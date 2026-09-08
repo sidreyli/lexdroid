@@ -1,0 +1,5 @@
+# The second declared engine, for the engine-swap comparison. Same context as the first,
+# and temperature pinned at 0 here because this base ships at 0.6.
+FROM qwen3:8b
+PARAMETER num_ctx 16384
+PARAMETER temperature 0

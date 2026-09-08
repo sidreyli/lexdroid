@@ -1,9 +1,10 @@
 /**
- * The local engine client.
+ * The engine client.
  *
- * Everything the pipeline asks a model for goes through Ollama on this machine: generation,
- * embeddings, and later OCR. That is the whole of the Section 3 declaration -- no proprietary API
- * is called, and nothing about the documents leaves the machine.
+ * Everything the pipeline asks a model for goes through Ollama: generation, embeddings, and later
+ * OCR. That is the whole of the Section 3 declaration -- no proprietary API is called and the
+ * weights are open. Ollama is on this machine by default; OLLAMA_HOST can point it at a GPU you
+ * rent, which is the same weights on someone else's hardware and should be said that way.
  *
  * Generation is asked for as JSON against a declared schema and at temperature zero. Both are
  * deliberate: the reading stage returns facts a scoring function consumes, and a stage whose
@@ -13,6 +14,15 @@
 import { request } from 'undici';
 
 const HOST = process.env['OLLAMA_HOST'] ?? 'http://127.0.0.1:11434';
+
+/**
+ * A rented engine is reachable by whoever guesses its URL, and Ollama has no auth of its own.
+ * Passed inline at the shell and never stored: a token written to a file is a token in a backup.
+ */
+export function authHeaders(): Record<string, string> {
+  const token = process.env['LEXDROID_ENGINE_TOKEN'];
+  return token ? { authorization: `Bearer ${token}` } : {};
+}
 
 /**
  * Multilingual by design: the same model has to place a Malay provision and an English one in the
@@ -58,7 +68,7 @@ async function post<T>(path: string, body: unknown, timeoutMs = 600_000, model =
   try {
     const res = await request(`${HOST}${path}`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', ...authHeaders() },
       body: JSON.stringify(body),
       headersTimeout: timeoutMs,
       bodyTimeout: timeoutMs,
@@ -78,7 +88,11 @@ async function post<T>(path: string, body: unknown, timeoutMs = 600_000, model =
 
 export async function listModels(): Promise<string[]> {
   try {
-    const res = await request(`${HOST}/api/tags`, { headersTimeout: 10_000, bodyTimeout: 10_000 });
+    const res = await request(`${HOST}/api/tags`, {
+      headers: authHeaders(),
+      headersTimeout: 10_000,
+      bodyTimeout: 10_000,
+    });
     const body = (await res.body.json()) as { models?: { name: string }[] };
     return (body.models ?? []).map((m) => m.name);
   } catch (err) {

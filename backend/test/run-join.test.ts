@@ -6,7 +6,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { openDb } from '../src/db/index.js';
-import { openRun, joinRun, recordEvent, runEvents, finishRun } from '../src/run/index.js';
+import { openRun, joinRun, recordEvent, runEvents, finishRun, recordRent } from '../src/run/index.js';
 
 function fixture() {
   const db = openDb(':memory:');
@@ -47,5 +47,33 @@ describe('joining a run somebody else opened', () => {
     const run = openRun(db, { economies: ['SGP'], pillars: [6], model: 'm' });
     finishRun(run);
     expect(() => joinRun(db, run.id)).toThrow(/not running/);
+  });
+});
+
+describe('what a rented run cost', () => {
+  const usd = (db: ReturnType<typeof fixture>, runId: string) =>
+    (db.prepare('SELECT SUM(usd) AS usd FROM run_cost WHERE run_id = ?').get(runId) as { usd: number }).usd;
+
+  it('records the charge against the run', () => {
+    const db = fixture();
+    const run = openRun(db, { economies: ['SGP'], pillars: [6], model: 'gemma4-lex-16k' });
+    recordRent(db, run.id, run.engine, 'gemma4-lex-16k', 0.51);
+    expect(usd(db, run.id)).toBeCloseTo(0.51);
+  });
+
+  it('adds a second charge rather than replacing the first', () => {
+    const db = fixture();
+    const run = openRun(db, { economies: ['SGP'], pillars: [6], model: 'gemma4-lex-16k' });
+    recordRent(db, run.id, run.engine, 'gemma4-lex-16k', 0.51);
+    recordRent(db, run.id, run.engine, 'gemma4-lex-16k', 0.25);
+    expect(usd(db, run.id)).toBeCloseTo(0.76);
+  });
+
+  it('leaves a run on this machine costing nothing', () => {
+    const db = fixture();
+    const run = openRun(db, { economies: ['SGP'], pillars: [6], model: 'gemma4-lex-16k' });
+    finishRun(run);
+    const row = db.prepare('SELECT SUM(usd) AS usd FROM run_cost WHERE run_id = ?').get(run.id) as { usd: number | null };
+    expect(row.usd ?? 0).toBe(0);
   });
 });

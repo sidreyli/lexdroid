@@ -14,10 +14,11 @@ import { spawn } from 'node:child_process';
 import { createWriteStream, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { openDb } from '../src/db/index.js';
-import { openRun, finishRun, runEvents } from '../src/run/index.js';
+import { openRun, finishRun, runEvents, recordRent } from '../src/run/index.js';
 import { describe } from '../src/run/events.js';
 import { duplicateEngine, workUnits, type Unit } from '../src/run/fleet.js';
 import { READING_MODEL } from '../src/engines/ollama.js';
+import { probeEngine, describeReport, usable, mismatchedEngine, fingerprintOf } from '../src/engines/probe.js';
 
 interface Args {
   economies: string[];
@@ -26,6 +27,9 @@ interface Args {
   model: string;
   depth: number | null;
   compare: boolean;
+  probe: boolean;
+  usdPerHour: number;
+  requireSerial: boolean;
 }
 
 function parseArgs(argv: string[]): Args {
@@ -49,19 +53,10 @@ function parseArgs(argv: string[]): Args {
     model: get('model') ?? READING_MODEL,
     depth: get('depth') !== null ? Number(get('depth')) : null,
     compare: !argv.includes('--no-compare'),
+    probe: !argv.includes('--no-probe'),
+    usdPerHour: Number(get('usd-per-hour') ?? 0),
+    requireSerial: argv.includes('--require-serial'),
   };
-}
-
-/** Each host is asked for itself. A fleet that starts against a dead engine wastes the whole run. */
-async function hasModel(host: string, model: string): Promise<boolean> {
-  try {
-    const res = await fetch(`${host}/api/tags`);
-    if (!res.ok) return false;
-    const body = (await res.json()) as { models?: { name?: string }[] };
-    return (body.models ?? []).some((m) => (m.name ?? '').split(':')[0] === model.split(':')[0]);
-  } catch {
-    return false;
-  }
 }
 
 /** One work unit on one engine, as a child gate that joins the run. Output goes to its own log. */
@@ -107,11 +102,27 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  for (const host of args.hosts) {
-    if (!(await hasModel(host, args.model))) {
-      console.error(`\n${host} is not serving ${args.model}. Start it there, or drop it from --hosts.\n`);
-      process.exit(1);
-    }
+  console.log(`\nChecking ${args.hosts.length} engine(s)...\n`);
+  const reports = await Promise.all(
+    args.hosts.map((h) => probeEngine(h, args.model, { quick: !args.probe })),
+  );
+  for (const r of reports) console.log(`  ${describeReport(r)}`);
+
+  const unusable = reports.filter((r) => !usable(r, args.requireSerial));
+  if (unusable.length > 0) {
+    console.error(
+      `\n${unusable.length} of ${reports.length} engine(s) cannot be used. Fix them, or drop them from --hosts.\n`,
+    );
+    process.exit(1);
+  }
+
+  // The cloud failure a laptop cannot have: the same tag built differently on two machines. Half
+  // the run would be answered by one model and half by the other, and neither half would say so.
+  const odd = mismatchedEngine(reports);
+  if (odd) {
+    console.error(`\n${odd.host} serves ${fingerprintOf(odd)}, but ${reports[0]!.host} serves`);
+    console.error(`${fingerprintOf(reports[0]!)}. One run answered by two models is two runs.\n`);
+    process.exit(1);
   }
 
   const units = workUnits(args.economies, args.pillars);
@@ -168,6 +179,10 @@ async function main(): Promise<void> {
 
   const seconds = (Date.now() - started) / 1000;
   const failed = done.filter((d) => d.code !== 0);
+  // Rented hardware bills for the hour it is held, not for the seconds it decodes, so the
+  // charge is hosts x wall time. Zero for a laptop, which is why the default is zero.
+  const rent = args.usdPerHour * args.hosts.length * (seconds / 3600);
+  if (rent > 0) recordRent(db, run.id, run.engine, args.model, rent);
   finishRun(run, failed.length > 0 ? 'failed' : 'complete');
 
   console.log('');
@@ -179,6 +194,9 @@ async function main(): Promise<void> {
   }
   console.log('');
   console.log(`  run ${run.id} recorded as ${failed.length > 0 ? 'failed' : 'complete'}`);
+  if (rent > 0) {
+    console.log(`  rent: $${rent.toFixed(2)} for ${args.hosts.length} host(s) at $${args.usdPerHour}/hour`);
+  }
   console.log(`  answers: npm run -w backend runs -- --run ${run.id}`);
   if (failed.length > 0) console.log(`  a failed unit left its reason in ${logDir}`);
 

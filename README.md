@@ -26,12 +26,18 @@ npm run dev
 sheet, and imports their sample kit into a quarantined baseline store. It reports what is missing
 rather than failing at the first gap.
 
-Two local models are needed. Both are open weights and both run through
-[Ollama](https://ollama.com); nothing leaves the machine.
+Two models are needed. Both are open weights and both run through
+[Ollama](https://ollama.com), on this machine by default -- no proprietary API is ever called.
 
 ```
 ollama pull bge-m3          # multilingual embeddings for the semantic index
+ollama pull gemma4:12b      # the base the reading engine is built from
+ollama create gemma4-lex-16k -f ollama/gemma4-lex-16k.Modelfile
 ```
+
+The reading engine is stock `gemma4:12b` at a wider context and nothing else; the Modelfile in
+`ollama/` is the whole of it. `qwen3-lex-16k` beside it is the second declared engine for the
+engine-swap comparison, built the same way from `qwen3:8b`.
 
 ## Building a corpus
 
@@ -109,6 +115,54 @@ two workers sharing one Ollama server have their reads batched together by that 
 `scripts/concurrency.ts` measures what that costs -- 18 of 40 provisions read differently, findings
 appearing and vanishing, while a second pass at one-at-a-time agreed with the first on all 40.
 Parallelism across engines is safe; parallelism inside one is not.
+
+Every host is checked before the run opens, and what blocks a run is that the hosts disagree about
+what they are serving. Spreading a run over rented machines makes one tag mean two different
+builds -- a different quantisation, a different parameter count -- and then half the answers come
+from one model and half from the other, with nothing in the output saying so. So the family, size
+and quantisation are read from each host and compared, which is exact.
+
+The fleet also times two concurrent requests against one alone, and reports whether the server ran
+them together. That is a cross-check rather than a gate, and the distinction is worth keeping
+straight: a worker reads one provision at a time and has its engine to itself, so there is never a
+second request for the server to bundle with. The protection is structural. The timing would be a
+poor gate anyway -- the same server here measured 1.11x, then read above the threshold once a
+second model was resident and memory was tight. `--require-serial` makes it blocking, which is
+what to use when something else shares the engine.
+
+    npm run -w backend engines -- --hosts http://127.0.0.1:11434,http://127.0.0.1:11502
+
+runs those checks on their own, which is the thing to do the moment a rented GPU boots.
+
+### Renting the engines
+
+The fleet does not care whether a host is on the desk or in a datacentre, so a run can be spread
+over GPUs hired by the hour. `infra/runpod/bootstrap.sh` prepares one: it installs Ollama, builds the
+reading engine from the same Modelfile this repo uses, and pins the server to one request at a time.
+
+    BASE=gemma4:12b TAG=gemma4-lex-16k bash bootstrap.sh
+
+It binds to localhost and nothing else, because Ollama has no authentication of its own and a pod
+port open to the internet is a GPU anyone can spend. `infra/runpod/tunnel.sh` carries each pod to a
+local port over SSH and prints the `--hosts` line to paste:
+
+    ./infra/runpod/tunnel.sh 'root@1.2.3.4 -p 40022' 'root@5.6.7.8 -p 40022'
+
+To reach a host over a public URL instead, put a token-checking proxy in front of it and set
+`LEXDROID_ENGINE_TOKEN` in the shell that launches the run. It is sent as a bearer token and is never
+written to a file.
+
+Rented hardware bills for the hour it is held rather than the seconds it decodes, so the charge is
+hosts times wall time. `--usd-per-hour` records it into the run record, where the rest of the
+run cost already lives:
+
+    npm run -w backend fleet -- --economies SGP,MYS --pillars 6,7 --hosts ... --usd-per-hour 0.34
+
+Two things do not move. The corpus and the run record stay in the SQLite file on this machine, so
+only prompts and answers cross the wire; and the engine stays the same open weights, so no
+proprietary API is called either way. What does change is that provisions are read on hardware
+somebody else owns, and a submission should say that rather than repeat that nothing leaves the
+machine.
 
 Each worker's own output goes to `backend/data/fleet/<run id>/`, because several gates interleaving
 their decisions on one terminal is not readable. The answers are in the run record either way.

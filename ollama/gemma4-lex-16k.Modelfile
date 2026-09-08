@@ -1,0 +1,4 @@
+# The reading engine. Stock gemma4:12b with a context wide enough for a long provision
+# plus the pillar's rubric; 8k truncated the prompt silently, which reads as a wrong answer.
+FROM gemma4:12b
+PARAMETER num_ctx 16384

@@ -13,3 +13,6 @@
 
 # Generated with provenance; keep the diff readable
 data/rubric.json text eol=lf
+
+# Shell scripts run on Linux pods; a carriage return there is a bad interpreter error.
+*.sh text eol=lf

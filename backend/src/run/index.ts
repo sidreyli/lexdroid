@@ -421,6 +421,17 @@ export function recordPillarAnswer(run: RunContext, answer: PillarAnswer): void 
   })();
 }
 
+/**
+ * What the run cost to rent, which is not what it cost to compute.
+ * A hired GPU bills for the hour whether it is decoding or idle, so the launcher charges hours.
+ */
+export function recordRent(db: Db, runId: string, engine: string, model: string, usd: number): void {
+  db.prepare(
+    `INSERT INTO run_cost (run_id, engine, model, usd) VALUES (?, ?, ?, ?)
+     ON CONFLICT (run_id, engine, model) DO UPDATE SET usd = usd + excluded.usd`,
+  ).run(runId, engine, model, usd);
+}
+
 /** One engine call per provision per pillar, plus one per framework candidate. */
 function addCost(db: Db, run: RunContext, answer: PillarAnswer): void {
   const calls = answer.readings.length + answer.frameworkReadings.length;
