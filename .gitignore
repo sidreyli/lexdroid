@@ -11,6 +11,8 @@ backend/data/lexdroid.db.*
 # from their sample kit; never redistributed with the public repository.
 backend/data/baseline.db
 backend/data/baseline.db-*
+backend/data/engine-cache.db
+backend/data/engine-cache.db-*
 backend/data/cache/
 backend/data/runs/
 backend/data/exports/

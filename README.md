@@ -96,6 +96,18 @@ the corpus is built once and queried by all 61 indicators; the model stage is bo
 of calls it makes, not by shortening its prompts. Nothing is ever made faster by looking at less
 evidence -- a cheap filter may reorder candidates, never remove them.
 
+### The engine cache, and when not to use it
+
+`LEXDROID_ENGINE_CACHE=1` replays stored engine answers instead of asking for them, which turns a
+forty-minute pillar into seconds while a scoring rule is being worked on. It is off unless set.
+
+It must never be on for a run whose numbers will be quoted. A change is validated by running two
+economies and seeing whether it moves both toward ESCAP's answers; replayed readings make that a
+replay rather than a measurement, and a scoring change could be "validated" without ever meeting a
+fresh reading. Every replayed call is counted into `run_cost.cached_calls`, and a run that used one
+carries a note on its own record saying it is not quotable. Delete `backend/data/engine-cache.db` to
+clear it; nothing else is affected.
+
 ## API
 
 | | |

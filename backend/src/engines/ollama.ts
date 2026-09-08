@@ -11,6 +11,7 @@
  * later.
  */
 import { request } from 'undici';
+import { cacheEnabled, cacheGet, cacheKey, cachePut } from './cache.js';
 
 const HOST = process.env['OLLAMA_HOST'] ?? 'http://127.0.0.1:11434';
 
@@ -131,6 +132,8 @@ export interface Generated {
   completionTokens: number;
   durationMs: number;
   model: string;
+  /** Whether this answer was replayed rather than asked for. A run that used one is not a measurement. */
+  fromCache: boolean;
 }
 
 /**
@@ -146,12 +149,8 @@ export async function generate(
 ): Promise<Generated> {
   const model = opts.model ?? READING_MODEL;
   const started = Date.now();
-  const res = await post<{
-    response?: string;
-    message?: { content?: string };
-    prompt_eval_count?: number;
-    eval_count?: number;
-  }>('/api/chat', {
+
+  const body = {
     model,
     stream: false,
     messages: [
@@ -164,13 +163,30 @@ export async function generate(
       temperature: opts.temperature ?? 0,
       ...(opts.contextTokens ? { num_ctx: opts.contextTokens } : {}),
     },
-  }, 600_000, model);
+  };
 
-  return {
+  // Keyed on the request itself, so a changed prompt, schema, model or option misses rather than
+  // replaying an answer to a question nobody is asking any more.
+  const key = cacheEnabled() ? cacheKey(body) : null;
+  if (key) {
+    const hit = cacheGet(key);
+    if (hit) return { ...hit, fromCache: true };
+  }
+
+  const res = await post<{
+    response?: string;
+    message?: { content?: string };
+    prompt_eval_count?: number;
+    eval_count?: number;
+  }>('/api/chat', body, 600_000, model);
+
+  const answer = {
     text: res.message?.content ?? res.response ?? '',
     promptTokens: res.prompt_eval_count ?? 0,
     completionTokens: res.eval_count ?? 0,
     durationMs: Date.now() - started,
     model,
   };
+  if (key) cachePut(key, answer);
+  return { ...answer, fromCache: false };
 }

@@ -78,6 +78,8 @@ export interface PillarAnswer {
   durationMs: number;
   /** Engine time only, summed across calls -- the number a cost sheet quotes. */
   engineMs: number;
+  /** Calls replayed from the development cache. Any number above zero disqualifies the run. */
+  cachedCalls: number;
   /** Where the wall time went, stage by stage. */
   stages: StageTiming[];
 }
@@ -328,6 +330,8 @@ export async function answerPillar(
     engineMs:
       readings.reduce((n, r) => n + r.durationMs, 0) +
       frameworkReadings.reduce((n, r) => n + r.durationMs, 0),
+    cachedCalls:
+      readings.filter((r) => r.fromCache).length + frameworkReadings.filter((r) => r.fromCache).length,
     stages,
   };
 }
