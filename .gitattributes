@@ -1,0 +1,15 @@
+# The repository stores text with LF endings and checks it out native.
+#
+# This is built on Windows and will be cloned by reviewers on macOS and Linux, and the deploy
+# criterion is that a stranger runs it within thirty minutes. Committed CRLF is how that stranger
+# gets a shell script with carriage returns in it, or a diff that is entirely line endings.
+* text=auto
+
+# Binary and generated, never touched
+*.png binary
+*.pdf binary
+*.xlsx binary
+*.db binary
+
+# Generated with provenance; keep the diff readable
+data/rubric.json text eol=lf

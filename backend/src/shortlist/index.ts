@@ -1,0 +1,459 @@
+/**
+ * Which instruments is this question about, decided before any of them are fetched.
+ *
+ * The register knows the title, kind, official number and portal of every instrument in an economy
+ * without reading one of them -- 6,365 for Singapore, from fourteen requests. This stage ranks that
+ * register against a cell's query set and says which documents are worth the cost of retrieving.
+ *
+ * Why this exists rather than "fetch everything, then search it":
+ *
+ *   - It is the same argument the architecture makes about the read stage, one stage earlier.
+ *     Asking every section "are you about anything?" returns everything, forever; fetching every
+ *     instrument in order to find the six a question turns on is that mistake applied to bandwidth.
+ *     Singapore's Acts are 1,048 requests and its subsidiary legislation 11,682 more.
+ *   - It is the only version that works in the live hour. An economy nobody has touched cannot have
+ *     its statute book downloaded first, and Singapore Statutes Online will not serve one anyway:
+ *     measured 6 September 2026, its firewall starts refusing sustained crawling well inside the
+ *     six-second delay its own robots.txt invites.
+ *   - It generalises. Nothing here knows anything about Singapore.
+ *
+ * What it is not: a filter on evidence. It decides fetch order and fetch scope, both of which are
+ * recorded per cell with the ranks that produced them. A title-based shortlist can miss an
+ * instrument whose title does not disclose its subject -- that is a real recall risk, it is stated
+ * here rather than hidden, and it is mitigated three ways: the match is semantic rather than
+ * keyword, the depth is generous, and an instrument that later proves relevant is fetched then. The
+ * thing we must never do is drop a document quietly and let a cell report no restriction because of
+ * it.
+ */
+import type { Db } from '../db/index.js';
+import { embed, EMBEDDING_MODEL } from '../engines/ollama.js';
+import { ftsQuery, fuse, type SearchHit } from '../index/index.js';
+
+const EMBED_BATCH = 32;
+
+/**
+ * Titles are short, so batches can be large and the whole register embeds in one pass. Singapore's
+ * 6,365 instruments cost one local model run and no network requests at all.
+ */
+export interface InstrumentCandidate {
+  instrumentId: number;
+  title: string;
+  kind: string;
+  officialNumber: string | null;
+  sourceUrl: string;
+  /** Whether the document behind it has already been fetched and parsed. */
+  read: boolean;
+  rank: number;
+  channels: string[];
+  /**
+   * The headings that put it here, best first.
+   *
+   * A shortlist that says only "rank 3" cannot be argued with. One that says "rank 3, because its
+   * section 199 is headed Accounting records" can be checked against the Act in a second, and
+   * checked *before* anything is fetched -- which is the only point at which a wrong shortlist is
+   * cheap to notice.
+   */
+  matchedHeadings: string[];
+}
+
+function toBlob(v: Float32Array): Buffer {
+  return Buffer.from(v.buffer, v.byteOffset, v.byteLength);
+}
+
+function normalise(v: ArrayLike<number>): Float32Array {
+  const out = new Float32Array(v.length);
+  let norm = 0;
+  for (let i = 0; i < v.length; i += 1) norm += v[i]! * v[i]!;
+  norm = Math.sqrt(norm) || 1;
+  for (let i = 0; i < v.length; i += 1) out[i] = v[i]! / norm;
+  return out;
+}
+
+/**
+ * Embed the title of every registered instrument that does not have one yet.
+ *
+ * The kind is included in the embedded text because "Act" and "Regulations" carry real meaning in
+ * this rubric: an obligation in an Act binds everyone, the same words in a regulator's guideline
+ * bind licensees only, and the score bands turn on that difference.
+ */
+export async function buildInstrumentIndex(
+  db: Db,
+  opts: { economy?: string; model?: string; log?: (line: string) => void } = {},
+): Promise<{ embedded: number; alreadyPresent: number; model: string }> {
+  const model = opts.model ?? EMBEDDING_MODEL;
+  const log = opts.log ?? (() => {});
+
+  const params: unknown[] = [model];
+  let economyClause = '';
+  if (opts.economy) {
+    economyClause = 'AND i.economy_code = ?';
+    params.push(opts.economy);
+  }
+
+  const pending = db
+    .prepare(
+      `SELECT i.id, i.title, i.kind, i.official_number FROM instrument i
+        WHERE NOT EXISTS (
+          SELECT 1 FROM instrument_embedding e WHERE e.instrument_id = i.id AND e.model = ?
+        )
+        ${economyClause}
+        ORDER BY i.id`,
+    )
+    .all(...params) as { id: number; title: string; kind: string; official_number: string | null }[];
+
+  const already = (
+    db.prepare('SELECT COUNT(*) c FROM instrument_embedding WHERE model = ?').get(model) as { c: number }
+  ).c;
+
+  if (pending.length === 0) return { embedded: 0, alreadyPresent: already, model };
+
+  const insert = db.prepare(
+    `INSERT INTO instrument_embedding (instrument_id, model, dims, vector) VALUES (?, ?, ?, ?)
+     ON CONFLICT(instrument_id) DO UPDATE SET model = excluded.model, dims = excluded.dims,
+                                              vector = excluded.vector`,
+  );
+
+  let done = 0;
+  for (let i = 0; i < pending.length; i += EMBED_BATCH) {
+    const batch = pending.slice(i, i + EMBED_BATCH);
+    const inputs = batch.map((r) => `${r.title} (${r.kind}${r.official_number ? `, ${r.official_number}` : ''})`);
+    const vectors = await embed(inputs, model);
+    db.transaction(() => {
+      vectors.forEach((v, j) => {
+        const unit = normalise(v);
+        insert.run(batch[j]!.id, model, unit.length, toBlob(unit));
+      });
+    })();
+    done += batch.length;
+    if (done % 1000 < EMBED_BATCH) log(`  ${done}/${pending.length} titles embedded`);
+  }
+
+  return { embedded: done, alreadyPresent: already, model };
+}
+
+// ------------------------------------------------------------------------------------------
+// Ranking the register against a question
+// ------------------------------------------------------------------------------------------
+
+/**
+ * Term matching over titles, weighted by how rare each term is.
+ *
+ * Without the weighting this channel is worse than useless: "law" appears in a large fraction of
+ * Singapore's titles, so a query about cybersecurity frameworks returned the Application of English
+ * Law Act 1993 and the Civil Law Act 1909 ahead of the Cybersecurity Act 2018. Inverse document
+ * frequency fixes that without a hand-tuned stopword list -- a term that matches half the register
+ * carries almost no information and is scored accordingly, in any language.
+ */
+function titleLexical(
+  db: Db,
+  query: string,
+  economy: string,
+  limit: number,
+  kind?: string,
+): SearchHit[] {
+  const q = ftsQuery(query);
+  if (!q) return [];
+  const terms = [
+    ...new Set(
+      q
+        .split(/\s+/)
+        .map((t) => t.replace(/^"|"$/g, '').toLowerCase())
+        .filter((t) => t.length >= 3),
+    ),
+  ];
+  if (!terms.length) return [];
+
+  // The register is thousands of rows, not millions, so a scan costs nothing and avoids a second
+  // index that could drift out of step with the section index.
+  const rows = db
+    .prepare(
+      `SELECT id, title FROM instrument WHERE economy_code = ?${kind ? ' AND kind = ?' : ''} ORDER BY id`,
+    )
+    .all(...(kind ? [economy, kind] : [economy])) as { id: number; title: string }[];
+  if (!rows.length) return [];
+
+  const lower = rows.map((r) => ({ id: r.id, t: r.title.toLowerCase() }));
+  const idf = new Map<string, number>();
+  for (const term of terms) {
+    const df = lower.reduce((n, r) => n + (r.t.includes(term) ? 1 : 0), 0);
+    idf.set(term, df === 0 ? 0 : Math.log(1 + lower.length / df));
+  }
+
+  const scored = lower
+    .map((r) => ({
+      id: r.id,
+      score: terms.reduce((a, term) => a + (r.t.includes(term) ? idf.get(term)! : 0), 0),
+    }))
+    .filter((r) => r.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit);
+
+  return scored.map((r, i) => ({
+    sectionId: r.id, // the fuser is rank-based and id-agnostic; here the id is an instrument
+    score: r.score,
+    rank: i + 1,
+    channel: 'title-lexical' as const,
+    query,
+  }));
+}
+
+/**
+ * The register ranked on what its instruments contain, not on what they are called.
+ *
+ * This exists because titles were measured and found empty. Against ESCAP's own citations for
+ * Singapore pillars 6 and 7, title ranking surfaced 7 of 23 cited instruments in a list of 100;
+ * the Companies Act, Income Tax Act, Employment Act, Banking Act and Criminal Procedure Code sat
+ * past rank 200, and restricting the search to Acts alone did not move them. "Companies Act 1967"
+ * contains no word about keeping records. Its section 199 is headed "Accounting records".
+ *
+ * An instrument's place is its single best heading's place. Not an average: an Act is relevant
+ * because of the two provisions that answer the question, and averaging them against four hundred
+ * that do not is how the Companies Act came to rank below the Maintenance of Parents Act.
+ */
+async function headingDense(
+  db: Db,
+  query: string,
+  economy: string,
+  limit: number,
+  model: string,
+  kind?: string,
+): Promise<SearchHit[]> {
+  const rows = db
+    .prepare(
+      `SELECT h.instrument_id id, h.heading, h.vector FROM heading_embedding h
+         JOIN instrument i ON i.id = h.instrument_id
+        WHERE i.economy_code = ? AND h.model = ?${kind ? ' AND i.kind = ?' : ''}`,
+    )
+    .all(...(kind ? [economy, model, kind] : [economy, model])) as {
+    id: number;
+    heading: string;
+    vector: Buffer;
+  }[];
+  if (!rows.length) return [];
+
+  const [qv] = await embed([query], model);
+  if (!qv) return [];
+  const q = normalise(qv);
+
+  const best = new Map<number, { score: number; heading: string }>();
+  for (const r of rows) {
+    const v = new Float32Array(r.vector.buffer, r.vector.byteOffset, r.vector.byteLength / 4);
+    let dot = 0;
+    for (let i = 0; i < q.length && i < v.length; i += 1) dot += q[i]! * v[i]!;
+    const cur = best.get(r.id);
+    if (!cur || dot > cur.score) best.set(r.id, { score: dot, heading: r.heading });
+  }
+
+  return [...best.entries()]
+    .sort((a, b) => b[1].score - a[1].score)
+    .slice(0, limit)
+    .map(([id, v], i) => ({
+      sectionId: id,
+      score: v.score,
+      rank: i + 1,
+      channel: 'heading-dense' as const,
+      query,
+      matched: v.heading,
+    }));
+}
+
+/** The same over headings by term, weighted the same way titles are, for the same reason. */
+function headingLexical(
+  db: Db,
+  query: string,
+  economy: string,
+  limit: number,
+  kind?: string,
+): SearchHit[] {
+  const q = ftsQuery(query);
+  if (!q) return [];
+  const terms = [
+    ...new Set(
+      q
+        .split(/\s+/)
+        .map((t) => t.replace(/^"|"$/g, '').toLowerCase())
+        .filter((t) => t.length >= 3),
+    ),
+  ];
+  if (!terms.length) return [];
+
+  const rows = db
+    .prepare(
+      `SELECT c.instrument_id id, c.headings FROM instrument_contents c
+         JOIN instrument i ON i.id = c.instrument_id
+        WHERE i.economy_code = ?${kind ? ' AND i.kind = ?' : ''}`,
+    )
+    .all(...(kind ? [economy, kind] : [economy])) as { id: number; headings: string }[];
+  if (!rows.length) return [];
+
+  // Document frequency over instruments, not over headings: a term appearing in forty headings of
+  // one Act says that Act is about it, and should not be discounted as if it were everywhere.
+  const parsed = rows.map((r) => ({ id: r.id, hs: (JSON.parse(r.headings) as string[]).map((h) => h.toLowerCase()) }));
+  const idf = new Map<string, number>();
+  for (const term of terms) {
+    const df = parsed.reduce((n, r) => n + (r.hs.some((h) => h.includes(term)) ? 1 : 0), 0);
+    idf.set(term, df === 0 ? 0 : Math.log(1 + parsed.length / df));
+  }
+
+  const scored: { id: number; score: number; matched: string }[] = [];
+  for (const r of parsed) {
+    let best = 0;
+    let heading = '';
+    for (const h of r.hs) {
+      const s = terms.reduce((a, t) => a + (h.includes(t) ? idf.get(t)! : 0), 0);
+      if (s > best) {
+        best = s;
+        heading = h;
+      }
+    }
+    if (best > 0) scored.push({ id: r.id, score: best, matched: heading });
+  }
+
+  return scored
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit)
+    .map((r, i) => ({
+      sectionId: r.id,
+      score: r.score,
+      rank: i + 1,
+      channel: 'heading-lexical' as const,
+      query,
+      matched: r.matched,
+    }));
+}
+
+async function titleDense(
+  db: Db,
+  query: string,
+  economy: string,
+  limit: number,
+  model: string,
+  kind?: string,
+): Promise<SearchHit[]> {
+  // The kind filter belongs in the query, not after it. Applied afterwards it spends the whole
+  // retrieval depth on subsidiary legislation -- 5,841 of Singapore's 6,365 instruments -- and then
+  // discards nearly all of it, so a search restricted to Acts came back with two candidates.
+  const rows = db
+    .prepare(
+      `SELECT e.instrument_id id, e.vector FROM instrument_embedding e
+       JOIN instrument i ON i.id = e.instrument_id
+       WHERE i.economy_code = ? AND e.model = ?${kind ? ' AND i.kind = ?' : ''}`,
+    )
+    .all(...(kind ? [economy, model, kind] : [economy, model])) as { id: number; vector: Buffer }[];
+  if (!rows.length) return [];
+
+  const [qv] = await embed([query], model);
+  if (!qv) return [];
+  const q = normalise(qv);
+
+  const scored = rows.map((r) => {
+    const v = new Float32Array(r.vector.buffer, r.vector.byteOffset, r.vector.byteLength / 4);
+    let dot = 0;
+    for (let i = 0; i < q.length && i < v.length; i += 1) dot += q[i]! * v[i]!;
+    return { id: r.id, score: dot };
+  });
+  scored.sort((a, b) => b.score - a.score);
+
+  return scored.slice(0, limit).map((r, i) => ({
+    sectionId: r.id,
+    score: r.score,
+    rank: i + 1,
+    channel: 'title-dense' as const,
+    query,
+  }));
+}
+
+/**
+ * Rank an economy's registered instruments against one or more queries.
+ *
+ * Both channels for the same reason they are both used over sections: a title search for "cross
+ * border data transfer" will not match "Personal Data Protection Act" on words, and a title search
+ * for "Banking Act" should not be beaten by something merely about finance.
+ */
+export async function shortlistInstruments(
+  db: Db,
+  opts: {
+    economy: string;
+    queries: string[];
+    limit?: number;
+    depthPerQuery?: number;
+    kind?: string;
+    model?: string;
+    /** Set false to rank on titles alone. Used to measure what the contents index is worth. */
+    contents?: boolean;
+  },
+): Promise<InstrumentCandidate[]> {
+  const model = opts.model ?? EMBEDDING_MODEL;
+  const limit = opts.limit ?? 25;
+  const depth = opts.depthPerQuery ?? 40;
+
+  // Each query in each channel is its own run. Reciprocal rank fusion combines ranks, so a run
+  // must keep its own ranking -- flattening them first would make rank 1 of a weak query
+  // indistinguishable from rank 1 of a strong one.
+  const runs: SearchHit[][] = [];
+  for (const query of opts.queries) {
+    const lex = titleLexical(db, query, opts.economy, depth, opts.kind);
+    if (lex.length) runs.push(lex);
+    const dense = await titleDense(db, query, opts.economy, depth, model, opts.kind);
+    if (dense.length) runs.push(dense);
+
+    // The contents channels, where an instrument has contents. An instrument that has none is not
+    // penalised here -- it simply competes on its title, which is all it could ever do. That is why
+    // a partial contents index is worth having: it lifts what it covers and harms nothing else.
+    if (opts.contents !== false) {
+      const hLex = headingLexical(db, query, opts.economy, depth, opts.kind);
+      if (hLex.length) runs.push(hLex);
+      const hDense = await headingDense(db, query, opts.economy, depth, model, opts.kind);
+      if (hDense.length) runs.push(hDense);
+    }
+  }
+  if (!runs.length) return [];
+
+  // The heading that put each instrument on the list, kept from before fusion. Fusion is
+  // rank-based and drops the reason, and the reason is the part a reviewer can check.
+  const reasons = new Map<number, { rank: number; heading: string }[]>();
+  for (const run of runs) {
+    for (const hit of run) {
+      if (!hit.matched) continue;
+      const list = reasons.get(hit.sectionId) ?? [];
+      list.push({ rank: hit.rank, heading: hit.matched });
+      reasons.set(hit.sectionId, list);
+    }
+  }
+
+  const fused = fuse(runs).slice(0, limit * 3);
+
+  const byId = db.prepare(
+    `SELECT i.id, i.title, i.kind, i.official_number, i.source_url,
+            EXISTS (SELECT 1 FROM document d WHERE d.instrument_id = i.id) AS read
+       FROM instrument i WHERE i.id = ?`,
+  );
+
+  const out: InstrumentCandidate[] = [];
+  for (const hit of fused) {
+    const row = byId.get(hit.sectionId) as
+      | { id: number; title: string; kind: string; official_number: string | null; source_url: string; read: number }
+      | undefined;
+    if (!row) continue;
+    if (opts.kind && row.kind !== opts.kind) continue;
+    out.push({
+      instrumentId: row.id,
+      title: row.title,
+      kind: row.kind,
+      officialNumber: row.official_number,
+      sourceUrl: row.source_url,
+      read: row.read === 1,
+      rank: out.length + 1,
+      channels: hit.channels ?? [],
+      matchedHeadings: [
+        ...new Set(
+          (reasons.get(row.id) ?? [])
+            .sort((a, b) => a.rank - b.rank)
+            .map((r) => r.heading),
+        ),
+      ].slice(0, 3),
+    });
+    if (out.length >= limit) break;
+  }
+  return out;
+}

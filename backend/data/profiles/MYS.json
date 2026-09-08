@@ -1,0 +1,150 @@
+{
+  "code": "MYS",
+  "name": "Malaysia",
+  "legalSystem": {
+    "family": "mixed",
+    "note": "Common law inherited from England, alongside Syariah law in matters of personal status and a separate body of Sabah and Sarawak state law. Federal Acts are consolidated and reprinted by the Commissioner of Law Revision, and each reprint states on its cover the date it is current to. Subsidiary legislation is made as P.U. (A) and P.U. (B) instruments and is published separately from the Acts."
+  },
+  "officialLanguages": ["ms", "en"],
+  "languageNote": "Bahasa Melayu is the authoritative language of the law. The Laws of Malaysia portal publishes each Act in both a Malay and an English edition, and the English edition is a translation whose authority is subordinate: where the two differ, the Malay text governs. The register records which edition a document came from, so a row that quotes the English text is quoting a translation and says so.",
+  "instrumentTypes": [
+    {
+      "rank": 1,
+      "kind": "act",
+      "localName": "Akta (Act of Parliament)",
+      "bindingness": "binding",
+      "note": "The principal instrument, numbered in one series: Act 709 is the Personal Data Protection Act 2010. Cited by act number and section."
+    },
+    {
+      "rank": 2,
+      "kind": "regulation",
+      "localName": "Subsidiary legislation, P.U. (A)",
+      "bindingness": "binding",
+      "note": "Regulations, rules and orders made under an Act. Where an Act leaves a standard to be prescribed, the standard is here."
+    },
+    {
+      "rank": 3,
+      "kind": "notice",
+      "localName": "Notification, P.U. (B), and regulator policy documents",
+      "bindingness": "binding-on-licensees",
+      "note": "Bank Negara policy documents and MCMC determinations bind the licensees they are issued to by force of the parent Act. This is the tier v1 collapsed into the one above, scoring central bank guidance as though it were an Act."
+    },
+    {
+      "rank": 4,
+      "kind": "guideline",
+      "localName": "Regulator guidelines",
+      "bindingness": "advisory",
+      "note": "Personal Data Protection Department guidance and similar. Evidence of how a regulator reads a binding instrument, never the source of an obligation on their own."
+    }
+  ],
+  "portals": [
+    {
+      "name": "Laws of Malaysia",
+      "url": "https://lom.agc.gov.my",
+      "kind": "legislation-database",
+      "authority": "Attorney General's Chambers, Commissioner of Law Revision",
+      "pillars": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+      "adapter": "lom",
+      "adapterConfig": {
+        "catalogue": "https://lom.agc.gov.my/generate-principal-pdf.php?type=updated&lang=BI&search=",
+        "listing": "Principal Acts, Updated"
+      },
+      "notes": "The portal's table of current principal Acts is published as a PDF it generates itself, and that PDF carries every Act's number, English title, consolidation date, and a link straight to the Act's own file. That is the register, taken from one official artefact. It is deliberately not taken from the portal's search feed, which now answers with an encrypted payload the page decrypts using a key it ships to the browser: reading that would make the register depend on a key one rotation away from silently returning nothing, which is how a predecessor of this system quietly stopped enumerating Malaysia altogether. Subsidiary legislation is not reachable this way -- its links are signed with a digest we cannot compute -- and is recorded as an open gap rather than a quiet absence."
+    },
+    {
+      "name": "Personal Data Protection Department",
+      "url": "https://www.pdp.gov.my",
+      "kind": "regulator",
+      "authority": "Jabatan Perlindungan Data Peribadi",
+      "pillars": [6, 7],
+      "adapter": "wp",
+      "adapterConfig": {},
+      "notes": "The Act's subsidiary regulations and the sectoral codes of practice registered under it, which is where the operative detail of Malaysia's data protection regime sits. The pages that carry the codes are built client-side, so nothing is reachable by following links; the site runs WordPress and advertises its own read-only API, and the whole document library is enumerable through it. Uploads are filed under filename slugs, so a code enters the register under a provisional title and takes its real one from the first page of the document."
+    },
+    {
+      "name": "Malaysian Communications and Multimedia Commission",
+      "url": "https://www.mcmc.gov.my",
+      "kind": "regulator",
+      "authority": "MCMC",
+      "pillars": [7, 8, 10, 11],
+      "adapter": null,
+      "adapterConfig": {},
+      "notes": "Determinations, guidelines and the Content Code made under the Communications and Multimedia Act 1998. Binding on licensees through standard licence conditions rather than on their own terms, so a row citing one has to say what makes it binding."
+    },
+    {
+      "name": "National Cyber Security Agency",
+      "url": "https://www.nacsa.gov.my",
+      "kind": "regulator",
+      "authority": "NACSA",
+      "pillars": [7],
+      "adapter": null,
+      "adapterConfig": {},
+      "notes": "The Cyber Security Act 2024 and the codes of practice for national critical information infrastructure entities made under it."
+    },
+    {
+      "name": "Bank Negara Malaysia",
+      "url": "https://www.bnm.gov.my",
+      "kind": "regulator",
+      "authority": "Bank Negara Malaysia",
+      "pillars": [6, 7, 8],
+      "adapter": null,
+      "adapterConfig": {},
+      "notes": "Policy documents, the technology risk management one among them, binding on financial institutions. A policy document is not an Act, and treating it as one is a mistake this profile's instrument ranking exists to prevent."
+    },
+    {
+      "name": "Royal Malaysian Customs Department",
+      "url": "https://www.customs.gov.my",
+      "kind": "regulator",
+      "authority": "Jabatan Kastam Diraja Malaysia",
+      "pillars": [1, 2, 12],
+      "adapter": null,
+      "adapterConfig": {},
+      "notes": "Customs procedure and the electronic declaration systems the trade facilitation pillars turn on. Publishes in Malay by default."
+    },
+    {
+      "name": "Malaysian Investment Development Authority",
+      "url": "https://www.mida.gov.my",
+      "kind": "regulator",
+      "authority": "MIDA",
+      "pillars": [3, 5, 12],
+      "adapter": null,
+      "adapterConfig": {},
+      "notes": "Investment guidelines and the equity conditions attached to manufacturing and services licences."
+    },
+    {
+      "name": "Intellectual Property Corporation of Malaysia",
+      "url": "https://www.myipo.gov.my",
+      "kind": "regulator",
+      "authority": "MyIPO",
+      "pillars": [4],
+      "adapter": null,
+      "adapterConfig": {},
+      "notes": "Patents, trade marks and copyright administration. Recorded as a lead rather than crawled: the site refused an automated client on every path tried by a predecessor of this system, and Malaysia's intellectual property statutes are on the Laws of Malaysia portal in any case."
+    },
+    {
+      "name": "MYNIC",
+      "url": "https://mynic.my",
+      "kind": "registry",
+      "authority": "MYNIC Berhad",
+      "pillars": [12],
+      "adapter": null,
+      "adapterConfig": {},
+      "notes": "The .my registry's own eligibility policies, which are the domain name requirements. Not a government host, so a row citing it has to say what makes it authoritative."
+    }
+  ],
+  "commitments": [
+    { "name": "World Trade Organization", "status": "in-force", "sourceUrl": "https://www.wto.org/english/thewto_e/countries_e/malaysia_e.htm" },
+    { "name": "ASEAN", "status": "in-force", "sourceUrl": "https://asean.org/member-states/" },
+    { "name": "ASEAN Agreement on Electronic Commerce", "status": "in-force", "sourceUrl": "https://asean.org/book/asean-agreement-on-electronic-commerce/" },
+    { "name": "Comprehensive and Progressive Agreement for Trans-Pacific Partnership", "status": "in-force", "sourceUrl": "https://www.miti.gov.my/index.php/pages/view/cptpp" },
+    { "name": "Regional Comprehensive Economic Partnership", "status": "in-force", "sourceUrl": "https://rcepsec.org/" }
+  ],
+  "notes": "Malaysia is the third economy built and the hardest of the three: no API, the law served as PDFs, an authoritative language that is not English, and a statute book whose subsidiary legislation is not enumerable from the portal. It is where the non-English source path is tested for real.",
+  "authoredBy": "LexDroid team",
+  "authoredOn": "2026-09-07",
+  "sources": [
+    "lom.agc.gov.my -- the principal Acts catalogue, its PDF export and its document links read directly on 2026-09-07",
+    "Each regulator's own site, for its remit and the instruments it issues",
+    "NOT ESCAP's legal inventory or portal table: those are the answer key and are quarantined in the baseline store"
+  ]
+}
