@@ -235,6 +235,8 @@ export interface SectionReading {
   promptTokens: number;
   completionTokens: number;
   durationMs: number;
+  /** Replayed from the development cache rather than asked for. Counted into the run record. */
+  fromCache: boolean;
 }
 
 /** What a reading is about: the provision, and the instrument it sits in. */
@@ -634,6 +636,7 @@ export async function readSection(
       promptTokens: err.promptTokens,
       completionTokens: err.completionTokens,
       durationMs: err.durationMs || Date.now() - started,
+      fromCache: false,
     };
   }
 
@@ -665,6 +668,7 @@ export async function readSection(
     promptTokens: res.promptTokens,
     completionTokens: res.completionTokens,
     durationMs: res.durationMs,
+    fromCache: res.fromCache,
   };
 }
 
@@ -785,6 +789,8 @@ export interface FrameworkReading {
   promptTokens: number;
   completionTokens: number;
   durationMs: number;
+  /** Replayed from the development cache rather than asked for. Counted into the run record. */
+  fromCache: boolean;
 }
 
 const FRAMEWORK_SUBJECTS = {
@@ -919,6 +925,7 @@ export async function readFramework(
       promptTokens: err.promptTokens,
       completionTokens: err.completionTokens,
       durationMs: err.durationMs || Date.now() - started,
+      fromCache: false,
     };
   }
 
@@ -956,6 +963,7 @@ export async function readFramework(
     promptTokens: res.promptTokens,
     completionTokens: res.completionTokens,
     durationMs: res.durationMs,
+    fromCache: res.fromCache,
   };
 }
 

@@ -15,6 +15,7 @@ import { openDb } from '../src/db/index.js';
 import { loadRubric, indicatorsOfPillar } from '../src/rubric/index.js';
 import { answerPillar } from '../src/cell/index.js';
 import { haveModel, OllamaUnavailable, READING_MODEL } from '../src/engines/ollama.js';
+import { cacheEnabled, cacheSize } from '../src/engines/cache.js';
 import { openBaseline, BASELINE_DB_PATH, sameInstrument } from '../src/baseline/index.js';
 import { openRun, joinRun, recordPillarAnswer, recordStage, recordEvent, finishRun, codeRevision } from '../src/run/index.js';
 import type { RunEvent } from '../src/run/events.js';
@@ -159,6 +160,17 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
+  // Said before anything runs, because the number this run produces cannot be quoted and the
+  // person reading the output needs to know that before they read it, not after.
+  if (cacheEnabled()) {
+    console.log('');
+    console.log('  !! THE ENGINE CACHE IS ON. This run is a replay, not a measurement. !!');
+    console.log(`     ${cacheSize()} stored answer(s). Its scores test the scoring code and nothing else:`);
+    console.log('     no timing, no engine comparison and no agreement figure from it is quotable.');
+    console.log('     Unset LEXDROID_ENGINE_CACHE for a real run.');
+    console.log('');
+  }
+
   const db = openDb();
   const rubric = loadRubric();
   const all: Decision[] = [];
@@ -242,6 +254,7 @@ async function main(): Promise<void> {
   console.log(`    model: ${model}`);
   if (run) {
     emit({ stage: 'run', kind: 'finished', economy: args.economy, detail: `${all.length} cells` });
+    if (cacheEnabled()) console.log('    REPLAYED FROM CACHE -- this run is not a measurement');
     // A worker never closes a run it joined; the process that opened it knows when everyone is done.
     if (!args.joinRunId) finishRun(run);
     console.log(`    recorded as run ${run.id}`);

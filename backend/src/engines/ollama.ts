@@ -12,6 +12,7 @@
  * later.
  */
 import { request } from 'undici';
+import { cacheEnabled, cacheGet, cacheKey, cachePut } from './cache.js';
 
 const HOST = process.env['OLLAMA_HOST'] ?? 'http://127.0.0.1:11434';
 
@@ -193,6 +194,8 @@ export interface Generated {
   completionTokens: number;
   durationMs: number;
   model: string;
+  /** Whether this answer was replayed rather than asked for. A run that used one is not a measurement. */
+  fromCache: boolean;
 }
 
 /**
@@ -209,13 +212,8 @@ export async function generate(
   const model = opts.model ?? READING_MODEL;
   const limit = opts.maxOutputTokens ?? MAX_OUTPUT_TOKENS;
   const started = Date.now();
-  const res = await post<{
-    response?: string;
-    message?: { content?: string };
-    prompt_eval_count?: number;
-    eval_count?: number;
-    done_reason?: string;
-  }>('/api/chat', {
+
+  const body = {
     model,
     stream: false,
     messages: [
@@ -229,7 +227,23 @@ export async function generate(
       num_predict: limit,
       ...(opts.contextTokens ? { num_ctx: opts.contextTokens } : {}),
     },
-  }, 600_000, model);
+  };
+
+  // Keyed on the request itself, so a changed prompt, schema, model or option misses rather than
+  // replaying an answer to a question nobody is asking any more.
+  const key = cacheEnabled() ? cacheKey(body) : null;
+  if (key) {
+    const hit = cacheGet(key);
+    if (hit) return { ...hit, fromCache: true };
+  }
+
+  const res = await post<{
+    response?: string;
+    message?: { content?: string };
+    prompt_eval_count?: number;
+    eval_count?: number;
+    done_reason?: string;
+  }>('/api/chat', body, 600_000, model);
 
   const text = res.message?.content ?? res.response ?? '';
   const promptTokens = res.prompt_eval_count ?? 0;
@@ -237,11 +251,14 @@ export async function generate(
   const durationMs = Date.now() - started;
 
   // An answer that ran to the limit is the tail of a repetition loop, and reporting it as a
-  // reading would present the loop's leftovers as what the provision says.
+  // reading would present the loop's leftovers as what the provision says. Thrown before the
+  // cache is written, so a runaway is never replayed as if it were a reading.
   if (res.done_reason === 'length' || completionTokens >= limit) {
     throw new EngineOverran(model, limit, promptTokens, completionTokens, durationMs);
   }
   if (!text.trim()) throw new EngineSilent(model, promptTokens, durationMs);
 
-  return { text, promptTokens, completionTokens, durationMs, model };
+  const answer = { text, promptTokens, completionTokens, durationMs, model };
+  if (key) cachePut(key, answer);
+  return { ...answer, fromCache: false };
 }

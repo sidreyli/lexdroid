@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openDb } from '../src/db/index.js';
 import { openRun, joinRun, recordEvent, runEvents } from '../src/run/index.js';
-import { duplicateEngine, engineKey, workUnits } from '../src/run/fleet.js';
+import { duplicateEngine, engineKey, replayingWhilePaying, workUnits } from '../src/run/fleet.js';
 
 describe('what counts as one engine', () => {
   it('sees through the aliases of the same local server', () => {
@@ -71,5 +71,16 @@ describe('two workers writing one run', () => {
     expect(events.filter((e) => e.pillarId === 7)).toHaveLength(20);
     expect(events.map((e) => e.id)).toEqual([...events.map((e) => e.id)].sort((x, y) => x - y));
     opener.close();
+  });
+});
+
+describe('the cache and rented hardware never go together', () => {
+  it('stops a replayed run that is also being paid for by the hour', () => {
+    expect(replayingWhilePaying(true, 0.34)).toBe(true);
+  });
+
+  it('allows either one on its own', () => {
+    expect(replayingWhilePaying(true, 0)).toBe(false);
+    expect(replayingWhilePaying(false, 0.34)).toBe(false);
   });
 });

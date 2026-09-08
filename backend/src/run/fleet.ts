@@ -35,3 +35,11 @@ export function duplicateEngine(hosts: string[]): string | null {
   const i = keys.findIndex((k, n) => keys.indexOf(k) !== n);
   return i >= 0 ? hosts[i]! : null;
 }
+
+/**
+ * Replaying stored answers on GPUs billed by the hour. Each feature is fine alone; together the
+ * run carries a rent figure while being marked not a measurement, which reads as a measured one.
+ */
+export function replayingWhilePaying(cacheOn: boolean, usdPerHour: number): boolean {
+  return cacheOn && usdPerHour > 0;
+}

@@ -16,9 +16,10 @@ import { join } from 'node:path';
 import { openDb } from '../src/db/index.js';
 import { openRun, finishRun, runEvents, recordRent } from '../src/run/index.js';
 import { describe } from '../src/run/events.js';
-import { duplicateEngine, workUnits, type Unit } from '../src/run/fleet.js';
+import { duplicateEngine, replayingWhilePaying, workUnits, type Unit } from '../src/run/fleet.js';
 import { READING_MODEL } from '../src/engines/ollama.js';
 import { probeEngine, describeReport, usable, mismatchedEngine, fingerprintOf } from '../src/engines/probe.js';
+import { cacheEnabled } from '../src/engines/cache.js';
 
 interface Args {
   economies: string[];
@@ -101,6 +102,14 @@ function runUnit(unit: Unit, host: string, runId: string, logDir: string, args: 
 
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
+
+  // Replaying stored answers on hired GPUs bills for work nothing did, and the run would carry a
+  // rent figure while being marked unquotable. Two features that are each fine and never both.
+  if (replayingWhilePaying(cacheEnabled(), args.usdPerHour)) {
+    console.error('\nThe engine cache is on and these hosts are being paid for by the hour.');
+    console.error('A replayed run is not a measurement; unset LEXDROID_ENGINE_CACHE.\n');
+    process.exit(1);
+  }
 
   const duplicate = duplicateEngine(args.hosts);
   if (duplicate) {

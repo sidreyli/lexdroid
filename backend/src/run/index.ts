@@ -432,6 +432,24 @@ export function recordRent(db: Db, runId: string, engine: string, model: string,
   ).run(runId, engine, model, usd);
 }
 
+/**
+ * What a run says about itself when it was replayed instead of measured.
+ *
+ * On the run's own notes, where anyone reopening it reads it first. A cached run answers a
+ * question about the scoring code; it answers nothing about the engine, the corpus or the time.
+ */
+export const CACHED_RUN_NOTE = 'SERVED FROM THE DEVELOPMENT CACHE -- not a measurement, not quotable as a result';
+
+function markCached(db: Db, run: RunContext): void {
+  db.prepare(
+    `UPDATE run SET notes = CASE
+       WHEN notes IS NULL OR notes = '' THEN ?
+       WHEN notes LIKE ? THEN notes
+       ELSE notes || ' | ' || ? END
+     WHERE id = ?`,
+  ).run(CACHED_RUN_NOTE, `%${CACHED_RUN_NOTE}%`, CACHED_RUN_NOTE, run.id);
+}
+
 /** One engine call per provision per pillar, plus one per framework candidate. */
 function addCost(db: Db, run: RunContext, answer: PillarAnswer): void {
   const calls = answer.readings.length + answer.frameworkReadings.length;
@@ -444,13 +462,18 @@ function addCost(db: Db, run: RunContext, answer: PillarAnswer): void {
 
   db.prepare(
     `INSERT INTO run_cost (run_id, engine, model, calls, prompt_tokens, output_tokens, cached_calls, wall_seconds, usd)
-     VALUES (?, ?, ?, ?, ?, ?, 0, ?, 0)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)
      ON CONFLICT (run_id, engine, model) DO UPDATE SET
        calls = calls + excluded.calls,
        prompt_tokens = prompt_tokens + excluded.prompt_tokens,
        output_tokens = output_tokens + excluded.output_tokens,
+       cached_calls = cached_calls + excluded.cached_calls,
        wall_seconds = wall_seconds + excluded.wall_seconds`,
-  ).run(run.id, run.engine, answer.model, calls, prompt, output, answer.engineMs / 1000);
+  ).run(run.id, run.engine, answer.model, calls, prompt, output, answer.cachedCalls, answer.engineMs / 1000);
+
+  // A run that replayed even one answer says so on its own record, not only in a column someone
+  // has to know to look at.
+  if (answer.cachedCalls > 0) markCached(db, run);
 }
 
 /**
