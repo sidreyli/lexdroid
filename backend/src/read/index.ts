@@ -18,7 +18,7 @@
  */
 import type { Db } from '../db/index.js';
 import type { Indicator } from '../rubric/types.js';
-import { generate, EngineTimeout, READING_MODEL } from '../engines/ollama.js';
+import { generate, EngineFailure, READING_MODEL } from '../engines/ollama.js';
 import { MEASURES, INDICATOR_OF_MEASURE } from '../rubric/measures.js';
 
 /**
@@ -623,7 +623,7 @@ export async function readSection(
     // One provision the engine would not answer on. Recorded and stepped over, because the run has
     // a hundred and forty-nine others and losing all of them to this one is the worse outcome. An
     // engine that is not running still throws, from generate itself: that is a different fact.
-    if (!(err instanceof EngineTimeout)) throw err;
+    if (!(err instanceof EngineFailure)) throw err;
     return {
       sectionId: section.sectionId,
       pillarId,
@@ -631,9 +631,9 @@ export async function readSection(
       rejected: [],
       failure: err.message,
       model: opts.model ?? READING_MODEL,
-      promptTokens: 0,
-      completionTokens: 0,
-      durationMs: Date.now() - started,
+      promptTokens: err.promptTokens,
+      completionTokens: err.completionTokens,
+      durationMs: err.durationMs || Date.now() - started,
     };
   }
 
@@ -899,7 +899,7 @@ export async function readFramework(
     // framework". A framework indicator scores 0 when the instruments examined establish nothing;
     // an instrument that was never examined is not evidence of that, and is dropped rather than
     // counted as a negative.
-    if (!(err instanceof EngineTimeout)) throw err;
+    if (!(err instanceof EngineFailure)) throw err;
     return {
       instrumentId: input.instrumentId,
       subject,
@@ -916,9 +916,9 @@ export async function readFramework(
       quoteVerified: false,
       failure: err.message,
       model: opts.model ?? READING_MODEL,
-      promptTokens: 0,
-      completionTokens: 0,
-      durationMs: Date.now() - started,
+      promptTokens: err.promptTokens,
+      completionTokens: err.completionTokens,
+      durationMs: err.durationMs || Date.now() - started,
     };
   }
 
