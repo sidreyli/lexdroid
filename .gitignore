@@ -13,6 +13,7 @@ backend/data/baseline.db
 backend/data/baseline.db-*
 backend/data/cache/
 backend/data/runs/
+backend/data/fleet/
 backend/data/exports/
 
 # ESCAP source material and other teams' graded submissions.

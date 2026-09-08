@@ -17,6 +17,7 @@
     "zone1": "tsx scripts/zone1.ts",
     "search": "tsx scripts/search.ts",
     "gate": "tsx scripts/gate.ts",
+    "fleet": "tsx scripts/fleet.ts",
     "runs": "tsx scripts/runs.ts",
     "watch": "tsx scripts/watch.ts",
     "discovery": "tsx scripts/discovery.ts",

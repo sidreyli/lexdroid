@@ -16,7 +16,7 @@ import { loadRubric, indicatorsOfPillar } from '../src/rubric/index.js';
 import { answerPillar } from '../src/cell/index.js';
 import { haveModel, OllamaUnavailable, READING_MODEL } from '../src/engines/ollama.js';
 import { openBaseline, BASELINE_DB_PATH, sameInstrument } from '../src/baseline/index.js';
-import { openRun, recordPillarAnswer, recordStage, recordEvent, finishRun, codeRevision } from '../src/run/index.js';
+import { openRun, joinRun, recordPillarAnswer, recordStage, recordEvent, finishRun, codeRevision } from '../src/run/index.js';
 import type { RunEvent } from '../src/run/events.js';
 import { existsSync } from 'node:fs';
 import { reaches, type Decision } from '../src/decide/index.js';
@@ -32,6 +32,8 @@ interface Args {
   compare: boolean;
   verbose: boolean;
   record: boolean;
+  /** Join a run somebody else opened, and leave the closing to them. */
+  joinRunId: string | null;
 }
 
 function parseArgs(argv: string[]): Args {
@@ -52,6 +54,7 @@ function parseArgs(argv: string[]): Args {
     compare: !argv.includes('--no-compare'),
     verbose: argv.includes('--verbose'),
     record: !argv.includes('--no-record'),
+    joinRunId: get('run'),
   };
 }
 
@@ -165,9 +168,11 @@ async function main(): Promise<void> {
 
   // The run is opened before anything is answered and closed after, so a crash leaves a row that
   // says 'running' rather than leaving nothing at all.
-  const run = args.record
-    ? openRun(db, { economies: [args.economy], pillars: args.pillars, model, notes: 'gate' })
-    : null;
+  const run = !args.record
+    ? null
+    : args.joinRunId
+      ? joinRun(db, args.joinRunId)
+      : openRun(db, { economies: [args.economy], pillars: args.pillars, model, notes: 'gate' });
   if (run) console.log(`run ${run.id}  (code ${codeRevision()})`);
 
   // Everything the pillar says goes to the ledger. The terminal gets the part a person watching
@@ -237,7 +242,8 @@ async function main(): Promise<void> {
   console.log(`    model: ${model}`);
   if (run) {
     emit({ stage: 'run', kind: 'finished', economy: args.economy, detail: `${all.length} cells` });
-    finishRun(run);
+    // A worker never closes a run it joined; the process that opened it knows when everyone is done.
+    if (!args.joinRunId) finishRun(run);
     console.log(`    recorded as run ${run.id}`);
     printStages(db, run.id);
   }

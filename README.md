@@ -96,6 +96,23 @@ the corpus is built once and queried by all 61 indicators; the model stage is bo
 of calls it makes, not by shortening its prompts. Nothing is ever made faster by looking at less
 evidence -- a cheap filter may reorder candidates, never remove them.
 
+### Running one run on several engines
+
+Reading is the slow stage and it is decode-bound, so the way to make it finish sooner is more
+engines, not a busier one. `fleet` splits the work by economy and pillar, hands each unit to a
+worker that joins the same run, and shows one progress stream for all of them:
+
+    npm run -w backend fleet -- --economies SGP,MYS --pillars 6,7 --hosts http://127.0.0.1:11434,http://192.168.1.20:11434
+
+One worker per engine endpoint, and the fleet refuses a host listed twice. This is not fussiness:
+two workers sharing one Ollama server have their reads batched together by that server, and
+`scripts/concurrency.ts` measures what that costs -- 18 of 40 provisions read differently, findings
+appearing and vanishing, while a second pass at one-at-a-time agreed with the first on all 40.
+Parallelism across engines is safe; parallelism inside one is not.
+
+Each worker's own output goes to `backend/data/fleet/<run id>/`, because several gates interleaving
+their decisions on one terminal is not readable. The answers are in the run record either way.
+
 ## API
 
 | | |

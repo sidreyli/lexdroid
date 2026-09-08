@@ -83,6 +83,19 @@ export function openRun(db: Db, opts: OpenRunOptions): RunContext {
   return { id, db, engine };
 }
 
+/**
+ * Attach to a run somebody else opened, so several processes can answer one run together.
+ * Refuses a run that is finished: a closed run's totals have already been read.
+ */
+export function joinRun(db: Db, runId: string, engine?: string): RunContext {
+  const row = db.prepare('SELECT engine, status FROM run WHERE id = ?').get(runId) as
+    | { engine: string; status: string }
+    | undefined;
+  if (!row) throw new Error(`No run ${runId}.`);
+  if (row.status !== 'running') throw new Error(`Run ${runId} is ${row.status}, not running.`);
+  return { id: runId, db, engine: engine ?? row.engine };
+}
+
 export function finishRun(
   run: RunContext,
   status: 'complete' | 'failed' | 'cancelled' = 'complete',
