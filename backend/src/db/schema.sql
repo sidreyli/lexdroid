@@ -64,6 +64,37 @@ CREATE TABLE IF NOT EXISTS run_stage (
   recorded_at     TEXT NOT NULL
 );
 
+-- What the run is doing, while it is doing it.
+--
+-- run_stage says where the hour went, after the hour. This says what is happening now, and it is
+-- the difference between finding a stalled provision while it stalls and finding it in a query the
+-- next morning. Thirty-one calls wrote until the context window was full, four to nine minutes
+-- each, and nothing in the run said a word until the pillar finished.
+--
+-- Append-only, one row per thing that happened, and never summarised away: the ledger a person
+-- watches live is the same ledger a reviewer reads afterwards.
+CREATE TABLE IF NOT EXISTS run_event (
+  id              INTEGER PRIMARY KEY,
+  run_id          TEXT NOT NULL REFERENCES run(id) ON DELETE CASCADE,
+  at              TEXT NOT NULL,
+  economy_code    TEXT,
+  pillar_id       INTEGER,
+  indicator_id    TEXT,
+  stage           TEXT NOT NULL,              -- retrieve | read | framework | decide | record | run
+  -- started | finished | refused | failed. A refusal is the engine declining to produce a reading
+  -- and is not a failure of the run; both are recorded, and neither is silent.
+  kind            TEXT NOT NULL CHECK (kind IN ('started', 'finished', 'refused', 'failed')),
+  subject         TEXT,                       -- the provision, instrument or query it is about
+  detail          TEXT,
+  seconds         REAL,
+  -- Progress through the stage, so a watcher can say "reading 41 of 150" rather than "reading".
+  done            INTEGER,
+  total           INTEGER,
+  prompt_tokens   INTEGER,
+  output_tokens   INTEGER
+);
+CREATE INDEX IF NOT EXISTS run_event_run ON run_event (run_id, id);
+
 CREATE INDEX IF NOT EXISTS idx_run_stage_run ON run_stage(run_id);
 
 -- ---------------------------------------------------------------------------------------------

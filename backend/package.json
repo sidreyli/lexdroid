@@ -18,6 +18,7 @@
     "search": "tsx scripts/search.ts",
     "gate": "tsx scripts/gate.ts",
     "runs": "tsx scripts/runs.ts",
+    "watch": "tsx scripts/watch.ts",
     "discovery": "tsx scripts/discovery.ts",
     "contents": "tsx scripts/contents.ts",
     "verify": "tsx scripts/verify.ts"

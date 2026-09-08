@@ -12,6 +12,7 @@
  * to say, which of those the score rests on, and which were found and deliberately not counted.
  */
 import type { Db } from '../db/index.js';
+import type { Emit } from '../run/events.js';
 import { citationUrl } from '../export/index.js';
 import { amendsAnotherAct } from '../parse/identity.js';
 import type { Indicator } from '../rubric/types.js';
@@ -89,6 +90,8 @@ export interface AnswerOptions {
   contextTokens?: number;
   vectors?: LoadedVectors;
   log?: (line: string) => void;
+  /** Where this pillar says what it is doing, while it does it. */
+  emit?: Emit;
 }
 
 interface SectionRow {
@@ -128,6 +131,7 @@ export async function answerPillar(
 ): Promise<PillarAnswer> {
   const started = Date.now();
   const log = opts.log ?? ((): void => {});
+  const emit = opts.emit ?? ((): void => {});
   const rubric = loadRubric();
   const indicators = indicatorsOfPillar(pillarId, rubric);
   if (indicators.length === 0) throw new Error(`No indicators in pillar ${pillarId}`);
@@ -155,6 +159,16 @@ export async function answerPillar(
     });
     retrieval.push(record);
     log(`  ${indicator.id}: ${record.sections.length} of ${record.surfaced} surfaced provision(s)`);
+    emit({
+      stage: 'retrieve',
+      kind: 'finished',
+      economy,
+      pillarId,
+      indicatorId: indicator.id,
+      done: retrieval.length,
+      total: indicators.length,
+      detail: `${record.sections.length} of ${record.surfaced} surfaced provision(s)`,
+    });
   }
 
   stage('retrieve', retrieval.length);
@@ -172,12 +186,30 @@ export async function answerPillar(
     text: r.text,
   }));
 
-  const readings = await inPool(inputs, READ_CONCURRENCY, (input) =>
-    readSection(input, pillarId, pillarName, indicators, {
+  emit({ stage: 'read', kind: 'started', economy, pillarId, total: inputs.length });
+
+  let readsDone = 0;
+  const readings = await inPool(inputs, READ_CONCURRENCY, async (input) => {
+    const reading = await readSection(input, pillarId, pillarName, indicators, {
       ...(opts.model ? { model: opts.model } : {}),
       ...(opts.contextTokens ? { contextTokens: opts.contextTokens } : {}),
-    }),
-  );
+    });
+    readsDone += 1;
+    emit({
+      stage: 'read',
+      kind: reading.failure ? 'refused' : 'finished',
+      economy,
+      pillarId,
+      subject: `${input.instrumentTitle} :: ${input.headingPath}`,
+      detail: reading.failure ?? `${reading.findings.length} finding(s), ${reading.rejected.length} refused`,
+      done: readsDone,
+      total: inputs.length,
+      seconds: reading.durationMs / 1000,
+      promptTokens: reading.promptTokens,
+      outputTokens: reading.completionTokens,
+    });
+    return reading;
+  });
 
   // 3. Findings, carrying enough of their origin to be cited.
   const byId = new Map(rows.map((r) => [r.id, r]));
@@ -250,6 +282,26 @@ export async function answerPillar(
       ),
     );
     frameworkReadings.push(...readingsHere);
+    for (const r of readingsHere.filter((x) => x.failure !== null)) {
+      emit({
+        stage: 'framework',
+        kind: 'refused',
+        economy,
+        pillarId,
+        indicatorId: indicator.id,
+        detail: r.failure ?? '',
+        seconds: r.durationMs / 1000,
+      });
+    }
+    emit({
+      stage: 'framework',
+      kind: 'finished',
+      economy,
+      pillarId,
+      indicatorId: indicator.id,
+      total: readingsHere.length,
+      done: readingsHere.filter((x) => x.failure === null).length,
+    });
     const examined = readingsHere
       .map((r, n) => ({ r, c: candidates[n]! }))
       .filter((x) => x.r.failure === null);
@@ -308,6 +360,17 @@ export async function answerPillar(
     };
     return decide({ indicator, economy, evidence, frameworkEvidence, surfaced, coverage });
   });
+
+  for (const d of decisions) {
+    emit({
+      stage: 'decide',
+      kind: 'finished',
+      economy,
+      pillarId,
+      indicatorId: d.indicatorId,
+      detail: `score ${d.score ?? 'unresolved'} [${d.state}]`,
+    });
+  }
 
   stage('decide', decisions.length);
 

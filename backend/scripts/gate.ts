@@ -16,9 +16,13 @@ import { loadRubric, indicatorsOfPillar } from '../src/rubric/index.js';
 import { answerPillar } from '../src/cell/index.js';
 import { haveModel, OllamaUnavailable, READING_MODEL } from '../src/engines/ollama.js';
 import { openBaseline, BASELINE_DB_PATH, sameInstrument } from '../src/baseline/index.js';
-import { openRun, recordPillarAnswer, recordStage, finishRun, codeRevision } from '../src/run/index.js';
+import { openRun, recordPillarAnswer, recordStage, recordEvent, finishRun, codeRevision } from '../src/run/index.js';
+import type { RunEvent } from '../src/run/events.js';
 import { existsSync } from 'node:fs';
 import { reaches, type Decision } from '../src/decide/index.js';
+
+/** A read slower than this is said out loud while it is still happening, not after the pillar. */
+const SLOW_READ_SECONDS = 30;
 
 interface Args {
   economy: string;
@@ -166,6 +170,22 @@ async function main(): Promise<void> {
     : null;
   if (run) console.log(`run ${run.id}  (code ${codeRevision()})`);
 
+  // Everything the pillar says goes to the ledger. The terminal gets the part a person watching
+  // needs: a refusal, a read that is taking too long, and a count every so often.
+  const emit = (e: RunEvent): void => {
+    if (run) recordEvent(run, e);
+    if (e.stage !== 'read') return;
+    if (e.kind === 'refused') {
+      console.log(`  [${e.done}/${e.total}] refused -- ${e.subject}`);
+      console.log(`      ${e.detail}`);
+    } else if ((e.seconds ?? 0) >= SLOW_READ_SECONDS) {
+      console.log(`  [${e.done}/${e.total}] ${(e.seconds ?? 0).toFixed(0)}s -- ${e.subject}`);
+    } else if (e.done && e.done % 25 === 0) {
+      console.log(`  [${e.done}/${e.total}] read`);
+    }
+  };
+  emit({ stage: 'run', kind: 'started', economy: args.economy, detail: `pillars ${args.pillars.join(', ')} on ${model}` });
+
   for (const pillarId of args.pillars) {
     const indicators = indicatorsOfPillar(pillarId, rubric);
     console.log(`\n=== Pillar ${pillarId}: ${indicators[0]?.pillarName ?? ''} (${args.economy}) ===`);
@@ -174,6 +194,7 @@ async function main(): Promise<void> {
       ...(args.depth ? { depth: args.depth } : {}),
       model,
       log: (l) => console.log(l),
+      emit,
     });
 
     if (run) {
@@ -185,6 +206,14 @@ async function main(): Promise<void> {
         pillarId,
         seconds: (Date.now() - wrote) / 1000,
         items: answer.readings.length,
+      });
+      emit({
+        stage: 'record',
+        kind: 'finished',
+        economy: args.economy,
+        pillarId,
+        seconds: (Date.now() - wrote) / 1000,
+        total: answer.readings.length,
       });
     }
     for (const d of answer.decisions) printDecision(d, args.verbose);
@@ -207,6 +236,7 @@ async function main(): Promise<void> {
   );
   console.log(`    model: ${model}`);
   if (run) {
+    emit({ stage: 'run', kind: 'finished', economy: args.economy, detail: `${all.length} cells` });
     finishRun(run);
     console.log(`    recorded as run ${run.id}`);
     printStages(db, run.id);

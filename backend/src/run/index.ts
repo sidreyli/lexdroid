@@ -23,6 +23,7 @@ import { loadRubric } from '../rubric/index.js';
 import type { PillarAnswer } from '../cell/index.js';
 import { refile, type Decision, type Evidence } from '../decide/index.js';
 import { locateQuote } from '../util/locate.js';
+import type { RunEvent } from './events.js';
 
 /** The name a run answers to. Local engines cost nothing, and that is recorded rather than assumed. */
 export const DEFAULT_ENGINE = 'engine-a';
@@ -105,6 +106,65 @@ export function recordDiscard(run: RunContext, d: DiscardInput): void {
       'INSERT INTO discard (run_id, stage, subject, reason, detail, recorded_at) VALUES (?, ?, ?, ?, ?, ?)',
     )
     .run(run.id, d.stage, d.subject, d.reason, d.detail ?? null, new Date().toISOString());
+}
+
+/**
+ * One thing that happened, written down as it happens.
+ *
+ * Separate from recordStage, which is a total struck after the fact. This is the running commentary
+ * a person can watch and a reviewer can reopen, and it is the same rows for both.
+ */
+export function recordEvent(run: RunContext, e: RunEvent): void {
+  run.db
+    .prepare(
+      `INSERT INTO run_event (run_id, at, economy_code, pillar_id, indicator_id, stage, kind,
+                              subject, detail, seconds, done, total, prompt_tokens, output_tokens)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      run.id,
+      new Date().toISOString(),
+      e.economy ?? null,
+      e.pillarId ?? null,
+      e.indicatorId ?? null,
+      e.stage,
+      e.kind,
+      e.subject ?? null,
+      e.detail ?? null,
+      e.seconds ?? null,
+      e.done ?? null,
+      e.total ?? null,
+      e.promptTokens ?? null,
+      e.outputTokens ?? null,
+    );
+}
+
+/** Everything the run has said, in order. `after` follows a run that is still going. */
+export function runEvents(db: Db, runId: string, after = 0, limit = 500): (RunEvent & { id: number; at: string })[] {
+  const rows = db
+    .prepare(
+      `SELECT id, at, economy_code, pillar_id, indicator_id, stage, kind, subject, detail,
+              seconds, done, total, prompt_tokens, output_tokens
+         FROM run_event WHERE run_id = ? AND id > ? ORDER BY id LIMIT ?`,
+    )
+    .all(runId, after, limit) as Record<string, unknown>[];
+
+  return rows.map((r) => ({
+    id: r['id'] as number,
+    at: r['at'] as string,
+    stage: r['stage'] as RunEvent['stage'],
+    kind: r['kind'] as RunEvent['kind'],
+    ...(r['economy_code'] === null ? {} : { economy: r['economy_code'] as string }),
+    ...(r['pillar_id'] === null ? {} : { pillarId: r['pillar_id'] as number }),
+    ...(r['indicator_id'] === null ? {} : { indicatorId: r['indicator_id'] as string }),
+    ...(r['subject'] === null ? {} : { subject: r['subject'] as string }),
+    ...(r['detail'] === null ? {} : { detail: r['detail'] as string }),
+    ...(r['seconds'] === null ? {} : { seconds: r['seconds'] as number }),
+    ...(r['done'] === null ? {} : { done: r['done'] as number }),
+    ...(r['total'] === null ? {} : { total: r['total'] as number }),
+    ...(r['prompt_tokens'] === null ? {} : { promptTokens: r['prompt_tokens'] as number }),
+    ...(r['output_tokens'] === null ? {} : { outputTokens: r['output_tokens'] as number }),
+  }));
 }
 
 export interface StageInput {

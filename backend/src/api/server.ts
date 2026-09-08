@@ -10,6 +10,7 @@ import { loadRubric } from '../rubric/index.js';
 import { openDb } from '../db/index.js';
 import { availableProfiles, loadProfile } from '../profile/index.js';
 import { fuse, loadVectors, searchDense, searchLexical } from '../index/index.js';
+import { runEvents } from '../run/index.js';
 
 const PORT = Number(process.env['PORT'] ?? 4000);
 
@@ -180,6 +181,92 @@ route('GET', '/api/search', async (_req, res, _params, url) => {
     dense: dense.slice(0, limit).map((h) => ({ rank: h.rank, score: h.score, ...(hydrate(h.sectionId) as object) })),
     fused: fuse([lexical, dense]).slice(0, limit).map((h, i) => ({ rank: i + 1, channels: h.channels, ...(hydrate(h.sectionId) as object) })),
   });
+});
+
+/** The runs there are, newest first, with enough to pick one. */
+route('GET', '/api/runs', (_req, res, _params, url) => {
+  const db = openDb();
+  const limit = Math.min(Number(url.searchParams.get('limit') ?? 20), 100);
+  const rows = db
+    .prepare(
+      `SELECT id, started_at, finished_at, economies, pillars, engine, engine_model, source_mode,
+              code_revision, status
+         FROM run ORDER BY started_at DESC LIMIT ?`,
+    )
+    .all(limit) as Record<string, unknown>[];
+
+  json(res, 200, {
+    runs: rows.map((r) => ({
+      id: r['id'],
+      startedAt: r['started_at'],
+      finishedAt: r['finished_at'],
+      economies: JSON.parse(r['economies'] as string) as string[],
+      pillars: JSON.parse(r['pillars'] as string) as unknown,
+      engine: r['engine'],
+      model: r['engine_model'],
+      sourceMode: r['source_mode'],
+      codeRevision: r['code_revision'],
+      status: r['status'],
+    })),
+  });
+});
+
+/** One page of what a run said. `after` is the last event id already seen. */
+route('GET', '/api/runs/:id/events', (_req, res, params, url) => {
+  const db = openDb();
+  const after = Number(url.searchParams.get('after') ?? 0);
+  const limit = Math.min(Number(url.searchParams.get('limit') ?? 500), 2000);
+  const status = db.prepare('SELECT status FROM run WHERE id = ?').get(params['id']) as { status: string } | undefined;
+  if (!status) return json(res, 404, { error: `No run ${params['id']}` });
+  json(res, 200, { status: status.status, events: runEvents(db, params['id']!, after, limit) });
+});
+
+/**
+ * The same events, pushed.
+ *
+ * Server-sent events rather than a socket: a run is one-way traffic, and a browser reconnects to
+ * this on its own. The poll is against the ledger, so a viewer joining halfway sees the whole run
+ * from the start rather than only what happens next.
+ */
+route('GET', '/api/runs/:id/stream', (req, res, params, url) => {
+  const db = openDb();
+  const runId = params['id']!;
+  const exists = db.prepare('SELECT status FROM run WHERE id = ?').get(runId) as { status: string } | undefined;
+  if (!exists) return json(res, 404, { error: `No run ${runId}` });
+
+  res.writeHead(200, {
+    'content-type': 'text/event-stream; charset=utf-8',
+    'cache-control': 'no-cache',
+    connection: 'keep-alive',
+  });
+
+  let after = Number(url.searchParams.get('after') ?? 0);
+  let closed = false;
+  const send = (event: string, data: unknown): void => {
+    res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+  };
+
+  const tick = (): void => {
+    if (closed) return;
+    for (const e of runEvents(db, runId, after, 500)) {
+      send('run-event', e);
+      after = e.id;
+    }
+    const status = (db.prepare('SELECT status FROM run WHERE id = ?').get(runId) as { status: string }).status;
+    if (status !== 'running') {
+      send('done', { status });
+      closed = true;
+      clearInterval(timer);
+      res.end();
+    }
+  };
+
+  const timer = setInterval(tick, 1000);
+  req.on('close', () => {
+    closed = true;
+    clearInterval(timer);
+  });
+  tick();
 });
 
 const server = createServer((req, res) => {
