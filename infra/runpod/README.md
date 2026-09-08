@@ -69,9 +69,21 @@ the number of hosts and the wall time and records what the run cost.
 Terminate them in the console when the run finishes. A pod bills while it is running, whether or
 not anything is asking it to read.
 
-## What has not been tested
+## What has been tested on real pods
 
-The scripts here have been checked for syntax, and the model definition they build has been
-verified to produce exactly the tag this repo expects. The engine check has been validated against
-two real Ollama servers, one batching and one not, on one GPU. None of it has yet been run against
-an actual RunPod pod.
+On 8 September 2026 both scripts were run against two rented RTX 3090 pods (Community Cloud,
+runpod/base:1.0.2-ubuntu2204, 30 GB container disk, port 22/tcp exposed with `startSsh`).
+
+- `bootstrap.sh` completed unmodified in about 90 seconds on a fast pod, and both pods reported
+  the same fingerprint, `gemma4/11.9B/Q4_K_M`, and the same model digest.
+- `tunnel.sh`'s forwarding requires the pod's direct SSH endpoint; RunPod's proxy host
+  `ssh.runpod.io` does not carry `-L`, so `22/tcp` must be in the pod's exposed ports.
+- The engine check reported `one at a time (1.89x, 1.88x under two)` on both, so
+  `OLLAMA_NUM_PARALLEL=1` does hold on a pod. The same check on the development laptop reports
+  `batches (1.10x)`, so a pod is the safer engine, not the riskier one.
+- Decode throughput measured 53.4 tokens/sec on a 3090 pod against 24.4 on the laptop.
+
+## What has still not been tested
+
+No scored run has yet been driven end to end across rented pods, and both pods above were placed
+on the same host machine, so a genuine cross-machine fingerprint disagreement remains unexercised.
