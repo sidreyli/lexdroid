@@ -83,7 +83,17 @@ runpod/base:1.0.2-ubuntu2204, 30 GB container disk, port 22/tcp exposed with `st
   `batches (1.10x)`, so a pod is the safer engine, not the riskier one.
 - Decode throughput measured 53.4 tokens/sec on a 3090 pod against 24.4 on the laptop.
 
+### The first scored run on rented pods
+
+Run `1cb164cb`, 8 September 2026: Singapore and Malaysia, pillars 6 and 7, four work units across
+the two pods. 18 cells in **32.4 minutes** of wall time for **$0.24** of rent, against roughly 48
+minutes for the same work run sequentially on the laptop.
+
+Agreement with ESCAP's own answers: **16 of 18 exact, 18 of 18 within one band.** Three reads hit
+the output cap and were refused rather than recorded.
+
 ## What has still not been tested
 
-No scored run has yet been driven end to end across rented pods, and both pods above were placed
-on the same host machine, so a genuine cross-machine fingerprint disagreement remains unexercised.
+Both pods were placed on the same host machine, so a genuine cross-machine fingerprint
+disagreement remains unexercised. Reproducibility across two rented pods -- the same cell answered
+twice on different hardware -- has not been measured either.
