@@ -19,6 +19,7 @@
     "gate": "tsx scripts/gate.ts",
     "fleet": "tsx scripts/fleet.ts",
     "engines": "tsx scripts/engines.ts",
+    "concurrency": "tsx scripts/concurrency.ts",
     "runs": "tsx scripts/runs.ts",
     "watch": "tsx scripts/watch.ts",
     "discovery": "tsx scripts/discovery.ts",

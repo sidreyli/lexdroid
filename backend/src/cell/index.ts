@@ -40,12 +40,10 @@ import {
 } from '../decide/index.js';
 
 /**
- * How many provisions are read at once.
- *
- * One. Batched reads are not bit-identical to unbatched: at four, 8 of 20 provisions read
- * differently on a second pass; at one, none did, and 40 reads took 251s against 255s.
+ * How many provisions are read at once. One: batching changes the answers, measured twice.
+ * scripts/concurrency.ts is the re-test -- 18 of 40 read differently at two, 0 at one.
  */
-const READ_CONCURRENCY = 1;
+const READ_CONCURRENCY = Math.max(1, Number(process.env['LEXDROID_READ_CONCURRENCY'] ?? 1));
 
 /** How many instruments a framework indicator examines. */
 const FRAMEWORK_CANDIDATES = 5;

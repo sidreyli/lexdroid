@@ -39,10 +39,30 @@ export const EMBEDDING_MODEL = process.env['LEXDROID_EMBEDDING_MODEL'] ?? 'bge-m
  */
 export const READING_MODEL = process.env['LEXDROID_READING_MODEL'] ?? 'gemma4-lex-16k';
 
+/**
+ * The most tokens one answer may write. Set in the empty band between the two populations:
+ * over 5,783 calls, every useful answer stopped by 3,515 tokens and every runaway passed 11,786.
+ */
+export const MAX_OUTPUT_TOKENS = Number(process.env['LEXDROID_MAX_OUTPUT_TOKENS'] ?? 4096);
+
 export class OllamaUnavailable extends Error {
   constructor(detail: string) {
     super(`Ollama is not answering at ${HOST}: ${detail}\n  Start it, or set OLLAMA_HOST.`);
     this.name = 'OllamaUnavailable';
+  }
+}
+
+/** The engine produced nothing usable. Carries what the attempt cost, which is real either way. */
+export class EngineFailure extends Error {
+  constructor(
+    readonly model: string,
+    message: string,
+    readonly promptTokens = 0,
+    readonly completionTokens = 0,
+    readonly durationMs = 0,
+  ) {
+    super(message);
+    this.name = 'EngineFailure';
   }
 }
 
@@ -57,10 +77,36 @@ export class OllamaUnavailable extends Error {
  * everything it had already done, which is what happened here: nine cells' work lost to one
  * provision, ten minutes in.
  */
-export class EngineTimeout extends Error {
-  constructor(readonly model: string, detail: string) {
-    super(`${model} accepted the request and did not answer: ${detail}`);
+export class EngineTimeout extends EngineFailure {
+  constructor(model: string, detail: string) {
+    super(model, `${model} accepted the request and did not answer: ${detail}`);
     this.name = 'EngineTimeout';
+  }
+}
+
+/**
+ * The engine wrote until it was cut off at the output limit.
+ * Measured: 31 such calls, each filling the context window to the token and returning no finding,
+ * no quote and no reasoning, took 169 minutes -- a ninth of all engine time ever spent reading.
+ */
+export class EngineOverran extends EngineFailure {
+  constructor(model: string, limit: number, promptTokens: number, completionTokens: number, durationMs: number) {
+    super(
+      model,
+      `${model} wrote ${completionTokens} tokens without finishing and was cut off at the ${limit}-token limit`,
+      promptTokens,
+      completionTokens,
+      durationMs,
+    );
+    this.name = 'EngineOverran';
+  }
+}
+
+/** The engine answered with nothing at all. Observed once, at 81 seconds and zero output tokens. */
+export class EngineSilent extends EngineFailure {
+  constructor(model: string, promptTokens: number, durationMs: number) {
+    super(model, `${model} returned an empty answer`, promptTokens, 0, durationMs);
+    this.name = 'EngineSilent';
   }
 }
 
@@ -124,6 +170,8 @@ export interface GenerateOptions {
   temperature?: number;
   /** Tokens of context. Too small silently truncates the prompt, which reads as a wrong answer. */
   contextTokens?: number;
+  /** The most tokens one answer may write. Past it the answer is a repetition loop, not a reading. */
+  maxOutputTokens?: number;
   /**
    * Let the engine reason at length before answering. Off, and measured rather than assumed.
    *
@@ -159,12 +207,14 @@ export async function generate(
   opts: GenerateOptions = {},
 ): Promise<Generated> {
   const model = opts.model ?? READING_MODEL;
+  const limit = opts.maxOutputTokens ?? MAX_OUTPUT_TOKENS;
   const started = Date.now();
   const res = await post<{
     response?: string;
     message?: { content?: string };
     prompt_eval_count?: number;
     eval_count?: number;
+    done_reason?: string;
   }>('/api/chat', {
     model,
     stream: false,
@@ -176,15 +226,22 @@ export async function generate(
     think: opts.think ?? false,
     options: {
       temperature: opts.temperature ?? 0,
+      num_predict: limit,
       ...(opts.contextTokens ? { num_ctx: opts.contextTokens } : {}),
     },
   }, 600_000, model);
 
-  return {
-    text: res.message?.content ?? res.response ?? '',
-    promptTokens: res.prompt_eval_count ?? 0,
-    completionTokens: res.eval_count ?? 0,
-    durationMs: Date.now() - started,
-    model,
-  };
+  const text = res.message?.content ?? res.response ?? '';
+  const promptTokens = res.prompt_eval_count ?? 0;
+  const completionTokens = res.eval_count ?? 0;
+  const durationMs = Date.now() - started;
+
+  // An answer that ran to the limit is the tail of a repetition loop, and reporting it as a
+  // reading would present the loop's leftovers as what the provision says.
+  if (res.done_reason === 'length' || completionTokens >= limit) {
+    throw new EngineOverran(model, limit, promptTokens, completionTokens, durationMs);
+  }
+  if (!text.trim()) throw new EngineSilent(model, promptTokens, durationMs);
+
+  return { text, promptTokens, completionTokens, durationMs, model };
 }

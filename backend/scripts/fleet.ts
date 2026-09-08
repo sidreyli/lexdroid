@@ -81,7 +81,14 @@ function runUnit(unit: Unit, host: string, runId: string, logDir: string, args: 
   return new Promise((resolve) => {
     const child = spawn('npx', argv, {
       shell: true,
-      env: { ...process.env, OLLAMA_HOST: host, LLM_PROVIDER: 'ollama' },
+      // Pinned, not inherited. The one-request-in-flight guarantee is what makes several
+      // engines safe, and a stray environment variable must not be able to lift it.
+      env: {
+        ...process.env,
+        OLLAMA_HOST: host,
+        LLM_PROVIDER: 'ollama',
+        LEXDROID_READ_CONCURRENCY: '1',
+      },
     });
     child.stdout.pipe(out);
     child.stderr.pipe(out);
