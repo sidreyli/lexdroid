@@ -82,6 +82,7 @@ function storeWithOneAnswer(
         dutyBearer: 'A company', dutyAct: 'must keep', dutyForce: 'requires',
         definingWords: 'not less than 5 years',
         imposingWords: 'must keep',
+        prescribingWords: null,
         requirement: 'Accounting records must be kept for at least five years.',
         sectorScope: 'all', sector: null, dataScope: 'non-personal', dataDescription: null,
         appliesOnlyToGovernmentData: false, mandatory: true, countriesNamed: [],

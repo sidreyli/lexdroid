@@ -29,6 +29,7 @@ function finding(over: Partial<Finding>): Finding {
     roleWords: null,
     definingWords: null,
     imposingWords: null,
+    prescribingWords: null,
     dutyBearerKind: 'organisation',
     scopeUnstated: false,
     placeWords: null,

@@ -89,6 +89,7 @@ function finding(over: Partial<Finding> = {}): Finding {
     roleWords: null,
     definingWords: 'outside Singapore',
     imposingWords: 'must not transfer',
+    prescribingWords: null,
     dutyBearerKind: 'organisation',
     scopeUnstated: false,
     placeWords: 'outside Singapore',

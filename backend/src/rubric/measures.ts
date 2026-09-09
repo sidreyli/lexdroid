@@ -184,7 +184,8 @@ export const MEASURES: Record<string, Measure[]> = {
   '7.5': [
     {
       token: 'government-access',
-      defines: 'the words giving the authority the data or access to it',
+      defines:
+        'the words by which the authority itself obtains the data or access to it, rather than a power to make rules, codes or standards about data',
       permits: true,
       gloss:
         'a power for a public authority to obtain, access, or require the disclosure of personal data held by someone else',

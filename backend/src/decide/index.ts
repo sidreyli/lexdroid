@@ -872,13 +872,21 @@ function hold(indicatorId: string, evidence: Evidence[]): {
       });
       continue;
     }
-    // A power to require is not a requirement. Australia read a top-band transfer ban off a list
-    // of "examples of conditions that may be prescribed" and off "the Rules may make provision".
-    // Held, not dropped: the power is real and the rules made under it may impose the thing.
-    if (!e.finding.imposingWords) {
+    // A power to require is not a requirement -- unless the measure the rubric names is itself a
+    // power, where nothing is imposed and this hold would swallow every genuine finding.
+    if (!e.finding.imposingWords && !permits(indicatorId, e.finding.measure)) {
       held.push({
         evidence: e,
         reason: `the provision does not impose the requirement itself; it empowers another instrument to impose one`,
+      });
+      continue;
+    }
+    // And the same words cannot both impose the duty and confer the power to impose it. Australia
+    // answered both questions with the DATA Act stem listing conditions that may be prescribed.
+    if (restates(e.finding.imposingWords, e.finding.prescribingWords)) {
+      held.push({
+        evidence: e,
+        reason: `the words said to impose the requirement are the words empowering another instrument to impose one`,
       });
       continue;
     }
@@ -1102,6 +1110,14 @@ function appointing(indicatorId: string, measure: string | null): boolean {
 function actorKindOf(indicatorId: string, measure: string | null): 'private' | 'state' | null {
   if (!measure) return null;
   return (MEASURES[indicatorId] ?? []).find((m) => m.token === measure)?.actorKind ?? null;
+}
+
+/** Two answers that are the same words, one inside the other, whatever the spacing and case. */
+function restates(a: string | null, b: string | null): boolean {
+  if (!a || !b) return false;
+  const n = (t: string) => t.toLowerCase().replace(/\s+/g, ' ').trim();
+  const [x, y] = [n(a), n(b)];
+  return x.length > 0 && y.length > 0 && (x.includes(y) || y.includes(x));
 }
 
 /** Is this measure one the rubric describes as a permission or a limit rather than a command? */

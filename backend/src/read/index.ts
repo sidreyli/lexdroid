@@ -179,6 +179,15 @@ export interface Finding {
    */
   imposingWords: string | null;
   /**
+   * The words by which this provision empowers some other instrument to impose requirements.
+   *
+   * Asked because the last question was answered with the power itself: the DATA Act stem
+   * "examples of conditions that may be prescribed or imposed" was copied in as the words that
+   * imposed a transfer ban. Asking for the enabling words in their own right lets Zone 3 see
+   * when the two answers are the same words, without any list of phrases to match against.
+   */
+  prescribingWords: string | null;
+  /**
    * What kind of party the duty falls on, classifying the words already copied into dutyBearer.
    *
    * The measures say whom they are borne by and the reader was ignoring it: the Minister
@@ -411,6 +420,10 @@ function prompt(section: SectionInput, pillarName: string, indicators: readonly 
     'only empowers someone else to impose one -- "the rules may prescribe", "may make provision',
     'in relation to", "examples of conditions that may be imposed". A power to require is not a',
     'requirement, however plainly it names the thing that could be required.',
+    'prescribingWords: separately, the words by which this provision lets some other instrument',
+    'prescribe or impose requirements -- rules, regulations, a code, conditions of a licence.',
+    'Copy them from your quote. Null if it confers no such power. A provision may well do both,',
+    'imposing a duty of its own and empowering rules about it; answer each question on its own.',
     '',
     'Then the two facts the score bands are scaled by. Both are measured against the economy, not',
     'against the instrument you are reading. Every law binds everyone it reaches -- that is what a',
@@ -477,6 +490,7 @@ const schemaFor = (indicators: readonly Indicator[]) => ({
           measure: { type: 'string', enum: measureTokens(indicators) },
           definingWords: { type: ['string', 'null'] },
           imposingWords: { type: ['string', 'null'] },
+          prescribingWords: { type: ['string', 'null'] },
           requirement: { type: 'string' },
           sectorScope: { type: 'string', enum: ['all', 'specific'] },
           sector: { type: ['string', 'null'] },
@@ -508,6 +522,7 @@ const schemaFor = (indicators: readonly Indicator[]) => ({
           'measure',
           'definingWords',
           'imposingWords',
+          'prescribingWords',
           'requirement',
           'sectorScope',
           'dataScope',
@@ -648,6 +663,9 @@ export function rejectionFor(f: Finding, sectionText: string, allowed: Set<strin
   }
   if (f.imposingWords && !inProvision(f.imposingWords)) {
     return `the words said to impose the requirement, "${f.imposingWords}", are not in the provision`;
+  }
+  if (f.prescribingWords && !inProvision(f.prescribingWords)) {
+    return `the words said to empower another instrument, "${f.prescribingWords}", are not in the provision`;
   }
   if (f.scopeUnstated) return 'the reach of the duty was not answered in the terms offered';
   return null;
@@ -802,6 +820,7 @@ function coerce(raw: unknown): Finding | null {
     roleWords: str(r['roleWords']),
     definingWords: str(r['definingWords']),
     imposingWords: str(r['imposingWords']),
+    prescribingWords: str(r['prescribingWords']),
     dutyBearerKind:
       r['dutyBearerKind'] === 'government' || r['dutyBearerKind'] === 'individual'
         ? r['dutyBearerKind']
