@@ -3,6 +3,7 @@ import { Hanken_Grotesk } from "next/font/google";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AppShell } from "@/components/shell/app-shell";
+import { ReviewProvider } from "@/components/workbench/review-store";
 import "./globals.css";
 
 const sans = Hanken_Grotesk({
@@ -22,9 +23,11 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     <html lang="en" className={`${sans.variable} h-full antialiased`}>
       <body className="min-h-full">
         <TooltipProvider delayDuration={200}>
-          <AppShell>{children}</AppShell>
+          <ReviewProvider>
+            <AppShell>{children}</AppShell>
+          </ReviewProvider>
         </TooltipProvider>
-        <Toaster position="bottom-right" />
+        <Toaster position="top-center" />
       </body>
     </html>
   );

@@ -3,7 +3,7 @@
  * Never opens the database for writing and never runs a pipeline stage.
  */
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, writeFileSync, readFileSync, copyFileSync, readdirSync } from 'node:fs';
+import { mkdirSync, writeFileSync, readFileSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 const CHECKOUT = resolve(process.env.LEXDROID_CHECKOUT ?? 'C:/Users/sidha/Code/Projects/lexdroid');

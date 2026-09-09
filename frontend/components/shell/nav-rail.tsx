@@ -22,6 +22,7 @@ import {
   SidebarMenuItem,
   SidebarRail,
 } from "@/components/ui/sidebar";
+import { useReview } from "@/components/workbench/review-store";
 
 const work = [
   { href: "/", label: "Overview", icon: LayoutDashboard },
@@ -38,6 +39,8 @@ const reference = [
 
 export function NavRail({ reviewCount = 0 }: { reviewCount?: number }) {
   const pathname = usePathname();
+  const { decisions } = useReview();
+  const waiting = Math.max(0, reviewCount - Object.keys(decisions).length);
   const active = (href: string) =>
     href === "/" ? pathname === "/" : pathname.startsWith(href);
 
@@ -86,9 +89,9 @@ export function NavRail({ reviewCount = 0 }: { reviewCount?: number }) {
                   <span>{item.label}</span>
                 </Link>
               </SidebarMenuButton>
-              {item.href === "/workbench" && reviewCount > 0 ? (
-                <SidebarMenuBadge className="tnum rounded-full bg-ochre-soft px-2 text-[11px] font-medium text-ochre peer-data-[active=true]/menu-button:text-paper">
-                  {reviewCount}
+              {item.href === "/workbench" && waiting > 0 ? (
+                <SidebarMenuBadge className="tnum rounded-full bg-ochre-soft px-2 text-[11px] font-medium text-ochre peer-data-[active=true]/menu-button:bg-paper/15 peer-data-[active=true]/menu-button:text-paper">
+                  {waiting}
                 </SidebarMenuBadge>
               ) : null}
             </SidebarMenuItem>

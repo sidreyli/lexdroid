@@ -15,6 +15,7 @@ import type {
   Economy,
   ExportRow,
   Indicator,
+  QueueItem,
   Rubric,
   Run,
   RunEvent,
@@ -122,4 +123,30 @@ export function getReviewQueue(): ExportRow[] {
   return [...exportRows].sort(
     (a, b) => failed(b) - failed(a) || a.economy.localeCompare(b.economy) || a.id - b.id,
   );
+}
+
+/** "10.1" sorts after "6.2", which a plain string comparison gets backwards. */
+export function compareIndicatorIds(a: string, b: string): number {
+  const [ap, ai] = a.split(".").map(Number);
+  const [bp, bi] = b.split(".").map(Number);
+  return ap - bp || ai - bi;
+}
+
+/** The list the queue rail renders: enough to choose a finding, and nothing more. */
+export function getQueueItems(): QueueItem[] {
+  const names = new Map(economies.map((e) => [e.code, e.name]));
+  const categories = new Map(rubric.indicators.map((i) => [i.id, i.category]));
+  return getReviewQueue().map((r) => ({
+    id: r.id,
+    economy: r.economy,
+    economyName: names.get(r.economy) ?? r.economy,
+    indicatorId: r.indicatorId,
+    category: categories.get(r.indicatorId) ?? "",
+    lawName: r.lawName,
+    article: r.article,
+    state: r.state,
+    score: r.score,
+    hasQuote: r.quoteCharStart !== null,
+    failedGates: r.gates.filter((g) => !g.passed).length,
+  }));
 }

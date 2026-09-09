@@ -155,6 +155,9 @@ export interface ExportRow {
   headingPath: string | null;
   sectionLabel: string | null;
   anchor: string | null;
+  /** Where the whole provision starts in the document, so the quote can be rebased onto it. */
+  sectionCharStart: number | null;
+  sectionCharEnd: number | null;
   page: number | null;
   instrumentId: number | null;
   instrumentKind: string | null;
@@ -165,7 +168,9 @@ export interface ExportRow {
   timeframeBasis: string | null;
   officialNumber: string | null;
   instrumentLanguage: string | null;
+  documentId: number | null;
   extraction: string | null;
+  mediaType: string | null;
   applies: number | null;
   readingQuote: string | null;
   subclause: string | null;
@@ -216,6 +221,21 @@ export interface RunEvent {
   seconds: number | null;
   done: number | null;
   total: number | null;
+}
+
+/** One line in the workbench queue. Enough to choose a finding, and nothing more. */
+export interface QueueItem {
+  id: number;
+  economy: string;
+  economyName: string;
+  indicatorId: string;
+  category: string;
+  lawName: string;
+  article: string | null;
+  state: CellState;
+  score: number | null;
+  hasQuote: boolean;
+  failedGates: number;
 }
 
 /** One economy against one indicator, as the coverage grid sees it. */
