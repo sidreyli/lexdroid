@@ -43,6 +43,7 @@ export const READING_MODEL = process.env['LEXDROID_READING_MODEL'] ?? 'gemma4-le
 /**
  * The most tokens one answer may write. Set in the empty band between the two populations:
  * over 5,783 calls, every useful answer stopped by 3,515 tokens and every runaway passed 11,786.
+ * 8192 was tried and reverted: the two provisions it was meant to rescue overran that too.
  */
 export const MAX_OUTPUT_TOKENS = Number(process.env['LEXDROID_MAX_OUTPUT_TOKENS'] ?? 4096);
 

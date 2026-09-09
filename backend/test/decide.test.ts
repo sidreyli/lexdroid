@@ -391,6 +391,99 @@ describe('what counts as reaching broadly, which is not one test', () => {
     expect(d.held).toHaveLength(0);
   });
 
+  // The mirror on the other axis. Australia's motor-vehicle repair scheme binds only its own
+  // members and the data really is about an individual, so "personal" must not carry it alone.
+  const schemePersonalData = {
+    measure: 'local-storage',
+    quote: 'the data provider must store the information in Australia or an external Territory',
+    dutyBearer: 'the data provider',
+    dutyAct: 'must store',
+    placeWords: 'in Australia',
+    locatedData: 'sensitive information about an individual',
+    informationWords: 'sensitive information',
+    keepingWords: 'must store the information in Australia',
+    sectorScope: 'specific',
+    sector: 'motor vehicle service and repair information sharing scheme',
+    dataScope: 'personal',
+  } satisfies Partial<Finding>;
+
+  it('keeps a duty on one scheme out of the top band of 6.2 though the data is personal', () => {
+    const d = decide({
+      indicator: indicator62,
+      economy: 'AUS',
+      evidence: [evidence(12, 'Competition and Consumer Act 2010', { ...schemePersonalData, indicatorId: '6.2' })],
+      surfaced,
+      coverage,
+    });
+    expect(d.score).toBe(0.5);
+  });
+
+  it('puts the same duty in the top band of 6.4, where personal data alone carries it', () => {
+    const d = decide({
+      indicator: indicator64,
+      economy: 'AUS',
+      evidence: [
+        evidence(12, 'Competition and Consumer Act 2010', {
+          ...schemePersonalData,
+          indicatorId: '6.4',
+          measure: 'transfer-condition',
+        }),
+      ],
+      surfaced,
+      coverage,
+    });
+    expect(d.score).toBe(1);
+  });
+
+  it('still reaches the top band of 6.2 on two narrow measures in different instruments', () => {
+    const d = decide({
+      indicator: indicator62,
+      economy: 'AUS',
+      evidence: [
+        evidence(12, 'Competition and Consumer Act 2010', { ...schemePersonalData, indicatorId: '6.2' }),
+        evidence(13, 'My Health Records Act 2012', { ...schemePersonalData, indicatorId: '6.2' }),
+      ],
+      surfaced,
+      coverage,
+    });
+    expect(d.score).toBe(1);
+  });
+
+  // One section that bans holding data abroad and processing it abroad is one requirement, not
+  // two, so it must not satisfy "more than one measure in category (2)" on its own.
+  it('counts one section read under two measure labels as one measure', () => {
+    // Section 77 of the My Health Records Act bans holding records abroad and processing them
+    // abroad in the same breath. One requirement, read twice.
+    const section = evidence(13, 'My Health Records Act 2012', {
+      indicatorId: '6.1',
+      measure: 'transfer-ban',
+      quote:
+        'must not: (a) hold the records, or take the records, outside Australia; or (b) process or handle the information relating to the records outside Australia',
+      dutyBearer: 'the System Operator',
+      dutyAct: 'must not hold or take',
+      dutyForce: 'forbids',
+      placeWords: 'outside Australia',
+      exceptionWords: null,
+      locatedData: 'the records',
+      informationWords: 'records',
+      keepingWords: 'must not: (a) hold the records, or take the records, outside Australia',
+      sectorScope: 'specific',
+      sector: 'my health record system',
+      dataScope: 'specific-category',
+    });
+    const d = decide({
+      indicator: indicator61,
+      economy: 'AUS',
+      evidence: [
+        section,
+        { ...section, finding: { ...section.finding, measure: 'local-processing' } },
+      ],
+      surfaced,
+      coverage,
+    });
+    expect(d.score).toBe(0.5);
+  });
+
   it('puts the same shape in the top band of 6.4, where the guide says sectors alone are enough', () => {
     const d = decide({
       indicator: indicator64,

@@ -116,12 +116,19 @@ export const MEASURES: Record<string, Measure[]> = {
       actor: HOLDER,
     },
   ],
+  // The gloss names the shape of the rule; the extras name it the way a privacy statute writes it,
+  // which is how the cross-border disclosure principle is actually worded.
   '6.4': [
     {
       token: 'transfer-condition',
       locates: true,
       gloss:
         'a condition that must be met before data may be transferred out, the transfer being permitted once it is met',
+      alsoAsked: [
+        'cross-border disclosure of personal information to an overseas recipient',
+        'before disclosing personal information overseas the discloser must take reasonable steps to ensure the recipient complies',
+        'personal data may be transferred outside the economy only where the recipient affords a comparable standard of protection',
+      ],
       actor: HOLDER,
     },
   ],
