@@ -136,19 +136,68 @@ export async function buildDenseIndex(
 // ------------------------------------------------------------------------------------------
 
 /**
+ * Scripts written without spaces between words.
+ *
+ * Cyrillic and Malay are deliberately absent: they space their words, so the ordinary path already
+ * serves them. Chinese, Japanese and Thai do not, and that is a fact about search rather than about
+ * language -- a whole Chinese sentence arrives as one token however long it is.
+ */
+const SPACELESS = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Thai}]/u;
+const SPACELESS_RUN = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Thai}]+/gu;
+
+/** Enough for any real query set, and a bound on a pathologically long one. */
+const MAX_QUERY_TERMS = 96;
+
+/**
+ * One whitespace-delimited token, as terms the trigram index can actually match.
+ *
+ * A run of spaceless script becomes its overlapping character trigrams, which is the same unit the
+ * index is built from -- so no word segmenter, no dictionary and no per-language model is involved.
+ * "个人信息保护" searches as 个人信 OR 人信息 OR 信息保 OR 息保护, and a document sharing more of
+ * those ranks above one sharing fewer, which is exactly how a Latin query's terms already behave.
+ * Anything not in a spaceless script is returned untouched.
+ */
+function expand(token: string): string[] {
+  if (!SPACELESS.test(token)) return [token];
+  const out: string[] = [];
+  let last = 0;
+  for (const m of token.matchAll(SPACELESS_RUN)) {
+    const at = m.index ?? 0;
+    if (at > last) out.push(token.slice(last, at));
+    const run = m[0];
+    if (run.length <= MIN_TRIGRAM_TERM) out.push(run);
+    else for (let i = 0; i + MIN_TRIGRAM_TERM <= run.length; i += 1) out.push(run.slice(i, i + MIN_TRIGRAM_TERM));
+    last = at + run.length;
+  }
+  if (last < token.length) out.push(token.slice(last));
+  return out;
+}
+
+/**
  * Turn a phrase into an FTS5 query the trigram tokenizer can actually match.
  *
- * Two rules, both learned the hard way. Everything is a quoted phrase, because unquoted text is
+ * Three rules, all learned the hard way. Everything is a quoted phrase, because unquoted text is
  * FTS5 query syntax and a legal phrase containing OR, NOT or a hyphen is a syntax error or, worse,
- * a query that quietly means something else. And terms shorter than three characters are dropped,
+ * a query that quietly means something else. Terms shorter than three characters are dropped,
  * because a trigram index cannot match them -- a two-character query returns nothing and says
- * nothing about why.
+ * nothing about why. And a run of spaceless script is expanded into trigrams rather than left whole.
+ *
+ * That last rule is the query-side half of a bug whose index-side half was already fixed. The
+ * trigram tokenizer means Chinese is stored and searchable; splitting a query on whitespace means a
+ * Chinese question still arrived as one enormous term, which FTS5 can satisfy only by finding that
+ * entire string contiguously. The index worked and the search returned nothing -- the same silent
+ * failure as v1's Latin-only tokenizer, one stage later in the pipeline.
  */
 export function ftsQuery(phrase: string): string | null {
-  const terms = phrase
-    .toLowerCase()
-    .split(/[^\p{L}\p{N}]+/u)
-    .filter((t) => t.length >= MIN_TRIGRAM_TERM);
+  const terms = [
+    ...new Set(
+      phrase
+        .toLowerCase()
+        .split(/[^\p{L}\p{N}]+/u)
+        .flatMap(expand)
+        .filter((t) => t.length >= MIN_TRIGRAM_TERM),
+    ),
+  ].slice(0, MAX_QUERY_TERMS);
   if (terms.length === 0) return null;
   return terms.map((t) => `"${t.replace(/"/g, '""')}"`).join(' OR ');
 }
