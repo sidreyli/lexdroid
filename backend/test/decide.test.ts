@@ -1423,8 +1423,32 @@ describe('an indicator whose top band is an absence', () => {
     expect(at(i54, [p5('5.4', 'accounting-separation'), p5('5.4', 'functional-separation')]).score).toBe(0);
   });
 
-  it('scores the top band when nothing was found, having read something', () => {
-    expect(at(i54, []).score).toBe(1);
+  // The telecom Act, read, with this pillar's requirements found in it. That is what makes the
+  // absence a statement about the law rather than about the search.
+  const governing: SurfacedInstrument[] = [{ instrumentId: 1, instrumentTitle: 'Telecommunications Act', rank: 1 }];
+  const alsoInPillar = [p5('5.5', 'strict-licence')];
+
+  it('scores the top band when nothing was found in an instrument that governs', () => {
+    const d = decide({
+      indicator: i54, economy: 'SGP', evidence: alsoInPillar, surfaced: governing, coverage: read,
+    });
+    expect(d.score).toBe(1);
+  });
+
+  it('says nothing when the absence rests on no instrument that governs the subject', () => {
+    // Twenty provisions read, none of them from a telecom law: that is a search that missed, and
+    // reporting it as the top band is the worst error this rubric can make.
+    const d = decide({ indicator: i54, economy: 'SGP', evidence: [], surfaced: [], coverage: read });
+    expect(d.state).toBe('unresolved');
+    expect(d.score).toBeNull();
+    expect(d.decidingFact).toContain('governs the subject');
+  });
+
+  it('will not take a merely surfaced instrument as the witness for an absence', () => {
+    const d = decide({
+      indicator: i54, economy: 'SGP', evidence: [], surfaced: governing, coverage: read,
+    });
+    expect(d.state).toBe('unresolved');
   });
 
   it('says nothing at all when nothing was read, rather than scoring the absence', () => {

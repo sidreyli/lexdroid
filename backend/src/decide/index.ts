@@ -210,6 +210,17 @@ function measureCount(evidence: Evidence[]): number {
   return new Set(perSection.values()).size;
 }
 
+/**
+ * Does this band rest on not having found something, rather than on evidence?
+ *
+ * Asked of the rule itself rather than carried as metadata: the band an empty evidence set reaches
+ * is by definition the one absence earns, so the two can never drift apart.
+ */
+function scoresOnAbsence(indicator: Indicator, rule: Rule, ordinal: number): boolean {
+  if (band(indicator, ordinal).score <= 0) return false;
+  return rule(indicator, []).ordinal === ordinal;
+}
+
 function scopeScaled(
   indicator: Indicator,
   qualifying: Evidence[],
@@ -1216,8 +1227,34 @@ export function decide(input: DecideInput): Decision {
 
   const chosen = rule(indicator, qualifying);
   const chosenBand = band(indicator, chosen.ordinal);
+  const witness = absenceFor(input);
+
+  // Thirteen indicators score their maximum for the absence of something, so a retrieval miss and
+  // a real finding of absence produce the same 1. The claim needs an instrument that governs.
+  if (scoresOnAbsence(indicator, rule, chosen.ordinal) && witness?.basis !== 'governing') {
+    return {
+      indicatorId: indicator.id,
+      economy,
+      state: 'unresolved',
+      score: null,
+      band: null,
+      basis: [],
+      excluded,
+      held,
+      frameworkBasis: [],
+      absence: null,
+      coverage,
+      decidingFact: 'nothing read governs the subject whose absence this band asserts',
+      rationale:
+        `This indicator scores ${band(indicator, chosen.ordinal).score} for the absence of something, and ` +
+        `nothing among the ${coverage.sectionsRead} provision(s) read establishes an instrument that governs ` +
+        `the subject. An economy without the measure and an economy nobody looked at produce the same silence, ` +
+        `and only one of them is a finding.`,
+    };
+  }
+
   const basis = chosenBand.score > 0 ? leadWithWhatWasCounted(qualifying, chosen.counted) : [];
-  const absence = chosenBand.score > 0 ? null : absenceFor(input);
+  const absence = chosenBand.score > 0 ? null : witness;
 
   return {
     indicatorId: indicator.id,

@@ -4,6 +4,10 @@
  */
 import { describe, expect, it } from 'vitest';
 import { cellsFor, indicator, indicatorsOfPillar, loadRubric } from '../src/rubric/index.js';
+import { __rules } from '../src/decide/index.js';
+import type { Indicator } from '../src/rubric/types.js';
+
+type Rule = (indicator: Indicator, qualifying: never[]) => { ordinal: number };
 
 const rubric = loadRubric();
 
@@ -113,5 +117,26 @@ describe('provenance', () => {
       expect(i.provenance.document).toMatch(/Round 1 Database\.xlsx$/);
       expect(i.provenance.locator).toMatch(/row \d+/);
     }
+  });
+});
+
+/**
+ * The indicators that score their maximum for the absence of something. A retrieval miss on one of
+ * these reports 1, not 0, so the list is pinned: a rubric change that adds one has to be noticed.
+ */
+describe('the inverted indicators', () => {
+  const INVERTED = ['4.1', '4.2', '4.5', '4.6', '5.1', '5.4', '5.7', '7.1', '7.2', '8.1', '8.2', '11.2', '12.9'];
+
+  it('is the thirteen we know about', () => {
+    const found = rubric.indicators
+      .filter((i) => {
+        const rule = (__rules as Record<string, Rule | undefined>)[i.id];
+        if (i.shape === 'framework') return (i.bands[0]?.score ?? 0) > 0;
+        if (!rule) return false;
+        const ordinal = rule(i, []).ordinal;
+        return (i.bands.find((b) => b.ordinal === ordinal)?.score ?? 0) > 0;
+      })
+      .map((i) => i.id);
+    expect(found.sort()).toEqual([...INVERTED].sort());
   });
 });
