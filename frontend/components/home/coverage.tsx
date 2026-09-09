@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { cn } from "@/lib/utils";
 import type { CoverageState } from "@/lib/data/types";
 
@@ -75,7 +76,7 @@ export function Coverage({
               </div>
             ) : (
               <p className="text-[13px] leading-snug text-muted-foreground">
-                Every economy against every indicator. Point at a square to read it.
+                Every economy against every indicator. Point at a square to read it, open it for the answer.
               </p>
             )}
           </div>
@@ -138,15 +139,15 @@ export function Coverage({
                   if (!sq) return null;
                   const on = hover?.economy === e.code && hover?.indicatorId === id;
                   return (
-                    <button
+                    <Link
                       key={`${e.code}:${id}`}
-                      type="button"
+                      href={`/database/${e.code.toLowerCase()}/${id}`}
                       onMouseEnter={() => setHover(sq)}
                       onFocus={() => setHover(sq)}
                       onBlur={() => setHover(null)}
                       aria-label={`${e.name} ${id}, ${label[sq.state].toLowerCase()}`}
                       className={cn(
-                        "size-[12px] rounded-[3.5px] transition-transform duration-150 outline-none",
+                        "block size-[12px] rounded-[3.5px] transition-transform duration-150 outline-none",
                         tone[sq.state],
                         on && "scale-[1.4] ring-2 ring-navy/25",
                         "focus-visible:scale-[1.4] focus-visible:ring-2 focus-visible:ring-navy/40",

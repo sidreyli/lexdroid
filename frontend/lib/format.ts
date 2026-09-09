@@ -35,3 +35,15 @@ export function clip(text: string, max: number): string {
   const space = cut.lastIndexOf(" ");
   return `${cut.slice(0, space > max * 0.6 ? space : max).trimEnd()}...`;
 }
+
+/** The store keeps language tags. A reader wants the language. */
+const languages: Record<string, string> = {
+  en: "English",
+  ms: "Malay",
+  zh: "Chinese",
+  ta: "Tamil",
+};
+
+export function languageName(tag: string): string {
+  return languages[tag] ?? tag.toUpperCase();
+}

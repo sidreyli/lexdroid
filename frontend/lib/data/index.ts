@@ -16,6 +16,14 @@ import type {
   ExportRow,
   Indicator,
   QueueItem,
+  PillarMean,
+  PillarScores,
+  IndicatorScores,
+  Scoreboard,
+  CellDetail,
+  EconomyIndicatorRow,
+  EconomyPillar,
+  EconomyScores,
   Rubric,
   Run,
   RunEvent,
@@ -149,4 +157,154 @@ export function getQueueItems(): QueueItem[] {
     hasQuote: r.quoteCharStart !== null,
     failedGates: r.gates.filter((g) => !g.passed).length,
   }));
+}
+
+/**
+ * Scores per economy, per pillar and per indicator. A pillar mean is withheld until
+ * every indicator in it is answered, and the overall figure averages only those pillars.
+ */
+export function getScoreboard(): Scoreboard {
+  const current = getCurrentCells();
+  const at = new Map(current.map((c) => [`${c.economy}:${c.indicatorId}`, c]));
+  const codes = economies.map((e) => ({ code: e.code, name: e.name }));
+  const byId = new Map(rubric.indicators.map((i) => [i.id, i]));
+
+  const pillars: PillarScores[] = rubric.pillars.map((p) => {
+    const indicators: IndicatorScores[] = p.indicatorIds.map((id) => {
+      const indicator = byId.get(id);
+      return {
+        indicatorId: id,
+        category: indicator?.category ?? "",
+        exception: indicator?.exception ?? null,
+        bands: [...new Set(indicator?.bands.map((b) => b.score) ?? [])].sort((a, b) => a - b),
+        marks: codes.map(({ code }) => {
+          const cell = at.get(`${code}:${id}`);
+          return { economy: code, state: cell?.state ?? "not-attempted", score: cell?.score ?? null };
+        }),
+      };
+    });
+
+    const means: PillarMean[] = codes.map(({ code }) => {
+      const scores = p.indicatorIds
+        .map((id) => at.get(`${code}:${id}`)?.score)
+        .filter((s): s is number => s !== undefined && s !== null);
+      return {
+        economy: code,
+        answered: scores.length,
+        mean:
+          scores.length === p.indicatorIds.length
+            ? scores.reduce((a, b) => a + b, 0) / scores.length
+            : null,
+      };
+    });
+
+    const answered = indicators.filter((i) =>
+      i.marks.some((m) => m.state !== "not-attempted"),
+    ).length;
+    return { id: p.id, name: p.name, total: p.indicatorIds.length, answered, means, indicators };
+  });
+
+  const complete = pillars.filter((p) => p.means.every((m) => m.mean !== null));
+  const overall = codes.map(({ code }) => {
+    const means = complete
+      .map((p) => p.means.find((m) => m.economy === code)?.mean)
+      .filter((m): m is number => m !== null && m !== undefined);
+    return {
+      economy: code,
+      pillars: means.length,
+      mean: means.length ? means.reduce((a, b) => a + b, 0) / means.length : null,
+    };
+  });
+
+  return {
+    economies: codes,
+    pillars,
+    overall,
+    pillarsComplete: complete.length,
+    indicatorsTotal: rubric.indicators.length,
+    answeredTotal: new Set(current.map((c) => c.indicatorId)).size,
+  };
+}
+
+/** Runs repeat each other. The same provision quoted the same way is one finding. */
+function dedupeRows(rows: ExportRow[]): ExportRow[] {
+  const seen = new Map<string, ExportRow>();
+  for (const r of [...rows].sort((a, b) => b.createdAt.localeCompare(a.createdAt))) {
+    const key = `${r.lawName}|${r.article ?? ""}|${r.verbatimSnippet ?? ""}`;
+    if (!seen.has(key)) seen.set(key, r);
+  }
+  return [...seen.values()];
+}
+
+/** Everything one economy and indicator has to say: the answer, its evidence, its history. */
+export function getCellDetail(economy: string, indicatorId: string): CellDetail | null {
+  const eco = getEconomy(economy);
+  const indicator = getIndicator(indicatorId);
+  if (!eco || !indicator) return null;
+  const history = getCellHistory(eco.code, indicatorId);
+  const current = getCell(eco.code, indicatorId) ?? null;
+  const mine = current ? exportRows.filter((r) => r.cellId === current.id) : [];
+  const older = new Set(history.filter((c) => c.id !== current?.id).map((c) => c.id));
+  return {
+    economy: eco,
+    indicator,
+    current,
+    history: history.filter((c) => c.id !== current?.id),
+    rows: mine,
+    priorRows: mine.length ? [] : dedupeRows(exportRows.filter((r) => older.has(r.cellId))),
+  };
+}
+
+/** One economy against the whole rubric, pillar by pillar. */
+export function getEconomyScores(code: string): EconomyScores | null {
+  const eco = getEconomy(code);
+  if (!eco) return null;
+  const at = new Map(
+    getCurrentCells()
+      .filter((c) => c.economy === eco.code)
+      .map((c) => [c.indicatorId, c]),
+  );
+  const byId = new Map(rubric.indicators.map((i) => [i.id, i]));
+
+  const pillars: EconomyPillar[] = rubric.pillars.map((p) => {
+    const indicators: EconomyIndicatorRow[] = p.indicatorIds.map((id) => {
+      const cell = at.get(id);
+      return {
+        indicatorId: id,
+        category: byId.get(id)?.category ?? "",
+        state: cell?.state ?? "not-attempted",
+        score: cell?.score ?? null,
+        bandCriterion: cell?.bandCriterion ?? null,
+        instrument: cell?.controllingInstrument ?? null,
+        instrumentUrl: cell?.controllingInstrumentUrl ?? null,
+        answeredAt: cell?.answeredAt ?? null,
+        unresolvedReason: cell?.unresolvedReason ?? null,
+      };
+    });
+    const scores = indicators.map((i) => i.score).filter((s): s is number => s !== null);
+    return {
+      id: p.id,
+      name: p.name,
+      total: p.indicatorIds.length,
+      answered: indicators.filter((i) => i.state !== "not-attempted").length,
+      mean:
+        scores.length === p.indicatorIds.length
+          ? scores.reduce((a, b) => a + b, 0) / scores.length
+          : null,
+      indicators,
+    };
+  });
+
+  const complete = pillars.filter((p) => p.mean !== null);
+  return {
+    economy: eco,
+    overall: complete.length
+      ? complete.reduce((a, p) => a + (p.mean ?? 0), 0) / complete.length
+      : null,
+    pillarsComplete: complete.length,
+    pillarsTotal: pillars.length,
+    answered: at.size,
+    indicatorsTotal: rubric.indicators.length,
+    pillars,
+  };
 }

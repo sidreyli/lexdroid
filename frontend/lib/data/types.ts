@@ -247,3 +247,88 @@ export interface CoverageCell {
   score: number | null;
   cell: Cell | null;
 }
+
+/** Where one economy landed on one indicator, as the score ladder draws it. */
+export interface ScoreMark {
+  economy: string;
+  state: CoverageState;
+  score: number | null;
+}
+
+export interface IndicatorScores {
+  indicatorId: string;
+  category: string;
+  exception: string | null;
+  bands: number[];
+  marks: ScoreMark[];
+}
+
+/** A mean is only reported when every indicator in the pillar has been answered. */
+export interface PillarMean {
+  economy: string;
+  mean: number | null;
+  answered: number;
+}
+
+export interface PillarScores {
+  id: number;
+  name: string;
+  total: number;
+  answered: number;
+  means: PillarMean[];
+  indicators: IndicatorScores[];
+}
+
+export interface Scoreboard {
+  economies: { code: string; name: string }[];
+  pillars: PillarScores[];
+  /** Averaged over the pillars answered in full, which is what the method averages. */
+  overall: { economy: string; mean: number | null; pillars: number }[];
+  pillarsComplete: number;
+  indicatorsTotal: number;
+  answeredTotal: number;
+}
+
+/** One economy against one indicator, with everything needed to read the answer. */
+export interface CellDetail {
+  economy: Economy;
+  indicator: Indicator;
+  current: Cell | null;
+  history: Cell[];
+  /** Findings the run behind the current answer wrote. */
+  rows: ExportRow[];
+  /** Findings from earlier runs of the same pair, which is all there is when rows is empty. */
+  priorRows: ExportRow[];
+}
+
+/** One indicator as one economy's page lists it. */
+export interface EconomyIndicatorRow {
+  indicatorId: string;
+  category: string;
+  state: CoverageState;
+  score: number | null;
+  bandCriterion: string | null;
+  instrument: string | null;
+  instrumentUrl: string | null;
+  answeredAt: string | null;
+  unresolvedReason: string | null;
+}
+
+export interface EconomyPillar {
+  id: number;
+  name: string;
+  total: number;
+  answered: number;
+  mean: number | null;
+  indicators: EconomyIndicatorRow[];
+}
+
+export interface EconomyScores {
+  economy: Economy;
+  overall: number | null;
+  pillarsComplete: number;
+  pillarsTotal: number;
+  answered: number;
+  indicatorsTotal: number;
+  pillars: EconomyPillar[];
+}
