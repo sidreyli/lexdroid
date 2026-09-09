@@ -1,0 +1,157 @@
+{
+  "code": "CHN",
+  "name": "China",
+  "legalSystem": {
+    "family": "civil-law",
+    "note": "A civil law system with socialist characteristics. Statute is the whole of the law: there is no binding precedent, and a court's reasoning in one case does not govern the next. The hierarchy is set out in the Legislation Law: the Constitution, then 法律 passed by the National People's Congress or its Standing Committee, then 行政法规 made by the State Council, then 部门规章 issued by ministries and 地方性法规 passed by provincial congresses. A law routinely delegates its operative detail downward, so the duty ESCAP scores is often not in the Act at all: the Cybersecurity Law's Article 33 leaves critical-information-infrastructure specifics to a State Council regulation, and reading only the law would find no requirement where one plainly exists."
+  },
+  "officialLanguages": ["zh"],
+  "languageNote": "Law is enacted and published in Simplified Chinese, and that text is the only authoritative one. No official English translation is published by the legislature; the English titles that circulate are conveniences, not law. Every citation from this economy therefore quotes Chinese, and a row that shows an English rendering is showing a translation and has to say so. Chinese is also written without spaces between words, which is a fact about search rather than about law: a query built by splitting on whitespace produces one enormous token and matches nothing.",
+  "instrumentTypes": [
+    {
+      "rank": 1,
+      "kind": "act",
+      "localName": "法律 (Law of the National People's Congress or its Standing Committee)",
+      "bindingness": "binding",
+      "note": "The principal instrument, cited by name and article: 个人信息保护法 第三十八条. There is no act number in the Singapore or Malaysian sense; the title is the identifier, which is why a citation that names only 'the Data Security Law' without an article is unusable."
+    },
+    {
+      "rank": 2,
+      "kind": "regulation",
+      "localName": "行政法规 (Administrative Regulation of the State Council)",
+      "bindingness": "binding",
+      "note": "Made by the State Council under a delegating law. Where a law says the specifics are 'provided by the State Council', the enforceable rule is here — the Regulation on Protecting the Security of Critical Information Infrastructure (2021) being the case that matters most for pillars 6 and 7."
+    },
+    {
+      "rank": 3,
+      "kind": "rule",
+      "localName": "部门规章 (Departmental Rule of a ministry or commission)",
+      "bindingness": "binding",
+      "note": "Issued by a ministry such as the Cyberspace Administration of China or MIIT within its own remit. Binding, and in the data-governance pillars this is where the operative thresholds live: the cross-border data flow measures are CAC rules, not laws."
+    },
+    {
+      "rank": 4,
+      "kind": "regulation",
+      "localName": "地方性法规 (Local regulation of a provincial people's congress)",
+      "bindingness": "binding",
+      "note": "Binding within its province. Relevant because several data regimes were piloted provincially before national rules existed, so a provincial regulation can be the only instrument on point."
+    },
+    {
+      "rank": 5,
+      "kind": "guideline",
+      "localName": "国家标准 / 规范性文件 (National standard or normative document)",
+      "bindingness": "advisory",
+      "note": "A GB/T recommended national standard states how a regulator expects a binding duty to be met. Evidence of interpretation, never the source of an obligation on its own — except where a binding instrument incorporates the standard by reference, which has to be shown rather than assumed."
+    }
+  ],
+  "portals": [
+    {
+      "name": "National Laws and Regulations Database",
+      "url": "https://flk.npc.gov.cn",
+      "kind": "legislation-database",
+      "authority": "National People's Congress Standing Committee, Legislative Affairs Commission",
+      "pillars": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+      "adapter": "flk",
+      "adapterConfig": {
+        "seeds": [
+          {
+            "id": "ff8081817b6472a3017b656cc2040044",
+            "note": "个人信息保护法 — Personal Information Protection Law. Promulgated 2021-08-20, effective 2021-11-01, never amended. 74 articles."
+          },
+          {
+            "id": "021e7d7684474107b8f3febbb1c4f8b5",
+            "note": "网络安全法 — Cybersecurity Law. Originally 2016-11-07, amended by the Standing Committee's decision of 2025-10-28 and effective 2026-01-01 in that form. 81 articles. The portal keeps the superseded 2016 text under a separate id."
+          }
+        ]
+      },
+      "notes": "China's single authoritative index of national law, equivalent in role to Singapore's SSO. A detail page is a JS-rendered shell serving no text; the document is reached through the portal's own law-search API, which the flk adapter replays. It serves gazette text as Word, not PDF or HTML, which is why the corpus needs a .docx path at all. TWO BLOCKERS, BOTH OPEN. First and decisive: robots.txt, read 2026-09-09, is 'User-agent: * / Disallow: /' under a comment prohibiting the use of any automated tool or crawler to collect the site's data, so the fetcher refuses every request to this host and a China run currently registers nothing. That is the system honouring the site, not a defect, and it must not be waived for this host. Second: enumeration is unsolved anyway — the listing endpoint is a POST behind anti-bot protection, so the seed list above is not a walk of the portal. The adapter is kept, verified and refusing, so that it is ready if the access question is ever answered."
+    },
+    {
+      "name": "Cyberspace Administration of China",
+      "url": "https://www.cac.gov.cn",
+      "kind": "regulator",
+      "authority": "国家互联网信息办公室",
+      "pillars": [6, 7, 8, 10],
+      "adapter": null,
+      "adapterConfig": {},
+      "notes": "The central regulator for data and the internet, and the issuer of the measures that make the cross-border transfer regime operable — the security assessment, the standard contract and the 2024 provisions easing outbound flows. Pillar 6 cannot be answered from the laws alone, because the laws delegate the thresholds here."
+    },
+    {
+      "name": "Ministry of Industry and Information Technology",
+      "url": "https://www.miit.gov.cn",
+      "kind": "regulator",
+      "authority": "工业和信息化部",
+      "pillars": [5, 7, 10, 11, 12],
+      "adapter": null,
+      "adapterConfig": {},
+      "notes": "Telecommunications and ICT licensing, including the foreign-equity limits on value-added telecom services that pillar 5 turns on, and the ICP filing regime every site operating in China is subject to."
+    },
+    {
+      "name": "People's Bank of China",
+      "url": "http://www.pbc.gov.cn",
+      "kind": "regulator",
+      "authority": "中国人民银行",
+      "pillars": [6, 7, 8],
+      "adapter": null,
+      "adapterConfig": {},
+      "notes": "Financial-sector data rules, including the localisation duties on personal financial information that are stricter than the general regime. A sectoral rule that is stricter than the horizontal law is exactly the distinction indicator 6.2 scores on."
+    },
+    {
+      "name": "General Administration of Customs",
+      "url": "http://www.customs.gov.cn",
+      "kind": "regulator",
+      "authority": "海关总署",
+      "pillars": [1, 2, 3, 12],
+      "adapter": null,
+      "adapterConfig": {},
+      "notes": "Customs procedure and the single-window electronic declaration system the trade facilitation pillars turn on."
+    },
+    {
+      "name": "State Administration for Market Regulation",
+      "url": "https://www.samr.gov.cn",
+      "kind": "regulator",
+      "authority": "国家市场监督管理总局",
+      "pillars": [9, 11],
+      "adapter": null,
+      "adapterConfig": {},
+      "notes": "Competition enforcement under the Anti-Monopoly Law and the consumer protection regime, including the platform-economy rules relevant to pillar 9."
+    },
+    {
+      "name": "China National Intellectual Property Administration",
+      "url": "https://www.cnipa.gov.cn",
+      "kind": "regulator",
+      "authority": "国家知识产权局",
+      "pillars": [4],
+      "adapter": null,
+      "adapterConfig": {},
+      "notes": "Patents and trade marks. Copyright sits with the National Copyright Administration and trade secrets with the Anti-Unfair Competition Law, so pillar 4 is split across three bodies here rather than concentrated in one."
+    },
+    {
+      "name": "China Internet Network Information Center",
+      "url": "https://www.cnnic.net.cn",
+      "kind": "registry",
+      "authority": "中国互联网络信息中心",
+      "pillars": [12],
+      "adapter": null,
+      "adapterConfig": {},
+      "notes": "The .cn registry and its eligibility rules, which are the domain name requirements pillar 12 asks about. Operates under MIIT authority rather than independently, so its policies carry more weight than a private registry's."
+    }
+  ],
+  "commitments": [
+    { "name": "World Trade Organization", "status": "in-force", "sourceUrl": "https://www.wto.org/english/thewto_e/countries_e/china_e.htm" },
+    { "name": "Regional Comprehensive Economic Partnership", "status": "in-force", "sourceUrl": "https://rcepsec.org/" },
+    { "name": "Asia-Pacific Economic Cooperation", "status": "in-force", "sourceUrl": "https://www.apec.org/about-us/about-apec/member-economies" },
+    { "name": "China-ASEAN Free Trade Area", "status": "in-force", "sourceUrl": null },
+    { "name": "Comprehensive and Progressive Agreement for Trans-Pacific Partnership", "status": "not-a-party", "sourceUrl": null },
+    { "name": "Digital Economy Partnership Agreement", "status": "not-a-party", "sourceUrl": null }
+  ],
+  "notes": "China is the fourth economy and the first written in a non-Latin script, which is what makes it worth building: it exercises the CJK path end to end — a Word-only portal, a statute vocabulary with no Part/Section anywhere in it, and a language with no spaces between words — and every one of those was a silent failure rather than a loud one before it was tested. It is outside the three-economy scope in docs/architecture.md and does not displace them. THIS ECONOMY CANNOT CURRENTLY BE RUN, and the reason is not technical: flk.npc.gov.cn's robots.txt disallows every automated agent from the whole site, so the fetcher refuses it and the register stays empty. The parser, the Word extraction and the CJK query path are all verified against real documents and need no network, so they work on any Chinese statute obtained by means the source permits; the crawl is the only part that is blocked. Two further caveats stand behind that one: the register is a seed list rather than a portal walk, and the CAC, MIIT and PBOC rules carrying the operative detail for pillars 6 and 7 are recorded as leads with no adapter, so even an unblocked run would read national laws and nothing beneath them.",
+  "authoredBy": "LexDroid team",
+  "authoredOn": "2026-09-09",
+  "sources": [
+    "flk.npc.gov.cn -- its law-search API read directly on 2026-09-09, including flfgDetails for both seeded instruments and the download/pc object resolution",
+    "The Legislation Law of the People's Republic of China, for the hierarchy of instrument types",
+    "Each regulator's own site, for its remit and the instruments it issues",
+    "NOT ESCAP's legal inventory or portal table: those are the answer key and are quarantined in the baseline store"
+  ]
+}

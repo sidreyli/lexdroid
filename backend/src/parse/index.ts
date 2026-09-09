@@ -9,6 +9,8 @@
 import type { Db } from '../db/index.js';
 import { indexSections } from '../db/index.js';
 import type { FetchResult } from '../fetch/index.js';
+import { parseCn } from './cn.js';
+import { docxParagraphs, parseDocx } from './docx.js';
 import { parseFrl } from './frl.js';
 import { parseHtml } from './html.js';
 import { parsePdf } from './pdf.js';
@@ -25,10 +27,34 @@ const BY_HOST: Record<string, (html: string, url: string) => ParsedDocument> = {
   'www.legislation.gov.au': parseFrl,
 };
 
+/**
+ * The same, for Word documents. A .docx carries no numbering convention of its own, so turning its
+ * paragraphs into citable provisions takes a parser that knows the jurisdiction.
+ */
+const DOCX_BY_HOST: Record<string, (paragraphs: string[], url: string) => ParsedDocument> = {
+  'flk.npc.gov.cn': (paragraphs, url) => parseCn(paragraphs, url),
+};
+
 export async function parseDocument(res: FetchResult): Promise<ParsedDocument> {
   const host = new URL(res.finalUrl || res.url).host;
 
   if (res.mediaType.includes('pdf')) return parsePdf(res.body, res.url);
+
+  // Before the html/xml branch, and not merged into it: the OOXML media type is
+  // "application/vnd.openxmlformats-officedocument.wordprocessingml.document", and "openxmlformats"
+  // contains the substring "xml", so a Word document tested there would be handed to an HTML parser.
+  if (res.mediaType.includes('wordprocessingml')) {
+    const site = DOCX_BY_HOST[host];
+    if (!site) return parseDocx(res.body, res.url);
+    try {
+      return site(docxParagraphs(res.body), res.url);
+    } catch (err) {
+      return {
+        extraction: 'none', text: '', sections: [], title: null, meta: {}, parser: 'docx',
+        unread: { reason: 'parse-error', detail: `${res.url}: ${err instanceof Error ? err.message : String(err)}` },
+      };
+    }
+  }
 
   if (res.mediaType.includes('html') || res.mediaType.includes('xml')) {
     const html = res.body.toString('utf8');

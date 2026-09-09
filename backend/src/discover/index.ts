@@ -19,6 +19,7 @@ import { RobotsDisallowed, CacheMiss, HostSuspended } from '../fetch/index.js';
 import { parseDocument, storeDocument, verifyOffsets } from '../parse/index.js';
 import type { EconomyProfile } from '../profile/types.js';
 import { portalId } from '../profile/index.js';
+import { flkAdapter } from './flk.js';
 import { frlAdapter } from './frl.js';
 import { lomAdapter } from './lom.js';
 import { ssoAdapter } from './sso.js';
@@ -28,6 +29,7 @@ import type { Adapter, DiscoveredInstrument } from './types.js';
 export * from './types.js';
 
 const ADAPTERS: Record<string, Adapter> = {
+  flk: flkAdapter,
   frl: frlAdapter,
   lom: lomAdapter,
   sso: ssoAdapter,
