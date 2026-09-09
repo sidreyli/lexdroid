@@ -178,6 +178,15 @@ export interface Finding {
   dataScope: 'personal' | 'non-personal' | 'specific-category' | 'all';
   dataDescription: string | null;
   /**
+   * Neither scope field was answered in the terms offered, so both were filled in by us.
+   *
+   * The two scope fields decide which band an indicator lands in, and an unanswered one used to
+   * default to "all sectors" and "personal data" -- the pair that reaches the top band. A garbled
+   * answer became a maximum score in silence. It is now refused in Zone 2 and counted, so an
+   * engine that will not answer the question shows up as an engine that will not answer it.
+   */
+  scopeUnstated: boolean;
+  /**
    * The exception four of these nine indicators carry: "Not score data localization measure
    * applied to government data." Recorded as a fact here and applied in Zone 3, so the reason a
    * finding did not score is visible rather than absent.
@@ -371,16 +380,25 @@ function prompt(section: SectionInput, pillarName: string, indicators: readonly 
     'duty on an organisation to appoint someone -- and it is not a duty to keep records either. If',
     'what you wrote matches no measure listed, leave the finding out.',
     '',
-    'Then the two facts the score bands are scaled by.',
-    'sectorScope: "all" if the duty binds everyone the law reaches, "specific" if it binds only a',
-    'named industry -- banks, telecommunications licensees, healthcare institutions, air carriers.',
-    'dataScope: what kinds of data the duty covers. "personal" if the provision speaks of personal',
-    'data or information about an identifiable individual. "specific-category" if the words you',
-    'copied as informationWords name a kind of record: accounting records, health records,',
-    'subscriber records, financial statements, tax returns. "non-personal" if the data is plainly',
-    'not about people and the provision names no kind. "all" only where the provision puts no',
-    'limit whatever on what data is covered -- which is rare, and is not the same as a duty that',
-    'binds every sector.',
+    'Then the two facts the score bands are scaled by. Both are measured against the economy, not',
+    'against the instrument you are reading. Every law binds everyone it reaches -- that is what a',
+    'law is -- so the reach of this instrument tells you nothing about either field.',
+    'sectorScope: whom the duty binds out in the economy. "all" only if it falls on organisations',
+    'generally, whatever line of business they are in, so that a shop, a bank and a farm are all',
+    'bound alike. "specific" if it falls on a defined group: a named industry -- banks,',
+    'telecommunications licensees, healthcare institutions, air carriers -- or the members of a',
+    'scheme, register, licence or accreditation that this instrument sets up. A duty owed by',
+    'everyone who joins a scheme is owed by the scheme’s members and by nobody else, so it is',
+    '"specific" however evenly it falls within the scheme.',
+    'sector: when the scope is specific, name that industry or scheme in the instrument’s own words.',
+    'dataScope: what kinds of data the duty covers. "personal" only where the provision’s own words',
+    'say the data is about people -- "personal data", "personal information", "information about an',
+    'individual". Data held by a business is not personal data because a business holds it.',
+    '"specific-category" if the words you copied as informationWords name a kind of record:',
+    'accounting records, health records, subscriber records, financial statements, tax returns,',
+    'service and repair information. "non-personal" if the data is plainly not about people and the',
+    'provision names no kind. "all" only where the provision puts no limit whatever on what data is',
+    'covered -- which is rare, and is not the same as a duty that binds every sector.',
     '',
     'Two further facts are easy to answer carelessly.',
     'statedPeriod: the length of time the provision itself names, such as "5 years". Null if it',
@@ -588,6 +606,7 @@ export function rejectionFor(f: Finding, sectionText: string, allowed: Set<strin
   if (f.roleWords && !inProvision(f.roleWords)) {
     return `the position said to be created, "${f.roleWords}", is not in the provision`;
   }
+  if (f.scopeUnstated) return 'the reach of the duty was not answered in the terms offered';
   return null;
 }
 
@@ -691,6 +710,16 @@ function coerce(raw: unknown): Finding | null {
   const filedUnder = owner ?? indicatorId;
   const measure = claimed && (MEASURES[filedUnder] ?? []).some((m) => m.token === claimed) ? claimed : null;
 
+  const sectorScope =
+    r['sectorScope'] === 'all' || r['sectorScope'] === 'specific' ? r['sectorScope'] : null;
+  const dataScope =
+    r['dataScope'] === 'personal' ||
+    r['dataScope'] === 'non-personal' ||
+    r['dataScope'] === 'specific-category' ||
+    r['dataScope'] === 'all'
+      ? r['dataScope']
+      : null;
+
   return {
     indicatorId: filedUnder,
     ...(owner && owner !== indicatorId
@@ -713,13 +742,13 @@ function coerce(raw: unknown): Finding | null {
     informationWords: str(r['informationWords']),
     keepingWords: str(r['keepingWords']),
     requirement: str(r['requirement']) ?? '',
-    sectorScope: r['sectorScope'] === 'specific' ? 'specific' : 'all',
+    // Both scope fields used to fall back to the value that reaches the top band. They now fall
+    // back to the narrowest one and say they did, so a silence cannot be read as a wide answer.
+    sectorScope: sectorScope ?? 'specific',
     sector: str(r['sector']),
-    dataScope:
-      r['dataScope'] === 'non-personal' || r['dataScope'] === 'specific-category' || r['dataScope'] === 'all'
-        ? r['dataScope']
-        : 'personal',
+    dataScope: dataScope ?? 'specific-category',
     dataDescription: str(r['dataDescription']),
+    scopeUnstated: sectorScope === null || dataScope === null,
     appliesOnlyToGovernmentData: r['appliesOnlyToGovernmentData'] === true,
     mandatory: r['mandatory'] !== false,
     countriesNamed: Array.isArray(r['countriesNamed'])

@@ -88,6 +88,7 @@ function finding(over: Partial<Finding> = {}): Finding {
     dutyForce: 'forbids',
     roleWords: null,
     dutyBearerKind: 'organisation',
+    scopeUnstated: false,
     placeWords: 'outside Singapore',
     exceptionWords: null,
     locatedData: 'personal data',

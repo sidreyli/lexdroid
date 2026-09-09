@@ -56,6 +56,7 @@ const finding: Finding = {
   dutyForce: 'requires',
   roleWords: null,
   dutyBearerKind: 'organisation',
+  scopeUnstated: false,
   placeWords: null,
   exceptionWords: null,
   locatedData: null,

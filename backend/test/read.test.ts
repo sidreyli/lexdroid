@@ -28,6 +28,7 @@ function finding(over: Partial<Finding>): Finding {
     dutyForce: 'permits',
     roleWords: null,
     dutyBearerKind: 'organisation',
+    scopeUnstated: false,
     placeWords: null,
     exceptionWords: null,
     locatedData: null,
@@ -243,5 +244,36 @@ describe('filing a finding by its measure', () => {
     const f = __coerce({ ...raw, indicatorId: '7.3', measure: 'not-a-real-measure' });
     expect(f?.indicatorId).toBe('7.3');
     expect(f?.measure).toBeNull();
+  });
+});
+
+describe('a scope the reader did not answer', () => {
+  const raw = {
+    quote: 'The Authority may, for the purposes of this Act, by notice in writing require any licensee',
+    dutyBearer: 'The Authority',
+    dutyAct: 'may require',
+    dutyForce: 'permits',
+    indicatorId: '7.5',
+    measure: 'government-access',
+    sectorScope: 'all',
+    dataScope: 'personal',
+  };
+
+  it('falls back to the narrowest reach, not the widest', () => {
+    const f = __coerce({ ...raw, sectorScope: 'nationwide', dataScope: undefined });
+    expect(f?.sectorScope).toBe('specific');
+    expect(f?.dataScope).toBe('specific-category');
+    expect(f?.scopeUnstated).toBe(true);
+  });
+
+  it('refuses the finding rather than scoring it on a value we supplied', () => {
+    const f = __coerce({ ...raw, dataScope: 'confidential' });
+    expect(rejectionFor(f as Finding, SECTION, pillar7)).toMatch(/reach of the duty was not answered/);
+  });
+
+  it('keeps a finding whose scope was answered in the terms offered', () => {
+    const f = __coerce(raw);
+    expect(f?.scopeUnstated).toBe(false);
+    expect(f?.sectorScope).toBe('all');
   });
 });
