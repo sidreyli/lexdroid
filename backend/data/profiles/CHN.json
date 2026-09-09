@@ -67,6 +67,16 @@
       "notes": "China's single authoritative index of national law, equivalent in role to Singapore's SSO. A detail page is a JS-rendered shell serving no text; the document is reached through the portal's own law-search API, which the flk adapter replays. It serves gazette text as Word, not PDF or HTML, which is why the corpus needs a .docx path at all. TWO BLOCKERS, BOTH OPEN. First and decisive: robots.txt, read 2026-09-09, is 'User-agent: * / Disallow: /' under a comment prohibiting the use of any automated tool or crawler to collect the site's data, so the fetcher refuses every request to this host and a China run currently registers nothing. That is the system honouring the site, not a defect, and it must not be waived for this host. Second: enumeration is unsolved anyway — the listing endpoint is a POST behind anti-bot protection, so the seed list above is not a walk of the portal. The adapter is kept, verified and refusing, so that it is ready if the access question is ever answered."
     },
     {
+      "name": "State Council policy and information disclosure platform",
+      "url": "https://www.gov.cn",
+      "kind": "gazette",
+      "authority": "国务院办公厅",
+      "pillars": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+      "adapter": null,
+      "adapterConfig": {},
+      "notes": "Where 行政法规 are published — the tier the laws delegate their operative detail to, and therefore where much of what ESCAP actually scores lives. The Regulation on Protecting the Security of Critical Information Infrastructure, which Cybersecurity Law Article 33 delegates to, is here rather than on flk. PERMITTED: robots.txt read 2026-09-09 disallows only a list of specific legacy paths (/2016*/, some photo galleries and named articles) and advertises four search-engine sitemaps; /zhengce/ is not among the exclusions. Checked directly the same day, /zhengce/xxgk/ answers 200 with 226 KB of server-rendered HTML carrying real document links, so it is crawlable without a browser. No adapter written yet — this is the strongest candidate for the next one."
+    },
+    {
       "name": "Cyberspace Administration of China",
       "url": "https://www.cac.gov.cn",
       "kind": "regulator",
@@ -74,7 +84,7 @@
       "pillars": [6, 7, 8, 10],
       "adapter": null,
       "adapterConfig": {},
-      "notes": "The central regulator for data and the internet, and the issuer of the measures that make the cross-border transfer regime operable — the security assessment, the standard contract and the 2024 provisions easing outbound flows. Pillar 6 cannot be answered from the laws alone, because the laws delegate the thresholds here."
+      "notes": "The central regulator for data and the internet, and the issuer of the measures that make the cross-border transfer regime operable — the security assessment, the standard contract and the 2024 provisions easing outbound flows. Pillar 6 cannot be answered from the laws alone, because the laws delegate the thresholds here. PERMITTED: robots.txt read 2026-09-09 disallows four specific paths (/zfz/, /wxb_zfz/, /wxzf/ and one video URL pattern) and nothing else."
     },
     {
       "name": "Ministry of Industry and Information Technology",
@@ -84,7 +94,7 @@
       "pillars": [5, 7, 10, 11, 12],
       "adapter": null,
       "adapterConfig": {},
-      "notes": "Telecommunications and ICT licensing, including the foreign-equity limits on value-added telecom services that pillar 5 turns on, and the ICP filing regime every site operating in China is subject to."
+      "notes": "Telecommunications and ICT licensing, including the foreign-equity limits on value-added telecom services that pillar 5 turns on, and the ICP filing regime every site operating in China is subject to. NO STATED RESTRICTION: robots.txt returns 404 as at 2026-09-09, which expresses no exclusion — not the same as a grant of permission, so its own terms of use should be read before a crawl is pointed at it."
     },
     {
       "name": "People's Bank of China",
@@ -94,7 +104,7 @@
       "pillars": [6, 7, 8],
       "adapter": null,
       "adapterConfig": {},
-      "notes": "Financial-sector data rules, including the localisation duties on personal financial information that are stricter than the general regime. A sectoral rule that is stricter than the horizontal law is exactly the distinction indicator 6.2 scores on."
+      "notes": "Financial-sector data rules, including the localisation duties on personal financial information that are stricter than the general regime. A sectoral rule that is stricter than the horizontal law is exactly the distinction indicator 6.2 scores on. CLOSED: robots.txt read 2026-09-09 allows Baiduspider and disallows every other agent from the whole site, so this portal is not crawlable by us and its instruments have to be sourced another way."
     },
     {
       "name": "General Administration of Customs",
