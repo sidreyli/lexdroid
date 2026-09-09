@@ -872,6 +872,16 @@ function hold(indicatorId: string, evidence: Evidence[]): {
       });
       continue;
     }
+    // A power to require is not a requirement. Australia read a top-band transfer ban off a list
+    // of "examples of conditions that may be prescribed" and off "the Rules may make provision".
+    // Held, not dropped: the power is real and the rules made under it may impose the thing.
+    if (!e.finding.imposingWords) {
+      held.push({
+        evidence: e,
+        reason: `the provision does not impose the requirement itself; it empowers another instrument to impose one`,
+      });
+      continue;
+    }
     // A measure defined by where something has to be is not made out by a provision that names no
     // place. Pillar 6's bands all read "out of the economy" or "within the economy", and a licence
     // clause reading "subject to such conditions as the Authority may impose" satisfies none of

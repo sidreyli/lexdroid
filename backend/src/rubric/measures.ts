@@ -90,14 +90,14 @@ export const MEASURES: Record<string, Measure[]> = {
   '6.1': [
     {
       token: 'transfer-ban',
-      defines: 'the words stating the place the data may not go',
+      defines: 'the words naming the country or territory the data may not go to or beyond',
       locates: true,
       gloss: 'a prohibition on transferring data out of the economy',
       actor: HOLDER,
     },
     {
       token: 'local-processing',
-      defines: 'the words stating the place the processing must happen',
+      defines: 'the words naming the country or territory the processing must happen in',
       locates: true,
       gloss: 'a requirement that data be processed within the economy',
       actor: HOLDER,
@@ -106,7 +106,7 @@ export const MEASURES: Record<string, Measure[]> = {
   '6.2': [
     {
       token: 'local-storage',
-      defines: 'the words stating the place the data must be kept',
+      defines: 'the words naming the country, territory or jurisdiction the data must be kept in',
       locates: true,
       gloss: 'a requirement that data be stored or kept within the economy',
       alsoAsked: ['a requirement that records or documents be kept and retained within the economy'],
@@ -116,7 +116,7 @@ export const MEASURES: Record<string, Measure[]> = {
   '6.3': [
     {
       token: 'local-infrastructure',
-      defines: 'the words stating the place the facilities must be',
+      defines: 'the words naming the computing facilities, servers or equipment that must be in the economy',
       locates: true,
       gloss: 'a requirement to use computing facilities, servers or infrastructure located in the economy',
       actor: HOLDER,

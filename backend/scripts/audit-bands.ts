@@ -21,6 +21,7 @@ function finding(measure: string, over: Partial<Finding>): Finding {
     dutyForce: 'requires', placeWords: 'in the economy', exceptionWords: null,
     locatedData: 'records', informationWords: 'records', keepingWords: 'shall keep',
     roleWords: 'a data protection officer', definingWords: 'in the economy',
+                                            imposingWords: 'shall',
     dutyBearerKind: 'organisation',
     quote: 'q', requirement: 'r', sectorScope: 'all', sector: null, dataScope: 'all',
     dataDescription: null, scopeUnstated: false, appliesOnlyToGovernmentData: false,

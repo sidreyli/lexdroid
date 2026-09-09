@@ -168,6 +168,17 @@ export interface Finding {
    */
   definingWords: string | null;
   /**
+   * The words by which this provision itself imposes the requirement, or null when it only lets
+   * another instrument impose one.
+   *
+   * Australia's transfer ban was read off two rule-making powers: a list of "examples of
+   * conditions that may be prescribed" and "the Digital ID Rules may make provision". Both were
+   * recorded as mandatory prohibitions, one of them borne by the Rules themselves. A power to
+   * require is not a requirement, and telling them apart is a question about words in the
+   * provision like every other.
+   */
+  imposingWords: string | null;
+  /**
    * What kind of party the duty falls on, classifying the words already copied into dutyBearer.
    *
    * The measures say whom they are borne by and the reader was ignoring it: the Minister
@@ -396,6 +407,10 @@ function prompt(section: SectionInput, pillarName: string, indicators: readonly 
     'definingWords: every measure above says, under "made out by", the one thing a provision has to',
     'say to be that measure. Copy those words from your quote. Null if the provision does not say',
     'it anywhere -- and then it is not that measure, however close its subject is.',
+    'imposingWords: the words by which this provision itself imposes the requirement. Null if it',
+    'only empowers someone else to impose one -- "the rules may prescribe", "may make provision',
+    'in relation to", "examples of conditions that may be imposed". A power to require is not a',
+    'requirement, however plainly it names the thing that could be required.',
     '',
     'Then the two facts the score bands are scaled by. Both are measured against the economy, not',
     'against the instrument you are reading. Every law binds everyone it reaches -- that is what a',
@@ -461,6 +476,7 @@ const schemaFor = (indicators: readonly Indicator[]) => ({
           indicatorId: { type: 'string' },
           measure: { type: 'string', enum: measureTokens(indicators) },
           definingWords: { type: ['string', 'null'] },
+          imposingWords: { type: ['string', 'null'] },
           requirement: { type: 'string' },
           sectorScope: { type: 'string', enum: ['all', 'specific'] },
           sector: { type: ['string', 'null'] },
@@ -491,6 +507,7 @@ const schemaFor = (indicators: readonly Indicator[]) => ({
           'indicatorId',
           'measure',
           'definingWords',
+          'imposingWords',
           'requirement',
           'sectorScope',
           'dataScope',
@@ -628,6 +645,9 @@ export function rejectionFor(f: Finding, sectionText: string, allowed: Set<strin
   // The words that make the measure out are a claim about the provision like every other quote.
   if (f.definingWords && !inProvision(f.definingWords)) {
     return `the words said to make out ${f.measure}, "${f.definingWords}", are not in the provision`;
+  }
+  if (f.imposingWords && !inProvision(f.imposingWords)) {
+    return `the words said to impose the requirement, "${f.imposingWords}", are not in the provision`;
   }
   if (f.scopeUnstated) return 'the reach of the duty was not answered in the terms offered';
   return null;
@@ -781,6 +801,7 @@ function coerce(raw: unknown): Finding | null {
     authorisingWords: str(r['authorisingWords']),
     roleWords: str(r['roleWords']),
     definingWords: str(r['definingWords']),
+    imposingWords: str(r['imposingWords']),
     dutyBearerKind:
       r['dutyBearerKind'] === 'government' || r['dutyBearerKind'] === 'individual'
         ? r['dutyBearerKind']
