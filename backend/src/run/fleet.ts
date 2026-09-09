@@ -27,6 +27,22 @@ export function engineKey(host: string): string {
 }
 
 /**
+ * Which units each host takes, with every unit of one economy on one engine.
+ *
+ * Work stealing hands a unit to whichever engine is free, so one economy can be answered by two
+ * machines and nothing in the record says which answered what. Pinning costs an idle host when the
+ * economies are uneven, and buys an economy that was read start to finish by one engine.
+ */
+export function pinByEconomy(units: Unit[], hosts: string[]): Map<string, Unit[]> {
+  const byEconomy = new Map<string, Unit[]>();
+  for (const u of units) byEconomy.set(u.economy, [...(byEconomy.get(u.economy) ?? []), u]);
+  const out = new Map<string, Unit[]>(hosts.map((h) => [h, []]));
+  let n = 0;
+  for (const list of byEconomy.values()) out.get(hosts[n++ % hosts.length]!)!.push(...list);
+  return out;
+}
+
+/**
  * The first host that names an engine an earlier host already named, or null.
  * Two workers on one engine have their reads batched together, which changes the answers.
  */

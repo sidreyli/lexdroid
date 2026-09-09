@@ -10,7 +10,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openDb } from '../src/db/index.js';
 import { openRun, joinRun, recordEvent, runEvents } from '../src/run/index.js';
-import { duplicateEngine, engineKey, replayingWhilePaying, workUnits } from '../src/run/fleet.js';
+import {
+  duplicateEngine,
+  engineKey,
+  pinByEconomy,
+  replayingWhilePaying,
+  workUnits,
+} from '../src/run/fleet.js';
 
 describe('what counts as one engine', () => {
   it('sees through the aliases of the same local server', () => {
@@ -82,5 +88,32 @@ describe('the cache and rented hardware never go together', () => {
   it('allows either one on its own', () => {
     expect(replayingWhilePaying(true, 0)).toBe(false);
     expect(replayingWhilePaying(false, 0.34)).toBe(false);
+  });
+});
+
+describe('pinning an economy to one engine', () => {
+  const hosts = ['http://a:11434', 'http://b:11434', 'http://c:11434'];
+
+  it('gives every unit of one economy to the same host', () => {
+    const pinned = pinByEconomy(workUnits(['SGP', 'MYS', 'AUS'], [6, 7]), hosts);
+    for (const own of pinned.values()) {
+      expect(own).toHaveLength(2);
+      expect(new Set(own.map((u) => u.economy)).size).toBe(1);
+    }
+  });
+
+  it('keeps an economy whole when there are fewer hosts than economies', () => {
+    const pinned = pinByEconomy(workUnits(['SGP', 'MYS', 'AUS'], [6, 7]), hosts.slice(0, 2));
+    const where = new Map<string, string>();
+    for (const [host, own] of pinned) for (const u of own) {
+      expect(where.get(u.economy) ?? host).toBe(host);
+      where.set(u.economy, host);
+    }
+    expect(where.size).toBe(3);
+  });
+
+  it('leaves a host idle rather than splitting an economy across two', () => {
+    const pinned = pinByEconomy(workUnits(['SGP'], [6, 7]), hosts);
+    expect([...pinned.values()].filter((o) => o.length === 0)).toHaveLength(2);
   });
 });
