@@ -9,6 +9,8 @@ import Database from 'better-sqlite3';
 import { mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { topBandScoresAbsence } from '../decide/index.js';
+import type { Indicator } from '../rubric/types.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 export const BASELINE_DB_PATH = join(here, '..', '..', 'data', 'baseline.db');
@@ -181,4 +183,94 @@ export function discoveryTag(
   }
 
   return 'NEW';
+}
+
+/* ---------------------------------------------------------------------------------------------
+ * Reading ESCAP's answer for a cell.
+ * ------------------------------------------------------------------------------------------- */
+
+/** How the rows were resolved to one score, said in words the scoreboard can print. */
+export interface EscapAnswer {
+  score: number;
+  rows: number;
+  how: string;
+  /** True when the rows disagree and the ladder cannot combine them. Look before believing it. */
+  uncertain: boolean;
+}
+
+/** The ladders whose bands are combinations of components rather than a scale of severity. */
+const COMBINATION_LADDERS = new Set(['4.2', '4.6', '5.4', '11.3', '12.2']);
+
+/**
+ * The band ESCAP escalates a count of lesser measures into, and the band they are counted from.
+ *
+ * Fifteen indicators carry the sentence, and it is not always the top band that receives them:
+ * 3.4 escalates two screening mechanisms into its *second* band, not its first.
+ */
+function escalation(indicator: Indicator): { into: number; from: number } | null {
+  const phrase = /more than one (?:measure|sector|LCR)|at least two|two or more|cases of more than one/i;
+  for (let k = 0; k < indicator.bands.length - 1; k++) {
+    if (phrase.test(indicator.bands[k]!.criterion)) {
+      return { into: indicator.bands[k]!.score, from: indicator.bands[k + 1]!.score };
+    }
+  }
+  return null;
+}
+
+/**
+ * ESCAP's answer for one cell, from the rows they recorded for it.
+ *
+ * Their database is one row per measure, each scored as that measure alone would score, so a cell
+ * with several rows has to be resolved before it can be compared with anything. Taking the highest
+ * was wrong in both directions. On an indicator whose top band is an absence -- "No intermediary
+ * liability framework" -- the highest row is the one that found nothing, so Malaysia 8.2 (rows 0
+ * and 1) read as "no framework" when one of their own rows cites the framework: there the lowest
+ * row is the finding. And on an indicator that escalates on count -- "more than one measure in
+ * category (2)" -- Malaysia 6.2's two 0.5 rows are the top band by ESCAP's own sentence, not 0.5.
+ */
+export function escapScore(indicator: Indicator, scores: (number | null)[]): EscapAnswer {
+  const values = scores.map((s) => s ?? 0);
+  if (values.length === 0) return { score: 0, rows: 0, how: 'no row', uncertain: false };
+  if (values.length === 1) return { score: values[0]!, rows: 1, how: 'one row', uncertain: false };
+
+  const disagree = new Set(values).size > 1;
+
+  if (topBandScoresAbsence(indicator)) {
+    return {
+      score: Math.min(...values),
+      rows: values.length,
+      how: 'lowest row: any row that found the thing defeats the absence',
+      uncertain: disagree && COMBINATION_LADDERS.has(indicator.id),
+    };
+  }
+
+  // 1.4 is the only ladder that is a tally: a quarter for each measure, up to one.
+  if (indicator.id === '1.4') {
+    const measures = values.filter((v) => v > 0).length;
+    return {
+      score: Math.min(1, 0.25 * measures),
+      rows: values.length,
+      how: `${measures} measure(s), a quarter each`,
+      uncertain: false,
+    };
+  }
+
+  const highest = Math.max(...values);
+  const up = escalation(indicator);
+  const counted = up ? values.filter((v) => v === up.from).length : 0;
+  if (up && highest < up.into && counted > 1) {
+    return {
+      score: up.into,
+      rows: values.length,
+      how: `${counted} measures of the lesser band, which their criteria escalate`,
+      uncertain: false,
+    };
+  }
+
+  return {
+    score: highest,
+    rows: values.length,
+    how: 'highest row: the strongest measure sets the band',
+    uncertain: disagree && COMBINATION_LADDERS.has(indicator.id),
+  };
 }

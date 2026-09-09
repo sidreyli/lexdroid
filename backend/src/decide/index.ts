@@ -1430,3 +1430,17 @@ function rationaleFor(
 }
 
 export { RULES as __rules };
+
+/**
+ * Does this indicator's top band score the absence of something?
+ *
+ * The same empirical question `scoresOnAbsence` asks, put to the indicator rather than to one
+ * decision, so anything reading a score -- ours or ESCAP's -- can tell which direction it runs in.
+ */
+export function topBandScoresAbsence(indicator: Indicator): boolean {
+  const top = indicator.bands[0];
+  if (!top || top.score <= 0) return false;
+  if (indicator.shape === 'framework') return true;
+  const rule = RULES[indicator.id];
+  return rule ? rule(indicator, []).ordinal === top.ordinal : false;
+}
