@@ -31,6 +31,8 @@ export interface Measure {
   token: string;
   /** What the measure requires, in the language a provision would use. Also a retrieval query. */
   gloss: string;
+  /** The one thing a provision must say to be this measure. Answered as definingWords, and checked. */
+  defines: string;
   /**
    * Extra retrieval phrasings, asked but never shown to the reader.
    *
@@ -88,12 +90,14 @@ export const MEASURES: Record<string, Measure[]> = {
   '6.1': [
     {
       token: 'transfer-ban',
+      defines: 'the words stating the place the data may not go',
       locates: true,
       gloss: 'a prohibition on transferring data out of the economy',
       actor: HOLDER,
     },
     {
       token: 'local-processing',
+      defines: 'the words stating the place the processing must happen',
       locates: true,
       gloss: 'a requirement that data be processed within the economy',
       actor: HOLDER,
@@ -102,6 +106,7 @@ export const MEASURES: Record<string, Measure[]> = {
   '6.2': [
     {
       token: 'local-storage',
+      defines: 'the words stating the place the data must be kept',
       locates: true,
       gloss: 'a requirement that data be stored or kept within the economy',
       alsoAsked: ['a requirement that records or documents be kept and retained within the economy'],
@@ -111,6 +116,7 @@ export const MEASURES: Record<string, Measure[]> = {
   '6.3': [
     {
       token: 'local-infrastructure',
+      defines: 'the words stating the place the facilities must be',
       locates: true,
       gloss: 'a requirement to use computing facilities, servers or infrastructure located in the economy',
       actor: HOLDER,
@@ -121,6 +127,7 @@ export const MEASURES: Record<string, Measure[]> = {
   '6.4': [
     {
       token: 'transfer-condition',
+      defines: 'the words stating the condition that lets the data leave',
       locates: true,
       gloss:
         'a condition that must be met before data may be transferred out, the transfer being permitted once it is met',
@@ -139,6 +146,7 @@ export const MEASURES: Record<string, Measure[]> = {
   '7.3': [
     {
       token: 'minimum-retention',
+      defines: 'the words stating the period the data must be kept for',
       gloss:
         'a duty to keep data for at least some period, whether the period is stated here or prescribed elsewhere',
       alsoAsked: ['a duty to preserve records or documents for a stated number of years'],
@@ -146,6 +154,7 @@ export const MEASURES: Record<string, Measure[]> = {
     },
     {
       token: 'maximum-retention',
+      defines: 'the words stating when the data must stop being kept',
       gloss: 'a duty to stop keeping data, or not to keep it longer than a purpose requires',
       actor: 'the person or organisation holding the data',
     },
@@ -156,6 +165,7 @@ export const MEASURES: Record<string, Measure[]> = {
   '7.4': [
     {
       token: 'data-protection-officer',
+      defines: 'the words naming whoever must be appointed',
       appoints: true,
       actorKind: 'private',
       gloss:
@@ -164,6 +174,7 @@ export const MEASURES: Record<string, Measure[]> = {
     },
     {
       token: 'impact-assessment',
+      defines: 'the words naming the assessment that must be carried out',
       gloss:
         'a duty to assess the risks to personal data, or the effect on individuals, before carrying out the processing',
       actor: ORGANISATION,
@@ -173,6 +184,7 @@ export const MEASURES: Record<string, Measure[]> = {
   '7.5': [
     {
       token: 'government-access',
+      defines: 'the words giving the authority the data or access to it',
       permits: true,
       gloss:
         'a power for a public authority to obtain, access, or require the disclosure of personal data held by someone else',
@@ -186,12 +198,14 @@ export const MEASURES: Record<string, Measure[]> = {
   '8.3': [
     {
       token: 'user-identity',
+      defines: 'the words requiring the user to be identified',
       gloss:
         'a requirement to establish who a user is before they may connect to the internet or use an online service',
       actor: 'the internet or online service provider',
     },
     {
       token: 'sim-registration',
+      defines: 'the words requiring the subscriber identity to be recorded',
       gloss:
         'a requirement to record the identity of the person a SIM card or mobile subscription is issued to',
       actor: 'the telecommunications operator or its dealer',
@@ -200,11 +214,13 @@ export const MEASURES: Record<string, Measure[]> = {
   '8.4': [
     {
       token: 'content-removal',
+      defines: 'the words requiring the content to be removed, blocked or disabled',
       gloss: 'a duty to remove, block or disable access to content carried or hosted on a service',
       actor: 'the intermediary hosting or carrying the content',
     },
     {
       token: 'user-monitoring',
+      defines: 'the words requiring what users do to be monitored',
       gloss: 'a duty to monitor, watch or keep track of what users do on a service',
       actor: 'the intermediary providing the service',
     },
@@ -217,6 +233,7 @@ export const MEASURES: Record<string, Measure[]> = {
   '9.3': [
     {
       token: 'advertising-restriction',
+      defines: 'the words restricting what may be advertised, to whom or in what form',
       gloss:
         'a restriction on advertising online -- what may be advertised, to whom, or in what form -- apart from a requirement that advertising not be misleading',
       actor: 'the advertiser or the platform carrying the advertisement',
@@ -225,12 +242,14 @@ export const MEASURES: Record<string, Measure[]> = {
   '9.4': [
     {
       token: 'strict-content-licence',
+      defines: 'the words letting the licence be refused or revoked, or conditioning it on the content',
       gloss:
         'a licence to provide online content, applications or platform services that may be refused, suspended or revoked at the regulator’s discretion, or that attaches conditions to the content itself',
       actor: 'the provider of the online content or application',
     },
     {
       token: 'content-licence',
+      defines: 'the words requiring the licence, permit or registration',
       gloss:
         'a requirement to hold a licence, permit or registration in order to provide online content, applications or platform services',
       actor: 'the provider of the online content or application',
@@ -239,6 +258,7 @@ export const MEASURES: Record<string, Measure[]> = {
   '10.1': [
     {
       token: 'ict-import-ban',
+      defines: 'the words prohibiting the import or the supply from abroad',
       gloss:
         'a prohibition on importing a class of information and communications technology goods, or on supplying an online service from abroad',
       actor: 'the importer or the foreign supplier',
@@ -247,12 +267,14 @@ export const MEASURES: Record<string, Measure[]> = {
   '10.2': [
     {
       token: 'import-quota',
+      defines: 'the words stating the limit on how much may be imported',
       gloss:
         'a quota, ceiling or other limit on how much of an ICT good or online service may be imported',
       actor: 'the importer',
     },
     {
       token: 'import-compliance',
+      defines: 'the words stating what must be obtained or met before importing',
       gloss:
         'a licence, permit, authorisation, registration, labelling or import-control requirement that must be met before ICT goods or online services may be imported',
       actor: 'the importer',
@@ -261,6 +283,7 @@ export const MEASURES: Record<string, Measure[]> = {
   '10.4': [
     {
       token: 'ict-export-restriction',
+      defines: 'the words restricting the export or the supply abroad',
       gloss:
         'a prohibition, licence, permit or other control on exporting ICT goods or supplying online services abroad',
       actor: 'the exporter or the supplier',
@@ -269,6 +292,7 @@ export const MEASURES: Record<string, Measure[]> = {
   '11.1': [
     {
       token: 'foreign-exclusion-from-standards',
+      defines: 'the words keeping foreign persons out of the standard setting',
       gloss:
         'a rule keeping foreign persons, firms or bodies out of the process by which technical standards are set or adopted',
       actor: 'the standard-setting body or the regulator',
@@ -276,6 +300,7 @@ export const MEASURES: Record<string, Measure[]> = {
     },
     {
       token: 'opaque-standard-setting',
+      defines: 'the words letting the standard be set without publication or comment',
       gloss:
         'a rule allowing technical standards to be set, adopted or changed without publication, notice or an opportunity to comment',
       actor: 'the standard-setting body or the regulator',
@@ -285,12 +310,14 @@ export const MEASURES: Record<string, Measure[]> = {
   '11.3': [
     {
       token: 'product-testing',
+      defines: 'the words requiring the product to be tested, inspected or approved',
       gloss:
         'a requirement that a product be screened, tested, inspected or type-approved before it may be sold, imported or connected to a network',
       actor: 'the supplier or importer of the product',
     },
     {
       token: 'third-party-testing-accepted',
+      defines: 'the words accepting a test result or certificate from outside the economy',
       permits: true,
       gloss:
         'acceptance of test results, certificates or conformity assessments issued by a body outside the economy',
@@ -300,6 +327,7 @@ export const MEASURES: Record<string, Measure[]> = {
   '11.4': [
     {
       token: 'deviating-encryption-standard',
+      defines: 'the words naming the algorithm, key length or cryptographic standard required',
       gloss:
         'a required encryption algorithm, key length or cryptographic standard set by this economy in place of an internationally agreed one',
       actor: 'the supplier or operator of the system that must use it',
@@ -312,11 +340,13 @@ export const MEASURES: Record<string, Measure[]> = {
   '2.1': [
     {
       token: 'foreign-exclusion',
+      defines: 'the words excluding foreign firms from the contract',
       gloss: 'a rule that excludes foreign firms from bidding for government contracts',
       actor: 'the government body running the procurement',
     },
     {
       token: 'specific-foreign-exclusion',
+      defines: 'the words naming the group of foreign firms excluded',
       gloss:
         'a rule that excludes some named group of foreign firms from government contracts, such as those from a particular country or without a local partner',
       actor: 'the government body running the procurement',
@@ -325,12 +355,14 @@ export const MEASURES: Record<string, Measure[]> = {
   '2.2': [
     {
       token: 'surrender-source-code',
+      defines: 'the words requiring the source code, patent or trade secret to be handed over',
       gloss:
         'a requirement to hand over source code, patents, algorithms or trade secrets in order to bid for or win a government contract',
       actor: 'the supplier bidding for the contract',
     },
     {
       token: 'mandated-encryption',
+      defines: 'the words naming the encryption method that must be used',
       gloss: 'a requirement to use a particular encryption method or cryptographic standard in order to win a government contract',
       actor: 'the supplier bidding for the contract',
     },
@@ -338,12 +370,14 @@ export const MEASURES: Record<string, Measure[]> = {
   '2.3': [
     {
       token: 'foreign-bidder-discrimination',
+      defines: 'the words that treat a foreign bidder worse than a local one',
       gloss:
         'a condition in government procurement that treats foreign bidders worse than local ones, such as a price preference for domestic suppliers',
       actor: 'the government body running the procurement',
     },
     {
       token: 'bidding-condition',
+      defines: 'the words stating the condition every bidder must meet',
       gloss:
         'a condition on every bidder for a government contract, such as a local content share, a local employment target or another performance undertaking',
       actor: 'the supplier bidding for the contract',
@@ -352,6 +386,7 @@ export const MEASURES: Record<string, Measure[]> = {
   '3.2': [
     {
       token: 'joint-venture',
+      defines: 'the words requiring the local partner or the joint venture',
       gloss: 'a requirement that a foreign investor operate through a joint venture or in partnership with a local company',
       actor: 'the foreign investor',
     },
@@ -359,6 +394,7 @@ export const MEASURES: Record<string, Measure[]> = {
   '3.3': [
     {
       token: 'director-nationality',
+      defines: 'the words requiring the director, manager or secretary to be a national or resident',
       appoints: true,
       actorKind: 'private',
       gloss:
@@ -369,6 +405,7 @@ export const MEASURES: Record<string, Measure[]> = {
   '3.5': [
     {
       token: 'commercial-presence',
+      defines: 'the words requiring the branch, subsidiary or presence in the economy',
       gloss:
         'a requirement to establish a branch, subsidiary or other commercial presence in the economy before supplying a service to customers here',
       actor: 'the foreign supplier of the service',
@@ -379,6 +416,7 @@ export const MEASURES: Record<string, Measure[]> = {
   '4.3': [
     {
       token: 'patent-enforcement-restriction',
+      defines: 'the words restricting how the patent may be enforced',
       gloss:
         'a restriction on enforcing a patent, such as a compulsory licence, a limit on injunctions, a cap on damages or a bar on who may bring proceedings',
       actor: 'the patent holder seeking to enforce the patent',
@@ -387,6 +425,7 @@ export const MEASURES: Record<string, Measure[]> = {
   '4.9': [
     {
       token: 'trade-secret-disclosure',
+      defines: 'the words requiring the source code, algorithm or trade secret to be disclosed',
       gloss:
         'a requirement to disclose source code, algorithms or other trade secrets to a government body, apart from disclosure ordered to protect the public interest where the law also guards against unfair commercial use',
       actor: 'the company holding the source code or trade secret',
@@ -395,12 +434,14 @@ export const MEASURES: Record<string, Measure[]> = {
   '4.01': [
     {
       token: 'patent-applicant-discrimination',
+      defines: 'the words that treat a foreign applicant worse than a local one',
       gloss:
         'a rule in patent applications that treats foreign applicants worse than local ones, or refuses their applications on grounds that do not apply to locals',
       actor: 'the patent office deciding the application',
     },
     {
       token: 'patent-local-representative',
+      defines: 'the words requiring the local agent, attorney or address for service',
       appoints: true,
       actorKind: 'private',
       gloss: 'a requirement that a patent applicant appoint a local agent, attorney or address for service in the economy',
@@ -408,11 +449,13 @@ export const MEASURES: Record<string, Measure[]> = {
     },
     {
       token: 'patent-local-filing-first',
+      defines: 'the words requiring the application to be filed in the economy first',
       gloss: 'a requirement to file a patent application in this economy before filing it abroad',
       actor: 'the patent applicant',
     },
     {
       token: 'patent-substantive-examination',
+      defines: 'the words requiring the application to be substantively examined',
       gloss: 'a requirement that a patent application undergo substantive examination before it is granted',
       actor: 'the patent applicant',
     },
@@ -420,6 +463,7 @@ export const MEASURES: Record<string, Measure[]> = {
   '5.5': [
     {
       token: 'strict-telecom-licence',
+      defines: 'the words stating the strict condition the licence carries',
       gloss:
         'a licence to operate a telecommunications network or service that carries a strict condition, such as a minimum paid-up capital, a coverage or rollout obligation, or a worse condition for foreign operators',
       actor: 'the telecommunications operator applying for the licence',
@@ -430,12 +474,14 @@ export const MEASURES: Record<string, Measure[]> = {
   '10.3': [
     {
       token: 'local-content-category',
+      defines: 'the words requiring locally made goods or locally supplied services',
       gloss:
         'a requirement to use locally made goods or locally supplied services, stated for a whole sector or a broad class of goods such as telecommunications equipment',
       actor: 'the producer or supplier subject to the requirement',
     },
     {
       token: 'local-content-product',
+      defines: 'the words naming the product the local inputs are required in',
       gloss:
         'a requirement to use locally made inputs in one named product, such as mobile handsets or set-top boxes',
       actor: 'the producer or supplier subject to the requirement',
@@ -449,6 +495,7 @@ export const MEASURES: Record<string, Measure[]> = {
   '1.4': [
     {
       token: 'trade-defence-measure',
+      defines: 'the words imposing the anti-dumping, countervailing or safeguard duty',
       permits: true,
       gloss:
         'an anti-dumping duty, countervailing duty or safeguard measure imposed on imported ICT or electronic goods',
@@ -458,6 +505,7 @@ export const MEASURES: Record<string, Measure[]> = {
   '4.2': [
     {
       token: 'enforcement-procedure',
+      defines: 'the words giving the patent holder the procedure or the remedy',
       permits: true,
       gloss:
         'a civil or administrative procedure by which a patent holder can sue for infringement and obtain a remedy such as damages, an account of profits or an injunction',
@@ -465,6 +513,7 @@ export const MEASURES: Record<string, Measure[]> = {
     },
     {
       token: 'provisional-measure',
+      defines: 'the words giving the interim measure before trial',
       permits: true,
       gloss:
         'a provisional or interim measure in an intellectual property case, such as an interlocutory injunction, a search order or the seizure of infringing goods before trial',
@@ -474,6 +523,7 @@ export const MEASURES: Record<string, Measure[]> = {
   '4.6': [
     {
       token: 'enforcement-procedure',
+      defines: 'the words giving the copyright owner the procedure or the remedy',
       permits: true,
       gloss:
         'a civil or administrative procedure by which a copyright owner can sue for online infringement and obtain a remedy such as damages, an account of profits or an injunction',
@@ -481,6 +531,7 @@ export const MEASURES: Record<string, Measure[]> = {
     },
     {
       token: 'provisional-measure',
+      defines: 'the words giving the interim measure before trial',
       permits: true,
       gloss:
         'a provisional or interim measure in a copyright case, such as an interlocutory injunction, a blocking order or the seizure of infringing copies before trial',
@@ -490,6 +541,7 @@ export const MEASURES: Record<string, Measure[]> = {
   '4.5': [
     {
       token: 'fair-use-exception',
+      defines: 'the words permitting fair use or fair dealing as an open category',
       permits: true,
       gloss:
         'a general exception to copyright for fair use or fair dealing, stated as an open category of permitted uses rather than a closed list',
@@ -497,6 +549,7 @@ export const MEASURES: Record<string, Measure[]> = {
     },
     {
       token: 'qualified-exception',
+      defines: 'the words listing the purposes the exception is confined to',
       permits: true,
       gloss:
         'a narrow exception to copyright confined to listed purposes, or one conditioned on not conflicting with normal exploitation and not unreasonably prejudicing the rights holder',
@@ -506,6 +559,7 @@ export const MEASURES: Record<string, Measure[]> = {
   '4.1': [
     {
       token: 'trade-secret-protection',
+      defines: 'the words giving the holder a remedy for the unauthorised use or disclosure',
       permits: true,
       gloss:
         'protection for confidential business information or trade secrets, giving the holder a remedy against someone who acquires, uses or discloses it without consent',
@@ -513,6 +567,7 @@ export const MEASURES: Record<string, Measure[]> = {
     },
     {
       token: 'trade-secret-clause',
+      defines: 'the words imposing the duty of confidence',
       permits: true,
       gloss:
         'a single clause protecting confidential information inside a law about something else, such as a duty of confidence owed by an employee or an official',
@@ -522,6 +577,7 @@ export const MEASURES: Record<string, Measure[]> = {
   '5.1': [
     {
       token: 'passive-sharing-duty',
+      defines: 'the words requiring the towers, ducts, poles or sites to be shared',
       gloss:
         'a duty on a telecommunications operator to share passive infrastructure -- towers, masts, ducts, poles, trenches or sites -- with another operator',
       actor: 'the operator that owns the infrastructure',
@@ -530,12 +586,14 @@ export const MEASURES: Record<string, Measure[]> = {
   '5.4': [
     {
       token: 'accounting-separation',
+      defines: 'the words requiring the separate accounts',
       gloss:
         'a duty on a telecommunications operator to keep separate accounts for different services or for wholesale and retail activities',
       actor: 'the telecommunications operator',
     },
     {
       token: 'functional-separation',
+      defines: 'the words requiring the businesses to be run separately',
       gloss:
         'a duty on a telecommunications operator to run its network business as a separate unit or entity from its retail business',
       actor: 'the telecommunications operator',
@@ -544,6 +602,7 @@ export const MEASURES: Record<string, Measure[]> = {
   '5.7': [
     {
       token: 'independent-telecom-authority',
+      defines: 'the words stating the regulator acts independently or takes no direction',
       permits: true,
       gloss:
         'the establishment of a telecommunications or communications regulator, stated to act independently or not to be subject to direction in the exercise of its functions',
@@ -553,6 +612,7 @@ export const MEASURES: Record<string, Measure[]> = {
   '11.2': [
     {
       token: 'sdoc-allowed',
+      defines: 'the words accepting a declaration of conformity made by the supplier itself',
       permits: true,
       gloss:
         "a supplier's own declaration of conformity accepted as proof that a product meets safety, radio or electromagnetic compatibility requirements",
@@ -560,6 +620,7 @@ export const MEASURES: Record<string, Measure[]> = {
     },
     {
       token: 'mra-certification-accepted',
+      defines: 'the words accepting a certificate issued by a body in another country',
       permits: true,
       gloss:
         'a certificate from a conformity assessment body in another country accepted under a mutual recognition arrangement',
@@ -575,11 +636,13 @@ export const MEASURES: Record<string, Measure[]> = {
   '12.2': [
     {
       token: 'online-purchase-limit',
+      defines: 'the words restricting what may be bought online',
       gloss: 'a restriction on which goods or services may be bought online, or on how many of them',
       actor: 'the business selling goods or services online',
     },
     {
       token: 'online-delivery-limit',
+      defines: 'the words restricting delivery of what was bought online',
       gloss: 'a restriction on delivering to a buyer goods that were bought online',
       actor: 'the seller or the carrier delivering the goods',
     },
@@ -587,6 +650,7 @@ export const MEASURES: Record<string, Measure[]> = {
   '12.3': [
     {
       token: 'ecommerce-licence',
+      defines: 'the words requiring the licence, permit or registration to sell online',
       gloss:
         'a requirement to hold a licence, permit, approval or registration in order to sell goods or services online',
       actor: 'the business selling goods or services online',
@@ -595,6 +659,7 @@ export const MEASURES: Record<string, Measure[]> = {
   '12.4.1': [
     {
       token: 'local-bank-account',
+      defines: 'the words requiring an account with a bank established in the economy',
       gloss:
         'a requirement to hold or use an account with a bank established in the economy in order to take payment',
       actor: 'the business taking the payment',
@@ -603,6 +668,7 @@ export const MEASURES: Record<string, Measure[]> = {
   '12.4.2': [
     {
       token: 'payment-currency',
+      defines: 'the words naming the currency the payment must be made in',
       gloss: 'a requirement about which currency a payment to or from another country must be made in',
       actor: 'the party making or receiving the payment',
     },
@@ -610,6 +676,7 @@ export const MEASURES: Record<string, Measure[]> = {
   '12.4.3': [
     {
       token: 'national-payment-standard',
+      defines: 'the words naming the payment security standard this economy sets',
       gloss:
         'a standard for the security of electronic payments that this economy sets itself, rather than one adopted from an international body',
       actor: 'the payment service provider',
@@ -618,6 +685,7 @@ export const MEASURES: Record<string, Measure[]> = {
   '12.4.4': [
     {
       token: 'payment-licence',
+      defines: 'the words requiring the payment services licence',
       gloss:
         'a requirement to hold a licence to provide payment services, and the conditions that must be met to keep it',
       actor: 'the payment service provider',
@@ -626,6 +694,7 @@ export const MEASURES: Record<string, Measure[]> = {
   '12.4.5': [
     {
       token: 'payment-ceiling',
+      defines: 'the words stating the largest amount that may be paid',
       gloss:
         'a limit on the largest amount that may be paid by an electronic payment method, in one payment or over a period',
       actor: 'the payer or the payment service provider',
@@ -634,6 +703,7 @@ export const MEASURES: Record<string, Measure[]> = {
   '12.4.6': [
     {
       token: 'mandated-intermediary',
+      defines: 'the words requiring the payment to be routed through the intermediary',
       gloss:
         'a requirement to route online payments through a named or approved intermediary, switch, gateway or clearing house',
       actor: 'the payment service provider or the business taking the payment',
@@ -643,6 +713,7 @@ export const MEASURES: Record<string, Measure[]> = {
   '12.4.7': [
     {
       token: 'other-payment-restriction',
+      defines: 'the words restricting the making or receiving of the online payment',
       gloss:
         'any other restriction on making or receiving payment online, apart from ones about bank accounts, currency, security standards, licensing, maximum amounts or intermediaries',
       actor: 'the payment service provider or the business taking the payment',
@@ -652,11 +723,13 @@ export const MEASURES: Record<string, Measure[]> = {
   '12.6': [
     {
       token: 'transmission-duty',
+      defines: 'the words imposing the duty or charge on the electronic delivery',
       gloss: 'a customs duty, tariff or import charge imposed on something delivered electronically',
       actor: 'the importer of the electronic transmission',
     },
     {
       token: 'transmission-duty-power',
+      defines: 'the words conferring the power to impose the duty or charge',
       permits: true,
       gloss:
         'a power to impose a customs duty or import charge on goods or services delivered electronically, whether or not it has been exercised',
@@ -666,12 +739,14 @@ export const MEASURES: Record<string, Measure[]> = {
   '12.7': [
     {
       token: 'local-domain-or-presence',
+      defines: 'the words requiring the local domain name or the presence in the economy',
       gloss:
         'a requirement to register a domain name under the top-level domain of this economy, or to be physically present here, in order to sell online',
       actor: 'the business selling goods or services online',
     },
     {
       token: 'local-representative',
+      defines: 'the words naming the representative who must be in the economy',
       appoints: true,
       actorKind: 'private',
       gloss: 'a requirement to appoint a representative, agent or responsible person located in the economy',
@@ -681,6 +756,7 @@ export const MEASURES: Record<string, Measure[]> = {
   '12.8': [
     {
       token: 'local-presence',
+      defines: 'the words requiring the provider to be established or present in the economy',
       gloss:
         'a requirement for a provider of online services to be established, incorporated, registered or physically present in the economy',
       actor: 'the provider of the online service',

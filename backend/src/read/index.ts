@@ -157,6 +157,17 @@ export interface Finding {
    */
   roleWords: string | null;
   /**
+   * The words that make this the measure it was named as, quoted, or null when there are none.
+   *
+   * placeWords and roleWords each did this for one pillar, and each was written after that
+   * pillar's readings went wrong. Sixty-three of the seventy-four measures had no such field at
+   * all, so a provision could be filed under one of them on resemblance -- which is how a power to
+   * demand information became a duty to appoint an officer. Every measure now states the one thing
+   * a provision must say to be it, the reader copies those words, and a measure whose words are
+   * absent is held rather than scored.
+   */
+  definingWords: string | null;
+  /**
    * What kind of party the duty falls on, classifying the words already copied into dutyBearer.
    *
    * The measures say whom they are borne by and the reader was ignoring it: the Minister
@@ -285,7 +296,10 @@ function rubricBlock(indicators: readonly Indicator[]): string {
       const bands = i.bands.map((b) => `      (${b.ordinal}) scores ${b.score}: ${b.criterion}`).join('\n');
       const exception = i.exception ? `\n    Exception: ${i.exception}` : '';
       const measures = (MEASURES[i.id] ?? [])
-        .map((m) => `      ${m.token}: ${m.gloss}\n        borne by: ${m.actor}`)
+        .map(
+          (m) =>
+            `      ${m.token}: ${m.gloss}\n        borne by: ${m.actor}\n        made out by: ${m.defines}`,
+        )
         .join('\n');
       const measureBlock = measures
         ? `\n    Measures it recognises, one of which every finding must name:\n${measures}`
@@ -379,6 +393,9 @@ function prompt(section: SectionInput, pillarName: string, indicators: readonly 
     'however similar the words are: a power for a public authority to demand information is not a',
     'duty on an organisation to appoint someone -- and it is not a duty to keep records either. If',
     'what you wrote matches no measure listed, leave the finding out.',
+    'definingWords: every measure above says, under "made out by", the one thing a provision has to',
+    'say to be that measure. Copy those words from your quote. Null if the provision does not say',
+    'it anywhere -- and then it is not that measure, however close its subject is.',
     '',
     'Then the two facts the score bands are scaled by. Both are measured against the economy, not',
     'against the instrument you are reading. Every law binds everyone it reaches -- that is what a',
@@ -443,6 +460,7 @@ const schemaFor = (indicators: readonly Indicator[]) => ({
           dutyBearerKind: { type: 'string', enum: ['government', 'organisation', 'individual'] },
           indicatorId: { type: 'string' },
           measure: { type: 'string', enum: measureTokens(indicators) },
+          definingWords: { type: ['string', 'null'] },
           requirement: { type: 'string' },
           sectorScope: { type: 'string', enum: ['all', 'specific'] },
           sector: { type: ['string', 'null'] },
@@ -472,6 +490,7 @@ const schemaFor = (indicators: readonly Indicator[]) => ({
           'dutyBearerKind',
           'indicatorId',
           'measure',
+          'definingWords',
           'requirement',
           'sectorScope',
           'dataScope',
@@ -605,6 +624,10 @@ export function rejectionFor(f: Finding, sectionText: string, allowed: Set<strin
   }
   if (f.roleWords && !inProvision(f.roleWords)) {
     return `the position said to be created, "${f.roleWords}", is not in the provision`;
+  }
+  // The words that make the measure out are a claim about the provision like every other quote.
+  if (f.definingWords && !inProvision(f.definingWords)) {
+    return `the words said to make out ${f.measure}, "${f.definingWords}", are not in the provision`;
   }
   if (f.scopeUnstated) return 'the reach of the duty was not answered in the terms offered';
   return null;
@@ -757,6 +780,7 @@ function coerce(raw: unknown): Finding | null {
     statedPeriod: str(r['statedPeriod']),
     authorisingWords: str(r['authorisingWords']),
     roleWords: str(r['roleWords']),
+    definingWords: str(r['definingWords']),
     dutyBearerKind:
       r['dutyBearerKind'] === 'government' || r['dutyBearerKind'] === 'individual'
         ? r['dutyBearerKind']

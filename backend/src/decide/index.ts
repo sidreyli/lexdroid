@@ -860,6 +860,18 @@ function hold(indicatorId: string, evidence: Evidence[]): {
       });
       continue;
     }
+    // Every measure states the one thing a provision has to say to be it, and a provision that
+    // never says it is evidence of something else. This is the general form of the two holds
+    // below, which ask pillar 6 and 7.4 for more than one field because those pillars were read
+    // wrongly in more than one way. Held, not dropped: the provision is real and may be evidence
+    // for another indicator.
+    if (!e.finding.definingWords && definedBy(indicatorId, e.finding.measure)) {
+      held.push({
+        evidence: e,
+        reason: `the provision does not state ${definedBy(indicatorId, e.finding.measure)}, which is what makes it this measure`,
+      });
+      continue;
+    }
     // A measure defined by where something has to be is not made out by a provision that names no
     // place. Pillar 6's bands all read "out of the economy" or "within the economy", and a licence
     // clause reading "subject to such conditions as the Authority may impose" satisfies none of
@@ -1062,6 +1074,12 @@ function sameWords(a: string, b: string): boolean {
 function locational(indicatorId: string, measure: string | null): boolean {
   if (!measure) return false;
   return (MEASURES[indicatorId] ?? []).some((m) => m.token === measure && m.locates === true);
+}
+
+/** What this measure says a provision must state to be it. Every measure declares one. */
+function definedBy(indicatorId: string, measure: string | null): string | null {
+  if (!measure) return null;
+  return (MEASURES[indicatorId] ?? []).find((m) => m.token === measure)?.defines ?? null;
 }
 
 /** Is this measure one of the ones defined by someone being put in a role? */

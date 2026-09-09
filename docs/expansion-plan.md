@@ -51,10 +51,12 @@ resemblance alone. Pillars 6 and 7 are well defended precisely because they are 
 ## The order of work
 
 1. ~~Make the ruler trustworthy.~~ Done: the absence guard, the band sweep, the aggregation fix.
-2. **Give every measure a defining element.** One field the reader must fill with words from the
-   provision that make it that measure, checked against the text like every other quote, and held
-   rather than dropped when it is absent. This is the single change that protects the other ten
-   pillars, and it needs the 27 known cells re-run to confirm nothing regressed.
+2. **Give every measure a defining element.** Written, not yet confirmed. All 74 measures now
+   declare, in the words a statute would use, the one thing a provision has to say to be that
+   measure; the reader is shown it beside the measure and answers it as `definingWords`; the
+   answer is checked against the provision like every other quote; and a measure whose words are
+   absent is held rather than scored. The engine cache keys on the prompt, so it invalidated
+   itself. What remains is the confirming run of the 27 known cells.
 3. **Close the seven indicators with no scoring rule.** Three of them are one family — 3.1, 5.2 and
    12.01 are the same foreign-equity ladder, differing only in where the ladder starts — and 12.5 is
    a customs threshold compared against 200 USD. The remaining three are the practice-shaped ones:

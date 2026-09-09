@@ -55,6 +55,7 @@ const finding: Finding = {
   dutyAct: 'shall retain the records',
   dutyForce: 'requires',
   roleWords: null,
+  definingWords: 'a period of not less than 5 years',
   dutyBearerKind: 'organisation',
   scopeUnstated: false,
   placeWords: null,

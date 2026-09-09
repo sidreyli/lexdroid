@@ -27,6 +27,7 @@ function finding(over: Partial<Finding>): Finding {
     dutyAct: 'may',
     dutyForce: 'permits',
     roleWords: null,
+    definingWords: null,
     dutyBearerKind: 'organisation',
     scopeUnstated: false,
     placeWords: null,

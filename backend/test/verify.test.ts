@@ -80,6 +80,7 @@ function storeWithOneAnswer(
       {
         indicatorId: '7.3', measure: 'minimum-retention', quote,
         dutyBearer: 'A company', dutyAct: 'must keep', dutyForce: 'requires',
+        definingWords: 'not less than 5 years',
         requirement: 'Accounting records must be kept for at least five years.',
         sectorScope: 'all', sector: null, dataScope: 'non-personal', dataDescription: null,
         appliesOnlyToGovernmentData: false, mandatory: true, countriesNamed: [],
