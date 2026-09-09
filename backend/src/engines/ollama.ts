@@ -43,8 +43,9 @@ export const READING_MODEL = process.env['LEXDROID_READING_MODEL'] ?? 'gemma4-le
 /**
  * The most tokens one answer may write. Set in the empty band between the two populations:
  * over 5,783 calls, every useful answer stopped by 3,515 tokens and every runaway passed 11,786.
+ * Raised to 8192 after 4096 cut off two long provisions mid-answer; still under the runaway floor.
  */
-export const MAX_OUTPUT_TOKENS = Number(process.env['LEXDROID_MAX_OUTPUT_TOKENS'] ?? 4096);
+export const MAX_OUTPUT_TOKENS = Number(process.env['LEXDROID_MAX_OUTPUT_TOKENS'] ?? 8192);
 
 export class OllamaUnavailable extends Error {
   constructor(detail: string) {

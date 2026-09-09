@@ -161,15 +161,16 @@ export interface Decision {
  * So the same words in the methodology sheet mean two different things two indicators apart, and
  * the guide is where that is written down. A single shared predicate flattened the difference.
  */
-const reachesBroadly = (f: Finding, dataTypeAloneIsEnough: boolean): boolean => {
-  if (f.dataScope === 'personal') return true;
-  if (f.sectorScope !== 'all') return false;
-  return dataTypeAloneIsEnough ? true : f.dataScope === 'all';
+const reachesBroadly = (f: Finding, eitherAxisIsEnough: boolean): boolean => {
+  // Horizontal on both axes, or -- where the guide says one axis carries it -- on either.
+  const everySector = f.sectorScope === 'all';
+  const wideData = f.dataScope === 'personal' || f.dataScope === 'all';
+  return eitherAxisIsEnough ? everySector || f.dataScope === 'personal' : everySector && wideData;
 };
 
 /** "applied to specific sector, specific data, non-personal data". */
-const reachesNarrowly = (f: Finding, dataTypeAloneIsEnough: boolean): boolean =>
-  !reachesBroadly(f, dataTypeAloneIsEnough);
+const reachesNarrowly = (f: Finding, eitherAxisIsEnough: boolean): boolean =>
+  !reachesBroadly(f, eitherAxisIsEnough);
 
 /** A power that may be used is not a requirement that must be met. Read from the verb the finding
  *  quotes, not the mandatory flag beside it -- that flag called "may appoint" mandatory. */
@@ -198,7 +199,15 @@ const band = (indicator: Indicator, ordinal: number): ScoreBand => {
  * bind different populations under different schemes.
  */
 function measureCount(evidence: Evidence[]): number {
-  return new Set(evidence.map((e) => `${e.instrumentId} :: ${e.finding.measure ?? ''}`)).size;
+  // One section is one requirement even when it was read under two measure labels, so a provision
+  // contributes once. The lowest label keeps the count independent of the order evidence arrives.
+  const perSection = new Map<number, string>();
+  for (const e of evidence) {
+    const key = `${e.instrumentId} :: ${e.finding.measure ?? ''}`;
+    const seen = perSection.get(e.sectionId);
+    if (seen === undefined || key < seen) perSection.set(e.sectionId, key);
+  }
+  return new Set(perSection.values()).size;
 }
 
 function scopeScaled(
@@ -212,7 +221,7 @@ function scopeScaled(
   if (broad.length > 0) {
     return {
       ordinal: 1,
-      reason: `${broad.length} measure(s) reaching all sectors or personal data`,
+      reason: `${measureCount(broad)} measure(s) reaching all sectors or personal data`,
       counted: broad,
     };
   }
@@ -349,7 +358,8 @@ const RULES: Record<string, Rule> = {
         counted: narrows,
       };
     }
-    if (narrows.length === 1) {
+    // One measure, however many findings carry it: the count above already ruled out more.
+    if (narrows.length > 0) {
       return {
         ordinal: 2,
         reason: byCountry.length > 0 ? 'transfer prohibited to a named country' : base.reason,
