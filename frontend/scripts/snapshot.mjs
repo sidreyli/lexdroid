@@ -223,15 +223,19 @@ const runs = runRows.map((r) => ({
 }));
 writeFileSync(join(OUT, 'runs.json'), JSON.stringify(runs));
 
-// The tail of the newest run's ledger, so the run view has something to render
-// before a live stream is wired to it.
-const newest = runRows[0]?.id;
-const events = newest
-  ? query(`
-      SELECT id, run_id AS runId, at, economy_code AS economy, pillar_id AS pillarId,
-             indicator_id AS indicatorId, stage, kind, subject, detail, seconds, done, total
-        FROM run_event WHERE run_id = '${newest}' ORDER BY id DESC LIMIT 400`).reverse()
-  : [];
+// The ledger for every run still going, plus the newest few that finished. The monitor
+// reads its position from these, so a run in flight must bring its whole ledger.
+const watched = [
+  ...runRows.filter((r) => r.status === 'running').map((r) => r.id),
+  ...runRows.slice(0, 3).map((r) => r.id),
+].filter((id, i, all) => all.indexOf(id) === i);
+
+const events = watched.flatMap((id) =>
+  query(`
+    SELECT id, run_id AS runId, at, economy_code AS economy, pillar_id AS pillarId,
+           indicator_id AS indicatorId, stage, kind, subject, detail, seconds, done, total
+      FROM run_event WHERE run_id = '${id}' ORDER BY id DESC LIMIT 2000`).reverse(),
+);
 writeFileSync(join(OUT, 'run-events.json'), JSON.stringify(events));
 
 const discards = query(`
