@@ -18,7 +18,8 @@ import { answerPillar } from '../src/cell/index.js';
 import { haveModel, OllamaUnavailable, READING_MODEL } from '../src/engines/ollama.js';
 import { cacheEnabled, cacheSize } from '../src/engines/cache.js';
 import { openBaseline, BASELINE_DB_PATH, sameInstrument, escapScore } from '../src/baseline/index.js';
-import { openRun, joinRun, recordPillarAnswer, recordStage, recordEvent, finishRun, codeRevision } from '../src/run/index.js';
+import { openRun, joinRun, recordPillarAnswer, recordStage, recordEvent, finishRun, codeRevision, settleRates } from '../src/run/index.js';
+import { loadRates } from '../src/decide/currency.js';
 import type { RunEvent } from '../src/run/events.js';
 import { existsSync } from 'node:fs';
 import { reaches, type Decision } from '../src/decide/index.js';
@@ -190,6 +191,15 @@ async function main(): Promise<void> {
       : openRun(db, { economies: [args.economy], pillars: args.pillars, model, notes: 'gate' });
   if (run) console.log(`run ${run.id}  (code ${codeRevision()})`);
 
+  // One indicator compares a customs threshold with 200 USD, so the run settles on a rate once and
+  // records it. Without a run to record it on, today's is fetched and used unrecorded.
+  const fetched = await loadRates({
+    allowNetwork: run ? run.sourceMode === 'fetch' : true,
+    log: (l) => console.log(`  ${l}`),
+  });
+  const rates = run ? settleRates(run, fetched) : fetched;
+  if (rates) console.log(`exchange rates as at ${rates.asOf}  (${rates.source})`);
+
   // Everything the pillar says goes to the ledger. The terminal gets the part a person watching
   // needs: a refusal, a read that is taking too long, and a count every so often.
   const emit = (e: RunEvent): void => {
@@ -215,6 +225,7 @@ async function main(): Promise<void> {
       model,
       log: (l) => console.log(l),
       emit,
+      rates,
     });
 
     if (run) {

@@ -28,6 +28,9 @@ CREATE TABLE IF NOT EXISTS run (
   code_revision   TEXT NOT NULL,              -- git describe --always --dirty
   rubric_derived_at TEXT NOT NULL,
   status          TEXT NOT NULL CHECK (status IN ('running', 'complete', 'failed', 'cancelled')),
+  -- The exchange rates this run scored with, as fetched. Indicator 12.5 compares a customs
+  -- threshold with 200 USD, and a score re-derived next month must use the run's own rate.
+  fx_rates        TEXT,
   notes           TEXT
 );
 

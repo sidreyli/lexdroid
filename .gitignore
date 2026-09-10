@@ -36,3 +36,6 @@ docs/_manifest.tsv
 .DS_Store
 Thumbs.db
 backend/data/*.log
+
+# The fetched exchange rates. A cache, refreshed daily by any run that can reach the publisher.
+backend/data/fx-rates.json

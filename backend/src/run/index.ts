@@ -22,6 +22,7 @@ import type { Db } from '../db/index.js';
 import { loadRubric } from '../rubric/index.js';
 import type { PillarAnswer } from '../cell/index.js';
 import { refile, type Decision, type Evidence } from '../decide/index.js';
+import type { FxRates } from '../decide/currency.js';
 import { locateQuote } from '../util/locate.js';
 import type { RunEvent } from './events.js';
 
@@ -32,6 +33,8 @@ export interface RunContext {
   id: string;
   db: Db;
   engine: string;
+  /** 'cache-only' may not reach the network for anything, exchange rates included. */
+  sourceMode: 'fetch' | 'cache-only';
 }
 
 export interface OpenRunOptions {
@@ -80,7 +83,7 @@ export function openRun(db: Db, opts: OpenRunOptions): RunContext {
     loadRubric().derivedAt,
     opts.notes ?? null,
   );
-  return { id, db, engine };
+  return { id, db, engine, sourceMode: opts.sourceMode ?? 'fetch' };
 }
 
 /**
@@ -88,12 +91,12 @@ export function openRun(db: Db, opts: OpenRunOptions): RunContext {
  * Refuses a run that is finished: a closed run's totals have already been read.
  */
 export function joinRun(db: Db, runId: string, engine?: string): RunContext {
-  const row = db.prepare('SELECT engine, status FROM run WHERE id = ?').get(runId) as
-    | { engine: string; status: string }
+  const row = db.prepare('SELECT engine, status, source_mode FROM run WHERE id = ?').get(runId) as
+    | { engine: string; status: string; source_mode: 'fetch' | 'cache-only' }
     | undefined;
   if (!row) throw new Error(`No run ${runId}.`);
   if (row.status !== 'running') throw new Error(`Run ${runId} is ${row.status}, not running.`);
-  return { id: runId, db, engine: engine ?? row.engine };
+  return { id: runId, db, engine: engine ?? row.engine, sourceMode: row.source_mode };
 }
 
 export function finishRun(
@@ -103,6 +106,35 @@ export function finishRun(
   run.db
     .prepare('UPDATE run SET finished_at = ?, status = ? WHERE id = ?')
     .run(new Date().toISOString(), status, run.id);
+}
+
+/**
+ * The exchange rates this run scores with, settled once for everybody working on it.
+ *
+ * The first process to arrive writes what it fetched and every other process reads that back, so
+ * a fleet of six hosts answering one run cannot price the same threshold two ways. Stored on the
+ * run because verification re-derives every score later and must use the rate that produced it.
+ */
+export function settleRates(run: RunContext, fetched: FxRates | null): FxRates | null {
+  if (fetched) {
+    run.db
+      .prepare('UPDATE run SET fx_rates = ? WHERE id = ? AND fx_rates IS NULL')
+      .run(JSON.stringify(fetched), run.id);
+  }
+  return ratesOfRun(run.db, run.id);
+}
+
+/** The rates a run recorded, or null if it recorded none. */
+export function ratesOfRun(db: Db, runId: string): FxRates | null {
+  const row = db.prepare('SELECT fx_rates FROM run WHERE id = ?').get(runId) as
+    | { fx_rates: string | null }
+    | undefined;
+  if (!row?.fx_rates) return null;
+  try {
+    return JSON.parse(row.fx_rates) as FxRates;
+  } catch {
+    return null;
+  }
 }
 
 export interface DiscardInput {

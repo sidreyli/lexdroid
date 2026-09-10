@@ -125,9 +125,9 @@ describe('provenance', () => {
  * these reports 1, not 0, so the list is pinned: a rubric change that adds one has to be noticed.
  */
 describe('the inverted indicators', () => {
-  const INVERTED = ['4.1', '4.2', '4.5', '4.6', '5.1', '5.4', '5.7', '7.1', '7.2', '8.1', '8.2', '11.2', '12.9'];
+  const INVERTED = ['4.1', '4.2', '4.5', '4.6', '5.1', '5.4', '5.7', '7.1', '7.2', '8.1', '8.2', '11.2', '12.5', '12.9'];
 
-  it('is the thirteen we know about', () => {
+  it('is the fourteen we know about', () => {
     const found = rubric.indicators
       .filter((i) => {
         const rule = (__rules as Record<string, Rule | undefined>)[i.id];

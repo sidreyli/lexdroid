@@ -28,6 +28,7 @@ import { amendsAnotherAct } from '../parse/identity.js';
 import { citationUrl } from '../export/index.js';
 import { decide, type Evidence, type FrameworkEvidence, type SurfacedInstrument } from '../decide/index.js';
 import { loadRubric } from '../rubric/index.js';
+import { ratesOfRun } from '../run/index.js';
 
 export interface GateOutcome {
   gate: string;
@@ -406,6 +407,8 @@ export function recomputeScores(db: Db, runId: string): RecomputeResult {
 
   const rubric = loadRubric();
   const byId = new Map(rubric.indicators.map((i) => [i.id, i]));
+  // The rate that produced the score, not today's, or re-deriving would re-price rather than check.
+  const rates = ratesOfRun(db, runId);
 
   let agreed = 0;
   const disagreed: { indicatorId: string; stored: number | null; recomputed: number | null; why: string }[] = [];
@@ -477,6 +480,7 @@ export function recomputeScores(db: Db, runId: string): RecomputeResult {
         sectionsIndexed: cell.sections_indexed ?? 0,
         instrumentsConsidered: cell.surfaced ?? 0,
       },
+      rates,
     });
 
     if (again.score === cell.score && (again.band?.ordinal ?? null) === cell.band_ordinal) {

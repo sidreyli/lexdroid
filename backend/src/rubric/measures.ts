@@ -763,6 +763,153 @@ export const MEASURES: Record<string, Measure[]> = {
       actor: 'the provider of the online service',
     },
   ],
+  /* The foreign-equity family. 3.1, 5.2 and 12.01 ask the same question of three different
+     sectors, and every band names a level of ownership, so the level is the measure. */
+  '3.1': [
+    {
+      token: 'foreign-equity-ban',
+      defines: 'the words stating that a foreign person may hold no shares at all',
+      permits: true,
+      gloss:
+        'a rule that no share of a company in a sector relevant to digital trade -- computing, data services, media, logistics, finance -- may be held by a foreign person; not telecommunications and not e-commerce, which are asked about elsewhere',
+      alsoAsked: ['shares which may not be held by a foreign company or by a non-citizen'],
+      actor: 'the foreign person or company that would hold the shares',
+    },
+    {
+      token: 'foreign-equity-minority',
+      defines: 'the words stating the proportion of the shares a foreign person may hold',
+      permits: true,
+      gloss:
+        'a limit letting a foreign person hold only a minority of a company in a sector relevant to digital trade -- half the shares or fewer, however the provision phrases it, including a floor on the proportion that must be held locally',
+      actor: 'the foreign person or company that would hold the shares',
+    },
+    {
+      token: 'foreign-equity-controlling',
+      defines: 'the words stating the proportion of the shares a foreign person may hold',
+      permits: true,
+      gloss:
+        'a limit letting a foreign person hold more than half but not all of a company in a sector relevant to digital trade',
+      actor: 'the foreign person or company that would hold the shares',
+    },
+    {
+      token: 'foreign-equity-state-owned-only',
+      defines: 'the words confining the limit to a company in which the State holds shares',
+      permits: true,
+      gloss:
+        'a limit on foreign shareholding that bites only in a state-owned or government-linked company, leaving privately held companies free',
+      actor: 'the foreign person or company that would hold the shares',
+    },
+  ],
+  '5.2': [
+    {
+      token: 'telecom-equity-ban',
+      defines: 'the words stating that a foreign person may hold no shares at all',
+      permits: true,
+      gloss:
+        'a rule that no share of a telecommunications licensee, carrier or network operator may be held by a foreign person',
+      alsoAsked: ['shares in a licensed telecommunications company which a non-citizen may not hold'],
+      actor: 'the foreign person or company that would hold the shares',
+    },
+    {
+      token: 'telecom-equity-minority',
+      defines: 'the words stating the proportion of the shares a foreign person may hold',
+      permits: true,
+      gloss:
+        'a limit letting a foreign person hold only a minority of a telecommunications licensee or carrier -- half the shares or fewer, including a floor on the proportion that must be held locally',
+      actor: 'the foreign person or company that would hold the shares',
+    },
+    {
+      token: 'telecom-equity-controlling',
+      defines: 'the words stating the proportion of the shares a foreign person may hold',
+      permits: true,
+      gloss:
+        'a limit letting a foreign person hold more than half but not all of a telecommunications licensee or carrier',
+      actor: 'the foreign person or company that would hold the shares',
+    },
+    {
+      token: 'telecom-equity-state-owned-only',
+      defines: 'the words confining the limit to a company in which the State holds shares',
+      permits: true,
+      gloss:
+        'a limit on foreign shareholding in telecommunications that bites only in a state-owned or government-linked operator',
+      actor: 'the foreign person or company that would hold the shares',
+    },
+  ],
+  '12.01': [
+    {
+      token: 'ecommerce-equity-ban',
+      defines: 'the words stating that a foreign person may hold no shares at all',
+      permits: true,
+      gloss:
+        'a rule that no share of a company selling goods or services online, or operating an online marketplace, may be held by a foreign person',
+      actor: 'the foreign person or company that would hold the shares',
+    },
+    {
+      token: 'ecommerce-equity-minority',
+      defines: 'the words stating the proportion of the shares a foreign person may hold',
+      permits: true,
+      gloss:
+        'a limit letting a foreign person hold only a minority of a company selling online or operating an online marketplace -- half the shares or fewer, including a floor on the proportion that must be held locally',
+      actor: 'the foreign person or company that would hold the shares',
+    },
+    {
+      token: 'ecommerce-equity-controlling',
+      defines: 'the words stating the proportion of the shares a foreign person may hold',
+      permits: true,
+      gloss:
+        'a limit letting a foreign person hold more than half but not all of a company selling online or operating an online marketplace',
+      actor: 'the foreign person or company that would hold the shares',
+    },
+  ],
+  '12.5': [
+    {
+      token: 'de-minimis-threshold',
+      defines: 'the words stating the value below which the duty or tax is not charged',
+      permits: true,
+      gloss:
+        'a value of imported goods below which no customs duty, import duty or import tax is charged, however the provision names it -- a de minimis, a relief, an exemption by value, a threshold for informal clearance',
+      alsoAsked: ['goods of a value not exceeding a stated amount are exempt from import duty or sales tax'],
+      actor: 'the importer of the goods',
+    },
+  ],
+  '3.4': [
+    {
+      token: 'investment-screening',
+      defines: 'the words naming the approval, notification or clearance the investment must go through',
+      permits: true,
+      gloss:
+        'a mechanism under which a foreign investment or an acquisition of a business must be notified to, approved by or cleared with an authority before it may proceed; not ordinary competition-law merger review, which this indicator excludes',
+      alsoAsked: ['approval of the Minister required before a foreign person acquires an interest in a business'],
+      actor: 'the authority that screens the investment, and the investor who must seek its clearance',
+    },
+    {
+      token: 'discriminatory-merger-review',
+      defines: 'the words by which the review applies to a foreign party and not to a local one',
+      permits: true,
+      gloss:
+        'a merger or acquisition review that treats a foreign acquirer differently from a local one; ordinary anti-trust review applying alike to both is not this measure',
+      actor: 'the authority that reviews the acquisition',
+    },
+  ],
+  '9.1': [
+    {
+      token: 'content-blocking',
+      defines: 'the words naming the site, service or content that may be made inaccessible',
+      permits: true,
+      gloss:
+        'a power or duty to block access to a commercial website, online service or online content -- an ordinary trading site, a marketplace, an advertisement, a streaming or gambling service. Not political content, not criminal content such as child abuse material, not age-restricted content and not defamation, none of which this indicator scores',
+      alsoAsked: ['a direction to an internet service provider to disable access to a website'],
+      actor: 'the authority issuing the direction, and the service provider that must carry it out',
+    },
+    {
+      token: 'content-filtering',
+      defines: 'the words naming the content that must be screened, restricted or filtered',
+      permits: true,
+      gloss:
+        'a power or duty to filter, screen or restrict access to a class of commercial online content without blocking a site outright. Not political, criminal, age-restricted or defamatory content, which this indicator does not score',
+      actor: 'the authority requiring the filtering, and the service provider that must apply it',
+    },
+  ],
 };
 
 /**

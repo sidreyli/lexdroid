@@ -57,10 +57,23 @@ resemblance alone. Pillars 6 and 7 are well defended precisely because they are 
    answer is checked against the provision like every other quote; and a measure whose words are
    absent is held rather than scored. The engine cache keys on the prompt, so it invalidated
    itself. What remains is the confirming run of the 27 known cells.
-3. **Close the seven indicators with no scoring rule.** Three of them are one family — 3.1, 5.2 and
-   12.01 are the same foreign-equity ladder, differing only in where the ladder starts — and 12.5 is
-   a customs threshold compared against 200 USD. The remaining three are the practice-shaped ones:
-   3.4 is three-quarters readable from law, 9.1 partly, 5.3 not at all.
+3. ~~Close the seven indicators with no scoring rule.~~ Done, and the last band in the rubric is
+   now reachable. 3.1, 5.2 and 12.01 climb one foreign-equity ladder from three different rungs,
+   and the rung is the measure the reader names -- not a percentage parsed out of prose, because
+   "not less than 70% held by citizens" and "not more than 30% held by a foreigner" are the same
+   rule stated from opposite ends. 12.5 compares a customs threshold with 200 USD on a rate fetched
+   from the European Central Bank at the start of the run, recorded on the run and replayed by
+   verification, so a score re-derived next month reproduces rather than re-prices. 3.4 and 9.1 are
+   scored as far as law shows them, with 3.4's top band -- a case where screening actually blocked
+   an investment -- declared out of reach beside 5.1's. 5.3 is declared not answerable from law at
+   all: it scores the shares a government holds in telecom companies, which is a fact about a share
+   register. `npm run -w backend audit-bands` reports 0 problems.
+
+   One defect fell out of writing it. A band that scores the absence of something was reporting
+   that absence even when a provision of exactly that kind had been read and held -- a customs
+   threshold stated in money the run had no rate for was becoming "no de minimis". The absence
+   guard now needs both a governing instrument and nothing held under the indicator's own
+   measures.
 4. **Pilot one pillar end to end.** Pillar 10 or 11: four indicators, every vocabulary present, a
    full baseline, twelve cells, about a dollar.
 5. **Widen in waves**, ordered by how much is already defended: 1, 2, 10, 11, 4 first, then 8, then

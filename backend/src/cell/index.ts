@@ -30,6 +30,7 @@ import {
   type SectionInput,
   type SectionReading,
 } from '../read/index.js';
+import type { FxRates } from '../decide/currency.js';
 import {
   decide,
   type Coverage,
@@ -92,6 +93,8 @@ export interface AnswerOptions {
   log?: (line: string) => void;
   /** Where this pillar says what it is doing, while it does it. */
   emit?: Emit;
+  /** The rates the run settled on. Only indicator 12.5 consults them. */
+  rates?: FxRates | null;
 }
 
 interface SectionRow {
@@ -358,7 +361,7 @@ export async function answerPillar(
       sectionsIndexed: indexedSections,
       instrumentsConsidered: isFramework ? frameworkEvidence.length : new Set(rows.map((r) => r.instrument_id)).size,
     };
-    return decide({ indicator, economy, evidence, frameworkEvidence, surfaced, coverage });
+    return decide({ indicator, economy, evidence, frameworkEvidence, surfaced, coverage, rates: opts.rates ?? null });
   });
 
   for (const d of decisions) {

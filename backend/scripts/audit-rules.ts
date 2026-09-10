@@ -7,7 +7,7 @@
  * set, so a retrieval miss and a real finding of absence are the same output. This prints which.
  */
 import { loadRubric } from '../src/rubric/index.js';
-import { __rules } from '../src/decide/index.js';
+import { __rules, NOT_IN_LAW } from '../src/decide/index.js';
 import { MEASURES } from '../src/rubric/measures.js';
 
 const rubric = loadRubric();
@@ -19,7 +19,9 @@ for (const ind of rubric.indicators) {
     | undefined;
 
   let empty = '-';
-  if (ind.shape === 'framework') {
+  if (NOT_IN_LAW[ind.id]) {
+    empty = 'declared';
+  } else if (ind.shape === 'framework') {
     empty = String(ind.bands[0]?.score ?? '?');
   } else if (rule) {
     const ordinal = rule(ind, []).ordinal;
@@ -32,7 +34,7 @@ for (const ind of rubric.indicators) {
     ind.id,
     String(ind.pillarId),
     ind.shape,
-    rule ? 'rule' : ind.shape === 'framework' ? 'framework' : 'NO RULE',
+    NOT_IN_LAW[ind.id] ? 'declared' : rule ? 'rule' : ind.shape === 'framework' ? 'framework' : 'NO RULE',
     (MEASURES as Record<string, unknown>)[ind.id] ? 'vocab' : 'NO VOCAB',
     empty,
     ind.bands[0]?.criterion.slice(0, 58) ?? '',
@@ -46,6 +48,6 @@ console.log(line(head));
 console.log(width.map((w) => '-'.repeat(w)).join('  '));
 for (const r of rows) console.log(line(r));
 
-const risky = rows.filter((r) => r[5] !== '0' && r[5] !== 'unresolved');
+const risky = rows.filter((r) => r[5] !== '0' && r[5] !== 'unresolved' && r[5] !== 'declared');
 console.log(`\n${risky.length} indicator(s) score above zero on an empty evidence set:`);
 for (const r of risky) console.log(`  ${r[0]} -> ${r[5]}   "${r[6]}"`);

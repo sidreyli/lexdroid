@@ -1501,13 +1501,22 @@ describe('the vocabulary and the rules agree', () => {
   const stub = (id: string): Indicator =>
     indicator12(id, [{ score: 1, criterion: 'top' }, { score: 0.5, criterion: 'middle' }, { score: 0, criterion: 'none' }]);
 
+  // 12.5 is the one band that compares a figure, so the sweep hands every measure a stated
+  // amount and a rate; the rest of them never look at either.
+  const ctx = {
+    economy: 'SGP',
+    rates: { base: 'USD' as const, asOf: '2026-01-01', source: 'test', fetchedAt: '2026-01-01', usdPer: { SGD: 0.75 } },
+  };
+
   for (const [indicatorId, measures] of Object.entries(MEASURES)) {
     const rule = __rules[indicatorId];
     if (!rule) continue;
     for (const m of measures) {
       it(`${indicatorId} counts ${m.token}`, () => {
-        const e = p12(indicatorId, m.token, { countriesNamed: [], sectorScope: 'all', dataScope: 'personal' });
-        const out = rule(stub(indicatorId), [e]);
+        const e = p12(indicatorId, m.token, {
+          countriesNamed: [], sectorScope: 'all', dataScope: 'personal', definingWords: 'S$400',
+        });
+        const out = rule(stub(indicatorId), [e], ctx);
         if (notScoringAlone.has(`${indicatorId}:${m.token}`)) {
           expect(out.counted ?? []).not.toContain(e);
         } else {

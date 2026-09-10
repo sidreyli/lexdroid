@@ -66,6 +66,7 @@ const ADDED_COLUMNS: readonly { table: string; column: string; type: string }[] 
   { table: 'framework_reading', column: 'dedicated_shown', type: 'INTEGER' },
   { table: 'framework_reading', column: 'sector_words', type: 'TEXT' },
   { table: 'framework_reading', column: 'sectoral_shown', type: 'INTEGER' },
+  { table: 'run', column: 'fx_rates', type: 'TEXT' },
 ];
 
 function addMissingColumns(db: Db): void {

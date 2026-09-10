@@ -19,6 +19,7 @@
 import type { Indicator, ScoreBand } from '../rubric/types.js';
 import type { Finding } from '../read/index.js';
 import { MEASURES } from '../rubric/measures.js';
+import { inUsd, moneyIn, type FxRates } from './currency.js';
 
 /** One finding, with enough of its origin to cite it. */
 export interface Evidence {
@@ -261,7 +262,14 @@ function scopeScaled(
  *  with it, so the sentence a reviewer reads first is the one the score turns on. */
 type Outcome = { ordinal: number; reason: string; counted?: Evidence[] };
 
-type Rule = (indicator: Indicator, qualifying: Evidence[]) => Outcome;
+/** What a rule may need beyond the evidence. One rule needs it; the rest ignore it. */
+export interface RuleContext {
+  economy: string;
+  /** The exchange rates this run fetched, or null when none could be had. */
+  rates: FxRates | null;
+}
+
+type Rule = (indicator: Indicator, qualifying: Evidence[], ctx?: RuleContext) => Outcome;
 
 /**
  * The rule for a band that asks only whether a restriction exists.
@@ -341,6 +349,78 @@ function bothOrOne(what: string): Rule {
     if (procedures.length > 0) return { ordinal: 2, reason: `${what} procedures, but no provisional measures`, counted: procedures };
     if (provisional.length > 0) return { ordinal: 2, reason: `provisional measures, but no ${what} procedures`, counted: provisional };
     return { ordinal: 1, reason: `nothing read establishes ${what} procedures or provisional measures` };
+  };
+}
+
+/** How many different sectors the evidence names. A finding naming none counts as one. */
+function distinctSectors(evidence: Evidence[]): number {
+  return new Set(evidence.map((e) => (e.finding.sector ?? '').toLowerCase().trim())).size;
+}
+
+interface EquityTokens {
+  ban: string;
+  minority: string;
+  controlling: string;
+  stateOwnedOnly?: string;
+}
+
+/**
+ * The foreign-equity ladder, which 3.1, 5.2 and 12.01 all climb from different rungs.
+ *
+ * Their bands descend the same way -- no shares at all, a minority, a controlling but not a full
+ * stake, no limit -- so the rung is the measure, named by the reader and anchored to the words of
+ * the provision that state the proportion. Nothing here parses a number out of prose, because a
+ * proportion is stated from either end: "not less than 70% held by citizens" and "not more than
+ * 30% held by a foreign person" are the same rule, and a rule that read the figure alone would
+ * put them on opposite rungs.
+ *
+ * Where the ladders differ is the top. 3.1 and 5.2 have a ban band above the minority one and
+ * promote two minority limits into it; 12.01 starts at the minority, so a ban lands there too.
+ */
+function equityLadder(
+  t: EquityTokens,
+  opts: { hasBanBand: boolean; countBy: 'sector' | 'measure' },
+): Rule {
+  return (indicator, qualifying) => {
+    const of = (token?: string): Evidence[] =>
+      token ? qualifying.filter((e) => e.finding.measure === token) : [];
+    const bans = of(t.ban);
+    const minority = of(t.minority);
+    const controlling = of(t.controlling);
+    const stateOwned = of(t.stateOwnedOnly);
+
+    if (bans.length > 0) {
+      return {
+        ordinal: 1,
+        reason: 'no share of a company in this sector may be held by a foreign person',
+        counted: [...bans, ...minority],
+      };
+    }
+    if (minority.length > 0) {
+      if (!opts.hasBanBand) {
+        return { ordinal: 1, reason: 'a minority stake is the most a foreign person may hold', counted: minority };
+      }
+      const n = opts.countBy === 'sector' ? distinctSectors(minority) : measureCount(minority);
+      if (n > 1) {
+        return {
+          ordinal: 1,
+          reason: `a minority stake is the most a foreign person may hold, in ${n} ${opts.countBy === 'sector' ? 'sectors' : 'separate measures'}`,
+          counted: minority,
+        };
+      }
+      return { ordinal: 2, reason: 'a minority stake is the most a foreign person may hold', counted: minority };
+    }
+    if (controlling.length > 0 || stateOwned.length > 0) {
+      return {
+        ordinal: opts.hasBanBand ? 3 : 2,
+        reason:
+          controlling.length > 0
+            ? 'a controlling but not a full stake may be held by a foreign person'
+            : 'foreign shareholding is limited only where the State holds shares',
+        counted: [...controlling, ...stateOwned],
+      };
+    }
+    return { ordinal: indicator.bands.length, reason: 'no limit on foreign shareholding found' };
   };
 }
 
@@ -791,6 +871,130 @@ const RULES: Record<string, Rule> = {
     if (mra.length > 0) return { ordinal: 2, reason: 'foreign certificates are accepted under a mutual recognition arrangement', counted: mra };
     return { ordinal: 1, reason: 'nothing read accepts self-declaration or a foreign certificate' };
   },
+  /* 3.1, 5.2 and 12.01: one question asked of three sectors, and the sector is the measure, so a
+     telecom cap cannot be counted under 3.1 whatever the reader thought it was reading. */
+  '3.1': equityLadder(
+    {
+      ban: 'foreign-equity-ban',
+      minority: 'foreign-equity-minority',
+      controlling: 'foreign-equity-controlling',
+      stateOwnedOnly: 'foreign-equity-state-owned-only',
+    },
+    // "if only a minority stake in more than one sector" -- 3.1 counts sectors, and says so.
+    { hasBanBand: true, countBy: 'sector' },
+  ),
+
+  '5.2': equityLadder(
+    {
+      ban: 'telecom-equity-ban',
+      minority: 'telecom-equity-minority',
+      controlling: 'telecom-equity-controlling',
+      stateOwnedOnly: 'telecom-equity-state-owned-only',
+    },
+    // "OR if only a minority stake in more than one measures" -- one sector, so it counts measures.
+    { hasBanBand: true, countBy: 'measure' },
+  ),
+
+  '12.01': equityLadder(
+    {
+      ban: 'ecommerce-equity-ban',
+      minority: 'ecommerce-equity-minority',
+      controlling: 'ecommerce-equity-controlling',
+    },
+    { hasBanBand: false, countBy: 'measure' },
+  ),
+
+  /**
+   * 12.5 "No De Minimis" / "below 200 USD" / "at or above 200 USD".
+   *
+   * The only band in the rubric that compares a figure, and no statute states its threshold in
+   * dollars, so the conversion is pinned and dated in ./currency.ts and printed into the row. The
+   * lowest threshold leads where an economy states several: a relief from duty and a relief from
+   * sales tax are two thresholds, and the lower one is the one goods actually clear under.
+   */
+  '12.5': (indicator, qualifying, ctx) => {
+    const thresholds = qualifying.flatMap((e) => {
+      const money = moneyIn(e.finding.definingWords, ctx?.economy ?? '');
+      const usd = money ? inUsd(money, ctx?.rates ?? null) : null;
+      return money && usd !== null ? [{ evidence: e, money, usd }] : [];
+    });
+    if (thresholds.length === 0) return { ordinal: 1, reason: 'no de minimis threshold found' };
+
+    const lowest = thresholds.reduce((a, b) => (b.usd < a.usd ? b : a));
+    const assumed = lowest.money.assumedCurrency ? ', the provision using a bare symbol' : '';
+    const on = ctx?.rates ? ` on the ${ctx.rates.asOf} reference rate` : '';
+    const reason =
+      `a de minimis of ${lowest.money.currency} ${lowest.money.amount}${assumed}, about ` +
+      `${Math.round(lowest.usd)} USD${on}`;
+    return { ordinal: lowest.usd < 200 ? 2 : 3, reason, counted: [lowest.evidence] };
+  },
+
+  /**
+   * 3.4 "A case that the screening mechanism has been used to block an investment" / "Two or more
+   * screening mechanisms" / "A screening mechanism" / "No screening mechanism".
+   *
+   * The top band is a decided case rather than a rule, and no provision records one; it is
+   * declared in UNREACHABLE_BANDS rather than approximated. The three bands below it are all
+   * statutory, which is what this counts.
+   */
+  '3.4': (indicator, qualifying) => {
+    const mechanisms = qualifying.filter(
+      (e) => e.finding.measure === 'investment-screening' || e.finding.measure === 'discriminatory-merger-review',
+    );
+    const n = measureCount(mechanisms);
+    if (n > 1) return { ordinal: 2, reason: `${n} separate investment screening mechanisms`, counted: mechanisms };
+    if (n === 1) return { ordinal: 3, reason: 'one investment screening mechanism', counted: mechanisms };
+    return { ordinal: 4, reason: 'no investment screening mechanism found' };
+  },
+
+  /**
+   * 9.1 "Any blocking measure" / "Any filtering measure" / "No cases of blocking nor filtering".
+   *
+   * Blocking makes a site unreachable and filtering only narrows what passes, so blocking leads.
+   * What the indicator excludes -- political, criminal, age-restricted and defamatory content --
+   * is carried by the measure vocabulary, where the reader can act on it, rather than by a filter
+   * here that would throw away findings after the fact.
+   */
+  '9.1': (indicator, qualifying) => {
+    const blocking = qualifying.filter((e) => e.finding.measure === 'content-blocking');
+    const filtering = qualifying.filter((e) => e.finding.measure === 'content-filtering');
+    if (blocking.length > 0) {
+      return { ordinal: 1, reason: 'a power or duty to block commercial online content', counted: [...blocking, ...filtering] };
+    }
+    if (filtering.length > 0) {
+      return { ordinal: 2, reason: 'a power or duty to filter commercial online content', counted: filtering };
+    }
+    return { ordinal: 3, reason: 'no blocking or filtering of commercial online content found' };
+  },
+};
+
+/**
+ * Indicators whose bands turn on facts no provision states, declared rather than approximated.
+ *
+ * A cell here is unresolved and carries the reason, which is a different thing from an indicator
+ * nobody got round to: the reason is the answer, and it is the answer every run will give.
+ */
+export const NOT_IN_LAW: Readonly<Record<string, string>> = {
+  '5.3':
+    "This indicator scores the shares a government holds in telecommunications companies. That is a " +
+    "fact about a share register and an annual report, not about any provision: an Act that " +
+    "establishes or privatises an operator does not state what proportion the State holds today, and " +
+    "an Act that says nothing is not evidence that it holds none. ESCAP's own rows for it cite " +
+    "ownership disclosures rather than legislation, so a reader of law cannot answer it and this " +
+    "says so instead of guessing.",
+};
+
+/**
+ * Bands ESCAP draws that no reading of law can reach, declared so a sweep of the ladders reports
+ * a stated ceiling rather than a defect.
+ */
+export const UNREACHABLE_BANDS: Readonly<Record<string, Readonly<Record<number, string>>>> = {
+  '5.1': {
+    2: 'passive sharing is not mandated but is practised in the market -- a fact about the market, which no provision states',
+  },
+  '3.4': {
+    1: 'the screening mechanism has been used to block an investment -- a decided case, which no provision records',
+  },
 };
 
 /**
@@ -804,13 +1008,19 @@ function applyException(indicator: Indicator, evidence: Evidence[]): {
   kept: Evidence[];
   excluded: { evidence: Evidence; reason: string }[];
 } {
-  if (!indicator.exception || !/government data/i.test(indicator.exception)) {
+  const governmentData = /government data/i.test(indicator.exception ?? '');
+  // 3.1 carves out the two sectors 5.2 and 12.01 ask about, so a cap on either is not its cap.
+  const sectorsAskedElsewhere = indicator.id === '3.1';
+  if (!indicator.exception || (!governmentData && !sectorsAskedElsewhere)) {
     return { kept: evidence, excluded: [] };
   }
   const kept: Evidence[] = [];
   const excluded: { evidence: Evidence; reason: string }[] = [];
   for (const e of evidence) {
-    if (e.finding.appliesOnlyToGovernmentData) excluded.push({ evidence: e, reason: indicator.exception });
+    const out =
+      (governmentData && e.finding.appliesOnlyToGovernmentData) ||
+      (sectorsAskedElsewhere && /telecom|e-?commerce|online market/i.test(e.finding.sector ?? ''));
+    if (out) excluded.push({ evidence: e, reason: indicator.exception });
     else kept.push(e);
   }
   return { kept, excluded };
@@ -823,7 +1033,7 @@ function applyException(indicator: Indicator, evidence: Evidence[]): {
  * without a court order; where the provision does not say, neither answer is supported by the
  * document, and guessing is what a reviewer would catch.
  */
-function hold(indicatorId: string, evidence: Evidence[]): {
+function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
   kept: Evidence[];
   held: { evidence: Evidence; reason: string }[];
 } {
@@ -1017,6 +1227,20 @@ function hold(indicatorId: string, evidence: Evidence[]): {
         continue;
       }
     }
+    // A de minimis is a figure in a currency, and one that states none -- or states one in money
+    // the pinned rate table does not carry -- cannot be compared with the 200 USD line.
+    if (indicatorId === '12.5') {
+      const money = moneyIn(e.finding.definingWords, ctx.economy);
+      if (!money || inUsd(money, ctx.rates) === null) {
+        held.push({
+          evidence: e,
+          reason: money
+            ? `no exchange rate for ${money.currency} was available to this run, so the threshold cannot be put in US dollars`
+            : 'the provision states no figure, so there is no threshold to compare with 200 USD',
+        });
+        continue;
+      }
+    }
     kept.push(e);
   }
   return { kept, held };
@@ -1143,6 +1367,8 @@ export interface DecideInput {
   /** What the search returned for this indicator. Only ever used to evidence a zero. */
   surfaced?: SurfacedInstrument[];
   coverage: Coverage;
+  /** The rates this run fetched. Recorded on the run, so re-deriving a score reproduces it. */
+  rates?: FxRates | null;
 }
 
 /**
@@ -1228,7 +1454,8 @@ export function decide(input: DecideInput): Decision {
     return finding.indicatorId === indicator.id ? [{ ...e, finding }] : [];
   });
   const { kept: afterException, excluded } = applyException(indicator, mine);
-  const { kept: qualifying, held } = hold(indicator.id, afterException);
+  const ctx: RuleContext = { economy, rates: input.rates ?? null };
+  const { kept: qualifying, held } = hold(indicator.id, afterException, ctx);
 
   // Nothing was read, so nothing can be concluded. This is the difference between a finding of
   // absence and a failure to look, and ESCAP's reviewers can tell them apart.
@@ -1247,6 +1474,25 @@ export function decide(input: DecideInput): Decision {
       coverage,
       decidingFact: 'no provision was read',
       rationale: `No provision was read for this indicator, so neither a requirement nor its absence is evidenced. The economy's index holds ${coverage.sectionsIndexed} provision(s).`,
+    };
+  }
+
+  const declared = NOT_IN_LAW[indicator.id];
+  if (declared) {
+    return {
+      indicatorId: indicator.id,
+      economy,
+      state: 'unresolved',
+      score: null,
+      band: null,
+      basis: [],
+      excluded,
+      held,
+      frameworkBasis: [],
+      absence: null,
+      coverage,
+      decidingFact: 'this indicator is not answerable from legislation',
+      rationale: declared,
     };
   }
 
@@ -1269,13 +1515,25 @@ export function decide(input: DecideInput): Decision {
     };
   }
 
-  const chosen = rule(indicator, qualifying);
+  const chosen = rule(indicator, qualifying, ctx);
   const chosenBand = band(indicator, chosen.ordinal);
   const witness = absenceFor(input);
 
-  // Thirteen indicators score their maximum for the absence of something, so a retrieval miss and
-  // a real finding of absence produce the same 1. The claim needs an instrument that governs.
-  if (scoresOnAbsence(indicator, rule, chosen.ordinal) && witness?.basis !== 'governing') {
+  // Fourteen indicators score their maximum for the absence of something, so a retrieval miss and
+  // a real finding of absence produce the same 1. Two things have to hold before that claim stands.
+  //
+  // The first is an instrument that governs the subject: without one, an economy without the
+  // measure and an economy nobody looked at produce the same silence.
+  //
+  // The second is that nothing was held under one of this indicator's own measures. A provision we
+  // saw and could not evaluate is not a provision that is absent -- a customs threshold stated in
+  // money this run had no rate for is still a threshold, and reporting "no de minimis" off it
+  // would be the strongest claim in the rubric made on the weakest evidence.
+  const unevaluated = held.filter((h) =>
+    (MEASURES[indicator.id] ?? []).some((m) => m.token === h.evidence.finding.measure),
+  );
+  if (scoresOnAbsence(indicator, rule, chosen.ordinal) && (witness?.basis !== 'governing' || unevaluated.length > 0)) {
+    const ungoverned = witness?.basis !== 'governing';
     return {
       indicatorId: indicator.id,
       economy,
@@ -1288,12 +1546,17 @@ export function decide(input: DecideInput): Decision {
       frameworkBasis: [],
       absence: null,
       coverage,
-      decidingFact: 'nothing read governs the subject whose absence this band asserts',
-      rationale:
-        `This indicator scores ${band(indicator, chosen.ordinal).score} for the absence of something, and ` +
-        `nothing among the ${coverage.sectionsRead} provision(s) read establishes an instrument that governs ` +
-        `the subject. An economy without the measure and an economy nobody looked at produce the same silence, ` +
-        `and only one of them is a finding.`,
+      decidingFact: ungoverned
+        ? 'nothing read governs the subject whose absence this band asserts'
+        : 'a provision of this kind was read and could not be evaluated, so its absence is not established',
+      rationale: ungoverned
+        ? `This indicator scores ${band(indicator, chosen.ordinal).score} for the absence of something, and ` +
+          `nothing among the ${coverage.sectionsRead} provision(s) read establishes an instrument that governs ` +
+          `the subject. An economy without the measure and an economy nobody looked at produce the same silence, ` +
+          `and only one of them is a finding.`
+        : `This indicator scores ${band(indicator, chosen.ordinal).score} for the absence of something, and ` +
+          `${unevaluated.length} provision(s) of exactly that kind were read and held: ` +
+          `${unevaluated[0]?.reason}. Something we could not evaluate is not something that is not there.`,
     };
   }
 
