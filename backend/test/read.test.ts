@@ -235,13 +235,13 @@ describe('filing a finding by its measure', () => {
     expect(f?.refiledFrom).toBeUndefined();
   });
 
-  it('keeps the indicator the reader chose when the measure belongs to more than one', () => {
-    // 4.2 and 4.6 share both of their measures, and there the reader's own choice is the only
-    // thing that can separate them.
-    expect(INDICATOR_OF_MEASURE.has('enforcement-procedure')).toBe(false);
-    const f = __coerce({ ...raw, indicatorId: '4.2', measure: 'enforcement-procedure' });
+  it('refiles a patent remedy the reader filed under online copyright', () => {
+    // 4.2 and 4.6 ask for the same two remedies, so the reader confuses them. Each right now has
+    // its own measures, which puts the finding back where the measure lives.
+    expect(INDICATOR_OF_MEASURE.get('patent-enforcement-procedure')).toBe('4.2');
+    const f = __coerce({ ...raw, indicatorId: '4.6', measure: 'patent-enforcement-procedure' });
     expect(f?.indicatorId).toBe('4.2');
-    expect(f?.measure).toBe('enforcement-procedure');
+    expect(f?.refiledFrom).toEqual({ indicatorId: '4.6', measure: 'patent-enforcement-procedure' });
   });
 
   it('nulls a measure that does not exist where the finding ends up', () => {
