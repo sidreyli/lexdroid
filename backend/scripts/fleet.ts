@@ -16,7 +16,13 @@ import { join } from 'node:path';
 import { openDb } from '../src/db/index.js';
 import { openRun, finishRun, runEvents, recordRent } from '../src/run/index.js';
 import { describe } from '../src/run/events.js';
-import { duplicateEngine, replayingWhilePaying, workUnits, type Unit } from '../src/run/fleet.js';
+import {
+  duplicateEngine,
+  pinByEconomy,
+  replayingWhilePaying,
+  workUnits,
+  type Unit,
+} from '../src/run/fleet.js';
 import { READING_MODEL } from '../src/engines/ollama.js';
 import { probeEngine, describeReport, usable, mismatchedEngine, fingerprintOf } from '../src/engines/probe.js';
 import { cacheEnabled } from '../src/engines/cache.js';
@@ -31,6 +37,7 @@ interface Args {
   probe: boolean;
   usdPerHour: number;
   requireSerial: boolean;
+  perEconomy: boolean;
 }
 
 function parseArgs(argv: string[]): Args {
@@ -57,6 +64,7 @@ function parseArgs(argv: string[]): Args {
     probe: !argv.includes('--no-probe'),
     usdPerHour: Number(get('usd-per-hour') ?? 0),
     requireSerial: argv.includes('--require-serial'),
+    perEconomy: argv.includes('--per-economy'),
   };
 }
 
@@ -155,7 +163,13 @@ async function main(): Promise<void> {
   mkdirSync(logDir, { recursive: true });
 
   console.log(`run ${run.id}`);
+  const pinned = args.perEconomy ? pinByEconomy(units, args.hosts) : null;
   console.log(`${units.length} unit(s) across ${args.hosts.length} engine(s): ${args.hosts.join(', ')}`);
+  if (pinned) {
+    for (const [host, own] of pinned) {
+      console.log(`  ${host} reads ${own.map((u) => `${u.economy}/p${u.pillar}`).join(' ') || 'nothing'}`);
+    }
+  }
   console.log(`logs in ${logDir}`);
   console.log('');
 
@@ -180,10 +194,11 @@ async function main(): Promise<void> {
   const done: { unit: Unit; host: string; code: number }[] = [];
   await Promise.all(
     args.hosts.map(async (host) => {
+      // Pinned, a host reads its own economies and stops; unpinned, it takes whatever is next.
+      const own = pinned?.get(host);
       for (;;) {
-        const i = next++;
-        if (i >= units.length) return;
-        const unit = units[i]!;
+        const unit = own ? own.shift() : units[next++];
+        if (!unit) return;
         const code = await runUnit(unit, host, run.id, logDir, args);
         done.push({ unit, host, code });
       }

@@ -13,10 +13,11 @@
  */
 import { openDb } from '../src/db/index.js';
 import { loadRubric, indicatorsOfPillar } from '../src/rubric/index.js';
+import type { Indicator } from '../src/rubric/types.js';
 import { answerPillar } from '../src/cell/index.js';
 import { haveModel, OllamaUnavailable, READING_MODEL } from '../src/engines/ollama.js';
 import { cacheEnabled, cacheSize } from '../src/engines/cache.js';
-import { openBaseline, BASELINE_DB_PATH, sameInstrument } from '../src/baseline/index.js';
+import { openBaseline, BASELINE_DB_PATH, sameInstrument, escapScore } from '../src/baseline/index.js';
 import { openRun, joinRun, recordPillarAnswer, recordStage, recordEvent, finishRun, codeRevision } from '../src/run/index.js';
 import type { RunEvent } from '../src/run/events.js';
 import { existsSync } from 'node:fs';
@@ -100,25 +101,27 @@ function printDecision(d: Decision, verbose: boolean): void {
 }
 
 /** ESCAP's own answers for the same cells. Read only after ours are computed. */
-function baselineScores(economy: string, indicatorIds: string[]): Map<string, { score: number; instruments: string[] }> {
-  const out = new Map<string, { score: number; instruments: string[] }>();
+type TheirAnswer = { score: number; instruments: string[]; how: string; rows: number; uncertain: boolean };
+
+function baselineScores(economy: string, indicators: Indicator[]): Map<string, TheirAnswer> {
+  const out = new Map<string, TheirAnswer>();
   if (!existsSync(BASELINE_DB_PATH)) return out;
 
   const db = openBaseline();
   const like = economy === 'SGP' ? '%ingapore%' : economy === 'MYS' ? '%alaysia%' : '%ustralia%';
-  for (const id of indicatorIds) {
+  for (const indicator of indicators) {
     const rows = db
       .prepare('SELECT raw_score, act_or_practice FROM baseline_row WHERE economy LIKE ? AND indicator_id = ?')
-      .all(like, id) as { raw_score: number | null; act_or_practice: string | null }[];
+      .all(like, indicator.id) as { raw_score: number | null; act_or_practice: string | null }[];
     if (rows.length === 0) continue;
 
-    // An indicator with several rows takes the highest, which is how a scale of measures resolves
-    // to one cell score: 7.3 has a 0 row and four 1 rows, and the economy scores 1.
-    const score = Math.max(...rows.map((r) => r.raw_score ?? 0));
+    // One row per measure, so the rows resolve to one answer by the indicator's own ladder rather
+    // than by taking the highest. escapScore says which way, in the words this prints.
+    const answer = escapScore(indicator, rows.map((r) => r.raw_score));
     const instruments = rows
       .map((r) => (r.act_or_practice ?? '').split(/[;\n]/)[0]?.trim() ?? '')
       .filter((t) => t.length > 0);
-    out.set(id, { score, instruments });
+    out.set(indicator.id, { ...answer, instruments });
   }
   db.close();
   return out;
@@ -263,7 +266,10 @@ async function main(): Promise<void> {
 
   if (!args.compare) return;
 
-  const theirs = baselineScores(args.economy, all.map((d) => d.indicatorId));
+  const theirs = baselineScores(
+    args.economy,
+    all.flatMap((d) => rubric.indicators.filter((i) => i.id === d.indicatorId)),
+  );
   if (theirs.size === 0) {
     console.log('\nNo baseline rows for this economy; nothing to compare against.');
     return;
@@ -290,7 +296,8 @@ async function main(): Promise<void> {
       verdict = 'within one band';
       within += 1;
     } else verdict = 'DIFFERENT';
-    console.log(`  ${d.indicatorId.padEnd(6)} ${String(ours ?? '-').padEnd(6)} ${String(t.score).padEnd(8)} ${verdict}`);
+    const note = t.rows > 1 ? `   (${t.rows} rows -- ${t.how}${t.uncertain ? '; LOOK' : ''})` : '';
+    console.log(`  ${d.indicatorId.padEnd(6)} ${String(ours ?? '-').padEnd(6)} ${String(t.score).padEnd(8)} ${verdict}${note}`);
   }
   console.log(`\n  ${agree}/${all.length} exact, ${within}/${all.length} within one band.`);
   console.log('  ESCAP cites, per cell:');

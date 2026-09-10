@@ -210,6 +210,17 @@ function measureCount(evidence: Evidence[]): number {
   return new Set(perSection.values()).size;
 }
 
+/**
+ * Does this band rest on not having found something, rather than on evidence?
+ *
+ * Asked of the rule itself rather than carried as metadata: the band an empty evidence set reaches
+ * is by definition the one absence earns, so the two can never drift apart.
+ */
+function scoresOnAbsence(indicator: Indicator, rule: Rule, ordinal: number): boolean {
+  if (band(indicator, ordinal).score <= 0) return false;
+  return rule(indicator, []).ordinal === ordinal;
+}
+
 function scopeScaled(
   indicator: Indicator,
   qualifying: Evidence[],
@@ -849,6 +860,36 @@ function hold(indicatorId: string, evidence: Evidence[]): {
       });
       continue;
     }
+    // Every measure states the one thing a provision has to say to be it, and a provision that
+    // never says it is evidence of something else. This is the general form of the two holds
+    // below, which ask pillar 6 and 7.4 for more than one field because those pillars were read
+    // wrongly in more than one way. Held, not dropped: the provision is real and may be evidence
+    // for another indicator.
+    if (!e.finding.definingWords && definedBy(indicatorId, e.finding.measure)) {
+      held.push({
+        evidence: e,
+        reason: `the provision does not state ${definedBy(indicatorId, e.finding.measure)}, which is what makes it this measure`,
+      });
+      continue;
+    }
+    // A power to require is not a requirement -- unless the measure the rubric names is itself a
+    // power, where nothing is imposed and this hold would swallow every genuine finding.
+    if (!e.finding.imposingWords && !permits(indicatorId, e.finding.measure)) {
+      held.push({
+        evidence: e,
+        reason: `the provision does not impose the requirement itself; it empowers another instrument to impose one`,
+      });
+      continue;
+    }
+    // And the same words cannot both impose the duty and confer the power to impose it. Australia
+    // answered both questions with the DATA Act stem listing conditions that may be prescribed.
+    if (restates(e.finding.imposingWords, e.finding.prescribingWords)) {
+      held.push({
+        evidence: e,
+        reason: `the words said to impose the requirement are the words empowering another instrument to impose one`,
+      });
+      continue;
+    }
     // A measure defined by where something has to be is not made out by a provision that names no
     // place. Pillar 6's bands all read "out of the economy" or "within the economy", and a licence
     // clause reading "subject to such conditions as the Authority may impose" satisfies none of
@@ -1053,6 +1094,12 @@ function locational(indicatorId: string, measure: string | null): boolean {
   return (MEASURES[indicatorId] ?? []).some((m) => m.token === measure && m.locates === true);
 }
 
+/** What this measure says a provision must state to be it. Every measure declares one. */
+function definedBy(indicatorId: string, measure: string | null): string | null {
+  if (!measure) return null;
+  return (MEASURES[indicatorId] ?? []).find((m) => m.token === measure)?.defines ?? null;
+}
+
 /** Is this measure one of the ones defined by someone being put in a role? */
 function appointing(indicatorId: string, measure: string | null): boolean {
   if (!measure) return false;
@@ -1063,6 +1110,14 @@ function appointing(indicatorId: string, measure: string | null): boolean {
 function actorKindOf(indicatorId: string, measure: string | null): 'private' | 'state' | null {
   if (!measure) return null;
   return (MEASURES[indicatorId] ?? []).find((m) => m.token === measure)?.actorKind ?? null;
+}
+
+/** Two answers that are the same words, one inside the other, whatever the spacing and case. */
+function restates(a: string | null, b: string | null): boolean {
+  if (!a || !b) return false;
+  const n = (t: string) => t.toLowerCase().replace(/\s+/g, ' ').trim();
+  const [x, y] = [n(a), n(b)];
+  return x.length > 0 && y.length > 0 && (x.includes(y) || y.includes(x));
 }
 
 /** Is this measure one the rubric describes as a permission or a limit rather than a command? */
@@ -1216,8 +1271,34 @@ export function decide(input: DecideInput): Decision {
 
   const chosen = rule(indicator, qualifying);
   const chosenBand = band(indicator, chosen.ordinal);
+  const witness = absenceFor(input);
+
+  // Thirteen indicators score their maximum for the absence of something, so a retrieval miss and
+  // a real finding of absence produce the same 1. The claim needs an instrument that governs.
+  if (scoresOnAbsence(indicator, rule, chosen.ordinal) && witness?.basis !== 'governing') {
+    return {
+      indicatorId: indicator.id,
+      economy,
+      state: 'unresolved',
+      score: null,
+      band: null,
+      basis: [],
+      excluded,
+      held,
+      frameworkBasis: [],
+      absence: null,
+      coverage,
+      decidingFact: 'nothing read governs the subject whose absence this band asserts',
+      rationale:
+        `This indicator scores ${band(indicator, chosen.ordinal).score} for the absence of something, and ` +
+        `nothing among the ${coverage.sectionsRead} provision(s) read establishes an instrument that governs ` +
+        `the subject. An economy without the measure and an economy nobody looked at produce the same silence, ` +
+        `and only one of them is a finding.`,
+    };
+  }
+
   const basis = chosenBand.score > 0 ? leadWithWhatWasCounted(qualifying, chosen.counted) : [];
-  const absence = chosenBand.score > 0 ? null : absenceFor(input);
+  const absence = chosenBand.score > 0 ? null : witness;
 
   return {
     indicatorId: indicator.id,
@@ -1393,3 +1474,17 @@ function rationaleFor(
 }
 
 export { RULES as __rules };
+
+/**
+ * Does this indicator's top band score the absence of something?
+ *
+ * The same empirical question `scoresOnAbsence` asks, put to the indicator rather than to one
+ * decision, so anything reading a score -- ours or ESCAP's -- can tell which direction it runs in.
+ */
+export function topBandScoresAbsence(indicator: Indicator): boolean {
+  const top = indicator.bands[0];
+  if (!top || top.score <= 0) return false;
+  if (indicator.shape === 'framework') return true;
+  const rule = RULES[indicator.id];
+  return rule ? rule(indicator, []).ordinal === top.ordinal : false;
+}

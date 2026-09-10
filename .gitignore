@@ -35,3 +35,4 @@ docs/_manifest.tsv
 .env.*
 .DS_Store
 Thumbs.db
+backend/data/*.log
