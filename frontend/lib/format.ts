@@ -1,8 +1,6 @@
 /** Dates in the store are ISO strings. These render them the way a reader reads them. */
 
-const NOW = new Date("2026-09-09T12:00:00Z");
-
-export function relativeTime(iso: string, now: Date = NOW): string {
+export function relativeTime(iso: string, now: Date = new Date()): string {
   const then = new Date(iso);
   const mins = Math.round((now.getTime() - then.getTime()) / 60000);
   if (mins < 1) return "just now";
@@ -16,9 +14,11 @@ export function relativeTime(iso: string, now: Date = NOW): string {
 
 export function duration(seconds: number): string {
   if (!seconds) return "0s";
-  if (seconds < 60) return `${Math.round(seconds)}s`;
-  const mins = Math.floor(seconds / 60);
-  if (mins < 60) return `${mins}m ${Math.round(seconds % 60)}s`;
+  // Rounded first, so 59.6 seconds reads as a minute rather than as "60s".
+  const whole = Math.round(seconds);
+  if (whole < 60) return `${whole}s`;
+  const mins = Math.floor(whole / 60);
+  if (mins < 60) return `${mins}m ${whole % 60}s`;
   return `${Math.floor(mins / 60)}h ${mins % 60}m`;
 }
 
