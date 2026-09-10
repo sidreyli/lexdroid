@@ -1212,6 +1212,31 @@ describe('a framework indicator, which asks about instruments rather than provis
     expect(d.score).toBe(0.5);
   });
 
+  it('takes the confining words over the reader calling the same instrument horizontal', () => {
+    // An Act whose opening confines it to listed critical sectors, reported horizontal anyway.
+    // The words are in the instrument and the flag is an assertion, so the words decide.
+    const d = decide({
+      indicator: i72,
+      economy: 'MYS',
+      evidence: [],
+      frameworkEvidence: [instrument({ horizontal: true, sectoralShown: true })],
+      coverage: examined,
+    });
+    expect(d.score).toBe(0.5);
+    expect(d.decidingFact).toContain('limited in reach');
+  });
+
+  it('still reads an instrument as general where no confining words were found', () => {
+    const d = decide({
+      indicator: i72,
+      economy: 'SGP',
+      evidence: [],
+      frameworkEvidence: [instrument({ horizontal: true, sectoralShown: false })],
+      coverage: examined,
+    });
+    expect(d.score).toBe(0);
+  });
+
   // 12.9 has two bands and no middle. A sectoral consumer protection law is still a consumer
   // protection law, so it clears; under the old fixed ordinals it would have asked for a band 3
   // this indicator does not have.
