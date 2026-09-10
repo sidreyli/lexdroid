@@ -12,7 +12,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       }
     >
       <NavRail reviewCount={awaitingReview} />
-      <SidebarInset className="bg-paper min-h-svh overflow-x-hidden">{children}</SidebarInset>
+      {/* Clipped, not hidden: hidden would make this a scroll box and strand every sticky column. */}
+      <SidebarInset className="bg-paper min-h-svh overflow-x-clip">{children}</SidebarInset>
     </SidebarProvider>
   );
 }
