@@ -7,13 +7,15 @@ wrong. Every claim here is measured; the command that measures it is named.*
 
 ## Where we actually are
 
-27 cells answered — pillars 6 and 7, across Australia, Malaysia and Singapore. Against ESCAP's own
-answers, read by each indicator's own scoring ladder: **23 of 27 exact, 27 of 27 within one band.**
-Malaysia and Singapore are 9 of 9. Australia is 5 of 9, and all four differences are one band.
+39 cells answered across Australia, Malaysia and Singapore — pillars 6 and 7 (27 cells), and now
+pillar 10 (12 cells). Against ESCAP's own answers, read by each indicator's own scoring ladder:
+**23 of 27 exact on 6 and 7**, all differences within one band, and **9 of 12 exact on 10**. The
+pillar-10 gap is diagnosed and written up under step 4 below.
 
-156 cells remain: 61 regulatory indicators × 3 economies, less the 27 done. Measured cost is about
-four minutes and seven cents a cell, so the whole remainder is roughly eleven hours on one machine
-and twelve dollars.
+144 cells remain: 61 regulatory indicators × 3 economies, less the 39 done. Pillar 10 measured
+14.1 minutes and $0.45 for twelve cells on three rented GPUs — under four cents a cell — so the
+whole remainder is roughly three hours of wall time and five dollars of rent, plus the corpus
+preparation each new pillar needs first.
 
 ## What the audit of the ruler found
 
@@ -74,8 +76,37 @@ resemblance alone. Pillars 6 and 7 are well defended precisely because they are 
    threshold stated in money the run had no rate for was becoming "no de minimis". The absence
    guard now needs both a governing instrument and nothing held under the indicator's own
    measures.
-4. **Pilot one pillar end to end.** Pillar 10 or 11: four indicators, every vocabulary present, a
-   full baseline, twelve cells, about a dollar.
+4. ~~Pilot one pillar end to end.~~ Done: pillar 10, twelve cells, three economies on three rented
+   GPUs. Run `ef28728e`, 14.1 minutes wall, $0.45 of rent, 330 model calls. **Nine of twelve exact,
+   ten within one band.** Malaysia 4 of 4, Singapore 3 of 4, Australia 2 of 4.
+
+   Two things had to be true before it could run, and one of them was not. Pillar 10 turns on
+   customs and trade law, and neither Singapore's Customs Act 1960 nor Australia's Customs Act 1901
+   had ever been fetched -- the retrieval stage only ranks documents already parsed, so an
+   unfetched Act cannot be found however well it matches. `zone1 --pillars 10 --top 25 --embed`
+   added 42 documents to Singapore and 43 to Australia; Malaysia needed nothing. Afterwards the
+   Customs Act's "Power to prohibit imports and exports" ranks first for Singapore 10.1. **Every
+   new pillar needs this step before it is run, and it is cheap -- no model time.**
+
+   The defect the pilot exists to find is real and it is in the vocabulary, not the rules. Pillar 10
+   asks two questions of a provision: are the goods information and communications technology, and
+   does the movement cross a border. The measures name the *restriction* and leave both facts to a
+   gloss the reader is not made to answer. So Australia scored a 1 on import bans against ESCAP's 0
+   -- off consumer-goods bans, a customs detention power, and a "Simplified outline" whose entire
+   quoted defining words were the single word "prohibited" -- and Singapore scored a 1 on export
+   restrictions against ESCAP's 0, off hazardous waste, endangered species and food safety. Worse
+   than the misses: two cells that **agree** with ESCAP do so for the wrong reason. Australia and
+   Malaysia both score 1 on 10.4, but on a competition-law boycott provision and a
+   surveillance-device provision, where ESCAP cites the Defence Trade Controls Act and the Customs
+   (Prohibition of Exports) Order. Australia 10.3 is the one that is right for the right reason: the
+   Broadcasting Services Act local-content provisions, the same Act ESCAP cites.
+
+   The fix is the house remedy applied one level up. The defining element must be the words naming
+   the goods and the border crossing, not the words naming the restriction -- and the reader needs
+   sibling measures for the non-ICT case so that "this is a ban, but not on ICT" has somewhere
+   correct to go. Filtering the bad answers away afterwards would be the wrong shape: the system
+   should be giving good answers in the first place. **Expect this wherever an indicator's scope is
+   carried only in a gloss.**
 5. **Widen in waves**, ordered by how much is already defended: 1, 2, 10, 11, 4 first, then 8, then
    3, 5, 9, and pillar 12 last because it is fifteen indicators.
 6. **Weights and the composite**, once every cell has an answer.
