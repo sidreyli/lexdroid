@@ -280,10 +280,11 @@ export const MEASURES: Record<string, Measure[]> = {
     {
       token: 'ict-import-ban',
       defines:
-        'the words naming the computing, telecommunications or online goods or services that may not be brought in',
+        'the words naming the computing, telecommunications or online goods or services that may not be brought in.' +
+        ' The goods themselves, not the words about importing or prohibiting them: "prohibited", "any goods" and "the importation of" name no goods.',
       crossesBorder: true,
       gloss:
-        'a prohibition on importing a class of information and communications technology goods, or on supplying an online service from abroad',
+        'a prohibition on importing a class of information and communications technology goods, or on supplying an online service from abroad. A ban on food, medicines, chemicals, weapons, waste, wildlife, vehicles or consumer products is a real import ban and belongs to other-import-ban',
       alsoAsked: [
         'the importation of telecommunications or radiocommunications equipment is prohibited',
         'no person shall import any encryption device, computer hardware or telecommunications apparatus',
@@ -296,6 +297,10 @@ export const MEASURES: Record<string, Measure[]> = {
       token: 'other-import-ban',
       defines: 'the words naming the goods that may not be brought in',
       crossesBorder: true,
+      alsoAsked: [
+        'the Minister may impose a permanent ban on consumer goods of a particular kind',
+        'a person commits an offence if the person imports a firearm or firearm part',
+      ],
       gloss:
         'a prohibition on importing goods that are not computing, telecommunications or online goods -- food, medicines, chemicals, weapons, waste, wildlife, vehicles, consumer products',
       actor: 'the importer',
@@ -314,7 +319,8 @@ export const MEASURES: Record<string, Measure[]> = {
     {
       token: 'import-compliance',
       defines:
-        'the words naming the computing, telecommunications or online goods or services that may not be brought in without it',
+        'the words naming the computing, telecommunications or online goods or services that may not be brought in without it.' +
+        ' The goods themselves, not the words about importing or prohibiting them: "prohibited", "any goods" and "the importation of" name no goods.',
       crossesBorder: true,
       gloss:
         'a licence, permit, authorisation, registration, labelling or import-control requirement that must be met before ICT goods or online services may be imported',
@@ -333,7 +339,8 @@ export const MEASURES: Record<string, Measure[]> = {
     {
       token: 'ict-export-restriction',
       defines:
-        'the words naming the computing, telecommunications or online goods or services that may not be sent out',
+        'the words naming the computing, telecommunications or online goods or services that may not be sent out.' +
+        ' The goods themselves, not the words about importing or prohibiting them: "prohibited", "any goods" and "the importation of" name no goods.',
       crossesBorder: true,
       gloss:
         'a prohibition, licence, permit or other control on exporting ICT goods or supplying online services abroad',
@@ -347,6 +354,10 @@ export const MEASURES: Record<string, Measure[]> = {
       token: 'other-export-restriction',
       defines: 'the words naming the goods that may not be sent out',
       crossesBorder: true,
+      alsoAsked: [
+        'no person shall export hazardous or other waste except under a permit',
+        'a licence is required to export any scheduled species',
+      ],
       gloss:
         'a prohibition, licence or other control on exporting goods that are not computing, telecommunications or online goods -- waste, wildlife, food, medicines, chemicals, weapons, cultural property',
       actor: 'the exporter',
