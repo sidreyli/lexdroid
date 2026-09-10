@@ -549,36 +549,46 @@ export const MEASURES: Record<string, Measure[]> = {
       actor: 'the importer of the goods',
     },
   ],
+  // 4.2 and 4.6 ask for the same two remedies over different rights, so the right being sued on is
+  // what separates them and is the element the reader must quote.
   '4.2': [
     {
-      token: 'enforcement-procedure',
-      defines: 'the words giving the patent holder the procedure or the remedy',
+      token: 'patent-enforcement-procedure',
+      defines: 'the words naming the patent, the patented invention or the patentee',
       permits: true,
       gloss:
-        'a civil or administrative procedure by which a patent holder can sue for infringement and obtain a remedy such as damages, an account of profits or an injunction',
+        'a civil or administrative procedure by which a patent holder can sue for infringement of a patent and obtain a remedy such as damages, an account of profits or an injunction. Copyright is not a patent: an action over a copyright work belongs to 4.6',
+      alsoAsked: [
+        'proceedings for infringement of a patent may be brought by the patentee',
+        'the court may grant an injunction restraining infringement of the patent',
+      ],
       actor: 'the patent holder bringing the proceedings',
     },
     {
-      token: 'provisional-measure',
-      defines: 'the words giving the interim measure before trial',
+      token: 'patent-provisional-measure',
+      defines: 'the words naming the patent, the patented invention or the patentee',
       permits: true,
       gloss:
-        'a provisional or interim measure in an intellectual property case, such as an interlocutory injunction, a search order or the seizure of infringing goods before trial',
-      actor: 'the rights holder applying for the order',
+        'a provisional or interim measure in a patent case, such as an interlocutory injunction, a search order or the seizure of infringing goods before trial',
+      actor: 'the patent holder applying for the order',
     },
   ],
   '4.6': [
     {
-      token: 'enforcement-procedure',
-      defines: 'the words giving the copyright owner the procedure or the remedy',
+      token: 'online-copyright-enforcement-procedure',
+      defines: 'the words naming the copyright, the copyright work or the copyright owner',
       permits: true,
       gloss:
-        'a civil or administrative procedure by which a copyright owner can sue for online infringement and obtain a remedy such as damages, an account of profits or an injunction',
+        'a civil or administrative procedure by which a copyright owner can sue for infringement and obtain a remedy such as damages, an account of profits or an injunction. A patent is not a copyright: an action over a patent belongs to 4.2',
+      alsoAsked: [
+        'an action for infringement of copyright may be brought by the owner of the copyright',
+        'the court may order a network service provider to disable access to the infringing material',
+      ],
       actor: 'the copyright owner bringing the proceedings',
     },
     {
-      token: 'provisional-measure',
-      defines: 'the words giving the interim measure before trial',
+      token: 'online-copyright-provisional-measure',
+      defines: 'the words naming the copyright, the copyright work or the copyright owner',
       permits: true,
       gloss:
         'a provisional or interim measure in a copyright case, such as an interlocutory injunction, a blocking order or the seizure of infringing copies before trial',
@@ -962,8 +972,8 @@ export const MEASURES: Record<string, Measure[]> = {
  * Which indicator a measure belongs to, where it belongs to only one.
  *
  * The measure is drawn from the provision; the indicator is a filing decision the reader makes
- * twenty fields later, and it is the one it gets wrong. Seventy of the seventy-two tokens are
- * owned outright, so for those the measure settles the indicator and the reader's guess is spare.
+ * twenty fields later, and it is the one it gets wrong. Every token is owned outright, so the
+ * measure settles the indicator and the reader's guess is spare.
  */
 export const INDICATOR_OF_MEASURE: ReadonlyMap<string, string> = (() => {
   const owners = new Map<string, string[]>();

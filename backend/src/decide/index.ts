@@ -338,11 +338,11 @@ function absent(what: string): Rule {
       : { ordinal: 1, reason: `nothing read establishes ${what}` };
 }
 
-/** "Absence of both" / "one of them" / "both" -- 4.2 and 4.6, over the same two components. */
-function bothOrOne(what: string): Rule {
+/** "Absence of both" / "one of them" / "both" -- 4.2 and 4.6, over their own two components. */
+function bothOrOne(what: string, procedureToken: string, provisionalToken: string): Rule {
   return (_indicator, qualifying) => {
-    const procedures = qualifying.filter((e) => e.finding.measure === 'enforcement-procedure');
-    const provisional = qualifying.filter((e) => e.finding.measure === 'provisional-measure');
+    const procedures = qualifying.filter((e) => e.finding.measure === procedureToken);
+    const provisional = qualifying.filter((e) => e.finding.measure === provisionalToken);
     if (procedures.length > 0 && provisional.length > 0) {
       return { ordinal: 3, reason: `${what} procedures and provisional measures both exist`, counted: [...procedures, ...provisional] };
     }
@@ -825,8 +825,12 @@ const RULES: Record<string, Rule> = {
 
   /** 4.2 and 4.6 "Absence of both" / "one of them" / "both". The same two components twice, over
    *  patents and over online copyright. */
-  '4.2': bothOrOne('patent enforcement'),
-  '4.6': bothOrOne('online copyright enforcement'),
+  '4.2': bothOrOne('patent enforcement', 'patent-enforcement-procedure', 'patent-provisional-measure'),
+  '4.6': bothOrOne(
+    'online copyright enforcement',
+    'online-copyright-enforcement-procedure',
+    'online-copyright-provisional-measure',
+  ),
 
   /** 4.5 "Lack of framework OR of exceptions" / "unclear exceptions" / "clear exceptions
    *  following fair use or fair dealing". The band names the open model by name, so a closed list
