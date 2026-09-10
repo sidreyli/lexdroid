@@ -88,7 +88,7 @@ function finding(over: Partial<Finding> = {}): Finding {
     dutyForce: 'forbids',
     roleWords: null,
     definingWords: 'outside Singapore',
-    borderWords: null,
+    borderWords: 'outside Singapore',
     imposingWords: 'must not transfer',
     prescribingWords: null,
     dutyBearerKind: 'organisation',
@@ -936,7 +936,7 @@ describe('a prohibition, and the two things that are not one', () => {
   // labelled a transfer ban by the reader, and once the verb refiled it into the conditional
   // regime it faced no locational test at all, because the indicator it came from is the only one
   // whose rubric knows the word "transfer-ban". It names no place. It is not a flow measure.
-  it('holds a refiled finding that names no place, under the indicator it was refiled into', () => {
+  it('holds a refiled finding where nothing leaves the economy, under the indicator it was refiled into', () => {
     const d = decide({
       indicator: indicator64,
       economy: 'SGP',
@@ -950,6 +950,7 @@ describe('a prohibition, and the two things that are not one', () => {
           dutyAct: 'must inform',
           dutyForce: 'requires',
           placeWords: null,
+          borderWords: null,
           locatedData: 'the personal data',
           informationWords: 'personal data',
           exceptionWords: null,
@@ -959,7 +960,7 @@ describe('a prohibition, and the two things that are not one', () => {
       coverage,
     });
     expect(d.score).toBe(0);
-    expect(d.held[0]?.reason).toContain('names no place');
+    expect(d.held[0]?.reason).toContain('enters or leaves the economy');
   });
 
   // The record has to hold the decision's own inputs, or the score cannot be re-derived from it
@@ -1606,4 +1607,126 @@ describe('the vocabulary and the rules agree', () => {
       });
     }
   }
+});
+
+/**
+ * A duty not to do the act is not the duty to do it.
+ *
+ * 4.9 asks whether a firm is made to hand over its source code, and in all three economies the
+ * provisions answering it were secrecy clauses: the Greenhouse and Energy Minimum Standards Act
+ * forbidding an official to disclose, the Commerce (Trade Descriptions) Act forbidding a
+ * description that discloses a trade secret, section 52ZA saying nothing in the Division requires
+ * the giving of information. "requires" and "forbids" both counted as imposing a duty, so a law
+ * written to protect trade secrets made out the requirement to surrender them.
+ */
+describe('a measure only a command can make out', () => {
+  const indicator49: Indicator = {
+    id: '4.9',
+    pillarId: 4,
+    pillarName: 'Intellectual Property Rights',
+    category: 'Disclosure of source code',
+    exception: null,
+    criteriaText: '...',
+    bands: [
+      { score: 1, criterion: 'Requirement reaching all sectors', ordinal: 1 },
+      { score: 0.5, criterion: 'Requirement applied to a specific sector', ordinal: 2 },
+      { score: 0, criterion: 'No requirement', ordinal: 3 },
+    ],
+    shape: 'provision',
+    shapeBasis: 'test',
+    provenance: { document: 'test', locator: 'test' },
+  };
+
+  const on49 = (over: Partial<Finding>) =>
+    decide({
+      indicator: indicator49,
+      economy: 'AUS',
+      evidence: [
+        evidence(1, 'Greenhouse and Energy Minimum Standards Act 2012', {
+          indicatorId: '4.9',
+          measure: 'trade-secret-disclosure',
+          placeWords: null,
+          borderWords: null,
+          locatedData: null,
+          keepingWords: null,
+          ...over,
+        }),
+      ],
+      surfaced,
+      coverage,
+    });
+
+  it('holds a provision that forbids the act, and says which act it forbade', () => {
+    const d = on49({
+      quote: 'The public official must not, except for the purposes of this Act, be required to disclose the information',
+      dutyBearer: 'the public official',
+      dutyAct: 'must not... be required to disclose',
+      dutyForce: 'forbids',
+      definingWords: 'the information',
+      imposingWords: 'must not',
+    });
+    expect(d.score).toBe(0);
+    expect(d.held[0]?.reason).toContain('forbids the act');
+    expect(d.held[0]?.reason).toContain('must not... be required to disclose');
+  });
+
+  it('takes the same provision when it commands the disclosure instead', () => {
+    const d = on49({
+      quote: 'a supplier must disclose the source code of the software to the regulator',
+      dutyBearer: 'a supplier',
+      dutyAct: 'must disclose',
+      dutyForce: 'requires',
+      definingWords: 'the source code of the software',
+      imposingWords: 'must disclose',
+      sectorScope: 'all',
+    });
+    expect(d.score).toBe(1);
+    expect(d.held).toHaveLength(0);
+  });
+
+  it('leaves a measure the rubric writes as a prohibition alone', () => {
+    // 6.1 is a ban, so forbidding is how it is made out; this hold must not reach it.
+    const forbids = MEASURES['6.1']?.find((m) => m.token === 'transfer-ban');
+    expect(forbids?.commands).toBeUndefined();
+  });
+});
+
+/**
+ * Australian Privacy Principle 8 is ESCAP's whole answer for Australia 6.4, and we threw it away.
+ *
+ * The reader filed it under 6.1 as a ban, and the rubric moved it to 6.4 -- correctly, since a
+ * duty to take steps before data goes is the way through, not the wall. But the words that had
+ * made out the ban travelled with it, and "overseas" is no answer to what condition lets the data
+ * leave, so the check meant to catch that discarded the one provision that answers the cell.
+ */
+describe('a finding the rubric moves into 6.4', () => {
+  const app8 = finding({
+    indicatorId: '6.1',
+    measure: 'transfer-ban',
+    quote: 'the entity must take such steps as are reasonable in the circumstances to ensure that the overseas recipient does not breach the Australian Privacy Principles',
+    dutyBearer: 'the entity',
+    dutyAct: 'must take such steps',
+    dutyForce: 'requires',
+    definingWords: 'overseas',
+    placeWords: 'overseas',
+    borderWords: 'overseas',
+    exceptionWords: null,
+    imposingWords: 'must',
+  });
+
+  it('is asked the new measure’s question, not left holding the old one’s answer', () => {
+    expect(refile(app8).definingWords).toBe('must take such steps');
+  });
+
+  it('scores the cell rather than being held as a place restated', () => {
+    const d = decide({
+      indicator: indicator64,
+      economy: 'AUS',
+      evidence: [{ ...evidence(1, 'Privacy Act 1988'), finding: refile(app8) }],
+      surfaced,
+      coverage,
+    });
+    expect(d.score).toBe(1);
+    expect(d.held).toHaveLength(0);
+  });
 });

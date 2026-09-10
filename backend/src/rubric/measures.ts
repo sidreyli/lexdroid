@@ -83,6 +83,11 @@ export interface Measure {
   /** Whether this measure is defined by something crossing the economy's border. */
   crossesBorder?: boolean;
   /**
+   * Whether only a command makes this measure out, so that a prohibition does not.
+   * A duty not to disclose a trade secret was making out 4.9's duty to disclose one.
+   */
+  commands?: boolean;
+  /**
    * Whether the defining words must say more than where the data goes.
    *
    * 6.4 asks for a condition, and "overseas" is not one. The reader answered the condition question
@@ -140,7 +145,7 @@ export const MEASURES: Record<string, Measure[]> = {
         'the words stating what has to be satisfied before the data may go -- an "unless", an ' +
         '"only if", a "before ... must", or the standard the recipient has to meet. Naming the ' +
         'place the data goes, or the word "conditions" on its own, states no condition',
-      locates: true,
+      crossesBorder: true,
       distinctFromPlace: true,
       gloss:
         'a condition that must be met before data may be transferred out, the transfer being permitted once it is met',
@@ -414,6 +419,7 @@ export const MEASURES: Record<string, Measure[]> = {
     {
       token: 'surrender-source-code',
       defines: 'the words requiring the source code, patent or trade secret to be handed over',
+      commands: true,
       gloss:
         'a requirement to hand over source code, patents, algorithms or trade secrets in order to bid for or win a government contract',
       actor: 'the supplier bidding for the contract',
@@ -474,7 +480,9 @@ export const MEASURES: Record<string, Measure[]> = {
   '4.3': [
     {
       token: 'patent-enforcement-restriction',
-      defines: 'the words restricting how the patent may be enforced',
+      defines:
+        'the words naming the patent, the patented invention or the patentee, together with the ' +
+        'limit placed on enforcing it. A design, a copyright work or property at large is not a patent',
       gloss:
         'a restriction on enforcing a patent, such as a compulsory licence, a limit on injunctions, a cap on damages or a bar on who may bring proceedings',
       actor: 'the patent holder seeking to enforce the patent',
@@ -484,6 +492,7 @@ export const MEASURES: Record<string, Measure[]> = {
     {
       token: 'trade-secret-disclosure',
       defines: 'the words requiring the source code, algorithm or trade secret to be disclosed',
+      commands: true,
       gloss:
         'a requirement to disclose source code, algorithms or other trade secrets to a government body, apart from disclosure ordered to protect the public interest where the law also guards against unfair commercial use',
       actor: 'the company holding the source code or trade secret',

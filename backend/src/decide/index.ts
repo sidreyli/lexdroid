@@ -1073,6 +1073,15 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
       });
       continue;
     }
+    // A duty not to do the act is not the duty to do it. Secrecy provisions -- "shall not
+    // disclose", "nothing requires the giving of information" -- were making out 4.9 in all three.
+    if (commanded(indicatorId, e.finding.measure) && e.finding.dutyForce === 'forbids') {
+      held.push({
+        evidence: e,
+        reason: `the provision forbids the act -- "${e.finding.dutyAct}" -- that this measure is a requirement to perform`,
+      });
+      continue;
+    }
     // Every measure in the rubric is borne by somebody, so a provision the reader could find no
     // party in is evidence of none of them. Held, because the party may be there and unread.
     if (!e.finding.dutyBearer) {
@@ -1315,6 +1324,9 @@ export function refile(f: Finding): Finding {
       ...f,
       indicatorId: '6.4',
       measure: 'transfer-condition',
+      // The old words answered 6.1's question. What makes this a condition is the way through:
+      // the exception it is carved into, or the step the provision obliges before the data goes.
+      definingWords: f.exceptionWords ?? f.dutyAct,
       refiledFrom: { indicatorId: f.indicatorId, measure: f.measure },
     };
   }
@@ -1356,6 +1368,12 @@ function locational(indicatorId: string, measure: string | null): boolean {
 function definedBy(indicatorId: string, measure: string | null): string | null {
   if (!measure) return null;
   return (MEASURES[indicatorId] ?? []).find((m) => m.token === measure)?.defines ?? null;
+}
+
+/** Is this measure one only a command makes out, so that a prohibition of the act does not? */
+function commanded(indicatorId: string, measure: string | null): boolean {
+  if (!measure) return false;
+  return (MEASURES[indicatorId] ?? []).some((m) => m.token === measure && m.commands === true);
 }
 
 /** Is this measure one of the ones defined by something crossing the border? */
