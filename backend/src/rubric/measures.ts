@@ -80,6 +80,8 @@ export interface Measure {
    * says why the exemption exists, and lets a power to impose customs duties use the same one.
    */
   permits?: boolean;
+  /** Whether this measure is defined by something crossing the economy's border. */
+  crossesBorder?: boolean;
 }
 
 /** Whoever the obligation falls on. Most of these measures bind the holder of the data. */
@@ -256,38 +258,82 @@ export const MEASURES: Record<string, Measure[]> = {
       actor: 'the provider of the online content or application',
     },
   ],
+  // Every band in this pillar reads "ICT goods or digital services" and "import" or "export", so
+  // the goods are the defining element and the crossing is asked for in its own right.
   '10.1': [
     {
       token: 'ict-import-ban',
-      defines: 'the words prohibiting the import or the supply from abroad',
+      defines:
+        'the words naming the computing, telecommunications or online goods or services that may not be brought in',
+      crossesBorder: true,
       gloss:
         'a prohibition on importing a class of information and communications technology goods, or on supplying an online service from abroad',
+      alsoAsked: [
+        'the importation of telecommunications or radiocommunications equipment is prohibited',
+        'no person shall import any encryption device, computer hardware or telecommunications apparatus',
+      ],
       actor: 'the importer or the foreign supplier',
+    },
+    // Australia scored a 1 here off consumer product safety bans and a customs detention power.
+    // The reader had no way to say "a ban, and not on ICT", so it said ICT.
+    {
+      token: 'other-import-ban',
+      defines: 'the words naming the goods that may not be brought in',
+      crossesBorder: true,
+      gloss:
+        'a prohibition on importing goods that are not computing, telecommunications or online goods -- food, medicines, chemicals, weapons, waste, wildlife, vehicles, consumer products',
+      actor: 'the importer',
     },
   ],
   '10.2': [
     {
       token: 'import-quota',
-      defines: 'the words stating the limit on how much may be imported',
+      defines:
+        'the words naming the computing, telecommunications or online goods or services the limit applies to',
+      crossesBorder: true,
       gloss:
         'a quota, ceiling or other limit on how much of an ICT good or online service may be imported',
       actor: 'the importer',
     },
     {
       token: 'import-compliance',
-      defines: 'the words stating what must be obtained or met before importing',
+      defines:
+        'the words naming the computing, telecommunications or online goods or services that may not be brought in without it',
+      crossesBorder: true,
       gloss:
         'a licence, permit, authorisation, registration, labelling or import-control requirement that must be met before ICT goods or online services may be imported',
+      actor: 'the importer',
+    },
+    {
+      token: 'other-import-control',
+      defines: 'the words naming the goods the control applies to',
+      crossesBorder: true,
+      gloss:
+        'a quota, licence, permit or other import control on goods that are not computing, telecommunications or online goods',
       actor: 'the importer',
     },
   ],
   '10.4': [
     {
       token: 'ict-export-restriction',
-      defines: 'the words restricting the export or the supply abroad',
+      defines:
+        'the words naming the computing, telecommunications or online goods or services that may not be sent out',
+      crossesBorder: true,
       gloss:
         'a prohibition, licence, permit or other control on exporting ICT goods or supplying online services abroad',
+      alsoAsked: [
+        'a permit is required to export dual-use technology, cryptographic equipment or telecommunications apparatus',
+      ],
       actor: 'the exporter or the supplier',
+    },
+    // Singapore scored a 1 here off hazardous waste, endangered species and food safety.
+    {
+      token: 'other-export-restriction',
+      defines: 'the words naming the goods that may not be sent out',
+      crossesBorder: true,
+      gloss:
+        'a prohibition, licence or other control on exporting goods that are not computing, telecommunications or online goods -- waste, wildlife, food, medicines, chemicals, weapons, cultural property',
+      actor: 'the exporter',
     },
   ],
   '11.1': [

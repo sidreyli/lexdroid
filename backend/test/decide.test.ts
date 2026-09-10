@@ -88,6 +88,7 @@ function finding(over: Partial<Finding> = {}): Finding {
     dutyForce: 'forbids',
     roleWords: null,
     definingWords: 'outside Singapore',
+    borderWords: null,
     imposingWords: 'must not transfer',
     prescribingWords: null,
     dutyBearerKind: 'organisation',
@@ -1496,6 +1497,11 @@ describe('the vocabulary and the rules agree', () => {
     // 12.2's band requires both halves, so neither half reaches it by itself.
     '12.2:online-purchase-limit',
     '12.2:online-delivery-limit',
+    // Pillar 10 scores ICT goods and digital services. These name the trade restrictions on
+    // everything else, so the reader has somewhere true to file them instead of calling them ICT.
+    '10.1:other-import-ban',
+    '10.2:other-import-control',
+    '10.4:other-export-restriction',
   ]);
 
   const stub = (id: string): Indicator =>

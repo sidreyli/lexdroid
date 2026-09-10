@@ -28,6 +28,7 @@ function finding(over: Partial<Finding> = {}): Finding {
     dutyForce: 'requires',
     roleWords: null,
     definingWords: 'at a place within Singapore',
+    borderWords: null,
     imposingWords: 'shall keep and retain',
     prescribingWords: null,
     dutyBearerKind: 'organisation',

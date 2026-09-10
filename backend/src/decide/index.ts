@@ -601,11 +601,14 @@ const RULES: Record<string, Rule> = {
   /** 10.1 "Ban on more than one ICT goods or digital services" / "Ban on one specific product or
    *  services" / "No measure". The band counts bans, so the rule counts them. */
   '10.1': (indicator, qualifying) => {
-    if (qualifying.length > 1) {
-      return { ordinal: 1, reason: `${qualifying.length} ICT import bans`, counted: qualifying };
+    // The band scores ICT goods and digital services. A ban on other goods is a real finding and
+    // is recorded as one, but it is not this indicator's subject.
+    const ict = qualifying.filter((e) => e.finding.measure === 'ict-import-ban');
+    if (ict.length > 1) {
+      return { ordinal: 1, reason: `${ict.length} ICT import bans`, counted: ict };
     }
-    if (qualifying.length === 1) {
-      return { ordinal: 2, reason: 'a ban on one product or service', counted: qualifying };
+    if (ict.length === 1) {
+      return { ordinal: 2, reason: 'a ban on one product or service', counted: ict };
     }
     return { ordinal: 3, reason: 'no import ban on ICT goods or online services found' };
   },
@@ -630,8 +633,13 @@ const RULES: Record<string, Rule> = {
     return { ordinal: 3, reason: 'no import restriction on ICT goods or online services found' };
   },
 
-  /** 10.4 "Export restriction" / "No restriction". */
-  '10.4': present('export restriction on ICT goods or online services'),
+  /** 10.4 "Export restriction" / "No restriction", on ICT goods and digital services only. */
+  '10.4': (indicator, qualifying) => {
+    const ict = qualifying.filter((e) => e.finding.measure === 'ict-export-restriction');
+    return ict.length > 0
+      ? { ordinal: 1, reason: `${ict.length} export restriction(s) on ICT goods or online services`, counted: ict }
+      : { ordinal: 2, reason: 'no export restriction on ICT goods or online services found' };
+  },
 
   /** 11.1 "Not allowed foreigners to participate in the standard-setting bodies, OR non
    *  transparent standard-setting" / "No restriction". Either alone is the whole band. */
@@ -1163,6 +1171,15 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
       });
       continue;
     }
+    // A measure defined by a border crossing is not made out by a provision where nothing crosses.
+    // A consumer-goods safety ban and a power to detain goods already here are not import measures.
+    if (crossing(indicatorId, e.finding.measure) && !e.finding.borderWords) {
+      held.push({
+        evidence: e,
+        reason: 'nothing in the provision enters or leaves the economy, and this measure is a restriction on trade across the border',
+      });
+      continue;
+    }
     // A measure defined by someone being put in a role is not made out by a provision that puts
     // nobody in one. "The data recipient shall ensure that the consent of the data provider is
     // obtained" and "a data subject shall be given access to his personal data" both scored 7.4,
@@ -1322,6 +1339,12 @@ function locational(indicatorId: string, measure: string | null): boolean {
 function definedBy(indicatorId: string, measure: string | null): string | null {
   if (!measure) return null;
   return (MEASURES[indicatorId] ?? []).find((m) => m.token === measure)?.defines ?? null;
+}
+
+/** Is this measure one of the ones defined by something crossing the border? */
+function crossing(indicatorId: string, measure: string | null): boolean {
+  if (!measure) return false;
+  return (MEASURES[indicatorId] ?? []).some((m) => m.token === measure && m.crossesBorder === true);
 }
 
 /** Is this measure one of the ones defined by someone being put in a role? */

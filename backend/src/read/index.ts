@@ -167,6 +167,8 @@ export interface Finding {
    * absent is held rather than scored.
    */
   definingWords: string | null;
+  /** The words by which the thing crosses the economy's border, quoted. Null if nothing crosses. */
+  borderWords: string | null;
   /**
    * The words by which this provision itself imposes the requirement, or null when it only lets
    * another instrument impose one.
@@ -416,6 +418,12 @@ function prompt(section: SectionInput, pillarName: string, indicators: readonly 
     'definingWords: every measure above says, under "made out by", the one thing a provision has to',
     'say to be that measure. Copy those words from your quote. Null if the provision does not say',
     'it anywhere -- and then it is not that measure, however close its subject is.',
+    'borderWords: if the provision is about something entering or leaving the economy, copy from',
+    'your quote the words that say so -- "import", "export", "bring into Singapore", "take out of',
+    'Australia", "supplied from outside", "consign to a place outside". Null if nothing in the',
+    'provision crosses a border. Selling, making, possessing, using, supplying or advertising',
+    'something inside the economy crosses no border, and neither does a power to detain, seize or',
+    'inspect goods that are already here.',
     'imposingWords: the words by which this provision itself imposes the requirement. Null if it',
     'only empowers someone else to impose one -- "the rules may prescribe", "may make provision',
     'in relation to", "examples of conditions that may be imposed". A power to require is not a',
@@ -489,6 +497,7 @@ const schemaFor = (indicators: readonly Indicator[]) => ({
           indicatorId: { type: 'string' },
           measure: { type: 'string', enum: measureTokens(indicators) },
           definingWords: { type: ['string', 'null'] },
+          borderWords: { type: ['string', 'null'] },
           imposingWords: { type: ['string', 'null'] },
           prescribingWords: { type: ['string', 'null'] },
           requirement: { type: 'string' },
@@ -521,6 +530,7 @@ const schemaFor = (indicators: readonly Indicator[]) => ({
           'indicatorId',
           'measure',
           'definingWords',
+          'borderWords',
           'imposingWords',
           'prescribingWords',
           'requirement',
@@ -660,6 +670,9 @@ export function rejectionFor(f: Finding, sectionText: string, allowed: Set<strin
   // The words that make the measure out are a claim about the provision like every other quote.
   if (f.definingWords && !inProvision(f.definingWords)) {
     return `the words said to make out ${f.measure}, "${f.definingWords}", are not in the provision`;
+  }
+  if (f.borderWords && !inProvision(f.borderWords)) {
+    return `the words said to cross the border, "${f.borderWords}", are not in the provision`;
   }
   if (f.imposingWords && !inProvision(f.imposingWords)) {
     return `the words said to impose the requirement, "${f.imposingWords}", are not in the provision`;
@@ -819,6 +832,7 @@ function coerce(raw: unknown): Finding | null {
     authorisingWords: str(r['authorisingWords']),
     roleWords: str(r['roleWords']),
     definingWords: str(r['definingWords']),
+    borderWords: str(r['borderWords']),
     imposingWords: str(r['imposingWords']),
     prescribingWords: str(r['prescribingWords']),
     dutyBearerKind:
