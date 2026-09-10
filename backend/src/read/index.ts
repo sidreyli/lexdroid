@@ -471,12 +471,23 @@ function measureTokens(indicators: readonly Indicator[]): string[] {
   return [...new Set(indicators.flatMap((i) => (MEASURES[i.id] ?? []).map((m) => m.token)))];
 }
 
+/**
+ * The most findings one provision can carry, as a bound on the decoding grammar.
+ *
+ * Set above every reading ever observed, so it costs a true answer nothing and makes the
+ * repetition loop that produced the cut-off reads unrepresentable.
+ */
+export const MAX_FINDINGS_PER_PROVISION = 12;
+
 /** The response shape, declared to the engine so decoding is constrained rather than hoped for. */
 const schemaFor = (indicators: readonly Indicator[]) => ({
   type: 'object',
   properties: {
     findings: {
       type: 'array',
+      // No provision has ever yielded more than eleven findings. An unbounded array lets a looping
+      // model repeat one until it is cut off, and a cut-off read is a provision nobody read.
+      maxItems: MAX_FINDINGS_PER_PROVISION,
       items: {
         type: 'object',
         // Order matters here, not only for readability. Structured decoding fills the fields in
@@ -507,7 +518,7 @@ const schemaFor = (indicators: readonly Indicator[]) => ({
           dataDescription: { type: ['string', 'null'] },
           appliesOnlyToGovernmentData: { type: 'boolean' },
           mandatory: { type: 'boolean' },
-          countriesNamed: { type: 'array', items: { type: 'string' } },
+          countriesNamed: { type: 'array', maxItems: 24, items: { type: 'string' } },
           statedPeriod: { type: ['string', 'null'] },
           authorisingWords: { type: ['string', 'null'] },
           authorisation: {
