@@ -1697,9 +1697,15 @@ function decideFramework(input: DecideInput): Decision {
   };
 }
 
-/** Whether a framework applies across sectors, taking a sectoral claim only where it is shown. */
+/**
+ * Whether a framework applies across sectors, taking a sectoral claim only where it is shown.
+ *
+ * Words in the instrument confining it to named sectors settle the question. "Horizontal" is the
+ * reader's own assertion and used to override them, so an Act whose opening confined it to listed
+ * critical sectors still cleared the top band on the strength of a boolean.
+ */
 export function reaches(f: FrameworkEvidence): boolean {
-  return f.horizontal || !f.sectoralShown;
+  return !f.sectoralShown;
 }
 
 function capitalise(s: string): string {
