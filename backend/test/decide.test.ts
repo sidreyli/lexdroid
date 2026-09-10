@@ -294,6 +294,54 @@ describe('a prohibition that carries a way through', () => {
 });
 
 /**
+ * 6.4 asks for a condition, and the reader kept answering with the place.
+ *
+ * Of 758 findings on this measure, 447 gave the condition question the place words verbatim --
+ * "overseas", "outside Malaysia", "across national borders". The check meant to establish the
+ * condition was free to pass, which is how transfers of a business under the Corporations Act and
+ * a loss company's tax position under the Income Tax Assessment Act came to score a data cell.
+ */
+describe('what makes a transfer conditional', () => {
+  const conditional = (over: Partial<Finding>) =>
+    decide({
+      indicator: indicator64,
+      economy: 'SGP',
+      evidence: [evidence(1, 'Personal Data Protection Act 2012', over)],
+      surfaced,
+      coverage,
+    });
+
+  it('holds a finding whose condition is only the place the data goes', () => {
+    const d = conditional({ definingWords: 'outside Singapore', placeWords: 'outside Singapore', exceptionWords: null });
+    expect(d.score).toBe(0);
+    expect(d.held.map((h) => h.reason)).toContain(
+      'the words said to state the condition only name where the data goes, which is no condition',
+    );
+  });
+
+  it('takes a condition carved out as an exception, which is how section 26 states one', () => {
+    const d = conditional({
+      definingWords: 'outside Singapore',
+      placeWords: 'outside Singapore',
+      exceptionWords: 'except in accordance with requirements prescribed under this Act',
+    });
+    expect(d.score).toBe(1);
+    expect(d.held).toHaveLength(0);
+  });
+
+  it('takes a condition worded around the place, rather than reading the overlap as a repeat', () => {
+    // Regulation 10: "before transferring ... outside Singapore, take appropriate steps". The
+    // condition names the place because that is what it applies to, and it is still a condition.
+    const d = conditional({
+      definingWords: 'before transferring personal data outside Singapore, take appropriate steps',
+      placeWords: 'outside Singapore',
+      exceptionWords: null,
+    });
+    expect(d.score).toBe(1);
+  });
+});
+
+/**
  * 7.5 scores a power exercisable without a court order, so what the power needs first is the fact
  * the whole cell turns on -- and it was the least anchored field in the reading.
  */
@@ -794,6 +842,7 @@ describe('a prohibition, and the two things that are not one', () => {
           dutyAct: 'must, before transferring',
           dutyForce: 'requires',
           placeWords: 'outside Singapore',
+          definingWords: 'must, before transferring an individual’s personal data ... take appropriate steps',
           locatedData: 'an individual’s personal data',
           informationWords: 'personal data',
           exceptionWords: null,
@@ -817,6 +866,7 @@ describe('a prohibition, and the two things that are not one', () => {
           dutyAct: 'must, before transferring',
           dutyForce: 'requires',
           placeWords: 'outside Singapore',
+          definingWords: 'must, before transferring an individual’s personal data ... take appropriate steps',
           locatedData: 'an individual’s personal data',
           informationWords: 'personal data',
           exceptionWords: null,
