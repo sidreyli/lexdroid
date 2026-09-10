@@ -1094,6 +1094,19 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
       });
       continue;
     }
+    // Where the measure is a condition, the place the data goes is not one. The condition may be
+    // stated outright or carved out as an exception, so either will do; naming neither will not.
+    if (
+      mustSayMoreThanPlace(indicatorId, e.finding.measure) &&
+      !beyondPlace(e.finding.definingWords, e.finding.placeWords) &&
+      !beyondPlace(e.finding.exceptionWords, e.finding.placeWords)
+    ) {
+      held.push({
+        evidence: e,
+        reason: `the words said to state the condition only name where the data goes, which is no condition`,
+      });
+      continue;
+    }
     // A power to require is not a requirement -- unless the measure the rubric names is itself a
     // power, where nothing is imposed and this hold would swallow every genuine finding.
     if (!e.finding.imposingWords && !permits(indicatorId, e.finding.measure)) {
@@ -1369,6 +1382,23 @@ function restates(a: string | null, b: string | null): boolean {
   const n = (t: string) => t.toLowerCase().replace(/\s+/g, ' ').trim();
   const [x, y] = [n(a), n(b)];
   return x.length > 0 && y.length > 0 && (x.includes(y) || y.includes(x));
+}
+
+/**
+ * Words that say something the place words do not, which is what a condition has to do.
+ *
+ * Identity, not overlap: a condition is often worded around the place it applies to, and 447 of
+ * the 758 findings on this measure answered the condition question with the place verbatim.
+ */
+function beyondPlace(words: string | null, placeWords: string | null): boolean {
+  const n = (t: string | null) => (t ?? '').toLowerCase().replace(/\s+/g, ' ').trim();
+  return n(words).length > 0 && n(words) !== n(placeWords);
+}
+
+/** Is this measure one whose defining words have to say more than where the data goes? */
+function mustSayMoreThanPlace(indicatorId: string, measure: string | null): boolean {
+  if (!measure) return false;
+  return (MEASURES[indicatorId] ?? []).some((m) => m.token === measure && m.distinctFromPlace === true);
 }
 
 /** Is this measure one the rubric describes as a permission or a limit rather than a command? */

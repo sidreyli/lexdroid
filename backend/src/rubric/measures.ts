@@ -82,6 +82,13 @@ export interface Measure {
   permits?: boolean;
   /** Whether this measure is defined by something crossing the economy's border. */
   crossesBorder?: boolean;
+  /**
+   * Whether the defining words must say more than where the data goes.
+   *
+   * 6.4 asks for a condition, and "overseas" is not one. The reader answered the condition question
+   * with the place words, which made the check free to pass and let asset transfers score.
+   */
+  distinctFromPlace?: boolean;
 }
 
 /** Whoever the obligation falls on. Most of these measures bind the holder of the data. */
@@ -129,8 +136,12 @@ export const MEASURES: Record<string, Measure[]> = {
   '6.4': [
     {
       token: 'transfer-condition',
-      defines: 'the words stating the condition that lets the data leave',
+      defines:
+        'the words stating what has to be satisfied before the data may go -- an "unless", an ' +
+        '"only if", a "before ... must", or the standard the recipient has to meet. Naming the ' +
+        'place the data goes, or the word "conditions" on its own, states no condition',
       locates: true,
+      distinctFromPlace: true,
       gloss:
         'a condition that must be met before data may be transferred out, the transfer being permitted once it is met',
       alsoAsked: [
