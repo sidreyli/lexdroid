@@ -643,7 +643,9 @@ export function quoteIsInSection(quote: string, sectionText: string, min = MIN_Q
   const joined = parts.join(' ');
   if (joined.length < min) return false;
 
-  if (parts.length > 1) {
+  // A snippet is the evidence, so its elisions must not carry the argument. A phrase names one
+  // element of a snippet already checked, and "may ... declare" is how a split verb is quoted.
+  if (parts.length > 1 && min >= MIN_QUOTE_CHARS) {
     if (joined.length < min * ELIDED_WEIGHT) return false;
     if (Math.max(...parts.map((p) => p.length)) < MIN_ANCHOR_CHARS) return false;
   }
