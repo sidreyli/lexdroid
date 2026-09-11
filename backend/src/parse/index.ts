@@ -62,8 +62,8 @@ export interface StoredDocument {
 }
 
 /**
- * Write a fetched-and-parsed document into the store, replacing any previous parse of the same
- * bytes. Re-parsing the same document is expected -- a parser improves and the corpus is rebuilt
+ * Write a fetched-and-parsed document into the store, replacing any previous reading of the same
+ * address. Re-parsing the same document is expected -- a parser improves and the corpus is rebuilt
  * without re-fetching -- so the write is idempotent and the lexical index is rebuilt with it.
  */
 export function storeDocument(
@@ -98,6 +98,12 @@ export function storeDocument(
     const { id: documentId } = db
       .prepare('SELECT id FROM document WHERE url = ? AND content_hash = ?')
       .get(fetched.url, fetched.contentHash) as { id: number };
+
+    // The same address read again is the same document, not a second one. Keying only on the bytes
+    // let a re-read leave the stale reading in place beside the fresh one, so every provision the
+    // corpus held twice was retrieved twice and counted twice.
+    db.prepare('DELETE FROM document WHERE instrument_id = ? AND url = ? AND id <> ?')
+      .run(instrumentId, fetched.url, documentId);
 
     db.prepare('DELETE FROM section WHERE document_id = ?').run(documentId);
     db.prepare('DELETE FROM unread_document WHERE document_id = ?').run(documentId);
