@@ -16,17 +16,32 @@
  *     heading path is built by joining the two.
  */
 import * as cheerio from 'cheerio';
+import type { AnyNode, Element } from 'domhandler';
 import { nodeText } from './html-text.js';
 import { SectionBuilder, type ParsedDocument } from './types.js';
+
+/**
+ * Schedules are listed in the contents but not marked as child provisions, because the site nests
+ * them under a heading rather than under a Part. They are operative law -- a prohibited-goods list,
+ * a relief threshold, a table of licensable activities -- so they are asked for like any provision.
+ */
+const SCHEDULE_ID = /^Sc\d*-$/;
 
 /** provision id -> the label the table of contents gives it, in document order. */
 function tocLabels(html: string): Map<string, string> {
   const $ = cheerio.load(html);
   const out = new Map<string, string>();
-  $('input.childID[name="item"]').each((_i, el) => {
+  $('input[name="item"]').each((_i, el) => {
     const v = $(el).attr('value');
     if (!v || out.has(v)) return;
-    const label = $(el).closest('div').find('label').first().text().replace(/\s+/g, ' ').trim();
+    const isProvision = ($(el).attr('class') ?? '').split(/\s+/).includes('childID');
+    if (!isProvision && !SCHEDULE_ID.test(v)) return;
+    const id = $(el).attr('id');
+    const $label = id ? $(`label[for="${id}"]`).first() : $();
+    const label = ($label.length > 0 ? $label : $(el).closest('div').find('label').first())
+      .text()
+      .replace(/\s+/g, ' ')
+      .trim();
     out.set(v, label);
   });
   return out;
@@ -110,6 +125,83 @@ function readTimeline($: cheerio.CheerioAPI): Record<string, string> {
   return meta;
 }
 
+/**
+ * How much of one schedule goes into one section.
+ *
+ * Held below the reader's own limit so a section arrives whole. A tariff schedule read to its
+ * limit and cut is worse than one split honestly: the half never shown is reported as absence.
+ */
+const SCHEDULE_CHARS = 8_000;
+
+/**
+ * The rows of the schedule's own table.
+ *
+ * Every cell wraps its content in a table of its own, so "a row" cannot mean any tr: it means one
+ * with two or more cells that is not itself sitting inside one.
+ */
+function dataRows($: cheerio.CheerioAPI, node: AnyNode): Element[] {
+  const qualifies = (tr: Element): boolean => $(tr).children('td, th').length >= 2;
+  const all = $(node).find('tr').toArray().filter(qualifies);
+  return all.filter((tr) => !$(tr).parents('tr').toArray().some(qualifies));
+}
+
+/**
+ * The blocks a schedule is made of, in document order.
+ *
+ * Its own top-level tables are the paragraph boundaries; a table too long to read in one piece is
+ * split at its rows, each carrying the header row so the columns still say what they mean.
+ */
+function scheduleBlocks($: cheerio.CheerioAPI, schedule: AnyNode): string[] {
+  const blocks: string[] = [];
+  const take = (node: AnyNode): void => {
+    const text = nodeText([node]).trim();
+    if (!text) return;
+    if (text.length <= SCHEDULE_CHARS) {
+      blocks.push(text);
+      return;
+    }
+    const rows = dataRows($, node);
+    const heads = new Set(rows.filter((tr) => $(tr).parents('thead').length > 0));
+    if (rows.length - heads.size < 2) {
+      blocks.push(text);
+      return;
+    }
+    const head = [...heads]
+      .map((tr) => nodeText([tr]).replace(/\s+/g, ' ').trim())
+      .filter(Boolean)
+      .join(' | ');
+    for (const tr of rows) {
+      if (heads.has(tr)) continue;
+      const row = nodeText([tr]).trim();
+      if (row) blocks.push(head ? `${head}\n${row}` : row);
+    }
+  };
+  // The heading, its subtitle and the provision it serves are already in the heading path and the
+  // opening line, so the tables carrying them are not repeated as body.
+  $(schedule)
+    .children()
+    .each((_i, child) => {
+      if ($(child).find('td.sHdr, td.scHdr, td.SbodyRefs').length > 0) return;
+      take(child);
+    });
+  return blocks;
+}
+
+/** Blocks gathered into sections, never splitting a block across two. */
+function packed(blocks: string[]): string[] {
+  const out: string[] = [];
+  let current = '';
+  for (const block of blocks) {
+    if (current && current.length + block.length + 2 > SCHEDULE_CHARS) {
+      out.push(current);
+      current = '';
+    }
+    current = current ? `${current}\n\n${block}` : block;
+  }
+  if (current) out.push(current);
+  return out;
+}
+
 export function parseSso(html: string, url: string): ParsedDocument {
   const $ = cheerio.load(html);
   const parts = partIndex(html);
@@ -120,11 +212,41 @@ export function parseSso(html: string, url: string): ParsedDocument {
   const title = ($('title').first().text() || '').replace(/\s*-\s*Singapore Statutes Online\s*$/i, '').trim() || null;
   const meta = readTimeline($);
 
-  const provisions = $('#legisContent div.prov1').toArray();
+  // Provisions and schedules in document order, so a schedule stays where the Act puts it.
+  const blocks = $('#legisContent').find('div.prov1, div.schedule').toArray();
   const seen: string[] = [];
 
-  for (const el of provisions) {
-    const $prov = $(el);
+  for (const el of blocks) {
+    const $el = $(el);
+    if ($el.hasClass('schedule')) {
+      const $hdr = $el.find('td.sHdr').first();
+      const anchor = $hdr.attr('id') ?? null;
+      const name = nodeText($hdr.toArray()).replace(/\s+/g, ' ').trim();
+      const subtitle = nodeText($el.find('td.scHdr').first().toArray()).replace(/\s+/g, ' ').trim();
+      const refs = nodeText($el.find('td.SbodyRefs').first().toArray()).replace(/\s+/g, ' ').trim();
+      const chunks = packed(scheduleBlocks($, el));
+      if (chunks.length === 0) continue;
+      if (anchor) seen.push(anchor);
+
+      const heading = [name || 'Schedule', subtitle].filter(Boolean).join(' ');
+      // The heading a schedule prints is what a citation calls it by, so the id supplies only the
+      // ordinal and the printed heading carries the rest.
+      const label = anchor ? `Schedule ${/^Sc(\d*)-/.exec(anchor)?.[1] || ''}`.trim() : null;
+      chunks.forEach((text, i) => {
+        builder.add({
+          headingPath: chunks.length > 1 ? `${heading} (part ${i + 1} of ${chunks.length})` : heading,
+          label,
+          text: i === 0 && refs ? `${refs}\n\n${text}` : text,
+          page: null,
+          language: 'en',
+          repealed: false,
+          anchor,
+        });
+      });
+      continue;
+    }
+
+    const $prov = $el;
     const $hdr = $prov.find('td.prov1Hdr, td.prov1Rep').first();
     const anchor = $hdr.attr('id') ?? null;
     const heading = nodeText($hdr.toArray()).replace(/\s+/g, ' ').trim();
