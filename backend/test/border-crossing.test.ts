@@ -7,7 +7,7 @@
  * The measures named the restriction and left both facts -- ICT, and a border -- to a gloss.
  */
 import { describe, expect, it } from 'vitest';
-import { MEASURES } from '../src/rubric/measures.js';
+import { MEASURES, SUBJECTS } from '../src/rubric/measures.js';
 import { decide, type Evidence, type SurfacedInstrument } from '../src/decide/index.js';
 import { rejectionFor, __prompt, type Finding } from '../src/read/index.js';
 import { loadRubric } from '../src/rubric/index.js';
@@ -27,7 +27,8 @@ function finding(over: Partial<Finding> = {}): Finding {
     dutyAct: 'must not import',
     dutyForce: 'forbids',
     roleWords: null,
-    definingWords: 'telecommunications equipment',
+    definingWords: 'must not import into Australia',
+    subjectWords: 'telecommunications equipment',
     borderWords: 'import into Australia',
     imposingWords: 'must not import',
     prescribingWords: null,
@@ -102,9 +103,15 @@ describe('a trade measure is defined by the crossing', () => {
 });
 
 describe('the goods are the defining element', () => {
-  it('asks pillar 10 for the goods rather than for the restriction', () => {
+  it('asks pillar 10 for the goods, as what the provision has to be about', () => {
+    // It used to ask for them as the defining words, which is the same question twice: the words
+    // that make it a ban and the words naming what is banned are not the same words.
     for (const id of ['10.1', '10.2', '10.4']) {
-      for (const m of MEASURES[id]!) expect(m.defines, `${id} ${m.token}`).toMatch(/goods|services/);
+      expect(SUBJECTS[id], id).toMatch(/goods or services/);
+      for (const m of MEASURES[id]!) {
+        if (m.offSubject) continue;
+        expect(m.defines, `${id} ${m.token}`).toMatch(/brought in|sending out|sent out|limit|licence/);
+      }
     }
   });
 

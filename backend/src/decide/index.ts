@@ -18,7 +18,7 @@
  */
 import type { Indicator, ScoreBand } from '../rubric/types.js';
 import type { Finding } from '../read/index.js';
-import { MEASURES } from '../rubric/measures.js';
+import { MEASURES, SUBJECTS } from '../rubric/measures.js';
 import { inUsd, moneyIn, type FxRates } from './currency.js';
 
 /** One finding, with enough of its origin to cite it. */
@@ -1103,6 +1103,38 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
       });
       continue;
     }
+    // And a provision that never says what it is about. Every question before this one asks what
+    // the provision does, and a provision can do exactly the right thing to the wrong subject: the
+    // Competition Commission's duty to bank in Malaysia scored the online-payment cell, and a
+    // licence from the Kenaf and Tobacco Board scored the e-commerce licensing cell. Both impose
+    // the act. Neither names the thing the indicator asks about.
+    //
+    // Undefined, rather than null, means the reading predates the question -- held then would hold
+    // every finding in an earlier run rather than report anything about it.
+    const subject = aboutness(indicatorId, e.finding.measure);
+    if (subject && e.finding.subjectWords === null) {
+      held.push({
+        evidence: e,
+        reason: `the provision never names ${subject}, which is what this indicator is about`,
+      });
+      continue;
+    }
+    // And a subject answered with the words that impose the duty, or with the party bound. Those
+    // say what the provision does and to whom; neither says what it is about, and a provision
+    // whose subject can only be given in those words has not shown one.
+    if (
+      subject &&
+      e.finding.subjectWords !== null &&
+      e.finding.subjectWords !== undefined &&
+      (restates(e.finding.subjectWords, e.finding.definingWords) ||
+        restates(e.finding.subjectWords, e.finding.dutyBearer))
+    ) {
+      held.push({
+        evidence: e,
+        reason: `the words said to name ${subject} are the words that impose the duty or name the party bound`,
+      });
+      continue;
+    }
     // Where the measure is a condition, the place the data goes is not one. The condition may be
     // stated outright or carved out as an exception, so either will do; naming neither will not.
     if (
@@ -1368,6 +1400,19 @@ function locational(indicatorId: string, measure: string | null): boolean {
 function definedBy(indicatorId: string, measure: string | null): string | null {
   if (!measure) return null;
   return (MEASURES[indicatorId] ?? []).find((m) => m.token === measure)?.defines ?? null;
+}
+
+/**
+ * What a provision has to be about to answer this indicator, or null where none is declared.
+ *
+ * Null for the two pillars whose subject is already asked for three other ways, and for the
+ * catch-all measures that exist to record a ban on something this indicator does not score.
+ */
+function aboutness(indicatorId: string, measure: string | null): string | null {
+  const declared = SUBJECTS[indicatorId];
+  if (!declared) return null;
+  const off = (MEASURES[indicatorId] ?? []).some((m) => m.token === measure && m.offSubject === true);
+  return off ? null : declared;
 }
 
 /** Is this measure one only a command makes out, so that a prohibition of the act does not? */

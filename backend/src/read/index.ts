@@ -19,7 +19,7 @@
 import type { Db } from '../db/index.js';
 import type { Indicator } from '../rubric/types.js';
 import { generate, EngineFailure, READING_MODEL } from '../engines/ollama.js';
-import { MEASURES, INDICATOR_OF_MEASURE } from '../rubric/measures.js';
+import { MEASURES, INDICATOR_OF_MEASURE, SUBJECTS } from '../rubric/measures.js';
 
 /**
  * One requirement a provision imposes, described in the terms the score bands use.
@@ -167,6 +167,21 @@ export interface Finding {
    * absent is held rather than scored.
    */
   definingWords: string | null;
+  /**
+   * The words naming what the provision is about, quoted, or null where it never names it.
+   *
+   * Every other field asks what the provision does -- who is bound, what they must do, where, by
+   * what words. None asked what it was about, and that is what went wrong most often across the
+   * twelve-pillar run. "The Commission shall open and maintain an account or accounts with such
+   * bank or banks in Malaysia" really does require an account at a local bank, so every question
+   * asked of it was answered correctly, and it scored the maximum on whether online sellers must
+   * bank locally. A licence from the Kenaf and Tobacco Board really is a licence.
+   *
+   * Asked after the indicator is chosen and before the measure is named, because the subject
+   * belongs to the indicator: it is the rubric's own "Category" column. A provision that does not
+   * name it is evidence of something, and not of this.
+   */
+  subjectWords: string | null;
   /** The words by which the thing crosses the economy's border, quoted. Null if nothing crosses. */
   borderWords: string | null;
   /**
@@ -326,7 +341,9 @@ function rubricBlock(indicators: readonly Indicator[]): string {
       const measureBlock = measures
         ? `\n    Measures it recognises, one of which every finding must name:\n${measures}`
         : '';
-      return `  ${i.id} -- ${i.category}${exception}${measureBlock}\n    The distinctions this indicator draws:\n${bands}`;
+      const subject = SUBJECTS[i.id] ? `
+    It is about: ${SUBJECTS[i.id]}` : '';
+      return `  ${i.id} -- ${i.category}${exception}${subject}${measureBlock}\n    The distinctions this indicator draws:\n${bands}`;
     })
     .join('\n\n');
 }
@@ -410,6 +427,14 @@ function prompt(section: SectionInput, pillarName: string, indicators: readonly 
     'Minister, an authority, a commissioner, a regulator, a police officer or a public agency.',
     '"organisation" if it is a company, a licensee, a data user, an employer or any other body the',
     'law regulates. "individual" if it is a natural person acting for themselves.',
+    'subjectWords: each indicator above says, under "it is about", the thing a provision has to be',
+    'about to answer it. Copy from your quote the words naming that thing. Null if the provision',
+    'never names it anywhere -- and then this is not the indicator, however exactly the provision',
+    'imposes the kind of duty it describes. A licence is not an e-commerce licence unless the',
+    'provision says what is being licensed and the answer is selling online; a duty to bank locally',
+    'is not an online-payment rule unless the provision says what the payment is for. Do not copy',
+    'the words you used for dutyBearer or for definingWords: those say who is bound and what they',
+    'must do, and this asks what the provision is about.',
     'measure: only then, which measure this duty or power is. Each measure above says whom it is',
     'borne or held by. One borne by a party other than the one named there is not that measure,',
     'however similar the words are: a power for a public authority to demand information is not a',
@@ -506,6 +531,7 @@ const schemaFor = (indicators: readonly Indicator[]) => ({
           roleWords: { type: ['string', 'null'] },
           dutyBearerKind: { type: 'string', enum: ['government', 'organisation', 'individual'] },
           indicatorId: { type: 'string' },
+          subjectWords: { type: ['string', 'null'] },
           measure: { type: 'string', enum: measureTokens(indicators) },
           definingWords: { type: ['string', 'null'] },
           borderWords: { type: ['string', 'null'] },
@@ -539,6 +565,7 @@ const schemaFor = (indicators: readonly Indicator[]) => ({
           'roleWords',
           'dutyBearerKind',
           'indicatorId',
+          'subjectWords',
           'measure',
           'definingWords',
           'borderWords',
@@ -843,6 +870,7 @@ function coerce(raw: unknown): Finding | null {
     authorisingWords: str(r['authorisingWords']),
     roleWords: str(r['roleWords']),
     definingWords: str(r['definingWords']),
+    subjectWords: str(r['subjectWords']),
     borderWords: str(r['borderWords']),
     imposingWords: str(r['imposingWords']),
     prescribingWords: str(r['prescribingWords']),

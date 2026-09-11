@@ -88,6 +88,14 @@ export interface Measure {
    */
   commands?: boolean;
   /**
+   * Whether this measure is deliberately about something other than the indicator's subject.
+   *
+   * Three indicators carry a catch-all beside the real measure -- an import ban on food or
+   * firearms recorded as what it is, rather than as an ICT ban. Those exist to say "a ban, and not
+   * on this", so the subject test would hold exactly the findings they were written to keep.
+   */
+  offSubject?: boolean;
+  /**
    * Whether the defining words must say more than where the data goes.
    *
    * 6.4 asks for a condition, and "overseas" is not one. The reader answered the condition question
@@ -279,9 +287,7 @@ export const MEASURES: Record<string, Measure[]> = {
   '10.1': [
     {
       token: 'ict-import-ban',
-      defines:
-        'the words naming the computing, telecommunications or online goods or services that may not be brought in.' +
-        ' The goods themselves, not the words about importing or prohibiting them: "prohibited", "any goods" and "the importation of" name no goods.',
+      defines: 'the words prohibiting the goods or services from being brought in',
       crossesBorder: true,
       gloss:
         'a prohibition on importing a class of information and communications technology goods, or on supplying an online service from abroad. A ban on food, medicines, chemicals, weapons, waste, wildlife, vehicles or consumer products is a real import ban and belongs to other-import-ban',
@@ -297,6 +303,7 @@ export const MEASURES: Record<string, Measure[]> = {
       token: 'other-import-ban',
       defines: 'the words naming the goods that may not be brought in',
       crossesBorder: true,
+      offSubject: true,
       alsoAsked: [
         'the Minister may impose a permanent ban on consumer goods of a particular kind',
         'a person commits an offence if the person imports a firearm or firearm part',
@@ -309,8 +316,7 @@ export const MEASURES: Record<string, Measure[]> = {
   '10.2': [
     {
       token: 'import-quota',
-      defines:
-        'the words naming the computing, telecommunications or online goods or services the limit applies to',
+      defines: 'the words setting the limit on how much may be brought in',
       crossesBorder: true,
       gloss:
         'a quota, ceiling or other limit on how much of an ICT good or online service may be imported',
@@ -318,9 +324,7 @@ export const MEASURES: Record<string, Measure[]> = {
     },
     {
       token: 'import-compliance',
-      defines:
-        'the words naming the computing, telecommunications or online goods or services that may not be brought in without it.' +
-        ' The goods themselves, not the words about importing or prohibiting them: "prohibited", "any goods" and "the importation of" name no goods.',
+      defines: 'the words requiring the licence, permit, registration or label before it may be brought in',
       crossesBorder: true,
       gloss:
         'a licence, permit, authorisation, registration, labelling or import-control requirement that must be met before ICT goods or online services may be imported',
@@ -330,6 +334,7 @@ export const MEASURES: Record<string, Measure[]> = {
       token: 'other-import-control',
       defines: 'the words naming the goods the control applies to',
       crossesBorder: true,
+      offSubject: true,
       gloss:
         'a quota, licence, permit or other import control on goods that are not computing, telecommunications or online goods',
       actor: 'the importer',
@@ -338,9 +343,7 @@ export const MEASURES: Record<string, Measure[]> = {
   '10.4': [
     {
       token: 'ict-export-restriction',
-      defines:
-        'the words naming the computing, telecommunications or online goods or services that may not be sent out.' +
-        ' The goods themselves, not the words about importing or prohibiting them: "prohibited", "any goods" and "the importation of" name no goods.',
+      defines: 'the words prohibiting or controlling the sending out of the goods or services',
       crossesBorder: true,
       gloss:
         'a prohibition, licence, permit or other control on exporting ICT goods or supplying online services abroad',
@@ -354,6 +357,7 @@ export const MEASURES: Record<string, Measure[]> = {
       token: 'other-export-restriction',
       defines: 'the words naming the goods that may not be sent out',
       crossesBorder: true,
+      offSubject: true,
       alsoAsked: [
         'no person shall export hazardous or other waste except under a permit',
         'a licence is required to export any scheduled species',
@@ -1015,3 +1019,78 @@ export const INDICATOR_OF_MEASURE: ReadonlyMap<string, string> = (() => {
   for (const [token, ids] of owners) if (ids.length === 1 && ids[0]) sole.set(token, ids[0]);
   return sole;
 })();
+
+/**
+ * What a provision has to be about, indicator by indicator.
+ *
+ * Every field above asks what a provision *does* -- who is bound, what they must do, where, by
+ * what words. Nothing asked what it was *about*, and across the twelve-pillar run that is what
+ * went wrong most often. Malaysia's online-payment cell scored its maximum on "The Commission
+ * shall open and maintain an account or accounts with such bank or banks in Malaysia", which is
+ * the Competition Commission's housekeeping. Its e-commerce licensing cell scored on licences from
+ * the Kenaf and Tobacco Board and the solid waste regulator. Australia's ICT import ban scored on
+ * consumer product safety. Every one of those provisions genuinely imposes the act the measure
+ * describes. None of them is about the thing the indicator asks about.
+ *
+ * So the subject is asked the way the place and the role are asked: as words copied out of the
+ * provision, absent when the provision does not name it. The Kenaf Act names no online selling, a
+ * commission's bank account names no online payment, and a ban on consumer goods names no ICT
+ * good -- not because a list says those Acts are irrelevant, but because the words are not there.
+ *
+ * The subject is the indicator's, not the measure's: every measure of an indicator is about the
+ * same thing, which is what the rubric's "Category (Policy issue)" column says.
+ *
+ * Pillars 6 and 7 are deliberately absent. Their subject is already asked for and checked three
+ * ways -- the data located, the words calling it information, the words keeping it there -- and a
+ * second question about the same thing would only be answered with the same words.
+ */
+export const SUBJECTS: Readonly<Record<string, string>> = {
+  '1.4': 'the imported goods the anti-dumping, countervailing or safeguard duty is charged on',
+  '2.1': 'the government procurement, tender or public contract the exclusion applies to',
+  '2.2': 'the source code, encryption or trade secret that has to be surrendered or used',
+  '2.3': 'the government procurement, tender or public contract the limitation applies to',
+  '3.1': 'the sector or line of business whose shares are restricted',
+  '3.2': 'the business or sector the joint venture has to be formed in',
+  '3.3': 'the company or the office whose holder has to be a national or a resident',
+  '3.4': 'the investment or acquisition that has to be screened or approved',
+  '3.5': 'the service that may only be supplied through a presence in the economy',
+  '4.01': 'the patent or the patent application',
+  '4.2': 'the patent whose infringement is being remedied',
+  '4.3': 'the patent whose infringement is being remedied',
+  '4.5': 'the copyright work, or the right in it',
+  '4.6': 'the copyright work infringed online, or the right in it',
+  '4.9': 'the trade secret, source code or algorithm that has to be disclosed',
+  '4.1': 'the trade secret or confidential business information being protected',
+  '5.1': 'the telecommunications infrastructure that has to be shared',
+  '5.2': 'the telecommunications business whose shares are restricted',
+  '5.4': 'the telecommunications operator that has to separate its accounts or its functions',
+  '5.5': 'the telecommunications service, network or operator the licence is required for',
+  '5.7': 'the telecommunications regulator whose independence is in question',
+  '8.3': 'the user or subscriber of the online or telecommunications service who has to be identified',
+  '8.4': 'the online content, or the service carrying it, that has to be monitored',
+  '9.1': 'the website, online content or application that is to be blocked or filtered',
+  '9.3': 'the advertising, and the fact that it is carried online',
+  '9.4': 'the online content provider, platform or application the licence is required for',
+  '10.1': 'the computing, telecommunications or online goods or services that may not be brought in',
+  '10.2': 'the computing, telecommunications or online goods or services the restriction applies to',
+  '10.3': 'the goods, services or content the local-content requirement applies to',
+  '10.4': 'the computing, telecommunications or online goods or services that may not be sent out',
+  '11.1': 'the technical standard or technical regulation being set',
+  '11.2': 'the product whose safety or radio emissions have to be certified',
+  '11.3': 'the product that has to be screened, tested or certified',
+  '11.4': 'the encryption standard or cryptographic method',
+  '12.01': 'the e-commerce business or online marketplace whose shares are restricted',
+  '12.2': 'the online purchase, or the delivery of what was bought online',
+  '12.3': 'the online selling or e-commerce service the licence is required for',
+  '12.4.1': 'the online payment, or the online purchase the payment is for',
+  '12.4.2': 'the online payment, or the online purchase the payment is for',
+  '12.4.3': 'the online payment, or the online purchase the payment is for',
+  '12.4.4': 'the online payment, or the online purchase the payment is for',
+  '12.4.5': 'the online payment, or the online purchase the payment is for',
+  '12.4.6': 'the online payment, or the online purchase the payment is for',
+  '12.4.7': 'the online payment, or the online purchase the payment is for',
+  '12.5': 'the imported consignment or its value, which the threshold is applied to',
+  '12.6': 'the electronic transmission the duty or charge is imposed on',
+  '12.7': 'the domain name',
+  '12.8': 'the online service whose provider has to be present in the economy',
+};

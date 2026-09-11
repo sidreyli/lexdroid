@@ -51,6 +51,7 @@ function fixture() {
 const finding: Finding = {
   indicatorId: '7.3',
   measure: 'minimum-retention',
+  subjectWords: null,
   dutyBearer: 'Every company',
   dutyAct: 'shall retain the records',
   dutyForce: 'requires',
