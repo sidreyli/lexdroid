@@ -57,16 +57,19 @@ function mergeProvisions(bodies: string[]): string {
   const container = $('#legisContent').first();
   if (container.length === 0) return bodies[0]!;
 
+  // A schedule arrives as div.schedule rather than div.prov1, and is merged the same way: it is
+  // where a prohibited-goods list or a relief threshold is written down.
+  const HEADERS = 'td.prov1Hdr, td.prov1Rep, td.sHdr';
   const have = new Set<string>();
-  container.find('div.prov1 td.prov1Hdr, div.prov1 td.prov1Rep').each((_i, el) => {
+  container.find(`div.prov1 ${HEADERS}, div.schedule ${HEADERS}`).each((_i, el) => {
     const id = $(el).attr('id');
     if (id) have.add(id);
   });
 
   for (const html of bodies.slice(1)) {
     const $more = cheerio.load(html);
-    $more('#legisContent div.prov1').each((_i, el) => {
-      const id = $more(el).find('td.prov1Hdr, td.prov1Rep').first().attr('id');
+    $more('#legisContent').find('div.prov1, div.schedule').each((_i, el) => {
+      const id = $more(el).find(HEADERS).first().attr('id');
       if (id && have.has(id)) return;
       if (id) have.add(id);
       container.append($more.html(el as never));
