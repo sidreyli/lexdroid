@@ -20,6 +20,7 @@ import type { Db } from '../db/index.js';
 import type { Indicator } from '../rubric/types.js';
 import { generate, EngineFailure, READING_MODEL } from '../engines/ollama.js';
 import { MEASURES, INDICATOR_OF_MEASURE, SUBJECTS } from '../rubric/measures.js';
+import { findFragment } from '../util/locate.js';
 
 /**
  * One requirement a provision imposes, described in the terms the score bands use.
@@ -594,7 +595,9 @@ const schemaFor = (indicators: readonly Indicator[]) => ({
 function normaliseForQuoteCheck(s: string): string {
   return s
     .replace(/[‘’‛′]/g, "'")
-    .replace(/[“”″]/g, '"')
+    // The star on a defined term and the marks round a definition's subject are how the page is
+    // set, not words. A reader quoting faithfully drops them, and failing it for that is wrong.
+    .replace(/["“”″*]/g, '')
     .replace(/[‐-―−]/g, '-')
     .replace(/\s+/g, ' ')
     .trim()
@@ -609,8 +612,13 @@ function normaliseForQuoteCheck(s: string): string {
  */
 const MIN_QUOTE_CHARS = 8;
 const MIN_PHRASE_CHARS = 3;
-/** Each side of an ellipsis, on its own. Shorter than this and the gap is doing the work. */
-const MIN_FRAGMENT_CHARS = 6;
+/**
+ * What an elided quotation carries between its gaps. Fragments are matched in order, one after the
+ * other, so a short one between two long ones is pinned; the total is what stops the gaps working.
+ */
+const MIN_FRAGMENT_CHARS = 3;
+const MIN_ANCHOR_CHARS = 12;
+const ELIDED_WEIGHT = 5;
 
 /**
  * A quote that skips over text is still a quote, provided every part of it is really there and in
@@ -622,7 +630,8 @@ const MIN_FRAGMENT_CHARS = 6;
 function fragmentsOf(quote: string): string[] {
   return quote
     .split(/\s*(?:\.\.\.|…)\s*/)
-    .map((f) => normaliseForQuoteCheck(f).replace(/^[:;,(]+|[:;,]+$/g, '').trim())
+    // A full stop the reader adds to close its quotation is not a difference in the words.
+    .map((f) => normaliseForQuoteCheck(f).replace(/^[:;,(]+|[.:;,]+$/g, '').trim())
     .filter(Boolean);
 }
 
@@ -631,12 +640,18 @@ export function quoteIsInSection(quote: string, sectionText: string, min = MIN_Q
   const parts = fragmentsOf(quote);
   if (parts.length === 0) return false;
   // Elided or not, the words a reviewer follows must total at least the floor between them.
-  if (parts.join(' ').length < min) return false;
+  const joined = parts.join(' ');
+  if (joined.length < min) return false;
+
+  if (parts.length > 1) {
+    if (joined.length < min * ELIDED_WEIGHT) return false;
+    if (Math.max(...parts.map((p) => p.length)) < MIN_ANCHOR_CHARS) return false;
+  }
 
   let from = 0;
   for (const part of parts) {
-    if (part.length < MIN_FRAGMENT_CHARS && parts.length > 1) return false;
-    const at = haystack.indexOf(part, from);
+    if (part.length < MIN_FRAGMENT_CHARS) return false;
+    const at = findFragment(haystack, part, from, part.length < MIN_ANCHOR_CHARS);
     if (at < 0) return false;
     from = at + part.length;
   }
