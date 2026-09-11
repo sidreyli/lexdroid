@@ -53,6 +53,8 @@ const ADDED_COLUMNS: readonly { table: string; column: string; type: string }[] 
   { table: 'section', column: 'anchor', type: 'TEXT' },
   { table: 'instrument', column: 'title_provisional', type: 'INTEGER NOT NULL DEFAULT 0' },
   { table: 'instrument', column: 'also_at', type: 'TEXT' },
+  { table: 'instrument', column: 'made_under_instrument_id', type: 'INTEGER' },
+  { table: 'instrument', column: 'made_under_basis', type: 'TEXT' },
   { table: 'cell', column: 'queries', type: 'TEXT' },
   { table: 'cell', column: 'depth', type: 'INTEGER' },
   { table: 'cell', column: 'surfaced', type: 'INTEGER' },
