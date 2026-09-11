@@ -233,6 +233,84 @@ export interface BuildContentsOptions {
  * is what the shortlist was built for. Nothing is excluded: everything the budget does not reach
  * is still reported as left undone, and a later crawl continues down the same order.
  */
+/** As many candidates per question as the register is large, so a big register is still placed. */
+function depthFor(registered: number): number {
+  return Math.min(1_000, Math.max(40, Math.ceil(registered / 50)));
+}
+
+/** How far down the ranking an Act still carries its own instruments, and how many it carries. */
+const PARENTS_FOLLOWED = 60;
+const CARRIED_PER_PARENT = 40;
+
+/** A notice appoints someone or fixes a figure; the law it is made under is in the other three. */
+const CARRY_FIRST: readonly string[] = ['regulation', 'order', 'rule'];
+
+/** "Customs (Prohibited Imports) Regulations 1956" is made under "Customs Act 1901". */
+function actStem(title: string): string | null {
+  const stem = /^(.*?)\s+Act\b/i.exec(title.trim())?.[1]?.trim();
+  return stem && stem.length >= 4 ? stem : null;
+}
+
+/**
+ * Each Act near the top of the ranking, followed by the instruments made under it.
+ *
+ * A title is a weak signal over a register of tens of thousands, and the instruments that answer
+ * the rubric are exactly the ones with the flattest titles: "Customs Regulation 2015" ranked
+ * nowhere against 28,000 competitors, while the Act it is made under ranked twelfth. The Act is
+ * the signal. What hangs off it comes with it, and the score already knows which Act governs.
+ */
+export function withSubsidiary(db: Db, economy: string, ranked: number[]): number[] {
+  const rows = db
+    .prepare('SELECT id, title, kind FROM instrument WHERE economy_code = ? ORDER BY id')
+    .all(economy) as { id: number; title: string; kind: string }[];
+  const place = new Map(ranked.map((id, n) => [id, n] as const));
+  const byId = new Map(rows.map((r) => [r.id, r] as const));
+
+  const rank = (id: number): number => place.get(id) ?? Number.MAX_SAFE_INTEGER;
+  const carried: number[][] = [];
+  let lastParentAt = -1;
+  for (const [at, id] of ranked.entries()) {
+    if (carried.length >= PARENTS_FOLLOWED) break;
+    const row = byId.get(id);
+    const stem = row?.kind === 'act' ? actStem(row.title) : null;
+    if (!stem) continue;
+    lastParentAt = at;
+    const prefix = `${stem.toLowerCase()} `;
+    carried.push(
+      rows
+        .filter((r) => r.kind !== 'act' && `${r.title.toLowerCase()} `.startsWith(prefix))
+        .sort(
+          (a, b) =>
+            (CARRY_FIRST.includes(a.kind) ? 0 : 1) - (CARRY_FIRST.includes(b.kind) ? 0 : 1) ||
+            rank(a.id) - rank(b.id) ||
+            a.id - b.id,
+        )
+        .slice(0, CARRIED_PER_PARENT)
+        .map((r) => r.id),
+    );
+  }
+
+  const order: number[] = [];
+  const placed = new Set<number>();
+  const take = (id: number): void => {
+    if (placed.has(id)) return;
+    placed.add(id);
+    order.push(id);
+  };
+
+  // The governing Acts first, then their instruments a round at a time. Exhausting one Act before
+  // starting the next buried the customs regulations behind forty consumer-protection notices.
+  for (const id of ranked.slice(0, lastParentAt + 1)) take(id);
+  for (let k = 0; k < CARRIED_PER_PARENT; k += 1) {
+    for (const children of carried) {
+      const id = children[k];
+      if (id !== undefined) take(id);
+    }
+  }
+  for (const id of ranked) take(id);
+  return order;
+}
+
 export async function rubricOrder(
   db: Db,
   opts: { economy: string; model?: string; log?: (line: string) => void },
@@ -265,9 +343,12 @@ export async function rubricOrder(
       economy: opts.economy,
       queries,
       limit: registered,
+      depthPerQuery: depthFor(registered),
       ...(opts.model ? { model: opts.model } : {}),
     });
-    return ranked.map((c) => c.instrumentId);
+    const order = withSubsidiary(db, opts.economy, ranked.map((c) => c.instrumentId));
+    log(`  ${ranked.length} ranked; ${order.length} placed once each Act carries its own instruments`);
+    return order;
   } catch (err) {
     // A crawl that cannot rank is still a crawl. Said out loud, because the order it falls back to
     // is the one this function exists to replace.
