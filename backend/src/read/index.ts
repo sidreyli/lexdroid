@@ -336,7 +336,7 @@ function rubricBlock(indicators: readonly Indicator[]): string {
       const measures = (MEASURES[i.id] ?? [])
         .map(
           (m) =>
-            `      ${m.token}: ${m.gloss}\n        borne by: ${m.actor}\n        made out by: ${m.defines}`,
+            `      ${m.token}: ${m.gloss}\n        borne by: ${m.actor}\n        look in the provision for: ${m.defines}`,
         )
         .join('\n');
       const measureBlock = measures
@@ -441,9 +441,13 @@ function prompt(section: SectionInput, pillarName: string, indicators: readonly 
     'however similar the words are: a power for a public authority to demand information is not a',
     'duty on an organisation to appoint someone -- and it is not a duty to keep records either. If',
     'what you wrote matches no measure listed, leave the finding out.',
-    'definingWords: every measure above says, under "made out by", the one thing a provision has to',
-    'say to be that measure. Copy those words from your quote. Null if the provision does not say',
-    'it anywhere -- and then it is not that measure, however close its subject is.',
+    'definingWords: every measure above says, under "look in the provision for", the one thing a',
+    'provision has to say to be that measure. That line describes those words in our wording; it is',
+    'not the words themselves. Answer with the wording the provision itself uses, copied from your',
+    'quote, which will read nothing like the description. Repeating the description back is not an',
+    'answer.',
+    'Null if the provision does not say it anywhere -- and then it is not that measure, however',
+    'close its subject is.',
     'borderWords: if the provision is about something entering or leaving the economy, copy from',
     'your quote the words that say so -- "import", "export", "bring into Singapore", "take out of',
     'Australia", "supplied from outside", "consign to a place outside". Null if nothing in the',
@@ -660,6 +664,26 @@ export function quoteIsInSection(quote: string, sectionText: string, min = MIN_Q
   return true;
 }
 
+/** The catalogue's own description of a measure, folded for comparison with an answer. */
+function catalogueWords(indicatorId: string, measure: string): string[] {
+  const m = (MEASURES[indicatorId] ?? []).find((x) => x.token === measure);
+  return m ? [m.gloss, m.defines] : [];
+}
+
+/**
+ * Whether an answer is our description of the measure handed back instead of the provision's words.
+ * Counted as itself: 651 findings were held for a missing quote when the quote was never attempted.
+ */
+function echoesTheCatalogue(answer: string, indicatorId: string, measure: string): boolean {
+  const fold = (s: string): string => s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  const a = fold(answer);
+  if (a.length < 15) return false;
+  return catalogueWords(indicatorId, measure).some((w) => {
+    const f = fold(w);
+    return f.length >= 15 && (f.includes(a) || a.includes(f));
+  });
+}
+
 /**
  * Why a finding cannot stand, or null if it can.
  *
@@ -723,6 +747,9 @@ export function rejectionFor(f: Finding, sectionText: string, allowed: Set<strin
     return `the position said to be created, "${f.roleWords}", is not in the provision`;
   }
   // The words that make the measure out are a claim about the provision like every other quote.
+  if (f.definingWords && f.measure && echoesTheCatalogue(f.definingWords, f.indicatorId, f.measure)) {
+    return `the words said to make out ${f.measure} are this catalogue's description of it, not the provision's own words`;
+  }
   if (f.definingWords && !inProvision(f.definingWords)) {
     return `the words said to make out ${f.measure}, "${f.definingWords}", are not in the provision`;
   }

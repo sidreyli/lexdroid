@@ -95,7 +95,7 @@ describe('every measure says what makes it out', () => {
       'Cross-border Data Policies',
       [indicator('6.2')],
     );
-    expect(p).toContain('made out by:');
+    expect(p).toContain('look in the provision for:');
     expect(p).toContain(MEASURES['6.2']![0]!.defines);
   });
 });
