@@ -31,8 +31,43 @@ import {
   type SearchHit,
 } from '../index/index.js';
 
-/** How many sections a cell reads, unless told otherwise. Recorded in every retrieval record. */
+/** How many sections a cell reads in the corpus the depth was measured on, unless told otherwise. */
 export const DEFAULT_DEPTH = 24;
+
+/**
+ * The corpus the depth and the per-query width were measured on.
+ *
+ * Singapore holds 19,064 provisions. Malaysia holds 37,144 and Australia 55,902 -- a Singaporean
+ * provision has a fifth of the competition an Australian one has, and both were being asked for
+ * the same twenty-four places. Australia is the economy the run scored worst on.
+ */
+const MEASURED_ON = 19_000;
+
+/**
+ * How much further to look in a corpus larger than the one the numbers were measured on.
+ *
+ * Sub-linear on purpose. Retrieval is cheap and reading is not -- every extra place is another
+ * call to the model -- so the depth grows with the square root of the corpus rather than with the
+ * corpus. Australia's 55,902 provisions buy 1.7 times the depth, not three times it. Capped at
+ * double, because past that the cost is real and the answer is better retrieval, not more reading.
+ *
+ * A corpus smaller than the measured one is not read more thinly: the scale never falls below one.
+ * The number it produces is recorded on every cell, so a run says how deep it looked.
+ */
+export function scaleFor(indexedSections: number): number {
+  if (!Number.isFinite(indexedSections) || indexedSections <= MEASURED_ON) return 1;
+  return Math.min(2, Math.sqrt(indexedSections / MEASURED_ON));
+}
+
+/** The depth for a corpus of this size, rounded to a whole number of provisions. */
+export function depthFor(indexedSections: number): number {
+  return Math.round(DEFAULT_DEPTH * scaleFor(indexedSections));
+}
+
+/** And how deep each individual query goes before fusion, which is wider than the depth on purpose. */
+export function perQueryDepthFor(indexedSections: number): number {
+  return Math.round(PER_QUERY_DEPTH * scaleFor(indexedSections));
+}
 
 /**
  * How much of that depth one instrument may occupy.
@@ -211,26 +246,6 @@ export async function retrieveForIndicator(
   indicator: Indicator,
   opts: RetrieveOptions,
 ): Promise<RetrievalRecord> {
-  const depth = opts.depth ?? DEFAULT_DEPTH;
-  const economyRow = db
-    .prepare('SELECT name FROM economy WHERE code = ?')
-    .get(opts.economy) as { name: string } | undefined;
-  const queries = queriesFor(indicator, economyRow?.name);
-  const vectors = opts.vectors ?? loadVectors(db, { economy: opts.economy, ...(opts.model ? { model: opts.model } : {}) });
-
-  const runs: SearchHit[][] = [];
-  for (const query of queries) {
-    const lex = searchLexical(db, query, { limit: PER_QUERY_DEPTH, economy: opts.economy });
-    if (lex.length) runs.push(lex);
-    if (vectors.ids.length) {
-      const dense = await searchDense(query, vectors, {
-        limit: PER_QUERY_DEPTH,
-        ...(opts.model ? { model: opts.model } : {}),
-      });
-      if (dense.length) runs.push(dense);
-    }
-  }
-
   const indexedSections = (
     db
       .prepare(
@@ -239,6 +254,31 @@ export async function retrieveForIndicator(
       )
       .get(opts.economy) as { c: number }
   ).c;
+
+  // How far this economy's corpus is asked to be looked into. Declared, recorded, and larger for
+  // a larger statute book -- an asked-for depth still wins, because lowering it has to stay a
+  // choice someone made rather than something that happened.
+  const depth = opts.depth ?? depthFor(indexedSections);
+  const perQueryDepth = perQueryDepthFor(indexedSections);
+
+  const economyRow = db
+    .prepare('SELECT name FROM economy WHERE code = ?')
+    .get(opts.economy) as { name: string } | undefined;
+  const queries = queriesFor(indicator, economyRow?.name);
+  const vectors = opts.vectors ?? loadVectors(db, { economy: opts.economy, ...(opts.model ? { model: opts.model } : {}) });
+
+  const runs: SearchHit[][] = [];
+  for (const query of queries) {
+    const lex = searchLexical(db, query, { limit: perQueryDepth, economy: opts.economy });
+    if (lex.length) runs.push(lex);
+    if (vectors.ids.length) {
+      const dense = await searchDense(query, vectors, {
+        limit: perQueryDepth,
+        ...(opts.model ? { model: opts.model } : {}),
+      });
+      if (dense.length) runs.push(dense);
+    }
+  }
 
   const fused = runs.length ? fuse(runs) : [];
   const owner = instrumentOf(db, fused.map((h) => h.sectionId));
@@ -357,7 +397,7 @@ export async function retrieveForIndicator(
     depth,
     surfaced: fused.length,
     indexedSections,
-    perQueryDepth: PER_QUERY_DEPTH,
+    perQueryDepth,
     governing,
     sections,
   };
