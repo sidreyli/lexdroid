@@ -1554,13 +1554,60 @@ describe('an indicator whose top band is an absence', () => {
       { score: 0.25, criterion: 'One measure' },
       { score: 0, criterion: 'No measure' },
     ]);
-    const m = () => p5('1.4', 'trade-defence-measure', { dutyForce: 'permits', dutyAct: 'may impose a duty' });
+    // Distinct provisions, because the band counts measures. Reading one anti-dumping Act section
+    // by section is how Australia reported ten and Singapore eleven, against ESCAP's nought.
+    let n = 0;
+    const m = () => {
+      n += 1;
+      return {
+        ...p5('1.4', 'trade-defence-measure', { dutyAct: 'shall be charged a dumping duty' }),
+        sectionId: n,
+        instrumentId: n,
+      };
+    };
     expect(at(i14, []).score).toBe(0);
     expect(at(i14, [m()]).score).toBe(0.25);
     expect(at(i14, [m(), m()]).score).toBe(0.5);
     expect(at(i14, [m(), m(), m()]).score).toBe(0.75);
     expect(at(i14, [m(), m(), m(), m()]).score).toBe(1);
     expect(at(i14, [m(), m(), m(), m(), m()]).score).toBe(1);
+  });
+
+  it('counts one provision once, however many times it is read', () => {
+    const i14 = indicator12('1.4', [
+      { score: 1, criterion: 'More than three measures' },
+      { score: 0.75, criterion: 'Three measures' },
+      { score: 0.5, criterion: 'Two measures' },
+      { score: 0.25, criterion: 'One measure' },
+      { score: 0, criterion: 'No measure' },
+    ]);
+    // Four sections of one Act, read separately. That is one measure, however many provisions
+    // carry it -- which is the count Australia got wrong.
+    const same = (sectionId: number) => ({
+      ...p5('1.4', 'trade-defence-measure', { dutyAct: 'shall be charged a dumping duty' }),
+      sectionId,
+    });
+    expect(at(i14, [same(1), same(2), same(3), same(4)]).score).toBe(0.25);
+  });
+
+  it('does not count a power to impose a duty as a duty in force', () => {
+    const i14 = indicator12('1.4', [
+      { score: 1, criterion: 'More than three measures' },
+      { score: 0.75, criterion: 'Three measures' },
+      { score: 0.5, criterion: 'Two measures' },
+      { score: 0.25, criterion: 'One measure' },
+      { score: 0, criterion: 'No measure' },
+    ]);
+    const power = p5('1.4', 'trade-defence-measure', {
+      dutyForce: 'permits',
+      dutyAct: 'may impose a duty',
+      mandatory: false,
+      imposingWords: null,
+      prescribingWords: 'the Minister may by notice impose a dumping duty',
+    });
+    const d = at(i14, [power]);
+    expect(d.score).toBe(0);
+    expect(d.held).toHaveLength(1);
   });
 });
 
