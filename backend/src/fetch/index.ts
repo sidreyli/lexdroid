@@ -106,8 +106,8 @@ const BACKOFF_MS = [30_000, 90_000, 240_000];
 const SLOWDOWN_MS = 6000;
 
 /**
- * The delay used when robots.txt could not be read. Deliberately slower than our floor: not
- * knowing what a host wants is a reason to be careful, not a licence to go at full speed.
+ * The delay used when robots.txt could not be read. Not knowing what a host wants is a reason to
+ * be careful. A host that answers 4xx has said there are no rules, which is knowing.
  */
 const UNKNOWN_ROBOTS_DELAY_MS = 10_000;
 
@@ -561,7 +561,11 @@ export class Fetcher {
     const s = this.state(host);
     if (s.robots) return s.robots;
 
+    // A host that answers "there is no such file" has answered, and the answer is that it has no
+    // rules. Only 404 and 410 say that: 403 and 429 are a host pushing back, which is the opposite.
     const unknown = (): Robots => ({ disallow: [], allow: [], crawlDelayMs: UNKNOWN_ROBOTS_DELAY_MS, fetched: false });
+    const noRules = (): Robots => ({ disallow: [], allow: [], crawlDelayMs: null, fetched: true });
+    let absent = false;
 
     const cached = this.readCache(`${origin}/robots.txt`);
     if (cached) {
@@ -573,7 +577,10 @@ export class Fetcher {
       await this.wait(host);
       try {
         const res = await this.send(`${origin}/robots.txt`);
-        if (res.status === 200 && res.body.length > 0 && !isSoftBlock(res)) {
+        if (res.status === 404 || res.status === 410) {
+          absent = true;
+          s.robots = noRules();
+        } else if (res.status === 200 && res.body.length > 0 && !isSoftBlock(res)) {
           s.robots = parseRobots(res.body.toString('utf8'));
           const hash = sha256(res.body);
           writeFileMkdir(blobPath(hash), res.body);
@@ -599,9 +606,11 @@ export class Fetcher {
 
     const delay = Math.max(this.minDelayMs, s.robots.crawlDelayMs ?? 0);
     this.onLog(
-      s.robots.fetched
-        ? `  ${host}: robots.txt read, ${s.robots.disallow.length} disallow rule(s), ${delay}ms between requests`
-        : `  ${host}: robots.txt could not be read. Treating that as unknown rather than permissive: ${delay}ms between requests.`,
+      absent
+        ? `  ${host}: no robots.txt, which is a host saying it has no rules: ${delay}ms between requests`
+        : s.robots.fetched
+          ? `  ${host}: robots.txt read, ${s.robots.disallow.length} disallow rule(s), ${delay}ms between requests`
+          : `  ${host}: robots.txt could not be read. Treating that as unknown rather than permissive: ${delay}ms between requests.`,
     );
 
     // Record what we learned against every portal on this host, so the profile view shows it.
