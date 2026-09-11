@@ -8,10 +8,19 @@
  * from -- so the answer is a span in the original text, not in the folded copy.
  */
 
-/** One source character, folded. Empty when the character collapses into the space before it. */
+/**
+ * Typography that marks words without being words.
+ *
+ * Australian drafting stars every defined term and a definition wraps its subject in quotation
+ * marks, so a reader quoting the words faithfully still drops them. Comparing them is comparing
+ * how the page was set, not what it says.
+ */
+const UNSPOKEN = '*"“”„‟″';
+
+/** One source character, folded. Empty when it collapses into the character before it. */
 function fold(ch: string): string {
+  if (UNSPOKEN.includes(ch)) return '';
   if ('‘’‚‛′'.includes(ch)) return "'";
-  if ('“”„‟″'.includes(ch)) return '"';
   if ('‐‑‒–—―−'.includes(ch)) return '-';
   if (/\s/.test(ch)) return ' ';
   return ch.toLowerCase();
@@ -42,12 +51,32 @@ function foldWithOffsets(s: string): Folded {
 }
 
 /**
- * The shortest a fragment of an elided quotation may be and still be evidence.
+ * What an elided quotation has to carry to be evidence.
  *
- * Every fragment has to be found in order for the quote to verify, so short ones make the check
- * free to pass: "a ... the ... of" appears in sequence in almost any provision.
+ * The fragments are matched in order, each after the one before, so a short fragment between two
+ * long ones is pinned on both sides and is not a free pass. What has to be held down is the total:
+ * too few quoted words either side of the gaps and the gaps are doing the work. A floor on every
+ * fragment instead threw away true quotations -- "an authorised airport employee ... may ...
+ * require any person ... to provide ..." is how a long provision is honestly quoted.
  */
-const MIN_FRAGMENT = 12;
+export const MIN_FRAGMENT = 3;
+export const MIN_ANCHOR = 12;
+export const MIN_ELIDED_TOTAL = 40;
+
+/** A short fragment must sit on word boundaries, so "may" cannot be found inside "mayor". */
+export function wholeWordAt(text: string, at: number, length: number): boolean {
+  const before = at === 0 ? ' ' : text[at - 1]!;
+  const after = at + length >= text.length ? ' ' : text[at + length]!;
+  return !/[a-z0-9]/.test(before) && !/[a-z0-9]/.test(after);
+}
+
+/** The first place `fragment` sits in `text` at or after `from`, on word boundaries if asked. */
+export function findFragment(text: string, fragment: string, from: number, whole: boolean): number {
+  let at = text.indexOf(fragment, from);
+  if (!whole) return at;
+  while (at >= 0 && !wholeWordAt(text, at, fragment.length)) at = text.indexOf(fragment, at + 1);
+  return at;
+}
 
 /**
  * The fragments of a quotation that skips over words, or null when it skips over none.
@@ -63,9 +92,9 @@ export function elidedFragments(needle: string): string[] | null {
     .map((p) => foldWithOffsets(p).text.trim())
     .filter((p) => p.length > 0);
   if (parts.length < 2) return null;
-  // One trivial fragment and the check means nothing, so the whole quotation fails rather than
-  // passing on words every provision contains.
   if (parts.some((p) => p.length < MIN_FRAGMENT)) return null;
+  if (Math.max(...parts.map((p) => p.length)) < MIN_ANCHOR) return null;
+  if (parts.join(' ').length < MIN_ELIDED_TOTAL) return null;
   return parts;
 }
 
@@ -87,7 +116,7 @@ export function locateQuote(haystack: string, needle: string): { start: number; 
     let start: number | null = null;
     let end = 0;
     for (const fragment of fragments) {
-      const at = h.text.indexOf(fragment, from);
+      const at = findFragment(h.text, fragment, from, fragment.length < MIN_ANCHOR);
       if (at < 0) return null;
       if (start === null) start = h.starts[at]!;
       end = h.ends[at + fragment.length - 1]!;

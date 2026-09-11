@@ -29,7 +29,7 @@ import { citationUrl } from '../export/index.js';
 import { decide, type Evidence, type FrameworkEvidence, type SurfacedInstrument } from '../decide/index.js';
 import { loadRubric } from '../rubric/index.js';
 import { ratesOfRun } from '../run/index.js';
-import { elidedFragments } from '../util/locate.js';
+import { elidedFragments, findFragment, MIN_ANCHOR } from '../util/locate.js';
 
 export interface GateOutcome {
   gate: string;
@@ -101,18 +101,22 @@ export function quoteAppearsIn(sectionText: string, quote: string): boolean {
 
   let from = 0;
   for (const fragment of fragments) {
-    const at = haystack.indexOf(normalise(fragment), from);
+    const part = normalise(fragment);
+    const at = findFragment(haystack, part, from, part.length < MIN_ANCHOR);
     if (at < 0) return false;
-    from = at + normalise(fragment).length;
+    from = at + part.length;
   }
   return true;
 }
 
-/** Normalised for comparison: whitespace and the quotation marks a source may render differently. */
+/**
+ * Normalised for comparison: whitespace, the quotation marks a source may render differently,
+ * and the typography that marks words without being words -- a star, a definition's own marks.
+ */
 function normalise(s: string): string {
   return s
     .replace(/[‘’‚‛]/g, "'")
-    .replace(/[“”„‟]/g, '"')
+    .replace(/["“”„‟*]/g, '')
     .replace(/[‐-―−]/g, '-')
     .replace(/ /g, ' ')
     .replace(/\s+/g, ' ')
