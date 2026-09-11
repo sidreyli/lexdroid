@@ -357,6 +357,41 @@ function distinctSectors(evidence: Evidence[]): number {
   return new Set(evidence.map((e) => (e.finding.sector ?? '').toLowerCase().trim())).size;
 }
 
+/**
+ * What proportion the provision states, if it states one at all.
+ *
+ * Every band of 3.1, 5.2 and 12.01 is a proportion -- none, a minority, a controlling stake, all
+ * of it -- so a provision that states no proportion cannot be put anywhere on the ladder. Across
+ * the twelve-pillar run the top rung was reached in all three economies by provisions that state
+ * none: "must hold an Australian financial services licence", "limitation on ownership of certain
+ * licensees", "The shareholding of the company shall comply with relevant Malaysian foreign
+ * investment restrictions". That last one is a cross-reference to a rule kept somewhere else.
+ *
+ * Whether the figure is stated from the foreign end or the local end is deliberately not decided
+ * here -- "not more than 30% foreign" and "at least 70% local" are one rule, and a reading that
+ * took the number alone would put them on opposite rungs. All this says is that a figure is there.
+ */
+export function statedProportion(words: string | null): 'none' | 'some' | null {
+  if (!words) return null;
+  const t = words.toLowerCase().replace(/\s+/g, ' ');
+
+  const figure =
+    /\b\d{1,3}(\.\d+)?\s*(%|per ?cent)/.test(t) ||
+    /\b(one|two|three|four|five|six|seven|eight|nine|ten|fifteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)\b[ -]*(per ?cent|%)/.test(t) ||
+    /\b(majority|minority|controlling (stake|interest)|half|one[ -]third|two[ -]thirds|one[ -]quarter)\b/.test(t);
+
+  // A total exclusion is a proportion too -- it is nought -- and it is how the top band is worded.
+  const total =
+    /\bno (shares?|equity|stake|interest|shareholding)\b/.test(t) ||
+    /\b(wholly|entirely|fully) (owned|held)\b/.test(t) ||
+    /\b100\s*(%|per ?cent)\b/.test(t) ||
+    /\b(shall|must|may) not\b[^.]{0,40}\bany (shares?|equity|stake|interest)\b/.test(t);
+
+  if (total && !figure) return 'none';
+  if (figure) return 'some';
+  return total ? 'none' : null;
+}
+
 interface EquityTokens {
   ban: string;
   minority: string;
@@ -384,7 +419,11 @@ function equityLadder(
   return (indicator, qualifying) => {
     const of = (token?: string): Evidence[] =>
       token ? qualifying.filter((e) => e.finding.measure === token) : [];
-    const bans = of(t.ban);
+    // The top rung says no shares at all, so words that state a figure are not it: something may
+    // be held. Which of the two rungs below it is not decided here, because the figure alone does
+    // not say -- "not more than 30% foreign" and "at least 70% local" are one rule read from two
+    // ends. So the finding is put back to the reader rather than guessed at.
+    const bans = of(t.ban).filter((e) => statedProportion(e.finding.definingWords) !== 'some');
     const minority = of(t.minority);
     const controlling = of(t.controlling);
     const stateOwned = of(t.stateOwnedOnly);
@@ -815,7 +854,9 @@ const RULES: Record<string, Rule> = {
 
   /** 1.4 "0.25 for each measure, up to 1" -- the only indicator that scores by counting. */
   '1.4': (indicator, qualifying) => {
-    const n = qualifying.length;
+    // The band counts measures, not provisions. Counting findings made Australia's ten and
+    // Singapore's eleven out of the sections of one anti-dumping Act, read separately.
+    const n = measureCount(qualifying);
     // Bands run 1, 0.75, 0.5, 0.25, 0 in that order, so the ordinal is the distance from four.
     const ordinal = n >= 4 ? 1 : indicator.bands.length - n;
     return n > 0
@@ -1103,6 +1144,19 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
       });
       continue;
     }
+    // A band that is a proportion needs the provision to state one. 3.1, 5.2 and 12.01 descend
+    // from no shares, through a minority, to a controlling stake, and the top rung was reached in
+    // all three economies by provisions that state no proportion at all: "must hold an Australian
+    // financial services licence", "limitation on ownership of certain licensees", "The
+    // shareholding of the company shall comply with relevant Malaysian foreign investment
+    // restrictions" -- a cross-reference to a rule kept somewhere else.
+    if (proportional(indicatorId, e.finding.measure) && statedProportion(e.finding.definingWords) === null) {
+      held.push({
+        evidence: e,
+        reason: 'the provision states no proportion, and every band of this indicator is a proportion',
+      });
+      continue;
+    }
     // Where the measure is a condition, the place the data goes is not one. The condition may be
     // stated outright or carved out as an exception, so either will do; naming neither will not.
     if (
@@ -1369,6 +1423,15 @@ function definedBy(indicatorId: string, measure: string | null): string | null {
   if (!measure) return null;
   return (MEASURES[indicatorId] ?? []).find((m) => m.token === measure)?.defines ?? null;
 }
+
+/** Is every band of this indicator a proportion, so a provision stating none cannot be placed? */
+function proportional(indicatorId: string, measure: string | null): boolean {
+  if (!measure) return false;
+  return EQUITY_INDICATORS.has(indicatorId);
+}
+
+/** The three indicators whose bands are rungs on one ladder of foreign shareholding. */
+const EQUITY_INDICATORS: ReadonlySet<string> = new Set(['3.1', '5.2', '12.01']);
 
 /** Is this measure one only a command makes out, so that a prohibition of the act does not? */
 function commanded(indicatorId: string, measure: string | null): boolean {

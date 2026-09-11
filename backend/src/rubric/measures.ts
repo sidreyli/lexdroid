@@ -574,7 +574,6 @@ export const MEASURES: Record<string, Measure[]> = {
     {
       token: 'trade-defence-measure',
       defines: 'the words imposing the anti-dumping, countervailing or safeguard duty',
-      permits: true,
       gloss:
         'an anti-dumping duty, countervailing duty or safeguard measure imposed on imported ICT or electronic goods',
       actor: 'the importer of the goods',
