@@ -21,6 +21,7 @@ import type { EconomyProfile } from '../profile/types.js';
 import { portalId } from '../profile/index.js';
 import { frlAdapter } from './frl.js';
 import { lomAdapter } from './lom.js';
+import { lomSubsidAdapter } from './lom-subsid.js';
 import { ssoAdapter } from './sso.js';
 import { wpAdapter } from './wp.js';
 import type { Adapter, DiscoveredInstrument } from './types.js';
@@ -30,6 +31,7 @@ export * from './types.js';
 const ADAPTERS: Record<string, Adapter> = {
   frl: frlAdapter,
   lom: lomAdapter,
+  'lom-subsid': lomSubsidAdapter,
   sso: ssoAdapter,
   wp: wpAdapter,
 };
