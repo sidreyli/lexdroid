@@ -39,6 +39,9 @@ import * as cheerio from 'cheerio';
 import type { Db } from '../db/index.js';
 import { embed, EMBEDDING_MODEL } from '../engines/ollama.js';
 import { CacheMiss, HostSuspended, RobotsDisallowed, SoftBlocked, TransportFault, type Fetcher } from '../fetch/index.js';
+import { loadRubric } from '../rubric/index.js';
+import { MEASURES } from '../rubric/measures.js';
+import { shortlistInstruments } from '../shortlist/index.js';
 
 /** The words a drafter opens a container with, and how deep each one sits. */
 const CONTAINER_LEVEL: Record<string, number> = {
@@ -181,12 +184,24 @@ export interface ContentsProgress {
 
 export interface BuildContentsOptions {
   economy: string;
-  /** Which kinds to fetch contents for. Acts by default -- see the note at the top of this file. */
+  /**
+   * Which kinds to fetch contents for. Every kind by default.
+   *
+   * It was Acts only, which is a blunt way of protecting a budget and it removed the wrong things:
+   * an import ban lives in customs regulations, a procurement rule in a treasury policy, a
+   * certification requirement in a standards body's own document. Now that the order is decided by
+   * what the rubric asks about, a regulation that answers a question is reached before an Act that
+   * does not, and the budget no longer needs a kind filter to stand in for relevance.
+   */
   kinds?: string[];
   /** A wall-clock ceiling. The live hour is an hour, and a crawl that overruns it answers nothing. */
   budgetMs?: number;
-  /** Instrument ids to do first, in this order. Everything else follows in register order. */
+  /** Instrument ids to do first, in this order. Everything else follows behind them. */
   priority?: number[];
+  /** 'register' crawls in the order the portal listed things. The default ranks by the rubric. */
+  order?: 'rubric' | 'register';
+  /** The embedding model the ranking uses, where it is not the default. */
+  model?: string;
   log?: (line: string) => void;
 }
 
@@ -200,13 +215,74 @@ export interface BuildContentsOptions {
  * is strictly better than none: the instruments it covers are ranked on what they contain and the
  * rest fall back to their titles.
  */
+/**
+ * The order to crawl an economy's register in, decided by what the rubric asks about.
+ *
+ * The crawl is budgeted -- Singapore Statutes Online asks six seconds between requests, and the
+ * live test is an hour in total -- so the order is what the corpus ends up being. It was register
+ * order, which is the order a portal happens to list its instruments in, and the effect on
+ * Australia is measurable: 23,693 registered regulations, 109 fetched, and among the 23,584 left
+ * undone were the Customs (Prohibited Imports) Regulations 1956, the Customs (Prohibited Exports)
+ * Regulations 1958, the Customs Regulation 2015, the Radiocommunications Regulations 2023 and the
+ * Commonwealth Procurement Rules -- the last being the instrument ESCAP itself cites for
+ * Australia's procurement indicators.
+ *
+ * None of those is an obscure document. They were simply late in a list.
+ *
+ * So the register is ranked against the rubric's own vocabulary before anything is fetched, which
+ * is what the shortlist was built for. Nothing is excluded: everything the budget does not reach
+ * is still reported as left undone, and a later crawl continues down the same order.
+ */
+export async function rubricOrder(
+  db: Db,
+  opts: { economy: string; model?: string; log?: (line: string) => void },
+): Promise<number[]> {
+  const log = opts.log ?? ((): void => {});
+  const rubric = loadRubric();
+
+  // The subject of each indicator, and each measure said the way a provision would say it. The
+  // band criteria are left out: they distinguish one score from another, which is a question for
+  // a provision, not for a statute book's table of contents.
+  const queries: string[] = [];
+  for (const indicator of rubric.indicators) {
+    const subject = `${indicator.pillarName}: ${indicator.category}`.replace(/\s+/g, ' ').trim();
+    if (!queries.includes(subject)) queries.push(subject);
+    for (const measure of MEASURES[indicator.id] ?? []) {
+      const gloss = measure.gloss.replace(/\s+/g, ' ').trim();
+      if (!queries.includes(gloss)) queries.push(gloss);
+    }
+  }
+
+  const registered = (
+    db.prepare('SELECT COUNT(*) c FROM instrument WHERE economy_code = ?').get(opts.economy) as { c: number }
+  ).c;
+
+  if (registered === 0) return [];
+
+  log(`  ranking ${registered} registered instrument(s) against ${queries.length} rubric queries`);
+  try {
+    const ranked = await shortlistInstruments(db, {
+      economy: opts.economy,
+      queries,
+      limit: registered,
+      ...(opts.model ? { model: opts.model } : {}),
+    });
+    return ranked.map((c) => c.instrumentId);
+  } catch (err) {
+    // A crawl that cannot rank is still a crawl. Said out loud, because the order it falls back to
+    // is the one this function exists to replace.
+    log(`  could not rank the register (${err instanceof Error ? err.message : String(err)}); crawling in register order`);
+    return [];
+  }
+}
+
 export async function buildContents(
   db: Db,
   fetcher: Fetcher,
   opts: BuildContentsOptions,
 ): Promise<ContentsProgress> {
   const log = opts.log ?? ((): void => {});
-  const kinds = opts.kinds ?? ['act'];
+  const kinds = opts.kinds ?? ['act', 'regulation', 'order', 'rule', 'notice', 'guideline'];
   const started = Date.now();
   const progress: ContentsProgress = { fetched: 0, fromParsed: 0, skipped: 0, failed: 0 };
 
@@ -220,11 +296,21 @@ export async function buildContents(
     )
     .all(opts.economy, ...kinds) as { id: number; title: string; source_url: string }[];
 
-  const order = opts.priority
-    ? [
-        ...opts.priority.map((id) => pending.find((p) => p.id === id)).filter((p) => p !== undefined),
-        ...pending.filter((p) => !opts.priority!.includes(p.id)),
-      ]
+  // What the budget is spent on. Register order is the order a portal happens to list things in;
+  // asked for explicitly it is still available, and it is no longer the default.
+  const priority =
+    opts.priority ??
+    (opts.order === 'register'
+      ? undefined
+      : await rubricOrder(db, { economy: opts.economy, ...(opts.model ? { model: opts.model } : {}), log }));
+
+  const place = priority ? new Map(priority.map((id, i) => [id, i] as const)) : null;
+  const order = place
+    ? [...pending].sort(
+        (a, b) =>
+          (place.get(a.id) ?? Number.MAX_SAFE_INTEGER) - (place.get(b.id) ?? Number.MAX_SAFE_INTEGER) ||
+          a.id - b.id,
+      )
     : pending;
 
   const insert = db.prepare(
