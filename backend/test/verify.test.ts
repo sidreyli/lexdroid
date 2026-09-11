@@ -81,6 +81,7 @@ function storeWithOneAnswer(
         indicatorId: '7.3', measure: 'minimum-retention', quote,
         dutyBearer: 'A company', dutyAct: 'must keep', dutyForce: 'requires',
         definingWords: 'not less than 5 years',
+        subjectWords: null,
         imposingWords: 'must keep',
         prescribingWords: null,
         requirement: 'Accounting records must be kept for at least five years.',

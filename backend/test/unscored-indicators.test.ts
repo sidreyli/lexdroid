@@ -25,6 +25,7 @@ function finding(over: Partial<Finding>): Finding {
     indicatorId: '', measure: null, dutyBearer: 'a foreign person', dutyAct: 'may not hold',
     dutyForce: 'requires', placeWords: null, exceptionWords: null, locatedData: null,
     informationWords: null, keepingWords: null, roleWords: null, definingWords: 'not more than 30%',
+    subjectWords: 'the telecommunications sector',
     borderWords: null,
     imposingWords: 'may not hold', prescribingWords: null, dutyBearerKind: 'organisation',
     quote: 'a foreign person may not hold more than 30% of the shares', requirement: 'r',

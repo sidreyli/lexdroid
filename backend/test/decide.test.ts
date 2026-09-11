@@ -88,6 +88,7 @@ function finding(over: Partial<Finding> = {}): Finding {
     dutyForce: 'forbids',
     roleWords: null,
     definingWords: 'outside Singapore',
+    subjectWords: null,
     borderWords: 'outside Singapore',
     imposingWords: 'must not transfer',
     prescribingWords: null,
@@ -1378,6 +1379,7 @@ function p12(indicatorId: string, measure: string, over: Partial<Finding> = {}):
       dutyForce: 'requires',
       dutyAct: 'shall not sell',
       mandatory: true,
+      subjectWords: 'goods sold online',
       ...over,
     }),
   };
@@ -1479,7 +1481,8 @@ describe('an indicator whose top band is an absence', () => {
       ...evidence(1, 'Telecommunications Act'),
       finding: finding({
         indicatorId, measure, placeWords: null, locatedData: null, informationWords: null,
-        dutyForce: 'requires', dutyAct: 'shall keep separate accounts', mandatory: true, ...over,
+        dutyForce: 'requires', dutyAct: 'shall keep separate accounts', mandatory: true,
+        subjectWords: 'a public telecommunications licensee', ...over,
       }),
     };
   }
@@ -1649,6 +1652,7 @@ describe('a measure only a command can make out', () => {
           borderWords: null,
           locatedData: null,
           keepingWords: null,
+          subjectWords: 'a trade secret',
           ...over,
         }),
       ],
