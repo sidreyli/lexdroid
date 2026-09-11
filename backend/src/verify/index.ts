@@ -356,18 +356,29 @@ export interface RecomputeResult {
   perCell: Map<number, { agreed: boolean; why: string | null }>;
 }
 
+/** The instrument ids recorded with the cell, or none where a store predates the column. */
+function parseGoverning(raw: string | null): number[] {
+  if (!raw) return [];
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((v): v is number => typeof v === 'number') : [];
+  } catch {
+    return [];
+  }
+}
+
 export function recomputeScores(db: Db, runId: string): RecomputeResult {
   const cells = db
     .prepare(
       `SELECT c.id, c.economy_code, c.indicator_id, c.sections_read, c.sections_indexed, c.surfaced,
-              a.score, a.band_ordinal
+              c.governing, a.score, a.band_ordinal
          FROM cell c LEFT JOIN cell_answer a ON a.cell_id = c.id
         WHERE c.run_id = ? ORDER BY c.indicator_id`,
     )
     .all(runId) as {
     id: number; economy_code: string; indicator_id: string;
     sections_read: number | null; sections_indexed: number | null; surfaced: number | null;
-    score: number | null; band_ordinal: number | null;
+    governing: string | null; score: number | null; band_ordinal: number | null;
   }[];
 
   const evidenceFor = db.prepare(
@@ -475,6 +486,9 @@ export function recomputeScores(db: Db, runId: string): RecomputeResult {
       evidence,
       frameworkEvidence,
       surfaced,
+      // The register's verdict as the run had it. Re-deriving against today's register would be
+      // re-running the shortlist rather than checking the score.
+      governing: parseGoverning(cell.governing),
       coverage: {
         sectionsRead: cell.sections_read ?? 0,
         sectionsIndexed: cell.sections_indexed ?? 0,

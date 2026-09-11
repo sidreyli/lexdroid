@@ -1441,9 +1441,36 @@ export interface DecideInput {
   frameworkEvidence?: FrameworkEvidence[];
   /** What the search returned for this indicator. Only ever used to evidence a zero. */
   surfaced?: SurfacedInstrument[];
+  /**
+   * The instruments the register named as governing this question, best first.
+   *
+   * Zone 1 works this out from the instruments' own titles against the cell's queries and then
+   * threw it away. It is the only thing in the pipeline that knows a takeovers Act governs foreign
+   * equity and a companies Act does not, and a cell with two candidate citations needs to know.
+   */
+  governing?: number[];
   coverage: Coverage;
   /** The rates this run fetched. Recorded on the run, so re-deriving a score reproduces it. */
   rates?: FxRates | null;
+}
+
+/**
+ * The same evidence, with the instruments that govern the question first.
+ *
+ * Australia's 58 answered cells were drawn from eighteen instruments, and two general statutes
+ * controlled thirty-one of them. Its foreign-equity cell is the shape of the problem: the Foreign
+ * Acquisitions and Takeovers Act was retrieved, read, and produced a finding, and the row cited
+ * the Corporations Act -- which was cited because it had more provisions in the search, not
+ * because it governs foreign investment.
+ *
+ * Nothing is added or removed. A general statute that really does impose the measure still scores
+ * it; what changes is which of two instruments is put forward as the one the cell turns on.
+ */
+function governingFirst<T extends { instrumentId: number }>(evidence: T[], governing: number[]): T[] {
+  if (governing.length === 0) return evidence;
+  const place = new Map(governing.map((id, i) => [id, i] as const));
+  const rank = (e: T): number => place.get(e.instrumentId) ?? Number.MAX_SAFE_INTEGER;
+  return [...evidence].sort((a, b) => rank(a) - rank(b));
 }
 
 /**
@@ -1469,9 +1496,17 @@ function absenceFor(input: DecideInput): Absence | null {
     perInstrument.set(e.instrumentId, (perInstrument.get(e.instrumentId) ?? 0) + 1);
   }
 
+  // The register's verdict first, then the weight of evidence. Ordering by finding count alone
+  // was ordering by size: the biggest general statute in the corpus answers most searches, and so
+  // Australia reported nine of its zeros against the Competition and Consumer Act.
+  const named = new Map((input.governing ?? []).map((id, i) => [id, i] as const));
   const governing = surfaced
     .filter((s) => (perInstrument.get(s.instrumentId) ?? 0) > 0)
     .sort((a, b) => {
+      const byRegister =
+        (named.get(a.instrumentId) ?? Number.MAX_SAFE_INTEGER) -
+        (named.get(b.instrumentId) ?? Number.MAX_SAFE_INTEGER);
+      if (byRegister !== 0) return byRegister;
       const byFindings = (perInstrument.get(b.instrumentId) ?? 0) - (perInstrument.get(a.instrumentId) ?? 0);
       return byFindings !== 0 ? byFindings : a.rank - b.rank;
     })[0];
@@ -1524,10 +1559,13 @@ export function decide(input: DecideInput): Decision {
   //
   // The reader's own answer is not overwritten: it stays in the reading, which is the record of
   // what the model said. This is the decision's view of it.
-  const mine = input.evidence.flatMap((e) => {
-    const finding = refile(e.finding);
-    return finding.indicatorId === indicator.id ? [{ ...e, finding }] : [];
-  });
+  const mine = governingFirst(
+    input.evidence.flatMap((e) => {
+      const finding = refile(e.finding);
+      return finding.indicatorId === indicator.id ? [{ ...e, finding }] : [];
+    }),
+    input.governing ?? [],
+  );
   const { kept: afterException, excluded } = applyException(indicator, mine);
   const ctx: RuleContext = { economy, rates: input.rates ?? null };
   const { kept: qualifying, held } = hold(indicator.id, afterException, ctx);
