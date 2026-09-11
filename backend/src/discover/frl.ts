@@ -86,6 +86,97 @@ function apiUrl(base: string, collection: string, skip: number): string {
   return `${base}titles?${params.toString()}`;
 }
 
+/** Pages of children read per Act. Twenty is 2,000 instruments, and more says only how long a list is. */
+const MAX_AUTHORISED_PAGES = 20;
+
+/** The register id in a title's own URL: "F2025L01263" in .../F2025L01263/latest/text. */
+export function registerIdOf(url: string): string | null {
+  return /legislation\.gov\.au\/([A-Z]\d{4}[A-Z]\d{5})(?![A-Za-z0-9])/i.exec(url)?.[1]?.toUpperCase() ?? null;
+}
+
+/**
+ * One page of the titles an Act authorises.
+ *
+ * The relation is the register's own: every legislative instrument says which title authorises it,
+ * and the API serves the question backwards. In force only, because a repealed instrument is not a
+ * requirement a row could cite -- and because it is what takes the Customs Act from 11,891 to
+ * 7,649. A second conjoined clause is refused by the service, so the principal test is left out.
+ */
+function authorisedUrl(base: string, actId: string, skip: number): string {
+  const params = new URLSearchParams({
+    $filter: 'isInForce eq true',
+    $select: 'id,name',
+    $orderby: 'id',
+    $top: String(PAGE),
+    $count: 'true',
+  });
+  if (skip > 0) params.set('$skip', String(skip));
+  return `${base}titles/search(criteria='authorises("${actId}")')?${params.toString()}`;
+}
+
+export interface AuthorisedTitle {
+  id: string;
+  name: string;
+}
+
+export interface AuthorisedTitles {
+  titles: AuthorisedTitle[];
+  /** What the register says the total is, against what was read. Truncation is reported, not hidden. */
+  stated: number | null;
+  complete: boolean;
+}
+
+/**
+ * Everything the register says is made under one Act.
+ *
+ * Capped, because the Customs Act authorises 7,649 in-force tariff concession orders and by-laws.
+ * Past the cap the title-stem fallback is what it always was, so truncation loses nothing.
+ */
+export async function authorisedTitles(
+  fetcher: Fetcher,
+  actId: string,
+  opts: { base?: string; maxPages?: number; log?: (line: string) => void } = {},
+): Promise<AuthorisedTitles> {
+  const base = opts.base ?? DEFAULT_API;
+  const maxPages = opts.maxPages ?? MAX_AUTHORISED_PAGES;
+  const log = opts.log ?? ((): void => {});
+  const titles: AuthorisedTitle[] = [];
+  let stated: number | null = null;
+  let skip = 0;
+
+  for (let page = 0; page < maxPages; page += 1) {
+    let res;
+    try {
+      res = await fetcher.fetch(authorisedUrl(base, actId, skip));
+    } catch (err) {
+      log(`    ${actId}: not read -- ${err instanceof Error ? err.message : String(err)}`);
+      return { titles, stated, complete: false };
+    }
+    if (res.status !== 200) {
+      log(`    ${actId}: HTTP ${res.status}`);
+      return { titles, stated, complete: false };
+    }
+
+    let body: { value?: AuthorisedTitle[]; '@odata.count'?: number };
+    try {
+      body = JSON.parse(res.body.toString('utf8')) as typeof body;
+    } catch {
+      log(`    ${actId}: the API answered with something that is not JSON`);
+      return { titles, stated, complete: false };
+    }
+    const rows = body.value;
+    if (!Array.isArray(rows)) return { titles, stated, complete: false };
+    if (stated === null) stated = body['@odata.count'] ?? null;
+
+    titles.push(...rows);
+    skip += rows.length;
+    if (rows.length === 0) break;
+    if (stated !== null && skip >= stated) break;
+  }
+
+  return { titles, stated, complete: stated === null ? true : titles.length >= stated };
+}
+
 function officialNumber(row: TitleRow): string | null {
   if (row.number === null || row.year === null) return row.id;
   return `${row.seriesType ?? row.collection} No. ${row.number}, ${row.year}`;

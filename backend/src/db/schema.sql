@@ -154,6 +154,10 @@ CREATE TABLE IF NOT EXISTS instrument (
                   CHECK (status IN ('in-force', 'repealed', 'draft', 'amending', 'unknown')),
   status_basis    TEXT,                       -- the sentence in the document that establishes it
   amends_instrument_id INTEGER REFERENCES instrument(id),
+  -- The Act this instrument is made under, as the register itself states it. Inferring it
+  -- from the title misses every instrument its drafters did not name after its parent.
+  made_under_instrument_id INTEGER REFERENCES instrument(id),
+  made_under_basis TEXT,
   commenced_on    TEXT,                       -- ISO date, read from the document itself
   last_amended_on TEXT,
   timeframe_basis TEXT,                       -- quoted evidence for the two dates above

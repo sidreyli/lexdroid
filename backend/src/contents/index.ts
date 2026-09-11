@@ -42,6 +42,7 @@ import { CacheMiss, HostSuspended, RobotsDisallowed, SoftBlocked, TransportFault
 import { loadRubric } from '../rubric/index.js';
 import { MEASURES } from '../rubric/measures.js';
 import { shortlistInstruments } from '../shortlist/index.js';
+import { linkParents } from './parentage.js';
 
 /** The words a drafter opens a container with, and how deep each one sits. */
 const CONTAINER_LEVEL: Record<string, number> = {
@@ -261,10 +262,23 @@ function actStem(title: string): string | null {
  */
 export function withSubsidiary(db: Db, economy: string, ranked: number[]): number[] {
   const rows = db
-    .prepare('SELECT id, title, kind FROM instrument WHERE economy_code = ? ORDER BY id')
-    .all(economy) as { id: number; title: string; kind: string }[];
+    .prepare(
+      `SELECT id, title, kind, made_under_instrument_id parent
+         FROM instrument WHERE economy_code = ? ORDER BY id`,
+    )
+    .all(economy) as { id: number; title: string; kind: string; parent: number | null }[];
   const place = new Map(ranked.map((id, n) => [id, n] as const));
   const byId = new Map(rows.map((r) => [r.id, r] as const));
+
+  // What the register itself says is made under each Act. A title-stem match is the fallback for a
+  // portal that states nothing, and is kept behind the stated relation rather than in place of it.
+  const stated = new Map<number, Set<number>>();
+  for (const r of rows) {
+    if (r.parent === null || r.parent === r.id) continue;
+    const set = stated.get(r.parent) ?? new Set<number>();
+    set.add(r.id);
+    stated.set(r.parent, set);
+  }
 
   const rank = (id: number): number => place.get(id) ?? Number.MAX_SAFE_INTEGER;
   const carried: number[][] = [];
@@ -272,15 +286,22 @@ export function withSubsidiary(db: Db, economy: string, ranked: number[]): numbe
   for (const [at, id] of ranked.entries()) {
     if (carried.length >= PARENTS_FOLLOWED) break;
     const row = byId.get(id);
-    const stem = row?.kind === 'act' ? actStem(row.title) : null;
-    if (!stem) continue;
+    if (row?.kind !== 'act') continue;
+    const children = stated.get(id) ?? new Set<number>();
+    const stem = actStem(row.title);
+    const prefix = stem ? `${stem.toLowerCase()} ` : null;
+    if (children.size === 0 && !prefix) continue;
     lastParentAt = at;
-    const prefix = `${stem.toLowerCase()} `;
     carried.push(
       rows
-        .filter((r) => r.kind !== 'act' && `${r.title.toLowerCase()} `.startsWith(prefix))
+        .filter(
+          (r) =>
+            r.kind !== 'act' &&
+            (children.has(r.id) || (prefix !== null && `${r.title.toLowerCase()} `.startsWith(prefix))),
+        )
         .sort(
           (a, b) =>
+            (children.has(a.id) ? 0 : 1) - (children.has(b.id) ? 0 : 1) ||
             (CARRY_FIRST.includes(a.kind) ? 0 : 1) - (CARRY_FIRST.includes(b.kind) ? 0 : 1) ||
             rank(a.id) - rank(b.id) ||
             a.id - b.id,
@@ -311,9 +332,54 @@ export function withSubsidiary(db: Db, economy: string, ranked: number[]): numbe
   return order;
 }
 
+/**
+ * Ask the register what the highest-ranked Acts carry, before the order is decided.
+ *
+ * Only those Acts, because only theirs are carried. The answers are stored, so a second crawl of
+ * the same economy asks nothing.
+ */
+async function askWhatEachActCarries(
+  db: Db,
+  fetcher: Fetcher,
+  economy: string,
+  byRank: number[],
+  log: (line: string) => void,
+  budgetMs?: number,
+): Promise<void> {
+  const acts = new Set(
+    (db.prepare("SELECT id FROM instrument WHERE economy_code = ? AND kind = 'act'").all(economy) as {
+      id: number;
+    }[]).map((r) => r.id),
+  );
+  const top = byRank.filter((id) => acts.has(id)).slice(0, PARENTS_FOLLOWED);
+  if (top.length === 0) return;
+
+  try {
+    const p = await linkParents(db, fetcher, top, { log, ...(budgetMs ? { budgetMs } : {}) });
+    if (p.asked > 0) {
+      log(
+        `  asked the register about ${p.asked} Act(s): ${p.linked} instrument(s) now say what they ` +
+          `are made under` +
+          (p.truncated || p.failed ? `, ${p.truncated} answered in part, ${p.failed} not answered` : '') +
+          (p.unasked ? `, ${p.unasked} not reached inside the budget` : ''),
+      );
+    }
+  } catch (err) {
+    // An unanswered register is the crawl we already had, not a crawl that stops.
+    log(`  could not ask what each Act carries (${err instanceof Error ? err.message : String(err)})`);
+  }
+}
+
 export async function rubricOrder(
   db: Db,
-  opts: { economy: string; model?: string; log?: (line: string) => void },
+  opts: {
+    economy: string;
+    model?: string;
+    fetcher?: Fetcher;
+    /** A ceiling on asking the register what each Act carries, not on the ranking itself. */
+    budgetMs?: number;
+    log?: (line: string) => void;
+  },
 ): Promise<number[]> {
   const log = opts.log ?? ((): void => {});
   const rubric = loadRubric();
@@ -346,7 +412,11 @@ export async function rubricOrder(
       depthPerQuery: depthFor(registered),
       ...(opts.model ? { model: opts.model } : {}),
     });
-    const order = withSubsidiary(db, opts.economy, ranked.map((c) => c.instrumentId));
+    const byRank = ranked.map((c) => c.instrumentId);
+    if (opts.fetcher) {
+      await askWhatEachActCarries(db, opts.fetcher, opts.economy, byRank, log, opts.budgetMs);
+    }
+    const order = withSubsidiary(db, opts.economy, byRank);
     log(`  ${ranked.length} ranked; ${order.length} placed once each Act carries its own instruments`);
     return order;
   } catch (err) {
@@ -383,7 +453,15 @@ export async function buildContents(
     opts.priority ??
     (opts.order === 'register'
       ? undefined
-      : await rubricOrder(db, { economy: opts.economy, ...(opts.model ? { model: opts.model } : {}), log }));
+      : await rubricOrder(db, {
+          economy: opts.economy,
+          fetcher,
+          // A quarter of the crawl's budget at most: the order is worth paying for, the documents
+          // are what the budget is for.
+          ...(opts.budgetMs ? { budgetMs: Math.floor(opts.budgetMs / 4) } : {}),
+          ...(opts.model ? { model: opts.model } : {}),
+          log,
+        }));
 
   const place = priority ? new Map(priority.map((id, i) => [id, i] as const)) : null;
   const order = place
