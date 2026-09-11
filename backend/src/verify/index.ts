@@ -29,6 +29,7 @@ import { citationUrl } from '../export/index.js';
 import { decide, type Evidence, type FrameworkEvidence, type SurfacedInstrument } from '../decide/index.js';
 import { loadRubric } from '../rubric/index.js';
 import { ratesOfRun } from '../run/index.js';
+import { elidedFragments } from '../util/locate.js';
 
 export interface GateOutcome {
   gate: string;
@@ -85,6 +86,26 @@ export function isOfficialHost(host: string, known: Set<string>): boolean {
   if (known.has(h)) return true;
   for (const k of known) if (h.endsWith(`.${k}`)) return true;
   return /(^|\.)gov(\.[a-z]{2,3})?(\.[a-z]{2})?$/.test(h) || /\.gov\.[a-z]{2}$/.test(h) || h.endsWith('.gov');
+}
+
+/**
+ * Are the quoted words in the provision?
+ *
+ * A quotation that elides is checked fragment by fragment, each after the one before. That is a
+ * weaker claim than an unbroken quote and a real one: the words are there, in that order.
+ */
+export function quoteAppearsIn(sectionText: string, quote: string): boolean {
+  const haystack = normalise(sectionText);
+  const fragments = elidedFragments(quote);
+  if (!fragments) return haystack.includes(normalise(quote));
+
+  let from = 0;
+  for (const fragment of fragments) {
+    const at = haystack.indexOf(normalise(fragment), from);
+    if (at < 0) return false;
+    from = at + normalise(fragment).length;
+  }
+  return true;
 }
 
 /** Normalised for comparison: whitespace and the quotation marks a source may render differently. */
@@ -224,7 +245,7 @@ function gatesFor(row: RowRecord, hosts: Set<string>): GateOutcome[] {
     } else if (!row.section_text) {
       out.push({ gate: 'quote-in-source', passed: false, detail: 'the cited provision is no longer in the store' });
     } else {
-      const found = normalise(row.section_text).includes(normalise(quote));
+      const found = quoteAppearsIn(row.section_text, quote);
       out.push({
         gate: 'quote-in-source',
         passed: found,
@@ -236,7 +257,10 @@ function gatesFor(row: RowRecord, hosts: Set<string>): GateOutcome[] {
     //    than the reading: one reading yields several findings, each quoting a different span.
     if (quote && row.quote_char_start !== null && row.quote_char_end !== null && row.doc_text) {
       const at = row.doc_text.slice(row.quote_char_start, row.quote_char_end);
-      const ok = normalise(at) === normalise(quote);
+      // An elided quotation spans the words it skipped, so the offsets bound the passage rather
+      // than reproduce it. What is checked is that every fragment sits inside those bounds, in order.
+      const fragments = elidedFragments(quote);
+      const ok = fragments ? quoteAppearsIn(at, quote) : normalise(at) === normalise(quote);
       out.push({
         gate: 'offsets-resolve',
         passed: ok,
