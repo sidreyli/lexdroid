@@ -241,6 +241,10 @@ function depthFor(registered: number): number {
 
 /** How far down the ranking an Act still carries its own instruments, and how many it carries. */
 const PARENTS_FOLLOWED = 60;
+
+/** Instruments taken from each question's own ranking, and Acts followed for each question. */
+const SHARE_PER_QUESTION = 400;
+const PARENTS_PER_QUESTION = 3;
 const CARRIED_PER_PARENT = 40;
 
 /** A notice appoints someone or fixes a figure; the law it is made under is in the other three. */
@@ -260,7 +264,7 @@ function actStem(title: string): string | null {
  * nowhere against 28,000 competitors, while the Act it is made under ranked twelfth. The Act is
  * the signal. What hangs off it comes with it, and the score already knows which Act governs.
  */
-export function withSubsidiary(db: Db, economy: string, ranked: number[]): number[] {
+export function withSubsidiary(db: Db, economy: string, ranked: number[], parents = PARENTS_FOLLOWED): number[] {
   const rows = db
     .prepare(
       `SELECT id, title, kind, made_under_instrument_id parent
@@ -284,7 +288,7 @@ export function withSubsidiary(db: Db, economy: string, ranked: number[]): numbe
   const carried: number[][] = [];
   let lastParentAt = -1;
   for (const [at, id] of ranked.entries()) {
-    if (carried.length >= PARENTS_FOLLOWED) break;
+    if (carried.length >= parents) break;
     const row = byId.get(id);
     if (row?.kind !== 'act') continue;
     const children = stated.get(id) ?? new Set<number>();
@@ -329,6 +333,31 @@ export function withSubsidiary(db: Db, economy: string, ranked: number[]): numbe
     }
   }
   for (const id of ranked) take(id);
+  return order;
+}
+
+/**
+ * One crawl order out of sixty-one rankings, a place each at a time.
+ *
+ * Fusing every indicator's queries into one ranking decides the crawl by popularity: an instrument
+ * that is the best answer to one question loses to instruments that are mediocre answers to many.
+ * Measured on Australia, the Act that authorises the Commonwealth Procurement Rules ranks 5th when
+ * the procurement questions are asked and 106th when all 61 are asked at once, which put it past
+ * the cut and its Rules out of reach. Every indicator is a cell that has to be answered, so every
+ * indicator gets the same share of the crawl.
+ */
+export function shareTheCrawl(perQuestion: number[][]): number[] {
+  const order: number[] = [];
+  const placed = new Set<number>();
+  const deepest = Math.max(0, ...perQuestion.map((q) => q.length));
+  for (let round = 0; round < deepest; round += 1) {
+    for (const question of perQuestion) {
+      const id = question[round];
+      if (id === undefined || placed.has(id)) continue;
+      placed.add(id);
+      order.push(id);
+    }
+  }
   return order;
 }
 
@@ -384,18 +413,17 @@ export async function rubricOrder(
   const log = opts.log ?? ((): void => {});
   const rubric = loadRubric();
 
-  // The subject of each indicator, and each measure said the way a provision would say it. The
-  // band criteria are left out: they distinguish one score from another, which is a question for
-  // a provision, not for a statute book's table of contents.
-  const queries: string[] = [];
-  for (const indicator of rubric.indicators) {
-    const subject = `${indicator.pillarName}: ${indicator.category}`.replace(/\s+/g, ' ').trim();
-    if (!queries.includes(subject)) queries.push(subject);
+  // One question per indicator: its subject, and each measure said the way a provision would say
+  // it. The band criteria are left out -- they distinguish one score from another, which is a
+  // question for a provision, not for a statute book's table of contents.
+  const questions = rubric.indicators.map((indicator) => {
+    const qs = [`${indicator.pillarName}: ${indicator.category}`.replace(/\s+/g, ' ').trim()];
     for (const measure of MEASURES[indicator.id] ?? []) {
       const gloss = measure.gloss.replace(/\s+/g, ' ').trim();
-      if (!queries.includes(gloss)) queries.push(gloss);
+      if (!qs.includes(gloss)) qs.push(gloss);
     }
-  }
+    return { id: indicator.id, queries: qs };
+  });
 
   const registered = (
     db.prepare('SELECT COUNT(*) c FROM instrument WHERE economy_code = ?').get(opts.economy) as { c: number }
@@ -403,21 +431,26 @@ export async function rubricOrder(
 
   if (registered === 0) return [];
 
-  log(`  ranking ${registered} registered instrument(s) against ${queries.length} rubric queries`);
+  log(`  ranking ${registered} registered instrument(s) for each of ${questions.length} indicators`);
   try {
-    const ranked = await shortlistInstruments(db, {
-      economy: opts.economy,
-      queries,
-      limit: registered,
-      depthPerQuery: depthFor(registered),
-      ...(opts.model ? { model: opts.model } : {}),
-    });
-    const byRank = ranked.map((c) => c.instrumentId);
+    const perQuestion: number[][] = [];
+    for (const question of questions) {
+      const ranked = await shortlistInstruments(db, {
+        economy: opts.economy,
+        queries: question.queries,
+        limit: SHARE_PER_QUESTION,
+        depthPerQuery: depthFor(registered),
+        ...(opts.model ? { model: opts.model } : {}),
+      });
+      perQuestion.push(ranked.map((c) => c.instrumentId));
+    }
+
+    const byRank = shareTheCrawl(perQuestion);
     if (opts.fetcher) {
       await askWhatEachActCarries(db, opts.fetcher, opts.economy, byRank, log, opts.budgetMs);
     }
-    const order = withSubsidiary(db, opts.economy, byRank);
-    log(`  ${ranked.length} ranked; ${order.length} placed once each Act carries its own instruments`);
+    const order = withSubsidiary(db, opts.economy, byRank, questions.length * PARENTS_PER_QUESTION);
+    log(`  ${byRank.length} placed by question; ${order.length} once each Act carries its own instruments`);
     return order;
   } catch (err) {
     // A crawl that cannot rank is still a crawl. Said out loud, because the order it falls back to
