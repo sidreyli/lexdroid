@@ -65,7 +65,18 @@ export async function register(
   );
 
   for (const portal of profile.portals) {
-    if (!portal.adapter) continue;
+    // A declared portal nothing can read is a hole in the corpus, and it was skipped in silence.
+    // Malaysia declares its customs department, its communications commission and seven more
+    // regulators, and registers not one document from any of them -- so the orders, guidelines and
+    // codes those bodies publish are absent, and a cell reads that absence as "no requirement".
+    // Recorded here so the shortfall is a number on the run rather than a thing nobody said.
+    if (!portal.adapter) {
+      results.push({ portal: portal.name, found: 0, added: 0, error: 'no adapter reads this portal' });
+      db.prepare('INSERT INTO discard (stage, subject, reason, detail, recorded_at) VALUES (?, ?, ?, ?, ?)')
+        .run('discover', portal.url, 'portal-unread', `${portal.name} (${portal.kind}) has no adapter`, now);
+      log(`${portal.name} (${portal.url}) -- no adapter reads this portal`);
+      continue;
+    }
     const adapter = ADAPTERS[portal.adapter];
     if (!adapter) {
       results.push({ portal: portal.name, found: 0, added: 0, error: `no adapter named "${portal.adapter}"` });
