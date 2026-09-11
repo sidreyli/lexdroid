@@ -375,6 +375,9 @@ CREATE TABLE IF NOT EXISTS cell (
   -- Provisions actually put in front of the engine for this cell. Larger than the shortlist:
   -- reading is pillar-scoped, so a cell is answered over its whole pillar's union.
   sections_read   INTEGER,
+  -- The instruments the register named as governing this question, best first. The decision is
+  -- ordered by it, so it is recorded with the cell rather than re-derived from a later register.
+  governing       TEXT,                       -- JSON array of instrument ids
   UNIQUE (run_id, economy_code, indicator_id)
 );
 

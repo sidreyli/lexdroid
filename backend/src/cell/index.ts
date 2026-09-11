@@ -361,7 +361,15 @@ export async function answerPillar(
       sectionsIndexed: indexedSections,
       instrumentsConsidered: isFramework ? frameworkEvidence.length : new Set(rows.map((r) => r.instrument_id)).size,
     };
-    return decide({ indicator, economy, evidence, frameworkEvidence, surfaced, coverage, rates: opts.rates ?? null });
+    // Which instruments the register said govern this question. Worked out in Zone 1 from their
+    // titles, and needed in Zone 3 to tell the Act that governs the subject from the Act that is
+    // merely large enough to answer any search.
+    const governing = (record?.governing ?? []).map((g) => g.instrumentId);
+
+    return decide({
+      indicator, economy, evidence, frameworkEvidence, surfaced, governing, coverage,
+      rates: opts.rates ?? null,
+    });
   });
 
   for (const d of decisions) {

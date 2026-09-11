@@ -263,8 +263,8 @@ export function recordPillarAnswer(run: RunContext, answer: PillarAnswer): void 
 
   const insertCell = db.prepare(
     `INSERT INTO cell (run_id, economy_code, indicator_id, state, unresolved_reason, answered_at,
-                       queries, depth, surfaced, sections_indexed, sections_read)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                       queries, depth, surfaced, sections_indexed, sections_read, governing)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   );
   const insertShortlist = db.prepare(
     `INSERT OR IGNORE INTO shortlist_entry (cell_id, section_id, channel, query, rank, score, read_at)
@@ -313,6 +313,9 @@ export function recordPillarAnswer(run: RunContext, answer: PillarAnswer): void 
           record?.surfaced ?? null,
           record?.indexedSections ?? null,
           answer.readings.length,
+          // The register's verdict on which instruments govern the question. Recorded because the
+          // score is derived from it, and a score that cannot be re-derived is not computed.
+          JSON.stringify((record?.governing ?? []).map((g) => g.instrumentId)),
         ).lastInsertRowid,
       );
 
