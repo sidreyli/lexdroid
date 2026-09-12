@@ -23,8 +23,10 @@ const COMMON = new Set([
 ]);
 
 /** A plural and its singular are the same word. "Persons" against "Person's" is not two Acts. */
+// And so are "Privatisation" and "Privatization": both spellings are used in the same statute book.
 function stem(w: string): string {
-  return w.length > 3 && w.endsWith('s') && !w.endsWith('ss') ? w.slice(0, -1) : w;
+  const s = w.replace(/iz/g, 'is');
+  return s.length > 3 && s.endsWith('s') && !s.endsWith('ss') ? s.slice(0, -1) : s;
 }
 
 /** A name reduced to the words that identify it, in order. */
@@ -58,7 +60,8 @@ export function statedName(sections: Pick<ParsedSection, 'text'>[], within = 14)
   for (const s of sections.slice(0, within)) {
     for (const re of STATES_NAME) {
       const m = re.exec(s.text);
-      if (m) return m[1]!.replace(/\s+/g, ' ').trim();
+      // The older drafting runs the commencement into the same sentence. That is not the name.
+      if (m) return m[1]!.replace(/\s+and\s+(?:shall|comes?|is deemed|shall be deemed)\b[\s\S]*$/i, '').replace(/\s+/g, ' ').trim();
     }
   }
   return null;
@@ -75,7 +78,12 @@ export function namesMatch(stated: string, title: string): boolean {
   const a = keyWords(stated);
   const b = keyWords(title);
   if (a.length === 0 || b.length === 0) return true;
-  const opens = (head: string[], rest: string[]) => head.slice(0, 3).every((w) => rest.includes(w));
+  // "Incorporated" against "Incorporation" is one word drafted twice, not two Acts, so a long
+  // shared opening counts as the same word.
+  const same = (x: string, y: string) =>
+    x === y || (x.length >= 6 && y.length >= 6 && (x.startsWith(y.slice(0, 6)) || y.startsWith(x.slice(0, 6))));
+  const opens = (head: string[], rest: string[]) =>
+    head.slice(0, 3).every((w) => rest.some((r) => same(w, r)));
   return opens(a, b) || opens(b, a);
 }
 
