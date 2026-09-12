@@ -9,11 +9,11 @@
 import type { ParsedSection } from './types.js';
 
 /** The two drafting formulas: "may be cited as the X" and the modern "This Act is the X". */
-// Parentheses belong to the name, not after it: Malaysia and Singapore write whole families as
-// "Personal Data Protection (Class of Data Users) (Amendment) Order".
+// Parentheses and line breaks belong to the name, not after it: whole families of Malaysian and
+// Singaporean instruments are told apart only by what is inside the brackets, which a PDF wraps.
 const STATES_NAME = [
-  /(?:may be|is)\s+cited\s+as\s+the\s+([A-Z][^.,;\n]{4,110})/,
-  /This\s+(?:Act|Ordinance|Enactment|Regulations?|Rules|Order)\s+is\s+the\s+([A-Z][^.,;\n]{4,110})/,
+  /(?:may be|is)\s+cited\s+as\s+the\s+([A-Z][^.,;]{4,110})/,
+  /This\s+(?:Act|Ordinance|Enactment|Regulations?|Rules|Order)\s+is\s+the\s+([A-Z][^.,;]{4,110})/,
 ];
 
 /** Words too common to distinguish one instrument from another. */
