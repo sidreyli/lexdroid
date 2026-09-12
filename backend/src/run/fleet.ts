@@ -70,3 +70,41 @@ export function duplicateEngine(hosts: string[]): string | null {
 export function replayingWhilePaying(cacheOn: boolean, usdPerHour: number): boolean {
   return cacheOn && usdPerHour > 0;
 }
+
+/**
+ * What a child gate is told about engines.
+ *
+ * Pinned, not inherited: one request in flight per engine is what makes several engines safe, and
+ * a stray environment variable must not be able to lift it. Reading wide means more engines, never
+ * a larger number here.
+ */
+export function childEngineEnv(hosts: string[]): Record<string, string> {
+  if (hosts.length === 0) throw new Error('a child needs at least one engine');
+  return {
+    OLLAMA_HOSTS: hosts.join(','),
+    OLLAMA_HOST: hosts[0]!,
+    LLM_PROVIDER: 'ollama',
+    LEXDROID_READ_CONCURRENCY: '1',
+  };
+}
+
+/**
+ * How a run is shaped across engines.
+ *
+ * Pillar-at-a-time: every engine reads one pillar together, so the largest pillar is divided
+ * instead of setting the floor. One economy's pillar 12 is 603 provisions; alone on one engine it
+ * is four hours whatever the other eleven are doing.
+ *
+ * Unit-at-a-time: one engine per pillar, which is reproducible per engine but ends when its
+ * biggest single unit ends.
+ */
+export type Shape = 'pillar-at-a-time' | 'unit-at-a-time';
+
+/** Wall time in seconds for a shape, given each unit's cost and how many engines there are. */
+export function makespan(unitSeconds: number[], engines: number, shape: Shape): number {
+  const total = unitSeconds.reduce((a, b) => a + b, 0);
+  if (engines < 1) throw new Error('a run needs at least one engine');
+  if (shape === 'pillar-at-a-time') return total / engines;
+  const longest = unitSeconds.length > 0 ? Math.max(...unitSeconds) : 0;
+  return Math.max(total / engines, longest);
+}

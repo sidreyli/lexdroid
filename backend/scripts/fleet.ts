@@ -17,6 +17,7 @@ import { openDb } from '../src/db/index.js';
 import { openRun, finishRun, runEvents, recordRent } from '../src/run/index.js';
 import { describe } from '../src/run/events.js';
 import {
+  childEngineEnv,
   duplicateEngine,
   longestFirst,
   pinByEconomy,
@@ -40,6 +41,7 @@ interface Args {
   usdPerHour: number;
   requireSerial: boolean;
   perEconomy: boolean;
+  fanOut: boolean;
 }
 
 function parseArgs(argv: string[]): Args {
@@ -67,11 +69,12 @@ function parseArgs(argv: string[]): Args {
     usdPerHour: Number(get('usd-per-hour') ?? 0),
     requireSerial: argv.includes('--require-serial'),
     perEconomy: argv.includes('--per-economy'),
+    fanOut: argv.includes('--fan-out'),
   };
 }
 
 /** One work unit on one engine, as a child gate that joins the run. Output goes to its own log. */
-function runUnit(unit: Unit, host: string, runId: string, logDir: string, args: Args, attempt = 1): Promise<number> {
+function runUnit(unit: Unit, hosts: string[], runId: string, logDir: string, args: Args, attempt = 1): Promise<number> {
   const suffix = attempt > 1 ? `-try${attempt}` : '';
   const logPath = join(logDir, `${unit.economy}-p${unit.pillar}${suffix}.log`);
   const out = createWriteStream(logPath);
@@ -93,14 +96,7 @@ function runUnit(unit: Unit, host: string, runId: string, logDir: string, args: 
   return new Promise((resolve) => {
     const child = spawn('npx', argv, {
       shell: true,
-      // Pinned, not inherited. The one-request-in-flight guarantee is what makes several
-      // engines safe, and a stray environment variable must not be able to lift it.
-      env: {
-        ...process.env,
-        OLLAMA_HOST: host,
-        LLM_PROVIDER: 'ollama',
-        LEXDROID_READ_CONCURRENCY: '1',
-      },
+      env: { ...process.env, ...childEngineEnv(hosts) },
     });
     child.stdout.pipe(out);
     child.stderr.pipe(out);
@@ -131,6 +127,12 @@ async function main(): Promise<void> {
   if (replayingWhilePaying(cacheEnabled(), args.usdPerHour)) {
     console.error('\nThe engine cache is on and these hosts are being paid for by the hour.');
     console.error('A replayed run is not a measurement; unset LEXDROID_ENGINE_CACHE.\n');
+    process.exit(1);
+  }
+
+  if (args.fanOut && args.perEconomy) {
+    console.error('\n--fan-out and --per-economy ask for opposite shapes: one engine per economy,');
+    console.error('or every engine on each pillar. Pick one.\n');
     process.exit(1);
   }
 
@@ -184,6 +186,7 @@ async function main(): Promise<void> {
   console.log(`run ${run.id}`);
   const pinned = args.perEconomy ? pinByEconomy(units, args.hosts) : null;
   console.log(`${units.length} unit(s) across ${args.hosts.length} engine(s): ${args.hosts.join(', ')}`);
+  if (args.fanOut) console.log('  every engine reads each pillar together, one pillar at a time');
   if (pinned) {
     for (const [host, own] of pinned) {
       console.log(`  ${host} reads ${own.map((u) => `${u.economy}/p${u.pillar}`).join(' ') || 'nothing'}`);
@@ -211,24 +214,35 @@ async function main(): Promise<void> {
   const started = Date.now();
   let next = 0;
   const done: { unit: Unit; host: string; code: number }[] = [];
-  await Promise.all(
-    args.hosts.map(async (host) => {
-      // Pinned, a host reads its own economies and stops; unpinned, it takes whatever is next.
-      const own = pinned?.get(host);
-      for (;;) {
-        const unit = own ? own.shift() : units[next++];
-        if (!unit) return;
-        let code = await runUnit(unit, host, run.id, logDir, args);
-        // A unit that died on a passing fault deserves one more go; a real defect fails twice.
-        if (code !== 0) {
-          console.log(`${unit.economy} pillar ${unit.pillar} failed on ${host}; one more attempt`);
-          clearUnit(db, run.id, unit);
-          code = await runUnit(unit, host, run.id, logDir, args, 2);
+
+  /** One attempt, then one more: a passing fault deserves another go, a real defect fails twice. */
+  const attempt = async (unit: Unit, hosts: string[], label: string): Promise<void> => {
+    let code = await runUnit(unit, hosts, run.id, logDir, args);
+    if (code !== 0) {
+      console.log(`${unit.economy} pillar ${unit.pillar} failed on ${label}; one more attempt`);
+      clearUnit(db, run.id, unit);
+      code = await runUnit(unit, hosts, run.id, logDir, args, 2);
+    }
+    done.push({ unit, host: label, code });
+  };
+
+  if (args.fanOut) {
+    // Every engine reads one pillar together. The biggest pillar is then divided rather than
+    // setting the floor, which is the whole of the tail on a run of this shape.
+    for (const unit of units) await attempt(unit, args.hosts, `${args.hosts.length} engine(s)`);
+  } else {
+    await Promise.all(
+      args.hosts.map(async (host) => {
+        // Pinned, a host reads its own economies and stops; unpinned, it takes whatever is next.
+        const own = pinned?.get(host);
+        for (;;) {
+          const unit = own ? own.shift() : units[next++];
+          if (!unit) return;
+          await attempt(unit, [host], host);
         }
-        done.push({ unit, host, code });
-      }
-    }),
-  );
+      }),
+    );
+  }
 
   following = false;
   await following_;

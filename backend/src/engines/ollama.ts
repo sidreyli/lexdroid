@@ -13,8 +13,12 @@
  */
 import { request } from 'undici';
 import { cacheEnabled, cacheGet, cacheKey, cachePut } from './cache.js';
+import { enginePool, engineHosts } from './pool.js';
+import { OllamaUnavailable } from './errors.js';
+export { OllamaUnavailable, NoEnginesLeft } from './errors.js';
 
-const HOST = process.env['OLLAMA_HOST'] ?? 'http://127.0.0.1:11434';
+/** The first engine named. Reads go to whichever engine the pool frees; this is for one-offs. */
+const HOST = engineHosts()[0]!;
 
 /**
  * A rented engine is reachable by whoever guesses its URL, and Ollama has no auth of its own.
@@ -47,12 +51,6 @@ export const READING_MODEL = process.env['LEXDROID_READING_MODEL'] ?? 'gemma4-le
  */
 export const MAX_OUTPUT_TOKENS = Number(process.env['LEXDROID_MAX_OUTPUT_TOKENS'] ?? 4096);
 
-export class OllamaUnavailable extends Error {
-  constructor(detail: string) {
-    super(`Ollama is not answering at ${HOST}: ${detail}\n  Start it, or set OLLAMA_HOST.`);
-    this.name = 'OllamaUnavailable';
-  }
-}
 
 /** The engine produced nothing usable. Carries what the attempt cost, which is real either way. */
 export class EngineFailure extends Error {
@@ -128,9 +126,9 @@ export function engineReconnects(): number {
   return reconnectAttempts;
 }
 
-async function once<T>(path: string, body: unknown, timeoutMs: number, model: string): Promise<T> {
+async function once<T>(host: string, path: string, body: unknown, timeoutMs: number, model: string): Promise<T> {
   try {
-    const res = await request(`${HOST}${path}`, {
+    const res = await request(`${host}${path}`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', ...authHeaders() },
       body: JSON.stringify(body),
@@ -142,7 +140,7 @@ async function once<T>(path: string, body: unknown, timeoutMs: number, model: st
     return JSON.parse(text) as T;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    if (/ECONNREFUSED|fetch failed|other side closed/i.test(message)) throw new OllamaUnavailable(message);
+    if (/ECONNREFUSED|fetch failed|other side closed/i.test(message)) throw new OllamaUnavailable(message, host);
     if (/UND_ERR_(HEADERS|BODY)_TIMEOUT|Headers Timeout|Body Timeout/i.test(message)) {
       throw new EngineTimeout(model, message);
     }
@@ -154,20 +152,31 @@ async function once<T>(path: string, body: unknown, timeoutMs: number, model: st
  * The same request, retried while the engine is only briefly away. Past the budget it really has
  * gone, and the caller must stop rather than report a search that found nothing.
  */
-async function post<T>(path: string, body: unknown, timeoutMs = 600_000, model = ''): Promise<T> {
+async function post<T>(host: string, path: string, body: unknown, timeoutMs = 600_000, model = ''): Promise<T> {
   for (let attempt = 0; ; attempt += 1) {
     try {
-      const value = await once<T>(path, body, timeoutMs, model);
+      const value = await once<T>(host, path, body, timeoutMs, model);
       if (attempt > 0) console.warn(`  engine answered again after ${attempt} attempt(s) waiting`);
       return value;
     } catch (err) {
       const wait = RECONNECT_WAITS_MS[attempt];
       if (!(err instanceof OllamaUnavailable) || wait === undefined) throw err;
       reconnectAttempts += 1;
-      console.warn(`  engine unreachable; waiting ${wait / 1000}s, then attempt ${attempt + 2}`);
+      console.warn(`  ${host} unreachable; waiting ${wait / 1000}s, then attempt ${attempt + 2}`);
       await new Promise((r) => setTimeout(r, wait));
     }
   }
+}
+
+/**
+ * The same request, on whichever engine is free. Past its reconnect budget an engine really has
+ * gone, so it is retired and the request is tried on another rather than costing the pillar.
+ */
+async function onAnyEngine<T>(path: string, body: unknown, timeoutMs: number, model: string): Promise<T> {
+  return enginePool().run(
+    (host) => post<T>(host, path, body, timeoutMs, model),
+    (err) => err instanceof OllamaUnavailable,
+  );
 }
 
 export async function listModels(): Promise<string[]> {
@@ -180,7 +189,7 @@ export async function listModels(): Promise<string[]> {
     const body = (await res.body.json()) as { models?: { name: string }[] };
     return (body.models ?? []).map((m) => m.name);
   } catch (err) {
-    throw new OllamaUnavailable(err instanceof Error ? err.message : String(err));
+    throw new OllamaUnavailable(err instanceof Error ? err.message : String(err), HOST);
   }
 }
 
@@ -193,7 +202,7 @@ export async function haveModel(name: string): Promise<boolean> {
 /** One batch of texts to vectors. Ollama embeds sequentially; the batch is for fewer round trips. */
 export async function embed(texts: string[], model: string = EMBEDDING_MODEL): Promise<Float32Array[]> {
   if (texts.length === 0) return [];
-  const res = await post<{ embeddings: number[][] }>('/api/embed', { model, input: texts });
+  const res = await onAnyEngine<{ embeddings: number[][] }>('/api/embed', { model, input: texts }, 600_000, model);
   if (!res.embeddings || res.embeddings.length !== texts.length) {
     throw new Error(`${model} returned ${res.embeddings?.length ?? 0} vectors for ${texts.length} inputs`);
   }
@@ -274,7 +283,7 @@ export async function generate(
     if (hit) return { ...hit, fromCache: true };
   }
 
-  const res = await post<{
+  const res = await onAnyEngine<{
     response?: string;
     message?: { content?: string };
     prompt_eval_count?: number;
