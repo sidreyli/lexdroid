@@ -6,6 +6,10 @@ import { AppShell } from "@/components/shell/app-shell";
 import { ReviewProvider } from "@/components/workbench/review-store";
 import "./globals.css";
 
+// Every page reads the working store, which moves while a run does. Nothing here may be
+// prerendered, or the interface would serve whatever the build machine happened to see.
+export const dynamic = "force-dynamic";
+
 const sans = Hanken_Grotesk({
   variable: "--font-sans",
   subsets: ["latin"],
