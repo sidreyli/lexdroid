@@ -1107,7 +1107,14 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     //
     // This is not a rule about pillar 6. Every measure in the rubric names an actor and an act, so
     // a provision with no act binds nobody under any of them.
-    if (e.finding.dutyForce === 'declares') {
+    //
+    // Except the measures that name no act. A ceiling, a quota, a de minimis and an equity cap are
+    // made out by a stated quantity, not by a commanded one, and the rubric already says so on the
+    // measure. Malaysia's e-money exemption states its limit as a criterion -- "a wallet limit not
+    // exceeding RM500 per user" -- which is the answer ESCAP gives for that cell and is a
+    // declaration by grammar. The reader was right about the verb; the gate was asking the wrong
+    // measures for one.
+    if (e.finding.dutyForce === 'declares' && !permits(indicatorId, e.finding.measure)) {
       held.push({
         evidence: e,
         reason: `the provision declares what is the case -- "${e.finding.dutyAct}" -- rather than requiring anyone to do anything`,

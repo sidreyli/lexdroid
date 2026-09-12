@@ -317,6 +317,7 @@ export const MEASURES: Record<string, Measure[]> = {
     {
       token: 'import-quota',
       defines: 'the words setting the limit on how much may be brought in',
+      permits: true,
       crossesBorder: true,
       gloss:
         'a quota, ceiling or other limit on how much of an ICT good or online service may be imported',
@@ -786,6 +787,7 @@ export const MEASURES: Record<string, Measure[]> = {
     {
       token: 'payment-ceiling',
       defines: 'the words stating the largest amount that may be paid',
+      permits: true,
       gloss:
         'a limit on the largest amount that may be paid by an electronic payment method, in one payment or over a period',
       actor: 'the payer or the payment service provider',
