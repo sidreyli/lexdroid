@@ -20,9 +20,12 @@ import { parseDocument, storeDocument, verifyOffsets } from '../parse/index.js';
 import { namesAnInstrument, statedName } from '../parse/identity.js';
 import type { EconomyProfile } from '../profile/types.js';
 import { portalId } from '../profile/index.js';
+import { crawlAdapter } from './crawl.js';
+import { drupalAdapter } from './drupal.js';
 import { frlAdapter } from './frl.js';
 import { lomAdapter } from './lom.js';
 import { lomSubsidAdapter } from './lom-subsid.js';
+import { sitemapAdapter } from './sitemap.js';
 import { ssoAdapter } from './sso.js';
 import { wpAdapter } from './wp.js';
 import type { Adapter, DiscoveredInstrument } from './types.js';
@@ -30,9 +33,12 @@ import type { Adapter, DiscoveredInstrument } from './types.js';
 export * from './types.js';
 
 const ADAPTERS: Record<string, Adapter> = {
+  crawl: crawlAdapter,
+  drupal: drupalAdapter,
   frl: frlAdapter,
   lom: lomAdapter,
   'lom-subsid': lomSubsidAdapter,
+  sitemap: sitemapAdapter,
   sso: ssoAdapter,
   wp: wpAdapter,
 };

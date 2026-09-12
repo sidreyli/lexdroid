@@ -32,6 +32,15 @@ export interface Evidence {
   citation: string;
   /** Whether the provision only instructs an amendment to some other Act. */
   amendsAnotherAct: boolean;
+  /**
+   * What the economy's own instrument hierarchy says this kind of instrument can do.
+   *
+   * Declared in the profile and, until now, never read: "Advisory Guidelines state how a regulator
+   * reads a binding instrument. Evidence of interpretation, never the source of an obligation on
+   * their own." Absent for a corpus registered before this was carried, which reads as binding --
+   * the behaviour every earlier run had.
+   */
+  bindingness?: 'binding' | 'binding-on-licensees' | 'advisory';
 }
 
 /** What a framework-shaped indicator is decided from. One per candidate instrument. */
@@ -1342,6 +1351,18 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
       held.push({
         evidence: e,
         reason: 'the provision amends another Act rather than imposing the duty itself, so the duty belongs to the principal Act',
+      });
+      continue;
+    }
+    // An advisory document can word a duty exactly as a statute does and still not impose one:
+    // it says how the regulator reads an obligation that lives somewhere else. Held rather than
+    // dropped, because it is good evidence of what the binding instrument is understood to mean.
+    if (e.bindingness === 'advisory') {
+      held.push({
+        evidence: e,
+        reason:
+          'the instrument is advisory, so it states how a binding instrument is read rather than ' +
+          'imposing the duty itself',
       });
       continue;
     }

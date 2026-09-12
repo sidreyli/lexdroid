@@ -143,7 +143,7 @@
         10,
         11
       ],
-      "adapter": null,
+      "adapter": "crawl",
       "adapterConfig": {},
       "notes": "Determinations, guidelines and the Content Code made under the Communications and Multimedia Act 1998. Binding on licensees through standard licence conditions rather than on their own terms, so a row citing one has to say what makes it binding."
     },
@@ -155,7 +155,7 @@
       "pillars": [
         7
       ],
-      "adapter": null,
+      "adapter": "sitemap",
       "adapterConfig": {},
       "notes": "The Cyber Security Act 2024 and the codes of practice for national critical information infrastructure entities made under it."
     },
@@ -169,7 +169,7 @@
         7,
         8
       ],
-      "adapter": null,
+      "adapter": "sitemap",
       "adapterConfig": {},
       "notes": "Policy documents, the technology risk management one among them, binding on financial institutions. A policy document is not an Act, and treating it as one is a mistake this profile's instrument ranking exists to prevent."
     },
@@ -183,7 +183,7 @@
         2,
         12
       ],
-      "adapter": null,
+      "adapter": "crawl",
       "adapterConfig": {},
       "notes": "Customs procedure and the electronic declaration systems the trade facilitation pillars turn on. Publishes in Malay by default."
     },
@@ -197,7 +197,7 @@
         5,
         12
       ],
-      "adapter": null,
+      "adapter": "sitemap",
       "adapterConfig": {},
       "notes": "Investment guidelines and the equity conditions attached to manufacturing and services licences."
     },
@@ -209,7 +209,7 @@
       "pillars": [
         4
       ],
-      "adapter": null,
+      "adapter": "crawl",
       "adapterConfig": {},
       "notes": "Patents, trade marks and copyright administration. Recorded as a lead rather than crawled: the site refused an automated client on every path tried by a predecessor of this system, and Malaysia's intellectual property statutes are on the Laws of Malaysia portal in any case."
     },
@@ -221,7 +221,7 @@
       "pillars": [
         12
       ],
-      "adapter": null,
+      "adapter": "crawl",
       "adapterConfig": {},
       "notes": "The .my registry's own eligibility policies, which are the domain name requirements. Not a government host, so a row citing it has to say what makes it authoritative."
     }

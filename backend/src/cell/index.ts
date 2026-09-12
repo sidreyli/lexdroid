@@ -16,6 +16,8 @@ import type { Emit } from '../run/events.js';
 import { citationUrl } from '../export/index.js';
 import { enginePool } from '../engines/pool.js';
 import { amendsAnotherAct } from '../parse/identity.js';
+import { loadProfile } from '../profile/index.js';
+import type { InstrumentType } from '../profile/types.js';
 import type { Indicator } from '../rubric/types.js';
 import { indicatorsOfPillar, loadRubric } from '../rubric/index.js';
 import { loadVectors, type LoadedVectors } from '../index/index.js';
@@ -110,6 +112,7 @@ interface SectionRow {
   id: number;
   instrument_id: number;
   instrument_title: string;
+  instrument_kind: InstrumentType['kind'];
   source_url: string;
   heading_path: string;
   text: string;
@@ -145,6 +148,9 @@ export async function answerPillar(
   const log = opts.log ?? ((): void => {});
   const emit = opts.emit ?? ((): void => {});
   const rubric = loadRubric();
+  // What this economy says each kind of instrument can do. Declared per economy because the answer
+  // differs: a Malaysian Order is subsidiary legislation, and an ACMA guide binds nobody.
+  const bindingness = new Map(loadProfile(economy).instrumentTypes.map((t) => [t.kind, t.bindingness]));
   const indicators = indicatorsOfPillar(pillarId, rubric);
   if (indicators.length === 0) throw new Error(`No indicators in pillar ${pillarId}`);
   const pillarName = indicators[0]!.pillarName;
@@ -251,6 +257,7 @@ export async function answerPillar(
         headingPath: row.heading_path,
         citation: citationFor(row),
         amendsAnotherAct: amendsAnotherAct(row.text),
+        ...(bindingness.get(row.instrument_kind) ? { bindingness: bindingness.get(row.instrument_kind)! } : {}),
       });
     }
   }
@@ -500,7 +507,7 @@ function sectionRows(db: Db, ids: number[]): SectionRow[] {
   return db
     .prepare(
       `SELECT s.id, s.heading_path, s.text, s.anchor,
-              d.instrument_id, i.title AS instrument_title, d.url AS source_url
+              d.instrument_id, i.title AS instrument_title, i.kind AS instrument_kind, d.url AS source_url
          FROM section s
          JOIN document d ON d.id = s.document_id
          JOIN instrument i ON i.id = d.instrument_id
