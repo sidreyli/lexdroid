@@ -20,6 +20,11 @@ const COMMON = new Set([
   'rules', 'order', 'reprint', 'revised', 'repealed', 'malaysia', 'singapore', 'australia',
 ]);
 
+/** A plural and its singular are the same word. "Persons" against "Person's" is not two Acts. */
+function stem(w: string): string {
+  return w.length > 3 && w.endsWith('s') && !w.endsWith('ss') ? w.slice(0, -1) : w;
+}
+
 /** A name reduced to the words that identify it, in order. */
 function keyWords(s: string): string[] {
   const seen = new Set<string>();
@@ -28,7 +33,22 @@ function keyWords(s: string): string[] {
     .replace(/[^a-z0-9]+/g, ' ')
     .split(' ')
     .filter((w) => w.length > 2 && !COMMON.has(w) && !/^\d+$/.test(w))
+    .map(stem)
     .filter((w) => (seen.has(w) ? false : (seen.add(w), true)));
+}
+
+/**
+ * Whether a filed title names an instrument at all.
+ *
+ * A catalogue row whose title is a web page's theme name -- Malaysia's data protection portal
+ * filed one as "Wordpress Revolutionize" -- is not a legal title, so it has nothing to contradict
+ * the document with. The document's own words are the better evidence and it takes their name.
+ */
+const NAMES_AN_INSTRUMENT =
+  /\b(act|ordinance|enactment|regulations?|rules?|order|notice|guidelines?|code|bill|constitution|charter|decree|akta|peraturan|perintah|kaedah|undang)\b/i;
+
+export function namesAnInstrument(title: string): boolean {
+  return NAMES_AN_INSTRUMENT.test(title);
 }
 
 /** The name a document gives itself, from its opening provisions. Null if it never says. */
@@ -57,11 +77,18 @@ export function namesMatch(stated: string, title: string): boolean {
   return opens(a, b) || opens(b, a);
 }
 
-/** The contradiction, in words, or null where there is none to state. */
+/**
+ * The contradiction, in words, or null where there is none to state.
+ *
+ * A title the register only guessed at cannot contradict anything, so it is not asked to: the
+ * check compares two instrument names, and a placeholder is not one.
+ */
 export function identityMismatch(
   sections: Pick<ParsedSection, 'text'>[],
   title: string,
+  opts: { titleProvisional?: boolean } = {},
 ): { stated: string; detail: string } | null {
+  if (opts.titleProvisional || !namesAnInstrument(title)) return null;
   const stated = statedName(sections);
   if (stated === null || namesMatch(stated, title)) return null;
   return {

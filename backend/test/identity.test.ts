@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { statedName, namesMatch, identityMismatch, amendsAnotherAct } from '../src/parse/identity.js';
+import { statedName, namesMatch, identityMismatch, namesAnInstrument, amendsAnotherAct } from '../src/parse/identity.js';
 
 const s = (text: string) => [{ text }];
 
@@ -30,6 +30,42 @@ describe('whether two names are the same instrument', () => {
 
   it('will not match a different Act', () => {
     expect(namesMatch('Judicial Appointments Commission Act 2009', 'WITNESS PROTECTION ACT 2009')).toBe(false);
+  });
+
+  it('reads a plural and its singular as the same word', () => {
+    // Three of Malaysia's ten rejected documents were rejected over an "s". The Destitute Persons
+    // Act is filed as "DESTITUTE PERSON'S ACT 1977" and is the same Act either way.
+    expect(namesMatch('Destitute Persons Act 1977', "DESTITUTE PERSON'S ACT 1977")).toBe(true);
+    expect(namesMatch('Labuan Offshore Trusts Act', 'LABUAN OFFSHORES TRUSTS ACT 1996')).toBe(true);
+  });
+});
+
+describe('a filed title that is not a legal title', () => {
+  it('is not asked to contradict anything', () => {
+    // Malaysia's data protection portal filed a regulation under its own site theme. A page title
+    // is not an instrument name, so it cannot say the document is a different instrument.
+    expect(namesAnInstrument('Wordpress Revolutionize')).toBe(false);
+    expect(
+      identityMismatch(
+        s('1. (1) These regulations may be cited as the Personal Data Protection Regulations 2013.'),
+        'Wordpress Revolutionize',
+      ),
+    ).toBeNull();
+  });
+
+  it('leaves a real title to be checked as before', () => {
+    expect(namesAnInstrument('WITNESS PROTECTION ACT 2009')).toBe(true);
+    expect(namesAnInstrument('Peraturan Peraturan Perlindungan Data Peribadi 2013')).toBe(true);
+  });
+
+  it('does not check a title the register only guessed at', () => {
+    expect(
+      identityMismatch(
+        s('1. (1) This Act may be cited as the Judicial Appointments Commission Act 2009.'),
+        'Act 695 Reprint 2019 rules',
+        { titleProvisional: true },
+      ),
+    ).toBeNull();
   });
 });
 
