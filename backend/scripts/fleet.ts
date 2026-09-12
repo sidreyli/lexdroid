@@ -18,11 +18,13 @@ import { openRun, finishRun, runEvents, recordRent } from '../src/run/index.js';
 import { describe } from '../src/run/events.js';
 import {
   duplicateEngine,
+  longestFirst,
   pinByEconomy,
   replayingWhilePaying,
   workUnits,
   type Unit,
 } from '../src/run/fleet.js';
+import { indicatorsOfPillar, loadRubric } from '../src/rubric/index.js';
 import { READING_MODEL } from '../src/engines/ollama.js';
 import { probeEngine, describeReport, usable, mismatchedEngine, fingerprintOf } from '../src/engines/probe.js';
 import { cacheEnabled } from '../src/engines/cache.js';
@@ -162,7 +164,11 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  const units = workUnits(args.economies, args.pillars);
+  // How many indicators a pillar asks about is the size signal available before any of it runs.
+  const rubric = loadRubric();
+  const units = longestFirst(workUnits(args.economies, args.pillars), (u) =>
+    indicatorsOfPillar(u.pillar, rubric).length,
+  );
 
   const db = openDb();
   const run = openRun(db, {

@@ -16,6 +16,17 @@ export function workUnits(economies: string[], pillars: number[]): Unit[] {
   return units;
 }
 
+/**
+ * Biggest first. Whichever unit starts last decides when the run ends, so the last one handed out
+ * must not be the largest: in listed order the three pillar 12s go last and cost hours of tail.
+ */
+export function longestFirst(units: Unit[], size: (unit: Unit) => number): Unit[] {
+  return units
+    .map((unit, at) => ({ unit, at, size: size(unit) }))
+    .sort((a, b) => b.size - a.size || a.at - b.at)
+    .map((u) => u.unit);
+}
+
 /** localhost and 127.0.0.1 are the same engine, so the one-worker-per-engine rule must see that. */
 export function engineKey(host: string): string {
   return host
