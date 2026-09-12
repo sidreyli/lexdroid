@@ -23,6 +23,7 @@ import { loadRates } from '../src/decide/currency.js';
 import type { RunEvent } from '../src/run/events.js';
 import { existsSync } from 'node:fs';
 import { reaches, type Decision } from '../src/decide/index.js';
+import { loadProfile } from '../src/profile/index.js';
 
 /** A read slower than this is said out loud while it is still happening, not after the pillar. */
 const SLOW_READ_SECONDS = 30;
@@ -109,11 +110,11 @@ function baselineScores(economy: string, indicators: Indicator[]): Map<string, T
   if (!existsSync(BASELINE_DB_PATH)) return out;
 
   const db = openBaseline();
-  const like = economy === 'SGP' ? '%ingapore%' : economy === 'MYS' ? '%alaysia%' : '%ustralia%';
+  const baselineEconomy = loadProfile(economy).name;
   for (const indicator of indicators) {
     const rows = db
-      .prepare('SELECT raw_score, act_or_practice FROM baseline_row WHERE economy LIKE ? AND indicator_id = ?')
-      .all(like, indicator.id) as { raw_score: number | null; act_or_practice: string | null }[];
+      .prepare('SELECT raw_score, act_or_practice FROM baseline_row WHERE economy = ? AND indicator_id = ?')
+      .all(baselineEconomy, indicator.id) as { raw_score: number | null; act_or_practice: string | null }[];
     if (rows.length === 0) continue;
 
     // One row per measure, so the rows resolve to one answer by the indicator's own ladder rather

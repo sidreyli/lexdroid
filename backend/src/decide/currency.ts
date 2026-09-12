@@ -28,7 +28,7 @@ const ENDPOINT = 'https://api.frankfurter.dev/v1/latest';
 const SOURCE = 'European Central Bank daily reference rates, via api.frankfurter.dev';
 
 /** The currencies the in-scope economies state money in. */
-const WANTED = ['AUD', 'SGD', 'MYR', 'THB', 'IDR', 'CNY'] as const;
+const WANTED = ['AUD', 'SGD', 'MYR', 'INR', 'THB', 'IDR', 'CNY'] as const;
 
 export interface FxRates {
   /** Everything is expressed against the dollar, because the band ESCAP draws is in dollars. */
@@ -46,6 +46,7 @@ export const CURRENCY_OF: Readonly<Record<string, string>> = {
   AUS: 'AUD',
   SGP: 'SGD',
   MYS: 'MYR',
+  IND: 'INR',
   THA: 'THB',
   IDN: 'IDR',
   CHN: 'CNY',
@@ -57,6 +58,7 @@ const MARKERS: readonly (readonly [RegExp, string])[] = [
   [/\bA\s?\$|\bAUD\b|\bAustralian dollars?\b/i, 'AUD'],
   [/\bS\s?\$|\bSGD\b|\bSingapore dollars?\b/i, 'SGD'],
   [/\bRM(?=\s?\d)|\bMYR\b|\bringgit\b/i, 'MYR'],
+  [/₹(?=\s?\d)|\bINR\b|\bIndian rupees?\b|\brupees?\b/i, 'INR'],
   [/\bTHB\b|\bbaht\b/i, 'THB'],
   [/\bIDR\b|\bRp(?=\s?\d)|\brupiah\b/i, 'IDR'],
   [/\bCNY\b|\bRMB\b|\byuan\b|\brenminbi\b/i, 'CNY'],

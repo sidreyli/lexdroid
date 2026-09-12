@@ -234,10 +234,13 @@ describe('money read out of a provision', () => {
   it('reads the figure and the currency the provision names', () => {
     expect(moneyIn('not exceeding S$400', 'SGP')).toEqual({ amount: 400, currency: 'SGD', assumedCurrency: false });
     expect(moneyIn('not exceeding RM500', 'MYS')).toEqual({ amount: 500, currency: 'MYR', assumedCurrency: false });
+    expect(moneyIn('goods valued at ₹5,000', 'IND')).toEqual({ amount: 5000, currency: 'INR', assumedCurrency: false });
+    expect(moneyIn('goods valued at 5,000 rupees', 'IND')).toEqual({ amount: 5000, currency: 'INR', assumedCurrency: false });
   });
 
   it('falls back to the economy’s own currency for a bare symbol, and says it did', () => {
     expect(moneyIn('not exceeding $1,000', 'AUS')).toEqual({ amount: 1000, currency: 'AUD', assumedCurrency: true });
+    expect(moneyIn('not exceeding 5,000', 'IND')).toEqual({ amount: 5000, currency: 'INR', assumedCurrency: true });
   });
 
   it('reads no figure where the provision states none', () => {

@@ -14,6 +14,7 @@ backend/data/baseline.db-*
 backend/data/engine-cache.db
 backend/data/engine-cache.db-*
 backend/data/cache/
+backend/data/ocr/
 backend/data/runs/
 backend/data/fleet/
 backend/data/exports/
