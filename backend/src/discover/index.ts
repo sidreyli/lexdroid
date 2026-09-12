@@ -17,6 +17,7 @@ import type { Db } from '../db/index.js';
 import type { Fetcher } from '../fetch/index.js';
 import { RobotsDisallowed, CacheMiss, HostSuspended } from '../fetch/index.js';
 import { parseDocument, storeDocument, verifyOffsets } from '../parse/index.js';
+import { soleDocumentLink } from '../parse/html.js';
 import { namesAnInstrument, statedName } from '../parse/identity.js';
 import type { EconomyProfile } from '../profile/types.js';
 import { portalId } from '../profile/index.js';
@@ -207,6 +208,11 @@ export interface MaterialiseOptions {
    * only that stage.
    */
   reparse?: boolean;
+  /**
+   * Only the instruments nothing could be read out of. When the reason a document was unread is
+   * one the parser has since learned to handle, this retries exactly those and nothing else.
+   */
+  unreadOnly?: boolean;
   /** Only instruments whose title matches, case-insensitively. Used to prove a path quickly. */
   titleLike?: string;
   /**
@@ -240,7 +246,11 @@ export async function materialise(
     return portal?.adapter ? ADAPTERS[portal.adapter] ?? null : null;
   };
 
-  const where = opts.reparse
+  const where = opts.unreadOnly
+    ? `i.economy_code = ? AND EXISTS (
+         SELECT 1 FROM document d JOIN unread_document u ON u.document_id = d.id
+          WHERE d.instrument_id = i.id)`
+    : opts.reparse
     ? `i.economy_code = ? AND EXISTS (SELECT 1 FROM document d WHERE d.instrument_id = i.id)`
     : opts.refresh
       ? 'i.economy_code = ?'
@@ -279,7 +289,7 @@ export async function materialise(
     const adapter = adapterFor(row.discovered_via);
     const base = { instrumentId: row.id, title: row.title, url: row.source_url };
     try {
-      const fetched = adapter?.resolveDocument
+      let fetched = adapter?.resolveDocument
         ? await adapter.resolveDocument(row.source_url, fetcher)
         : await fetcher.fetch(row.source_url);
 
@@ -293,7 +303,24 @@ export async function materialise(
         continue;
       }
 
-      const parsed = await parseDocument(fetched);
+      let parsed = await parseDocument(fetched);
+
+      // A page of menus that publishes exactly one file is not an index of leads; it is the
+      // instrument's own wrapper, and the file is the document to cite.
+      const wrapper = parsed.unread?.reason === 'landing-page' || parsed.unread?.reason === 'empty';
+      if (wrapper && /html/i.test(fetched.mediaType)) {
+        const only = soleDocumentLink(fetched.body.toString('utf8'), fetched.finalUrl);
+        if (only) {
+          const inner = await fetcher.fetch(only);
+          const reparsed = inner.status === 200 ? await parseDocument(inner) : null;
+          if (reparsed && !reparsed.unread) {
+            fetched = inner;
+            parsed = reparsed;
+            log(`  [${n + 1}/${rows.length}] the page wraps one document: ${only}`);
+          }
+        }
+      }
+
       const stored = storeDocument(db, { instrumentId: row.id, fetched, parsed });
 
       // What the document says about itself, which is the only acceptable evidence for a date.

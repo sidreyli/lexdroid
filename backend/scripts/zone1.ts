@@ -4,6 +4,7 @@
  *   npm run -w backend zone1 -- --economy SGP --register
  *   npm run -w backend zone1 -- --economy SGP --read 20 --title "Personal Data"
  *   npm run -w backend zone1 -- --economy AUS --pillars 6,7 --top 25
+ *   npm run -w backend zone1 -- --economy SGP --unread
  *   npm run -w backend zone1 -- --economy SGP --embed
  *   npm run -w backend zone1 -- --economy SGP --status
  *
@@ -33,6 +34,8 @@ interface Args {
   embed: boolean;
   refresh: boolean;
   reparse: boolean;
+  /** Re-read only the documents nothing could be read out of. */
+  unread: boolean;
   status: boolean;
   delayMs: number | null;
   sourceMode: SourceMode;
@@ -53,19 +56,20 @@ function parseArgs(argv: string[]): Args {
 
   const readArg = get('read');
   const anyStage =
-    has('register') || readArg !== null || has('embed') || has('status') || has('reparse')
+    has('register') || readArg !== null || has('embed') || has('status') || has('reparse') || has('unread')
     || get('about') !== null || get('pillars') !== null;
 
   return {
     economy: (get('economy') ?? 'SGP').toUpperCase(),
     register: has('register') || !anyStage,
     read: readArg !== null ? (readArg === 'all' ? 0 : Number(readArg))
-      : (get('about') !== null || get('pillars') !== null || has('reparse')) ? 0 : anyStage ? null : 0,
+      : (get('about') !== null || get('pillars') !== null || has('reparse') || has('unread')) ? 0 : anyStage ? null : 0,
     title: get('title'),
     kind: get('kind'),
     embed: has('embed') || !anyStage,
     refresh: has('refresh'),
     reparse: has('reparse'),
+    unread: has('unread'),
     status: has('status'),
     delayMs: get('delay') !== null ? Number(get('delay')) : null,
     sourceMode: has('cache-only') ? 'cache-only' : 'fetch',
@@ -225,6 +229,7 @@ Shortlist -- ranking the register against ${asked.length} question(s), ${args.to
       ...(shortlisted ? { instrumentIds: shortlisted } : {}),
       refresh: args.refresh,
       reparse: args.reparse,
+      unreadOnly: args.unread,
       log: (l) => console.log(l),
     });
     const by = (o: string) => results.filter((r) => r.outcome === o).length;

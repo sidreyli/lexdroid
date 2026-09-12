@@ -7,7 +7,8 @@
  * presence of a framework as zero -- there, over-claiming lands us below ESCAP, not above.
  */
 import type { Database } from 'better-sqlite3';
-import { openBaseline } from '../baseline/index.js';
+import { openBaseline, escapScore } from '../baseline/index.js';
+import { loadRubric } from '../rubric/index.js';
 
 /** ESCAP name each economy code. Their sheets are keyed by name, ours by code. */
 const ESCAP_NAME: Record<string, string> = { AUS: 'Australia', MYS: 'Malaysia', SGP: 'Singapore' };
@@ -45,14 +46,27 @@ export function verdictFor(ours: number | null, theirs: number | null, findings:
 
 export function scorecard(db: Database, runId: string, baselinePath?: string): CellResult[] {
   const baseline = openBaseline(baselinePath);
-  const theirs = new Map<string, number>();
+  const indicators = new Map(loadRubric().indicators.map((i) => [i.id as string, i]));
+
+  // ESCAP records one row per measure, each scored as that measure alone would score, so the rows
+  // resolve to one answer by the indicator's own ladder. Taking the highest is wrong both ways.
+  const rowsOf = new Map<string, (number | null)[]>();
   for (const row of baseline
-    .prepare(`SELECT economy, indicator_id, MAX(raw_score) AS score FROM baseline_row
-              WHERE source = 'round-1' AND indicator_id IS NOT NULL GROUP BY economy, indicator_id`)
-    .all() as { economy: string; indicator_id: string; score: number | null }[]) {
-    if (row.score !== null) theirs.set(`${row.economy}/${row.indicator_id}`, row.score);
+    .prepare(`SELECT economy, indicator_id, raw_score FROM baseline_row
+              WHERE source = 'round-1' AND indicator_id IS NOT NULL`)
+    .all() as { economy: string; indicator_id: string; raw_score: number | null }[]) {
+    const key = `${row.economy}/${row.indicator_id}`;
+    const at = rowsOf.get(key);
+    if (at) at.push(row.raw_score);
+    else rowsOf.set(key, [row.raw_score]);
   }
   baseline.close();
+
+  const theirs = new Map<string, number>();
+  for (const [key, scores] of rowsOf) {
+    const indicator = indicators.get(key.split('/')[1] ?? '');
+    if (indicator) theirs.set(key, escapScore(indicator, scores).score);
+  }
 
   const rows = db
     .prepare(`SELECT c.economy_code AS economy, c.indicator_id AS indicator, a.score AS ours,
