@@ -69,8 +69,9 @@ function parseArgs(argv: string[]): Args {
 }
 
 /** One work unit on one engine, as a child gate that joins the run. Output goes to its own log. */
-function runUnit(unit: Unit, host: string, runId: string, logDir: string, args: Args): Promise<number> {
-  const logPath = join(logDir, `${unit.economy}-p${unit.pillar}.log`);
+function runUnit(unit: Unit, host: string, runId: string, logDir: string, args: Args, attempt = 1): Promise<number> {
+  const suffix = attempt > 1 ? `-try${attempt}` : '';
+  const logPath = join(logDir, `${unit.economy}-p${unit.pillar}${suffix}.log`);
   const out = createWriteStream(logPath);
   const argv = [
     'tsx',
@@ -106,6 +107,18 @@ function runUnit(unit: Unit, host: string, runId: string, logDir: string, args: 
       resolve(code ?? 1);
     });
   });
+}
+
+/**
+ * Everything a half-finished unit recorded, so its retry starts from nothing.
+ * Children of a cell cascade, so the cells are the whole of it.
+ */
+function clearUnit(db: ReturnType<typeof openDb>, runId: string, unit: Unit): void {
+  db.prepare(
+    `DELETE FROM cell
+      WHERE run_id = ? AND economy_code = ?
+        AND CAST(substr(indicator_id, 1, instr(indicator_id, '.') - 1) AS INTEGER) = ?`,
+  ).run(runId, unit.economy, unit.pillar);
 }
 
 async function main(): Promise<void> {
@@ -199,7 +212,13 @@ async function main(): Promise<void> {
       for (;;) {
         const unit = own ? own.shift() : units[next++];
         if (!unit) return;
-        const code = await runUnit(unit, host, run.id, logDir, args);
+        let code = await runUnit(unit, host, run.id, logDir, args);
+        // A unit that died on a passing fault deserves one more go; a real defect fails twice.
+        if (code !== 0) {
+          console.log(`${unit.economy} pillar ${unit.pillar} failed on ${host}; one more attempt`);
+          clearUnit(db, run.id, unit);
+          code = await runUnit(unit, host, run.id, logDir, args, 2);
+        }
         done.push({ unit, host, code });
       }
     }),

@@ -15,7 +15,7 @@ import { openDb } from '../src/db/index.js';
 import { loadRubric, indicatorsOfPillar } from '../src/rubric/index.js';
 import type { Indicator } from '../src/rubric/types.js';
 import { answerPillar } from '../src/cell/index.js';
-import { haveModel, OllamaUnavailable, READING_MODEL } from '../src/engines/ollama.js';
+import { engineReconnects, haveModel, OllamaUnavailable, READING_MODEL } from '../src/engines/ollama.js';
 import { cacheEnabled, cacheSize } from '../src/engines/cache.js';
 import { openBaseline, BASELINE_DB_PATH, sameInstrument, escapScore } from '../src/baseline/index.js';
 import { openRun, joinRun, recordPillarAnswer, recordStage, recordEvent, finishRun, codeRevision, settleRates } from '../src/run/index.js';
@@ -266,6 +266,10 @@ async function main(): Promise<void> {
       `${rejected} refused finding(s), ${refusedQuotes} of them on the quote check ===`,
   );
   console.log(`    model: ${model}`);
+  // An engine that went away and came back is a fact about the run, not a detail of the transport.
+  if (engineReconnects() > 0) {
+    console.log(`    engine was briefly unreachable ${engineReconnects()} time(s) and was waited for`);
+  }
   if (run) {
     emit({ stage: 'run', kind: 'finished', economy: args.economy, detail: `${all.length} cells` });
     if (cacheEnabled()) console.log('    REPLAYED FROM CACHE -- this run is not a measurement');
