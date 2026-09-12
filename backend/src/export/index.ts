@@ -20,6 +20,12 @@
  *                         instrument it was read against -- the Australia 2.2 shape. A cell we
  *                         could not answer produces a row that says so. Silence is never a row.
  *
+ *   Only what was stood on.  Rows come from the answer's basis, not from everything the reader
+ *                         returned. Zone 3 sets most findings aside with a reason -- a sentence
+ *                         that declares rather than obliges, a power to make a rule rather than
+ *                         the rule -- and a finding it refused to score is not a measure. They
+ *                         stay in `reading`, which is the record of what was read.
+ *
  * The discovery tag is deliberately not set here. NEW versus KNOWN is defined against ESCAP's
  * sample kit, and no module under src/ outside the quarantine may read it -- so the tag is applied
  * by the caller that is allowed to, and a row leaves this module without one.
@@ -45,12 +51,13 @@ interface CellRow {
   controlling_instrument_id: number | null;
 }
 
-interface ReadingRow {
-  id: number;
+/** One finding the answer stood on, with the provision it was read out of. */
+interface BasisRow {
   section_id: number;
-  quote: string | null;
-  quote_char_start: number | null;
-  attributes: string;
+  measure: string | null;
+  reading_id: number | null;
+  reading_quote: string | null;
+  attributes: string | null;
   section_text: string;
   section_char_start: number;
   heading_path: string;
@@ -59,12 +66,24 @@ interface ReadingRow {
   language: string | null;
   doc_url: string;
   extraction: string | null;
-  instrument_id: number;
   title: string;
   official_number: string | null;
   commenced_on: string | null;
   last_amended_on: string | null;
   instrument_language: string | null;
+}
+
+interface FrameworkBasisRow {
+  title: string;
+  sectoral_shown: number | null;
+  official_number: string | null;
+  commenced_on: string | null;
+  last_amended_on: string | null;
+  source_url: string;
+  instrument_language: string | null;
+  quote: string | null;
+  sector: string | null;
+  quote_verified: number | null;
 }
 
 /** One finding as the reader returned it. Only the fields a row shows are named. */
@@ -74,6 +93,24 @@ interface Finding {
   requirement?: string;
   dutyBearer?: string;
   dutyAct?: string;
+}
+
+/**
+ * The finding behind one basis entry, out of the reading it was recorded in.
+ *
+ * Keyed on the measure because the decision is: one provision answers a measure once, so the
+ * pair is unique and a reading that carried several findings gives back the one that counted.
+ */
+function findingOf(attributes: string | null, measure: string | null): Finding | null {
+  if (!attributes) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(attributes);
+  } catch {
+    return null;
+  }
+  if (!Array.isArray(parsed)) return null;
+  return (parsed as Finding[]).find((f) => f.measure === measure) ?? null;
 }
 
 const MONTHS = [
@@ -173,19 +210,44 @@ export function buildExportRows(db: Db, runId: string): BuildResult {
     )
     .all(runId) as CellRow[];
 
-  const readingsFor = db.prepare(
-    `SELECT r.id, r.section_id, r.quote, r.quote_char_start, r.attributes,
+  const basisFor = db.prepare(
+    `SELECT b.section_id, b.measure, r.id AS reading_id, r.quote AS reading_quote, r.attributes,
             s.text AS section_text, s.char_start AS section_char_start,
             s.heading_path, s.label, s.anchor, s.language,
             d.url AS doc_url, d.extraction,
-            i.id AS instrument_id, i.title, i.official_number, i.commenced_on, i.last_amended_on,
+            i.title, i.official_number, i.commenced_on, i.last_amended_on,
             i.language AS instrument_language
-       FROM reading r
-       JOIN section s ON s.id = r.section_id
+       FROM answer_basis b
+       JOIN section s ON s.id = b.section_id
        JOIN document d ON d.id = s.document_id
        JOIN instrument i ON i.id = d.instrument_id
-      WHERE r.cell_id = ? AND r.applies = 1
-      ORDER BY r.id`,
+       LEFT JOIN reading r ON r.cell_id = b.cell_id AND r.section_id = b.section_id
+      WHERE b.cell_id = ? AND b.section_id IS NOT NULL
+      ORDER BY b.ordinal`,
+  );
+
+  // A framework indicator cites the instrument, not a provision: ESCAP is explicit that a
+  // per-provision citation there is not a discovery.
+  const frameworkBasisFor = db.prepare(
+    `SELECT i.title, i.official_number, i.commenced_on, i.last_amended_on, i.source_url,
+            i.language AS instrument_language, f.quote, f.sector, f.sectoral_shown, f.quote_verified
+       FROM answer_basis b
+       JOIN instrument i ON i.id = b.instrument_id
+       LEFT JOIN framework_reading f ON f.cell_id = b.cell_id AND f.instrument_id = b.instrument_id
+      WHERE b.cell_id = ? AND b.section_id IS NULL
+      ORDER BY b.ordinal`,
+  );
+
+  // The instruments carrying the same framework. ESCAP asked for one official link per row and
+  // the rest in the notes, so they are named rather than given rows of their own.
+  const alsoCarrying = db.prepare(
+    `SELECT i.title
+       FROM framework_reading f
+       JOIN instrument i ON i.id = f.instrument_id
+      WHERE f.cell_id = ? AND f.establishes_framework = 1
+        AND f.instrument_id <> (SELECT instrument_id FROM answer_basis
+                                 WHERE cell_id = ? AND section_id IS NULL ORDER BY ordinal LIMIT 1)
+      ORDER BY f.id`,
   );
 
   const instrument = db.prepare(
@@ -213,51 +275,67 @@ export function buildExportRows(db: Db, runId: string): BuildResult {
       let made = 0;
 
       if (cell.state === 'restricted') {
-        for (const r of readingsFor.all(cell.id) as ReadingRow[]) {
-          let findings: Finding[] = [];
-          try {
-            const parsed: unknown = JSON.parse(r.attributes);
-            if (Array.isArray(parsed)) findings = parsed as Finding[];
-          } catch {
-            // A reading whose attributes will not parse is a defect upstream, not something to
-            // paper over here: no row is made from it and the cell's count will show the gap.
-            findings = [];
-          }
+        for (const b of basisFor.all(cell.id) as BasisRow[]) {
+          const f = findingOf(b.attributes, b.measure);
+          const quote = f?.quote ?? b.reading_quote;
+          // Located per finding, because the quote differs per finding and the reading carries
+          // only the first one's span.
+          const at = quote ? locateQuote(b.section_text, quote) : null;
+          insert.run(
+            cell.id,
+            cell.economy_code,
+            b.title,
+            b.official_number,
+            timeframe(b.commenced_on, b.last_amended_on),
+            cell.indicator_id,
+            b.label ?? b.heading_path,
+            null, // discovery tag: applied outside src/, where the baseline may be read
+            b.heading_path,
+            quote,
+            at ? b.section_char_start + at.start : null,
+            at ? b.section_char_start + at.end : null,
+            mappingRationale(quote, f?.requirement ?? null),
+            citationUrl(b.doc_url, b.anchor),
+            confidenceOf({ quote, offsetsResolved: at !== null, extraction: b.extraction }),
+            noteFor(f ?? (b.measure ? { measure: b.measure } : {}), b.extraction),
+            b.language ?? b.instrument_language,
+            b.section_id,
+            b.reading_id,
+            now,
+          );
+          rows += 1;
+          made += 1;
+        }
 
-          for (const f of findings) {
-            const quote = f.quote ?? r.quote;
-            // Located per finding, because the quote differs per finding and the reading carries
-            // only the first one's span.
-            const at = quote ? locateQuote(r.section_text, quote) : null;
-            insert.run(
-              cell.id,
-              cell.economy_code,
-              r.title,
-              r.official_number,
-              timeframe(r.commenced_on, r.last_amended_on),
-              cell.indicator_id,
-              r.label ?? r.heading_path,
-              null, // discovery tag: applied outside src/, where the baseline may be read
-              r.heading_path,
-              quote,
-              at ? r.section_char_start + at.start : null,
-              at ? r.section_char_start + at.end : null,
-              mappingRationale(quote, f.requirement ?? null),
-              citationUrl(r.doc_url, r.anchor),
-              confidenceOf({
-                quote,
-                offsetsResolved: at !== null,
-                extraction: r.extraction,
-              }),
-              noteFor(f, r.extraction),
-              r.language ?? r.instrument_language,
-              r.section_id,
-              r.id,
-              now,
-            );
-            rows += 1;
-            made += 1;
-          }
+        for (const b of frameworkBasisFor.all(cell.id) as FrameworkBasisRow[]) {
+          insert.run(
+            cell.id,
+            cell.economy_code,
+            b.title,
+            b.official_number,
+            timeframe(b.commenced_on, b.last_amended_on),
+            cell.indicator_id,
+            null, // the instrument is the citation; there is no provision to point at
+            null,
+            null,
+            b.quote,
+            null,
+            null,
+            mappingRationale(b.quote, cell.rationale),
+            b.source_url,
+            b.quote
+              ? b.quote_verified === 1
+                ? 'high -- quoted words located in the stored source'
+                : 'medium -- quoted words not located in the stored source'
+              : 'no quotation',
+            frameworkNote(b, (alsoCarrying.all(cell.id, cell.id) as { title: string }[]).map((x) => x.title)),
+            b.instrument_language,
+            null,
+            null,
+            now,
+          );
+          rows += 1;
+          made += 1;
         }
       }
 
@@ -317,4 +395,23 @@ function noteFor(f: Finding, extraction: string | null): string | null {
   if (f.dutyBearer && f.dutyAct) parts.push(`Binds ${f.dutyBearer}: ${f.dutyAct}.`);
   if (extraction === 'ocr') parts.push('Source text recovered by OCR; the quotation should be spot-checked.');
   return parts.length ? parts.join(' ') : null;
+}
+
+/**
+ * What a framework row says beyond naming the instrument.
+ *
+ * Reach is reported only where the instrument's own words confine it -- the reader's sector label
+ * is a claim, and an unshown claim would put "limited to: all" on a row.
+ */
+function frameworkNote(row: FrameworkBasisRow, alsoCarrying: string[]): string {
+  const parts: string[] = [];
+  parts.push(
+    row.sectoral_shown === 1 && row.sector
+      ? `Framework limited to ${row.sector}, in the instrument's own words.`
+      : 'Framework applying across sectors.',
+  );
+  if (alsoCarrying.length > 0) {
+    parts.push(`Also carried by: ${alsoCarrying.slice(0, 6).join('; ')}.`);
+  }
+  return parts.join(' ');
 }

@@ -479,6 +479,22 @@ CREATE TABLE IF NOT EXISTS cell_answer (
   computed_at     TEXT NOT NULL
 );
 
+-- Which findings the answer actually stood on, in the decision's own order.
+-- Zone 3 sets most findings aside with a reason -- a sentence that declares rather than obliges,
+-- a power to make a rule rather than the rule. Those stay in `reading`, which is the record of
+-- what was read; they are not measures, so they are not rows.
+CREATE TABLE IF NOT EXISTS answer_basis (
+  id              INTEGER PRIMARY KEY,
+  cell_id         INTEGER NOT NULL REFERENCES cell(id) ON DELETE CASCADE,
+  ordinal         INTEGER NOT NULL,           -- what the band was counted from comes first
+  instrument_id   INTEGER NOT NULL REFERENCES instrument(id),
+  -- Null for a framework indicator: ESCAP decides those over instruments, not provisions.
+  section_id      INTEGER REFERENCES section(id),
+  measure         TEXT,
+  UNIQUE (cell_id, section_id, measure, instrument_id)
+);
+CREATE INDEX IF NOT EXISTS idx_answer_basis_cell ON answer_basis(cell_id);
+
 -- ---------------------------------------------------------------------------------------------
 -- The export row. ESCAP's fourteen columns, plus what we need to defend each one.
 -- A provision reaches this table only as evidence cited by a cell answer.

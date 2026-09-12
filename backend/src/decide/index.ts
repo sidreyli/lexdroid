@@ -1781,13 +1781,17 @@ export function decide(input: DecideInput): Decision {
     };
   }
 
-  const basis = chosenBand.score > 0 ? leadWithWhatWasCounted(qualifying, chosen.counted) : [];
-  const absence = chosenBand.score > 0 ? null : witness;
+  // Whether the band rests on provisions found or on their absence. Fourteen indicators score
+  // their maximum for something not being there, and such a cell has found no measure whatever
+  // its score -- it cites the instrument it was read against, the way ESCAP's own zero rows do.
+  const found = chosenBand.score > 0 && !scoresOnAbsence(indicator, rule, chosen.ordinal);
+  const basis = found ? leadWithWhatWasCounted(qualifying, chosen.counted) : [];
+  const absence = found ? null : witness;
 
   return {
     indicatorId: indicator.id,
     economy,
-    state: chosenBand.score > 0 ? 'restricted' : 'no-restriction',
+    state: found ? 'restricted' : 'no-restriction',
     score: chosenBand.score,
     band: chosenBand,
     basis,
@@ -1879,7 +1883,8 @@ function decideFramework(input: DecideInput): Decision {
   return {
     indicatorId: indicator.id,
     economy,
-    state: chosenBand.score > 0 ? 'restricted' : 'no-restriction',
+    // A framework found is the measure, whatever it scores: 7.1 scores zero for having one.
+    state: used.length > 0 ? 'restricted' : 'no-restriction',
     score: chosenBand.score,
     band: chosenBand,
     basis: [],

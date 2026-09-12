@@ -24,10 +24,7 @@
  * about, which is the whole point of having a reviewer.
  */
 import type { Db } from '../db/index.js';
-import { amendsAnotherAct } from '../parse/identity.js';
-import { citationUrl } from '../export/index.js';
-import { decide, type Evidence, type FrameworkEvidence, type SurfacedInstrument } from '../decide/index.js';
-import { loadRubric } from '../rubric/index.js';
+import { recordedDecider } from '../decide/record.js';
 import { ratesOfRun } from '../run/index.js';
 import { elidedFragments, findFragment, MIN_ANCHOR } from '../util/locate.js';
 
@@ -384,154 +381,29 @@ export interface RecomputeResult {
   perCell: Map<number, { agreed: boolean; why: string | null }>;
 }
 
-/** The instrument ids recorded with the cell, or none where a store predates the column. */
-function parseGoverning(raw: string | null): number[] {
-  if (!raw) return [];
-  try {
-    const parsed: unknown = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.filter((v): v is number => typeof v === 'number') : [];
-  } catch {
-    return [];
-  }
-}
-
 export function recomputeScores(db: Db, runId: string): RecomputeResult {
-  const cells = db
-    .prepare(
-      `SELECT c.id, c.economy_code, c.indicator_id, c.sections_read, c.sections_indexed, c.surfaced,
-              c.governing, a.score, a.band_ordinal
-         FROM cell c LEFT JOIN cell_answer a ON a.cell_id = c.id
-        WHERE c.run_id = ? ORDER BY c.indicator_id`,
-    )
-    .all(runId) as {
-    id: number; economy_code: string; indicator_id: string;
-    sections_read: number | null; sections_indexed: number | null; surfaced: number | null;
-    governing: string | null; score: number | null; band_ordinal: number | null;
-  }[];
-
-  const evidenceFor = db.prepare(
-    `SELECT r.attributes, r.section_id, s.heading_path, s.text, s.anchor, d.url AS doc_url,
-            i.id AS instrument_id, i.title
-       FROM reading r
-       JOIN section s ON s.id = r.section_id
-       JOIN document d ON d.id = s.document_id
-       JOIN instrument i ON i.id = d.instrument_id
-      WHERE r.cell_id = ? AND r.applies = 1 ORDER BY r.id`,
-  );
-
-  const frameworkFor = db.prepare(
-    `SELECT f.instrument_id, f.establishes_framework, f.horizontal, f.dedicated,
-            f.dedicated_shown, f.sectoral_shown, f.sector, f.quote,
-            i.title, i.source_url
-       FROM framework_reading f JOIN instrument i ON i.id = f.instrument_id
-      WHERE f.cell_id = ? ORDER BY f.id`,
-  );
-
-  // Which instruments the search surfaced, and how high. Needed to evidence a zero, and rebuilt
-  // from the shortlist rather than re-run: the point is to re-derive the decision from what was
-  // recorded, not to redo the search and get a different list to decide over.
-  const currentToFor = new Map<number, string | null>(
-    (db.prepare('SELECT id, last_amended_on FROM instrument').all() as
-      { id: number; last_amended_on: string | null }[]).map((r) => [r.id, r.last_amended_on]),
-  );
-
-  const surfacedFor = db.prepare(
-    `SELECT i.id AS instrumentId, i.title AS instrumentTitle, MIN(se.rank) AS rank
-       FROM shortlist_entry se
-       JOIN section s ON s.id = se.section_id
-       JOIN document d ON d.id = s.document_id
-       JOIN instrument i ON i.id = d.instrument_id
-      WHERE se.cell_id = ? GROUP BY i.id ORDER BY rank`,
-  );
-
-  const rubric = loadRubric();
-  const byId = new Map(rubric.indicators.map((i) => [i.id, i]));
   // The rate that produced the score, not today's, or re-deriving would re-price rather than check.
-  const rates = ratesOfRun(db, runId);
+  const { cells, rebuild } = recordedDecider(db, runId, ratesOfRun(db, runId));
 
   let agreed = 0;
   const disagreed: { indicatorId: string; stored: number | null; recomputed: number | null; why: string }[] = [];
   const perCell = new Map<number, { agreed: boolean; why: string | null }>();
 
   for (const cell of cells) {
-    const indicator = byId.get(cell.indicator_id);
-    if (!indicator) {
+    const again = rebuild(cell);
+    if (!again) {
       const why = 'the rubric no longer defines this indicator';
       disagreed.push({ indicatorId: cell.indicator_id, stored: cell.score, recomputed: null, why });
       perCell.set(cell.id, { agreed: false, why });
       continue;
     }
 
-    const evidence: Evidence[] = [];
-    for (const r of evidenceFor.all(cell.id) as {
-      attributes: string; section_id: number; heading_path: string; text: string; anchor: string | null;
-      doc_url: string; instrument_id: number; title: string;
-    }[]) {
-      let findings: unknown = [];
-      try {
-        findings = JSON.parse(r.attributes);
-      } catch {
-        findings = [];
-      }
-      if (!Array.isArray(findings)) continue;
-      for (const finding of findings) {
-        evidence.push({
-          finding: finding as Evidence['finding'],
-          sectionId: r.section_id,
-          instrumentId: r.instrument_id,
-          instrumentTitle: r.title,
-          headingPath: r.heading_path,
-          amendsAnotherAct: amendsAnotherAct(r.text),
-          citation: citationUrl(r.doc_url, r.anchor),
-        });
-      }
-    }
-
-    const frameworkEvidence: FrameworkEvidence[] = (frameworkFor.all(cell.id) as {
-      instrument_id: number; establishes_framework: number; horizontal: number | null;
-      dedicated: number | null; dedicated_shown: number | null; sectoral_shown: number | null;
-      sector: string | null; quote: string | null;
-      title: string; source_url: string;
-    }[]).map((f) => ({
-      instrumentId: f.instrument_id,
-      instrumentTitle: f.title,
-      citation: f.source_url,
-      establishesFramework: f.establishes_framework === 1,
-      horizontal: f.horizontal === 1,
-      dedicated: f.dedicated === 1,
-      dedicatedShown: f.dedicated_shown === 1,
-      sectoralShown: f.sectoral_shown === 1,
-      sector: f.sector,
-      quote: f.quote ?? '',
-    }));
-
-    const surfaced = surfacedFor.all(cell.id) as SurfacedInstrument[];
-    for (const s of surfaced) s.currentTo = currentToFor.get(s.instrumentId) ?? null;
-
-    const again = decide({
-      indicator,
-      economy: cell.economy_code,
-      evidence,
-      frameworkEvidence,
-      surfaced,
-      // The register's verdict as the run had it. Re-deriving against today's register would be
-      // re-running the shortlist rather than checking the score.
-      governing: parseGoverning(cell.governing),
-      coverage: {
-        sectionsRead: cell.sections_read ?? 0,
-        sectionsIndexed: cell.sections_indexed ?? 0,
-        instrumentsConsidered: cell.surfaced ?? 0,
-      },
-      rates,
-    });
-
     if (again.score === cell.score && (again.band?.ordinal ?? null) === cell.band_ordinal) {
       agreed += 1;
       perCell.set(cell.id, { agreed: true, why: null });
     } else {
       const why =
-        `band ${cell.band_ordinal} recorded, band ${again.band?.ordinal ?? 'none'} re-derived ` +
-        `from ${evidence.length} finding(s)`;
+        `band ${cell.band_ordinal} recorded, band ${again.band?.ordinal ?? 'none'} re-derived`;
       disagreed.push({
         indicatorId: cell.indicator_id, stored: cell.score, recomputed: again.score, why,
       });

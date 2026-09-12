@@ -97,23 +97,54 @@ function storeWithOneAnswer(
                               controlling_instrument_id, rationale, computed_at)
      VALUES (1, 1, 1, 'A minimum retention period is imposed', 'a stated period of 5 years', 1, 'x', ?)`,
   ).run(now);
+  // What the answer stood on. Rows come from here, not from everything the reader returned.
+  db.prepare(
+    `INSERT INTO answer_basis (cell_id, ordinal, instrument_id, section_id, measure)
+     VALUES (1, 1, 1, 1, 'minimum-retention')`,
+  ).run();
   return db;
 }
 
 describe('the export row', () => {
   it('makes one row per measure, not one per reading', () => {
     // "if the single entry includes multi measures, suggest to separate" -- a reviewer accepts or
-    // rejects one claim at a time, so two findings in one reading are two rows.
+    // rejects one claim at a time, so two measures in one reading are two rows.
     const db = storeWithOneAnswer();
     db.prepare('UPDATE reading SET attributes = ? WHERE id = 1').run(
       JSON.stringify([
         { indicatorId: '7.3', measure: 'minimum-retention', quote: QUOTE, requirement: 'Five years.', mandatory: true, dutyForce: 'requires' },
-        { indicatorId: '7.3', measure: 'minimum-retention', quote: QUOTE, requirement: 'Records kept.', mandatory: true, dutyForce: 'requires' },
+        { indicatorId: '7.3', measure: 'record-keeping', quote: QUOTE, requirement: 'Records kept.', mandatory: true, dutyForce: 'requires' },
       ]),
     );
+    db.prepare(
+      `INSERT INTO answer_basis (cell_id, ordinal, instrument_id, section_id, measure)
+       VALUES (1, 2, 1, 1, 'record-keeping')`,
+    ).run();
     const built = buildExportRows(db, 'r1');
     expect(built.rows).toBe(2);
     expect(built.cellsWithoutRow).toBe(0);
+    db.close();
+  });
+
+  it('leaves out a finding the decision set aside, and keeps it in the record', () => {
+    // Zone 3 held 4,310 of 5,268 findings on the twelve-pillar run -- a sentence that declares
+    // rather than obliges, a power to make a rule rather than the rule. The export was publishing
+    // all of them as measures.
+    const db = storeWithOneAnswer();
+    db.prepare('UPDATE reading SET attributes = ? WHERE id = 1').run(
+      JSON.stringify([
+        { indicatorId: '7.3', measure: 'minimum-retention', quote: QUOTE, requirement: 'Five years.', mandatory: true, dutyForce: 'requires' },
+        { indicatorId: '7.3', measure: 'deeming-rule', quote: QUOTE, requirement: 'Taken to be kept.', mandatory: false, dutyForce: 'declares' },
+      ]),
+    );
+    const built = buildExportRows(db, 'r1');
+    expect(built.rows).toBe(1);
+    const rows = db.prepare('SELECT notes FROM export_row').all() as { notes: string | null }[];
+    expect(rows[0]!.notes).toContain('minimum-retention');
+    // Still on the record: the export is a projection, not a filter that loses the reading.
+    expect(
+      (db.prepare('SELECT attributes FROM reading WHERE id = 1').get() as { attributes: string }).attributes,
+    ).toContain('deeming-rule');
     db.close();
   });
 

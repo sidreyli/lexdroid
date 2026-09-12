@@ -283,6 +283,10 @@ export function recordPillarAnswer(run: RunContext, answer: PillarAnswer): void 
         quote_verified, reasoning, prompt_tokens, output_tokens, latency_ms, read_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   );
+  const insertBasis = db.prepare(
+    `INSERT OR IGNORE INTO answer_basis (cell_id, ordinal, instrument_id, section_id, measure)
+     VALUES (?, ?, ?, ?, ?)`,
+  );
   const insertAnswer = db.prepare(
     `INSERT OR REPLACE INTO cell_answer
        (cell_id, score, band_ordinal, band_criterion, deciding_fact, controlling_instrument_id,
@@ -382,6 +386,18 @@ export function recordPillarAnswer(run: RunContext, answer: PillarAnswer): void 
           now,
         );
       }
+
+      // What the score stood on, in the decision's order. The export shows these and nothing
+      // else, so a finding Zone 3 set aside cannot reappear as a measure in the deliverable.
+      let ordinal = 0;
+      for (const e of decision.basis) {
+        insertBasis.run(cellId, (ordinal += 1), e.instrumentId, e.sectionId, e.finding.measure);
+      }
+      // A framework is one measure however many instruments carry it, so the leading instrument is
+      // the basis and the rest are corroboration the row names in its notes. `frameworkBasis`
+      // otherwise holds what was examined and found wanting, which is a record, not a basis.
+      const framework = decision.state === 'restricted' ? decision.frameworkBasis[0] : undefined;
+      if (framework) insertBasis.run(cellId, (ordinal += 1), framework.instrumentId, null, null);
 
       insertAnswer.run(
         cellId,
