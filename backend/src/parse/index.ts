@@ -11,6 +11,7 @@ import { indexSections } from '../db/index.js';
 import type { FetchResult } from '../fetch/index.js';
 import { parseFrl } from './frl.js';
 import { parseHtml } from './html.js';
+import { parseIndiaCode } from './indiacode.js';
 import { parsePdf } from './pdf.js';
 import { parseSso } from './sso.js';
 import { identityMismatch } from './identity.js';
@@ -27,6 +28,10 @@ const BY_HOST: Record<string, (html: string, url: string) => ParsedDocument> = {
 
 export async function parseDocument(res: FetchResult): Promise<ParsedDocument> {
   const host = new URL(res.finalUrl || res.url).host;
+
+  if (res.mediaType.includes('vnd.lexdroid.indiacode+json')) {
+    return parseIndiaCode(res.body.toString('utf8'), res.url);
+  }
 
   if (res.mediaType.includes('pdf')) return parsePdf(res.body, res.url);
 

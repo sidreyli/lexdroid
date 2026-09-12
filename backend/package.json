@@ -29,10 +29,13 @@
     "audit-bands": "tsx scripts/audit-bands.ts"
   },
   "dependencies": {
+    "@tesseract.js-data/eng": "^1.0.0",
+    "@tesseract.js-data/hin": "^1.0.0",
     "better-sqlite3": "^11.8.1",
     "cheerio": "^1.0.0",
     "exceljs": "^4.4.0",
     "pdfjs-dist": "^4.10.38",
+    "tesseract.js": "^7.0.0",
     "undici": "^7.3.0",
     "zod": "^3.24.1"
   },

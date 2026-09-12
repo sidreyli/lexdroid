@@ -2,6 +2,11 @@
 
 Everything ESCAP has published to finalists, ported from the previous workspace on 6 September 2026.
 
+LexDroid's implementation notes:
+
+- `india-integration.md` — implemented Central-law foundation, supplied-document acceptance
+  evidence, rollout sequence and declared India-specific limits.
+
 Each document appears twice: the **original** (`.pdf`, `.xlsx`, `.docx`, `.csv`) and a **readable
 text extraction** (`.md`) with the same basename. Read the `.md`; open the original when the layout
 matters, which for the spreadsheets it does.

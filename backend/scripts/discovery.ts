@@ -30,6 +30,7 @@ import { shortlistInstruments, type InstrumentCandidate } from '../src/shortlist
 import { openBaseline, BASELINE_DB_PATH, sameInstrument } from '../src/baseline/index.js';
 import { OllamaUnavailable } from '../src/engines/ollama.js';
 import { existsSync } from 'node:fs';
+import { loadProfile } from '../src/profile/index.js';
 
 /** Where the list is cut. Reported at several depths because the right one is a design choice. */
 const DEPTHS = [10, 25, 50, 100];
@@ -114,10 +115,10 @@ async function main(): Promise<void> {
   }
 
   const baseline = openBaseline();
-  const like = economy === 'SGP' ? '%ingapore%' : economy === 'MYS' ? '%alaysia%' : '%ustralia%';
+  const baselineEconomy = loadProfile(economy).name;
   const rows = baseline
-    .prepare('SELECT indicator_id, act_or_practice FROM baseline_row WHERE economy LIKE ?')
-    .all(like) as { indicator_id: string; act_or_practice: string | null }[];
+    .prepare('SELECT indicator_id, act_or_practice FROM baseline_row WHERE economy = ?')
+    .all(baselineEconomy) as { indicator_id: string; act_or_practice: string | null }[];
   baseline.close();
 
   for (const result of results) {

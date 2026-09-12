@@ -1,19 +1,24 @@
 /**
  * PDFs.
  *
- * Text-layer PDFs are read with pdf.js. A scan has no text layer, and this module does not guess:
- * it returns unread with the reason "scanned-no-ocr" and the page count, so the run report can
- * say how much of the corpus is behind OCR rather than reporting it as law that says nothing.
+ * Text-layer PDFs are read with pdf.js. Pages with no usable text layer are rendered locally and
+ * read with the packaged English and Hindi Tesseract models. OCR remains visibly marked in the
+ * stored extraction method and export confidence; a weak result is unread, never clean evidence.
  *
  * ESCAP marks this directly: "a tool that flags text it could not read is better built than one
  * that presents everything with equal confidence."
  */
 import { SectionBuilder, type ParsedDocument } from './types.js';
+import { ocrPdfPages, type OcrEngine } from './ocr.js';
 
 /** Below this many characters per page, the page is an image of text rather than text. */
 const MIN_CHARS_PER_PAGE = 80;
 
-const PROVISION_LINE = /^\s*(\d+[A-Z]{0,2})\.\s*(?:—|-|—)?\s*(?:\(1\))?\s*(?=\S)/;
+const PROVISION_LINE = /^\s*(\d+[A-Z]{0,2})\.\s*(?:—|-|–)?\s*(?:\(1\))?\s*(?=\S)/;
+/** India notifications sometimes number a paragraph "12.5 Definitions" without a second dot. */
+const DECIMAL_PROVISION_LINE = /^\s*[‘'"]?(\d+\.\d+[A-Z]{0,2})(?:\s+(?=\S)|\s*$)/;
+const provisionAt = (line: string): RegExpExecArray | null =>
+  DECIMAL_PROVISION_LINE.exec(line) ?? PROVISION_LINE.exec(line);
 const PART_LINE = /^\s*(PART\s+[IVXLC0-9]+[A-Z]?\b.*|Part\s+\d+[A-Z]?\b.*)$/;
 /** A PDF's text layer can split a heading's letters -- Malaysia's Acts render "Part II" as
  *  "P art II" -- so the test is on the letters, not on how the page happened to space them. */
@@ -25,9 +30,19 @@ const ENACTING = /^ENACTED by\b/i;
 export interface PageText {
   page: number;
   lines: string[];
+  language?: string | null;
+  ocrConfidence?: number;
 }
 
-async function extractPages(bytes: Buffer): Promise<PageText[]> {
+function languageOf(text: string): string | null {
+  const devanagari = (text.match(/[\u0900-\u097f]/g) ?? []).length;
+  const latin = (text.match(/[A-Za-z]/g) ?? []).length;
+  if (devanagari > latin && devanagari > 3) return 'hi';
+  if (latin > 3) return 'en';
+  return null;
+}
+
+export async function extractPages(bytes: Buffer): Promise<PageText[]> {
   // The legacy build is the one that runs under plain Node without a DOM.
   const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
   const doc = await pdfjs.getDocument({
@@ -61,7 +76,7 @@ async function extractPages(bytes: Buffer): Promise<PageText[]> {
       lastY = y;
     }
     if (current.trim()) lines.push(current.replace(/\s+/g, ' ').trim());
-    pages.push({ page: p, lines });
+    pages.push({ page: p, lines, language: languageOf(lines.join(' ')) });
     page.cleanup();
   }
   await doc.destroy();
@@ -130,7 +145,14 @@ function isCapitalised(line: string): boolean {
  * Separate from the extraction above so the rule below can be exercised without a PDF to hand.
  */
 export function sectionise(pages: PageText[]): SectionBuilder {
-  interface Candidate { label: string | null; heading: string; part: string; page: number; lines: string[] }
+  interface Candidate {
+    label: string | null;
+    heading: string;
+    part: string;
+    page: number;
+    lines: string[];
+    language: string | null;
+  }
   const items: ({ prose: string } | Candidate)[] = [];
   let part = '';
   let titlePending = false;
@@ -155,7 +177,7 @@ export function sectionise(pages: PageText[]): SectionBuilder {
       // A Part's subject is on the lines under its number, set in capitals, and it is often the
       // only place the subject appears at all -- "Part IV" alone tells a search nothing.
       if (titlePending) {
-        if (line.length < 80 && isCapitalised(line) && !PROVISION_LINE.test(line)) {
+        if (line.length < 80 && isCapitalised(line) && !provisionAt(line)) {
           part = `${part} ${line}`;
           continue;
         }
@@ -164,7 +186,10 @@ export function sectionise(pages: PageText[]): SectionBuilder {
       // The long title arrives in the front matter, which in these PDFs follows the arrangement of
       // sections, so it has to break out of whatever entry happened to be open.
       if (LONG_TITLE.test(line)) {
-        open = { label: null, heading: 'Long title', part: '', page: p.page, lines: [line] };
+        open = {
+          label: null, heading: 'Long title', part: '', page: p.page,
+          lines: [line], language: p.language ?? null,
+        };
         items.push(open);
         continue;
       }
@@ -172,9 +197,12 @@ export function sectionise(pages: PageText[]): SectionBuilder {
         open = null;
         continue;
       }
-      const provMatch = PROVISION_LINE.exec(line);
+      const provMatch = provisionAt(line);
       if (provMatch) {
-        open = { label: provMatch[1]!, heading: line.slice(0, 120), part, page: p.page, lines: [line] };
+        open = {
+          label: provMatch[1]!, heading: line.slice(0, 120), part, page: p.page,
+          lines: [line], language: p.language ?? null,
+        };
         items.push(open);
         continue;
       }
@@ -189,7 +217,7 @@ export function sectionise(pages: PageText[]): SectionBuilder {
   // matter that follows the arrangement glues itself onto whichever entry was open.
   const lastAt = new Map<string, number>();
   items.forEach((it, n) => {
-    if ('lines' in it && it.label) lastAt.set(it.label, n);
+    if ('lines' in it && it.label) lastAt.set(`${it.language ?? ''}:${it.label}`, n);
   });
 
   const builder = new SectionBuilder();
@@ -198,7 +226,7 @@ export function sectionise(pages: PageText[]): SectionBuilder {
       builder.addProse(it.prose);
       continue;
     }
-    if (it.label && lastAt.get(it.label) !== n) continue;
+    if (it.label && lastAt.get(`${it.language ?? ''}:${it.label}`) !== n) continue;
     const text = it.lines.join('\n').trim();
     if (!text) continue;
     builder.add({
@@ -206,7 +234,7 @@ export function sectionise(pages: PageText[]): SectionBuilder {
       label: it.label,
       text,
       page: it.page,
-      language: null,
+      language: it.language ?? languageOf(text),
       repealed: /\[?\bRepealed\b/i.test(text.slice(0, 120)),
       anchor: null,
     });
@@ -215,7 +243,30 @@ export function sectionise(pages: PageText[]): SectionBuilder {
   return builder;
 }
 
-export async function parsePdf(bytes: Buffer, url: string): Promise<ParsedDocument> {
+export interface ParsePdfOptions {
+  /** Supplied by tests or specialist deployments; the default is local English + Hindi Tesseract. */
+  ocrEngine?: OcrEngine;
+}
+
+function titleFromSections(builder: SectionBuilder): string | null {
+  for (const section of builder.sections) {
+    const match = /\b(?:may be called|may be cited as)\s+(?:the\s+)?(.+?(?:Act|Rules?|Regulations?|Order|Code)(?:,?\s*\d{4})?)[.;]/is.exec(section.text);
+    if (match?.[1]) return match[1].replace(/\s+/g, ' ').trim();
+  }
+  return null;
+}
+
+function subjectTitle(pages: PageText[]): string | null {
+  for (const page of pages.slice(0, 2)) {
+    for (const line of page.lines) {
+      const match = /^Subject\s*:-?\s*(.+)$/i.exec(line);
+      if (match?.[1]) return match[1].replace(/[.\s]+$/, '').trim();
+    }
+  }
+  return null;
+}
+
+export async function parsePdf(bytes: Buffer, url: string, opts: ParsePdfOptions = {}): Promise<ParsedDocument> {
   let pages: PageText[];
   try {
     pages = await extractPages(bytes);
@@ -226,14 +277,55 @@ export async function parsePdf(bytes: Buffer, url: string): Promise<ParsedDocume
     };
   }
 
+  const sparse = pages
+    .filter((page) => page.lines.join(' ').length < MIN_CHARS_PER_PAGE)
+    .map((page) => page.page);
+  const ocrUsed: number[] = [];
+  const ocrFailed: number[] = [];
+  const confidences: number[] = [];
+  let ocrError: string | null = null;
+  if (sparse.length > 0) {
+    try {
+      const recovered = await ocrPdfPages(bytes, sparse, opts.ocrEngine);
+      const byPage = new Map(recovered.map((page) => [page.page, page]));
+      pages = pages.map((page) => {
+        if (!sparse.includes(page.page)) return page;
+        const ocr = byPage.get(page.page);
+        const text = ocr?.lines.join(' ') ?? '';
+        if (!ocr || text.length < MIN_CHARS_PER_PAGE) {
+          ocrFailed.push(page.page);
+          return page;
+        }
+        ocrUsed.push(page.page);
+        confidences.push(ocr.confidence);
+        return {
+          page: page.page,
+          lines: ocr.lines,
+          language: languageOf(text),
+          ocrConfidence: ocr.confidence,
+        };
+      });
+    } catch (err) {
+      ocrError = err instanceof Error ? err.message : String(err);
+      ocrFailed.push(...sparse);
+    }
+  }
+
   const chars = pages.reduce((n, p) => n + p.lines.join(' ').length, 0);
   if (pages.length === 0 || chars / pages.length < MIN_CHARS_PER_PAGE) {
     return {
       extraction: 'none', text: '', sections: [], title: null, parser: 'pdf',
-      meta: { pages: String(pages.length), charsPerPage: String(Math.round(chars / Math.max(1, pages.length))) },
+      meta: {
+        pages: String(pages.length),
+        charsPerPage: String(Math.round(chars / Math.max(1, pages.length))),
+        ...(ocrFailed.length ? { ocrFailedPages: ocrFailed.join(',') } : {}),
+        ...(ocrError ? { ocrError } : {}),
+      },
       unread: {
-        reason: 'scanned-no-ocr',
-        detail: `${url} has ${pages.length} page(s) carrying ${Math.round(chars / Math.max(1, pages.length))} characters each. There is no usable text layer; this is a scan and needs OCR.`,
+        reason: 'ocr-below-threshold',
+        detail:
+          `${url} has ${pages.length} page(s) carrying ${Math.round(chars / Math.max(1, pages.length))} usable characters each after OCR` +
+          (ocrError ? ` failed: ${ocrError}` : '; the result is below the evidence threshold.'),
       },
     };
   }
@@ -244,16 +336,32 @@ export async function parsePdf(bytes: Buffer, url: string): Promise<ParsedDocume
     // Text came out but no provision structure did. Keep it as one section rather than discard it:
     // a guideline or a policy document is often genuinely unnumbered, and it is still evidence.
     const whole = pages.map((p) => p.lines.join('\n')).join('\n').trim();
-    builder.add({ headingPath: url, label: null, text: whole, page: 1, language: null, repealed: false, anchor: null });
+    builder.add({
+      headingPath: url, label: null, text: whole, page: 1,
+      language: languageOf(whole), repealed: false, anchor: null,
+    });
   }
 
   return {
-    extraction: 'pdf-text',
+    extraction: ocrUsed.length > 0 ? 'ocr' : 'pdf-text',
     text: builder.text,
     sections: builder.sections,
     unread: null,
-    title: runningHeader(pages),
-    meta: { pages: String(pages.length) },
+    title: runningHeader(pages) ?? titleFromSections(builder) ?? subjectTitle(pages),
+    meta: {
+      pages: String(pages.length),
+      ...(ocrUsed.length ? { ocrPages: ocrUsed.join(',') } : {}),
+      ...(confidences.length
+        ? { ocrConfidence: String(Math.round(confidences.reduce((sum, n) => sum + n, 0) / confidences.length)) }
+        : {}),
+      ...(ocrFailed.length
+        ? {
+            ocrFailedPages: ocrFailed.join(','),
+            partial: `OCR could not recover usable text from page(s) ${ocrFailed.join(', ')}.`,
+          }
+        : {}),
+      ...(ocrError ? { ocrError } : {}),
+    },
     parser: 'pdf',
   };
 }

@@ -8,9 +8,16 @@ import { ftsQuery, ftsPhrase, fuse } from '../src/index/index.js';
 
 describe('the economy profile', () => {
   it('has one for every economy in scope', () => {
-    // Australia and Malaysia land with step 5; this test is the reminder that a missing profile
-    // is a missing economy, not a silent default.
-    expect(availableProfiles()).toContain('SGP');
+    expect(availableProfiles()).toEqual(expect.arrayContaining(['AUS', 'IND', 'MYS', 'SGP']));
+  });
+
+  it('keeps India Central, bilingual and backed by a readable legislation register', () => {
+    const p = loadProfile('IND');
+    expect(p.name).toBe('India');
+    expect(p.officialLanguages).toEqual(expect.arrayContaining(['hi', 'en']));
+    expect(p.portals.some((x) => x.url === 'https://indiacode.gov.in' && x.adapter === 'indiacode')).toBe(true);
+    const indiaCode = p.portals.find((x) => x.adapter === 'indiacode')!;
+    expect(indiaCode.adapterConfig['jurisdiction']).toBe('CENTRAL');
   });
 
   it('describes the Singapore legal system, its languages and its portals', () => {
@@ -49,6 +56,21 @@ describe('the economy profile', () => {
 
     const commitments = db.prepare('SELECT COUNT(*) c FROM commitment WHERE economy_code = ?').get('SGP') as { c: number };
     expect(commitments.c).toBeGreaterThan(0);
+    db.close();
+  });
+
+  it('writes the India profile without sharing Singapore state', () => {
+    const db = openDb(':memory:');
+    applyProfile(db, loadProfile('IND'));
+    const economy = db.prepare('SELECT name, official_languages FROM economy WHERE code = ?').get('IND') as {
+      name: string;
+      official_languages: string;
+    };
+    expect(economy.name).toBe('India');
+    expect(JSON.parse(economy.official_languages)).toEqual(['hi', 'en']);
+    const portal = db.prepare('SELECT name FROM portal WHERE economy_code = ? AND url = ?')
+      .get('IND', 'https://indiacode.gov.in') as { name: string };
+    expect(portal.name).toBe('India Code');
     db.close();
   });
 });

@@ -20,6 +20,7 @@ import { parseDocument, storeDocument, verifyOffsets } from '../parse/index.js';
 import type { EconomyProfile } from '../profile/types.js';
 import { portalId } from '../profile/index.js';
 import { frlAdapter } from './frl.js';
+import { indiaCodeAdapter } from './indiacode.js';
 import { lomAdapter } from './lom.js';
 import { lomSubsidAdapter } from './lom-subsid.js';
 import { ssoAdapter } from './sso.js';
@@ -30,6 +31,7 @@ export * from './types.js';
 
 const ADAPTERS: Record<string, Adapter> = {
   frl: frlAdapter,
+  indiacode: indiaCodeAdapter,
   lom: lomAdapter,
   'lom-subsid': lomSubsidAdapter,
   sso: ssoAdapter,
