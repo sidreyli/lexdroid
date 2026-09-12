@@ -78,9 +78,8 @@ export function namesMatch(stated: string, title: string): boolean {
   const a = keyWords(stated);
   const b = keyWords(title);
   if (a.length === 0 || b.length === 0) return true;
-  // "Incorporated" against "Incorporation" is one word drafted twice, not two Acts, so a long
-  // shared opening counts as the same word.
-  // Eight, not fewer: six makes "arbitration" and "arbitral" the same word, and they are two Acts.
+  // "Incorporated" and "Incorporation" are one word drafted twice, so a long shared opening is
+  // the same word. Eight characters, not six: six joins "arbitration" to "arbitral".
   const same = (x: string, y: string) =>
     x === y || (x.length >= 8 && y.length >= 8 && (x.startsWith(y.slice(0, 8)) || y.startsWith(x.slice(0, 8))));
   const opens = (head: string[], rest: string[]) =>
