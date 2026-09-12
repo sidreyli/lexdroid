@@ -18,7 +18,7 @@
  */
 import type { Indicator, ScoreBand } from '../rubric/types.js';
 import type { Finding } from '../read/index.js';
-import { MEASURES, SUBJECTS } from '../rubric/measures.js';
+import { MEASURES, SUBJECTS, SUBJECT_DOMAIN } from '../rubric/measures.js';
 import { inUsd, moneyIn, type FxRates } from './currency.js';
 
 /** One finding, with enough of its origin to cite it. */
@@ -1176,6 +1176,18 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
       });
       continue;
     }
+    // And a subject named in full, from the provision, belonging to another world. "Bank" answers
+    // what the e-commerce licensing cell is about; so does "note, coin" for online payments. Each
+    // is a real subject copied out of a real provision, and neither is the one asked for. Where
+    // the indicator's subject is a domain, the words have to put the subject in it.
+    const domain = inDomain(indicatorId, e.finding.measure);
+    if (domain && e.finding.subjectWords && !domain.test(e.finding.subjectWords)) {
+      held.push({
+        evidence: e,
+        reason: `"${e.finding.subjectWords}" is not ${subject ?? "this indicator's subject"}`,
+      });
+      continue;
+    }
     // A band that is a proportion needs the provision to state one. 3.1, 5.2 and 12.01 descend
     // from no shares, through a minority, to a controlling stake, and the top rung was reached in
     // all three economies by provisions that state no proportion at all: "must hold an Australian
@@ -1464,6 +1476,19 @@ function definedBy(indicatorId: string, measure: string | null): string | null {
  */
 function aboutness(indicatorId: string, measure: string | null): string | null {
   const declared = SUBJECTS[indicatorId];
+  if (!declared) return null;
+  const off = (MEASURES[indicatorId] ?? []).some((m) => m.token === measure && m.offSubject === true);
+  return off ? null : declared;
+}
+
+/**
+ * The words a subject must use to be in this indicator's domain, or null where none is declared.
+ *
+ * Off-subject measures are exempt for the same reason they are exempt from the subject itself:
+ * they exist to record a ban on something this indicator does not score.
+ */
+function inDomain(indicatorId: string, measure: string | null): RegExp | null {
+  const declared = SUBJECT_DOMAIN[indicatorId];
   if (!declared) return null;
   const off = (MEASURES[indicatorId] ?? []).some((m) => m.token === measure && m.offSubject === true);
   return off ? null : declared;

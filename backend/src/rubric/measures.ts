@@ -1093,3 +1093,54 @@ export const SUBJECTS: Readonly<Record<string, string>> = {
   '12.7': 'the domain name',
   '12.8': 'the online service whose provider has to be present in the economy',
 };
+
+/**
+ * The words that place a subject in the domain an indicator asks about.
+ *
+ * SUBJECTS asks the reader to name what the provision is about, and the reading prompt tells it to
+ * answer null where the provision names no such thing, with this exact case spelled out: "A licence
+ * is not an e-commerce licence unless the provision says what is being licensed and the answer is
+ * selling online." The reader answers "bank" anyway, and "licence", and "note, coin" -- real
+ * subjects, copied from the provision, belonging to another world. A broadcasting licence and an
+ * auctioneer's commission both scored the e-commerce licensing cell that way.
+ *
+ * So the answer is checked against the question. Not a list of the instruments we do not want: a
+ * statement of what a subject has to say to be the one asked for, in the words a provision uses to
+ * say it. A subject saying none of them has not been shown, whatever it names.
+ */
+const ONLINE = /\b(online|on-line|internet|e-?commerce|e-?business|e-?retail|electronic|digital|web|website|cyber|computer|network|platform|marketplace|application|app|software|data|mobile)\b/i;
+
+/**
+ * 12.4 asks what limits paying for something online, and ESCAP answers it with the payment
+ * instrument rather than the word "online": a purchased payment facility for Australia, electronic
+ * money for Malaysia, the Payment Services Act for Singapore. A limit on the instrument is a limit
+ * on paying with it, so the instrument names the domain. The nouns are payment's own, so a sum
+ * payable to the World Bank and a rule on minting legal tender still name neither.
+ */
+const PAYMENT = new RegExp(
+  [
+    ONLINE.source,
+    /\bpayment\s+(service|system|facility|instrument|account|card|gateway|method|surcharge|order)/.source,
+    /\b(e-?money|stored[- ]value|digital currency|crypto\w*|virtual asset|funds transfer|money transfer|remittance|non-?cash payment|wallet|credit card|debit card)s?\b/.source,
+  ].join('|'),
+  'i',
+);
+
+/** 12.7 asks about the domain name itself, which is narrower than the pillar around it. */
+const DOMAIN_NAME = /\b(domain|url|website|web address|hostname|dns|registrar|registry)\b/i;
+
+export const SUBJECT_DOMAIN: Readonly<Record<string, RegExp>> = {
+  '12.01': ONLINE,
+  '12.2': ONLINE,
+  '12.3': ONLINE,
+  '12.4.1': PAYMENT,
+  '12.4.2': PAYMENT,
+  '12.4.3': PAYMENT,
+  '12.4.4': PAYMENT,
+  '12.4.5': PAYMENT,
+  '12.4.6': PAYMENT,
+  '12.4.7': PAYMENT,
+  '12.6': ONLINE,
+  '12.7': new RegExp([DOMAIN_NAME.source, ONLINE.source].join('|'), 'i'),
+  '12.8': ONLINE,
+};
