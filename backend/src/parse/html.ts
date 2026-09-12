@@ -131,3 +131,28 @@ export function parseHtml(html: string, url: string): ParsedDocument {
 function unread(title: string | null, reason: 'empty' | 'landing-page', detail: string): ParsedDocument {
   return { extraction: 'none', text: '', sections: [], unread: { reason, detail }, title, meta: {}, parser: 'html' };
 }
+
+/**
+ * The one file a landing page publishes, when it publishes exactly one.
+ * A page of menus wrapping a single PDF is pointing at its own instrument, not at leads.
+ */
+export function soleDocumentLink(html: string, pageUrl: string): string | null {
+  const $ = cheerio.load(html);
+  const host = new URL(pageUrl).host;
+  const found = new Set<string>();
+  $('a[href]').each((_, el) => {
+    const href = $(el).attr('href');
+    if (!href) return;
+    let target: URL;
+    try {
+      target = new URL(href, pageUrl);
+    } catch {
+      return;
+    }
+    if (target.host !== host) return;
+    if (!/\.(?:pdf|docx?|rtf)$/i.test(target.pathname)) return;
+    target.hash = '';
+    found.add(target.toString());
+  });
+  return found.size === 1 ? [...found][0]! : null;
+}
