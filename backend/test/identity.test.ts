@@ -96,3 +96,29 @@ describe('a provision that only instructs an amendment', () => {
     expect(amendsAnotherAct('32. (1) A licensee shall retain the records for a period of not less than six years.')).toBe(false);
   });
 });
+
+describe('a name the drafting writes differently from the register', () => {
+  it('keeps the bracketed part, which is what tells a family of instruments apart', () => {
+    expect(
+      statedName(s('1. (1) This order may be cited as the Personal Data Protection\n(Class of Data Users) (Amendment) Order 2016.')),
+    ).toBe('Personal Data Protection (Class of Data Users) (Amendment) Order 2016');
+  });
+
+  it('stops at the name, not at the commencement the same sentence runs into', () => {
+    expect(
+      statedName(s('1. This Act may be cited as the Ports (Privatization) Act 1990 and shall come into force on a date to be appointed.')),
+    ).toBe('Ports (Privatization) Act 1990');
+  });
+
+  it('reads one spelling against the other', () => {
+    expect(namesMatch('Ports (Privatization) Act 1990', 'PORTS (PRIVATISATION) ACT 1990')).toBe(true);
+    expect(namesMatch('Salvation Army (Incorporation) Act 1956', 'SALVATION ARMY (INCORPORATED) ACT 1956')).toBe(true);
+    expect(namesMatch('Goods and Services Tax (Repeal) Act 2018', 'GOODS AND SERVICES (REPEAL) ACT 2018')).toBe(true);
+  });
+
+  it('still holds two Acts apart where only the opening of a word agrees', () => {
+    expect(
+      namesMatch('Arbitration Act 2005', 'CONVENTION ON THE RECOGNITION AND ENFORCEMENT OF FOREIGN ARBITRAL AWARDS ACT 1985'),
+    ).toBe(false);
+  });
+});
