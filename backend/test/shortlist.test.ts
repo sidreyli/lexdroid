@@ -59,4 +59,33 @@ describe('shortlisting the register', () => {
     expect(out.some((c) => c.title === 'Cybersecurity Act 2018')).toBe(true);
     db.close();
   });
+  it('does not let having headings outrank a better title', async () => {
+    // Fusion adds a vote per channel, so an instrument carrying contents scored in twice as many
+    // runs as one without. Contents exist almost only for instruments already read, so summing gave
+    // "already read" a two-to-one advantage unrelated to relevance: measured at nought unread
+    // instruments in the shortlist for all three economies.
+    const db = openDb(':memory:');
+    seed(db);
+    db.prepare(
+      `INSERT INTO instrument (economy_code, title, kind, status, language, source_url, discovered_via, discovered_at)
+       VALUES ('XXX', 'Cybersecurity Advisory Council Act 2015', 'act', 'in-force', 'en', 'https://x/9', 'test', '2026-09-06')`,
+    ).run();
+    const withHeadings = db
+      .prepare("SELECT id FROM instrument WHERE title = 'Cybersecurity Advisory Council Act 2015'")
+      .get() as { id: number };
+    db.prepare(
+      `INSERT INTO instrument_contents (instrument_id, headings, heading_count, source_url, extractor, fetched_at)
+       VALUES (?, ?, 2, 'https://x/9', 'test', '2026-09-12')`,
+    ).run(withHeadings.id, JSON.stringify(['Cybersecurity duties of the Council', 'Cybersecurity reporting']));
+
+    const out = await shortlistInstruments(db, {
+      economy: 'XXX',
+      queries: ['cybersecurity'],
+      limit: 4,
+      kind: 'act',
+      model: 'none',
+    });
+    expect(out[0]!.title).toBe('Cybersecurity Act 2018');
+    db.close();
+  });
 });
