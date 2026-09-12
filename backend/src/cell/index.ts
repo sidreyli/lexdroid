@@ -14,6 +14,7 @@
 import type { Db } from '../db/index.js';
 import type { Emit } from '../run/events.js';
 import { citationUrl } from '../export/index.js';
+import { enginePool } from '../engines/pool.js';
 import { amendsAnotherAct } from '../parse/identity.js';
 import type { Indicator } from '../rubric/types.js';
 import { indicatorsOfPillar, loadRubric } from '../rubric/index.js';
@@ -41,10 +42,18 @@ import {
 } from '../decide/index.js';
 
 /**
- * How many provisions are read at once. One: batching changes the answers, measured twice.
+ * How many provisions one engine reads at once. One: batching changes the answers, measured twice.
  * scripts/concurrency.ts is the re-test -- 18 of 40 read differently at two, 0 at one.
  */
 const READ_CONCURRENCY = Math.max(1, Number(process.env['LEXDROID_READ_CONCURRENCY'] ?? 1));
+
+/**
+ * How many provisions the pillar reads at once: one per engine. Width comes from engines, which
+ * changed no answers, never from asking one engine for more, which changed many.
+ */
+function readWidth(): number {
+  return enginePool().width() * READ_CONCURRENCY;
+}
 
 /** How many instruments a framework indicator examines. */
 const FRAMEWORK_CANDIDATES = 5;
@@ -192,7 +201,7 @@ export async function answerPillar(
   emit({ stage: 'read', kind: 'started', economy, pillarId, total: inputs.length });
 
   let readsDone = 0;
-  const readings = await inPool(inputs, READ_CONCURRENCY, async (input) => {
+  const readings = await inPool(inputs, readWidth(), async (input) => {
     const reading = await readSection(input, pillarId, pillarName, indicators, {
       ...(opts.model ? { model: opts.model } : {}),
       ...(opts.contextTokens ? { contextTokens: opts.contextTokens } : {}),
@@ -274,7 +283,7 @@ export async function answerPillar(
     ).slice(0, FRAMEWORK_CANDIDATES);
     log(`  ${indicator.id}: examining ${candidates.length} instrument(s) as a possible framework`);
 
-    const readingsHere = await inPool(candidates, READ_CONCURRENCY, (c) =>
+    const readingsHere = await inPool(candidates, readWidth(), (c) =>
       readFramework(
         { instrumentId: c.instrumentId, title: c.title, openingText: openingOf(db, c.instrumentId) },
         subject,
