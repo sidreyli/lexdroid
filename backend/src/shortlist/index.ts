@@ -397,9 +397,8 @@ export async function shortlistInstruments(
     const dense = await titleDense(db, query, opts.economy, depth, model, opts.kind);
     if (dense.length) runs.push(dense);
 
-    // The contents channels, where an instrument has contents. An instrument that has none is not
-    // penalised here -- it simply competes on its title, which is all it could ever do. That is why
-    // a partial contents index is worth having: it lifts what it covers and harms nothing else.
+    // The contents channels, where an instrument has contents. Scores are averaged over the
+    // channels that could have found an instrument, not summed -- see normalising below.
     if (opts.contents !== false) {
       const hLex = headingLexical(db, query, opts.economy, depth, opts.kind);
       if (hLex.length) runs.push(hLex);
@@ -421,7 +420,31 @@ export async function shortlistInstruments(
     }
   }
 
-  const fused = fuse(runs).slice(0, limit * 3);
+  // Reciprocal rank fusion adds a vote per run, so an instrument carrying contents can score in
+  // twice as many runs as one without. Contents exist almost only for instruments already read, so
+  // summing hands "already read" a two-to-one advantage unrelated to relevance -- measured at nought
+  // unread instruments in the shortlist for all three economies. Averaging over the runs that could
+  // have found it lets a title compete at full strength.
+  const hasContents = new Set(
+    (
+      db
+        .prepare(
+          `SELECT c.instrument_id id FROM instrument_contents c
+             JOIN instrument i ON i.id = c.instrument_id
+            WHERE i.economy_code = ?`,
+        )
+        .all(opts.economy) as { id: number }[]
+    ).map((r) => r.id),
+  );
+  const titleRuns = runs.filter((r) => r[0] && !r[0].channel.startsWith('heading')).length;
+  const headingRuns = runs.length - titleRuns;
+  const fused = fuse(runs)
+    .map((h) => {
+      const eligible = hasContents.has(h.sectionId) ? titleRuns + headingRuns : titleRuns;
+      return { ...h, score: eligible > 0 ? h.score / eligible : h.score };
+    })
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit * 3);
 
   const byId = db.prepare(
     `SELECT i.id, i.title, i.kind, i.official_number, i.source_url,
