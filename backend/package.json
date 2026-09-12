@@ -27,7 +27,8 @@
     "verify": "tsx scripts/verify.ts",
     "audit-rules": "tsx scripts/audit-rules.ts",
     "audit-bands": "tsx scripts/audit-bands.ts",
-    "basis": "tsx scripts/basis.ts"
+    "basis": "tsx scripts/basis.ts",
+    "shortlist-recall": "tsx scripts/shortlist-recall.ts"
   },
   "dependencies": {
     "better-sqlite3": "^11.8.1",
