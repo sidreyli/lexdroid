@@ -8,6 +8,7 @@ import { useEffect, useState } from "react";
 import { useSecondsSince } from "./now";
 import type { RunEvent, RunStatus } from "@/lib/data/types";
 
+// Same origin by default: the interface serves the ledger itself, so nothing else need be running.
 const API = process.env.NEXT_PUBLIC_LEXDROID_API ?? "";
 
 export type Connection = "live" | "connecting" | "offline" | "closed";
@@ -24,14 +25,14 @@ export function useLiveRun(runId: string, seed: RunEvent[], seedStatus: RunStatu
   const [events, setEvents] = useState<RunEvent[]>(seed);
   const [status, setStatus] = useState<RunStatus>(seedStatus);
   const [connection, setConnection] = useState<Connection>(
-    seedStatus === "running" ? (API ? "connecting" : "offline") : "closed",
+    seedStatus === "running" ? "connecting" : "closed",
   );
   const [lastAt, setLastAt] = useState<string | null>(seed.at(-1)?.at ?? null);
   // Silence is the failure this view exists to catch: a read can stall saying nothing.
   const silence = useSecondsSince(lastAt);
 
   useEffect(() => {
-    if (!API || seedStatus !== "running") return;
+    if (seedStatus !== "running") return;
     const after = seed.at(-1)?.id ?? 0;
     const source = new EventSource(`${API}/api/runs/${runId}/stream?after=${after}`);
 

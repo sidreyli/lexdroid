@@ -236,6 +236,8 @@ export interface QueueItem {
   score: number | null;
   hasQuote: boolean;
   failedGates: number;
+  /** The verdict a reviewer has already recorded on this row, if any. */
+  verdict: "accept" | "edit" | "reject" | null;
 }
 
 /** One economy against one indicator, as the coverage grid sees it. */

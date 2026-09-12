@@ -4,14 +4,12 @@
  */
 import "server-only";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import Database from "better-sqlite3";
+import { DB_PATH, PROFILES_DIR, RUBRIC_PATH } from "./paths";
 
 const CONTEXT_CHARS = 2600;
 const TTL_MS = 5_000;
-
-const CHECKOUT = resolve(process.env.LEXDROID_CHECKOUT ?? join(process.cwd(), ".."));
-const DB_PATH = process.env.LEXDROID_DB ?? join(CHECKOUT, "backend/data/lexdroid.db");
 
 let handle: Database.Database | null = null;
 
@@ -65,12 +63,11 @@ function cached<T>(build: () => T): () => T {
 }
 
 export const liveRubric = cached(() => {
-  const p = join(CHECKOUT, "backend/data/rubric.json");
-  return existsSync(p) ? JSON.parse(readFileSync(p, "utf8")) : null;
+  return existsSync(RUBRIC_PATH) ? JSON.parse(readFileSync(RUBRIC_PATH, "utf8")) : null;
 });
 
 export const liveEconomies = cached(() => {
-  const dir = join(CHECKOUT, "backend/data/profiles");
+  const dir = PROFILES_DIR;
   if (!existsSync(dir)) return null;
   const profiles = readdirSync(dir)
     .filter((f) => f.endsWith(".json"))
@@ -267,3 +264,16 @@ export const liveRunEvents = cached(() => {
         FROM run_event WHERE run_id = '${id}' ORDER BY id DESC LIMIT 2000`).reverse(),
   );
 });
+
+export const liveVerdicts = cached(() =>
+  query<Record<string, unknown>>(`
+    SELECT a.id, a.export_row_id AS rowId, a.action, a.attestation,
+           a.changed_fields AS changedFields, a.reviewer, a.acted_at AS actedAt
+      FROM review_action a
+     ORDER BY a.id`).map((v) => ({
+    ...v,
+    attestation: v["attestation"] ?? "",
+    reviewer: v["reviewer"] ?? "",
+    changedFields: jsonOr(v["changedFields"], {} as Record<string, unknown>),
+  })),
+);

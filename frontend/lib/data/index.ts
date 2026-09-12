@@ -16,7 +16,9 @@ import {
   liveRubric,
   liveRunEvents,
   liveRuns,
+  liveVerdicts,
 } from "./store";
+import type { ReviewDecision } from "@/lib/review";
 import type {
   Cell,
   CoverageCell,
@@ -45,6 +47,15 @@ const cells = (): Cell[] => (liveCells() ?? cellsJson) as unknown as Cell[];
 const exportRows = (): ExportRow[] => (liveExportRows() ?? exportRowsJson) as unknown as ExportRow[];
 const runs = (): Run[] => (liveRuns() ?? runsJson) as unknown as Run[];
 const runEvents = (): RunEvent[] => (liveRunEvents() ?? runEventsJson) as unknown as RunEvent[];
+
+/** Every verdict ever recorded, oldest first. The newest on a row is the one that stands. */
+export function getVerdicts(): ReviewDecision[] {
+  return liveVerdicts() as unknown as ReviewDecision[];
+}
+
+export function getVerdict(rowId: number): ReviewDecision | undefined {
+  return [...getVerdicts()].reverse().find((v) => v.rowId === rowId);
+}
 
 export function getRubric(): Rubric {
   return rubric();
@@ -154,6 +165,7 @@ export function compareIndicatorIds(a: string, b: string): number {
 export function getQueueItems(): QueueItem[] {
   const names = new Map(economies().map((e) => [e.code, e.name]));
   const categories = new Map(rubric().indicators.map((i) => [i.id, i.category]));
+  const latest = new Map(getVerdicts().map((v) => [v.rowId, v]));
   return getReviewQueue().map((r) => ({
     id: r.id,
     economy: r.economy,
@@ -166,6 +178,7 @@ export function getQueueItems(): QueueItem[] {
     score: r.score,
     hasQuote: r.quoteCharStart !== null,
     failedGates: r.gates.filter((g) => !g.passed).length,
+    verdict: latest.get(r.id)?.action ?? null,
   }));
 }
 

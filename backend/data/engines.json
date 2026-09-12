@@ -1,0 +1,32 @@
+{
+  "$comment": "The engines the interface can choose between. ESCAP requires two that differ in kind, at least one open-weights, declared before 30 September and unchanged after.",
+  "default": "engine-a",
+  "engines": [
+    {
+      "id": "engine-a",
+      "label": "Engine A",
+      "kind": "open-weights",
+      "provider": "Ollama",
+      "model": "gemma4-lex-16k",
+      "checkpoint": "gemma4:12b-it-q4_K_M",
+      "hosted": false,
+      "hosts": ["http://127.0.0.1:11434"],
+      "declared": true,
+      "weaknesses": "Quantised to 4 bits. Reads a long provision in one pass at 16k context; a longer section is split, and a definition that sits outside the split is not seen.",
+      "notes": "Every run recorded so far was answered by this engine."
+    },
+    {
+      "id": "engine-b",
+      "label": "Engine B",
+      "kind": "hosted",
+      "provider": "",
+      "model": "",
+      "checkpoint": "",
+      "hosted": true,
+      "hosts": [],
+      "declared": false,
+      "weaknesses": "",
+      "notes": "Not declared yet. The interface offers it once a provider, model and exact checkpoint are filled in here."
+    }
+  ]
+}
