@@ -1,0 +1,71 @@
+import Link from "next/link";
+import { SidebarTrigger } from "@/components/ui/sidebar";
+import { Comparison, type Column } from "@/components/economies/comparison";
+import { getEconomies } from "@/lib/data";
+import { corpusOverview } from "@/lib/data/corpus";
+import { clip } from "@/lib/format";
+
+export const dynamic = "force-dynamic";
+export const metadata = { title: "Economies" };
+
+export default function EconomiesPage() {
+  const economies = [...getEconomies()].sort((a, b) => a.name.localeCompare(b.name));
+  const corpus = corpusOverview();
+  const columns: Column[] = economies.map((economy) => ({
+    economy,
+    corpus: corpus?.economies.find((c) => c.code === economy.code),
+  }));
+
+  return (
+    <div className="mx-auto w-full max-w-[1400px] px-5 pb-16 sm:px-8">
+      <header className="flex items-center gap-3 py-6 sm:py-8">
+        <SidebarTrigger className="-ml-1 size-8 rounded-lg text-muted-foreground" />
+        <div className="min-w-0">
+          <h1 className="text-[24px] leading-tight font-semibold tracking-tight text-navy-deep">
+            Economies
+          </h1>
+          <p className="mt-0.5 max-w-[80ch] text-[13.5px] leading-snug text-muted-foreground">
+            How each jurisdiction publishes its law, and where this system goes to read it. A
+            citation is only as good as the rung it came from, so the hierarchy is written down
+            before anything is scored.
+          </p>
+        </div>
+      </header>
+
+      <section className="bg-card lift mb-5 rounded-3xl p-6 sm:p-8">
+        <h2 className="text-[18px] leading-tight font-semibold tracking-tight text-navy-deep">
+          Where the three differ
+        </h2>
+        <p className="mt-2 mb-6 max-w-[72ch] text-[13.5px] leading-relaxed text-muted-foreground">
+          The three profiles agree on most of their shape. These are the lines where they do not,
+          and each one changes how a run has to behave.
+        </p>
+        <Comparison columns={columns} />
+      </section>
+
+      <div className="grid gap-4 lg:grid-cols-3">
+        {columns.map(({ economy, corpus: c }) => (
+          <Link
+            key={economy.code}
+            href={`/economies/${economy.code.toLowerCase()}`}
+            className="bg-card lift-sm flex flex-col rounded-3xl p-6 transition-shadow hover:shadow-[var(--lift)]"
+          >
+            <div className="flex items-baseline gap-2.5">
+              <h3 className="text-[17px] font-semibold tracking-tight text-navy-deep">
+                {economy.name}
+              </h3>
+              <span className="tnum text-[12px] text-muted-foreground">{economy.code}</span>
+            </div>
+            <p className="mt-2.5 flex-1 text-[13px] leading-relaxed text-muted-foreground">
+              {clip(economy.legalSystem.note, 230)}
+            </p>
+            <p className="tnum mt-4 text-[12.5px] text-muted-foreground">
+              {(c?.registered ?? 0).toLocaleString("en-GB")} instruments registered,{" "}
+              {(c?.sections ?? 0).toLocaleString("en-GB")} sections read
+            </p>
+          </Link>
+        ))}
+      </div>
+    </div>
+  );
+}
