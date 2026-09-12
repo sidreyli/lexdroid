@@ -1,6 +1,6 @@
 /**
- * Every read the interface makes goes through this module. It serves a snapshot of
- * the working store today; the backend routes it stands in for are in docs/api-contract.md.
+ * Every read the interface makes goes through this module. It reads the working store
+ * directly, and falls back to the checked-in snapshot when there is no database yet.
  */
 import "server-only";
 import cellsJson from "./fixtures/cells.json";
@@ -9,6 +9,14 @@ import exportRowsJson from "./fixtures/export-rows.json";
 import rubricJson from "./fixtures/rubric.json";
 import runEventsJson from "./fixtures/run-events.json";
 import runsJson from "./fixtures/runs.json";
+import {
+  liveCells,
+  liveEconomies,
+  liveExportRows,
+  liveRubric,
+  liveRunEvents,
+  liveRuns,
+} from "./store";
 import type {
   Cell,
   CoverageCell,
@@ -29,39 +37,41 @@ import type {
   RunEvent,
 } from "./types";
 
-const rubric = rubricJson as unknown as Rubric;
-const economies = economiesJson as unknown as Economy[];
-const cells = cellsJson as unknown as Cell[];
-const exportRows = exportRowsJson as unknown as ExportRow[];
-const runs = runsJson as unknown as Run[];
-const runEvents = runEventsJson as unknown as RunEvent[];
+// The live store where there is a database, and the checked-in snapshot where there is not,
+// so a fresh clone still renders something before its first run.
+const rubric = (): Rubric => (liveRubric() ?? rubricJson) as unknown as Rubric;
+const economies = (): Economy[] => (liveEconomies() ?? economiesJson) as unknown as Economy[];
+const cells = (): Cell[] => (liveCells() ?? cellsJson) as unknown as Cell[];
+const exportRows = (): ExportRow[] => (liveExportRows() ?? exportRowsJson) as unknown as ExportRow[];
+const runs = (): Run[] => (liveRuns() ?? runsJson) as unknown as Run[];
+const runEvents = (): RunEvent[] => (liveRunEvents() ?? runEventsJson) as unknown as RunEvent[];
 
 export function getRubric(): Rubric {
-  return rubric;
+  return rubric();
 }
 
 export function getIndicator(id: string): Indicator | undefined {
-  return rubric.indicators.find((i) => i.id === id);
+  return rubric().indicators.find((i) => i.id === id);
 }
 
 export function getEconomies(): Economy[] {
-  return economies;
+  return economies();
 }
 
 export function getEconomy(code: string): Economy | undefined {
-  return economies.find((e) => e.code === code.toUpperCase());
+  return economies().find((e) => e.code === code.toUpperCase());
 }
 
 export function getRuns(): Run[] {
-  return runs;
+  return runs();
 }
 
 export function getRun(id: string): Run | undefined {
-  return runs.find((r) => r.id === id);
+  return runs().find((r) => r.id === id);
 }
 
 export function getRunEvents(runId: string): RunEvent[] {
-  return runEvents.filter((e) => e.runId === runId);
+  return runEvents().filter((e) => e.runId === runId);
 }
 
 /**
@@ -70,7 +80,7 @@ export function getRunEvents(runId: string): RunEvent[] {
  */
 export function getCurrentCells(): Cell[] {
   const best = new Map<string, Cell>();
-  for (const c of cells) {
+  for (const c of cells()) {
     if (c.runStatus !== "complete") continue;
     const key = `${c.economy}:${c.indicatorId}`;
     const held = best.get(key);
@@ -81,7 +91,7 @@ export function getCurrentCells(): Cell[] {
 
 /** Every earlier answer for the same economy and indicator, newest first. */
 export function getCellHistory(economy: string, indicatorId: string): Cell[] {
-  return cells
+  return cells()
     .filter((c) => c.economy === economy && c.indicatorId === indicatorId)
     .sort((a, b) => b.runStartedAt.localeCompare(a.runStartedAt));
 }
@@ -99,8 +109,8 @@ export function getCell(economy: string, indicatorId: string): Cell | undefined 
 export function getCoverage(): CoverageCell[] {
   const current = getCurrentCells();
   const out: CoverageCell[] = [];
-  for (const economy of economies) {
-    for (const indicator of rubric.indicators) {
+  for (const economy of economies()) {
+    for (const indicator of rubric().indicators) {
       const cell = current.find(
         (c) => c.economy === economy.code && c.indicatorId === indicator.id,
       );
@@ -118,17 +128,17 @@ export function getCoverage(): CoverageCell[] {
 }
 
 export function getExportRows(): ExportRow[] {
-  return exportRows;
+  return exportRows();
 }
 
 export function getExportRow(id: number): ExportRow | undefined {
-  return exportRows.find((r) => r.id === id);
+  return exportRows().find((r) => r.id === id);
 }
 
 /** Rows a reviewer still has to look at, failed gates first. */
 export function getReviewQueue(): ExportRow[] {
   const failed = (r: ExportRow) => r.gates.filter((g) => !g.passed).length;
-  return [...exportRows].sort(
+  return [...exportRows()].sort(
     (a, b) => failed(b) - failed(a) || a.economy.localeCompare(b.economy) || a.id - b.id,
   );
 }
@@ -142,8 +152,8 @@ export function compareIndicatorIds(a: string, b: string): number {
 
 /** The list the queue rail renders: enough to choose a finding, and nothing more. */
 export function getQueueItems(): QueueItem[] {
-  const names = new Map(economies.map((e) => [e.code, e.name]));
-  const categories = new Map(rubric.indicators.map((i) => [i.id, i.category]));
+  const names = new Map(economies().map((e) => [e.code, e.name]));
+  const categories = new Map(rubric().indicators.map((i) => [i.id, i.category]));
   return getReviewQueue().map((r) => ({
     id: r.id,
     economy: r.economy,
@@ -166,10 +176,10 @@ export function getQueueItems(): QueueItem[] {
 export function getScoreboard(): Scoreboard {
   const current = getCurrentCells();
   const at = new Map(current.map((c) => [`${c.economy}:${c.indicatorId}`, c]));
-  const codes = economies.map((e) => ({ code: e.code, name: e.name }));
-  const byId = new Map(rubric.indicators.map((i) => [i.id, i]));
+  const codes = economies().map((e) => ({ code: e.code, name: e.name }));
+  const byId = new Map(rubric().indicators.map((i) => [i.id, i]));
 
-  const pillars: PillarScores[] = rubric.pillars.map((p) => {
+  const pillars: PillarScores[] = rubric().pillars.map((p) => {
     const indicators: IndicatorScores[] = p.indicatorIds.map((id) => {
       const indicator = byId.get(id);
       return {
@@ -221,7 +231,7 @@ export function getScoreboard(): Scoreboard {
     pillars,
     overall,
     pillarsComplete: complete.length,
-    indicatorsTotal: rubric.indicators.length,
+    indicatorsTotal: rubric().indicators.length,
     answeredTotal: new Set(current.map((c) => c.indicatorId)).size,
   };
 }
@@ -243,7 +253,7 @@ export function getCellDetail(economy: string, indicatorId: string): CellDetail 
   if (!eco || !indicator) return null;
   const history = getCellHistory(eco.code, indicatorId);
   const current = getCell(eco.code, indicatorId) ?? null;
-  const mine = current ? exportRows.filter((r) => r.cellId === current.id) : [];
+  const mine = current ? exportRows().filter((r) => r.cellId === current.id) : [];
   const older = new Set(history.filter((c) => c.id !== current?.id).map((c) => c.id));
   return {
     economy: eco,
@@ -251,11 +261,11 @@ export function getCellDetail(economy: string, indicatorId: string): CellDetail 
     current,
     history: history.filter((c) => c.id !== current?.id),
     rows: mine,
-    priorRows: mine.length ? [] : dedupeRows(exportRows.filter((r) => older.has(r.cellId))),
+    priorRows: mine.length ? [] : dedupeRows(exportRows().filter((r) => older.has(r.cellId))),
   };
 }
 
-/** One economy against the whole rubric, pillar by pillar. */
+/** One economy against the whole rubric(), pillar by pillar. */
 export function getEconomyScores(code: string): EconomyScores | null {
   const eco = getEconomy(code);
   if (!eco) return null;
@@ -264,9 +274,9 @@ export function getEconomyScores(code: string): EconomyScores | null {
       .filter((c) => c.economy === eco.code)
       .map((c) => [c.indicatorId, c]),
   );
-  const byId = new Map(rubric.indicators.map((i) => [i.id, i]));
+  const byId = new Map(rubric().indicators.map((i) => [i.id, i]));
 
-  const pillars: EconomyPillar[] = rubric.pillars.map((p) => {
+  const pillars: EconomyPillar[] = rubric().pillars.map((p) => {
     const indicators: EconomyIndicatorRow[] = p.indicatorIds.map((id) => {
       const cell = at.get(id);
       return {
@@ -304,7 +314,7 @@ export function getEconomyScores(code: string): EconomyScores | null {
     pillarsComplete: complete.length,
     pillarsTotal: pillars.length,
     answered: at.size,
-    indicatorsTotal: rubric.indicators.length,
+    indicatorsTotal: rubric().indicators.length,
     pillars,
   };
 }
