@@ -76,10 +76,13 @@ export function storeDocument(
   return db.transaction((): StoredDocument => {
     // A document filed under the wrong instrument parses cleanly and cites perfectly to the wrong
     // law, so the contradiction has to be caught here, before anything can be indexed out of it.
-    const filed = db.prepare('SELECT title FROM instrument WHERE id = ?').get(instrumentId) as
-      | { title: string }
+    const filed = db.prepare('SELECT title, title_provisional FROM instrument WHERE id = ?').get(instrumentId) as
+      | { title: string; title_provisional: number }
       | undefined;
-    const wrong = filed && !parsed.unread ? identityMismatch(parsed.sections, filed.title) : null;
+    const wrong =
+      filed && !parsed.unread
+        ? identityMismatch(parsed.sections, filed.title, { titleProvisional: filed.title_provisional === 1 })
+        : null;
     if (wrong) parsed = { ...parsed, unread: { reason: 'another-instrument', detail: wrong.detail } };
     db.prepare(
       `INSERT INTO document (instrument_id, url, content_hash, media_type, bytes, http_status,
@@ -92,7 +95,9 @@ export function storeDocument(
     ).run(
       instrumentId, fetched.url, fetched.contentHash, fetched.mediaType, fetched.body.length,
       fetched.status, fetched.fetchedAt, fetched.fromCache ? 1 : 0, parsed.extraction,
-      parsed.sections.length,
+      // An unread document holds no sections, whatever the parser managed to split. Counting what
+      // was never stored made ten Malaysian documents report 348 provisions the corpus has not got.
+      parsed.unread ? 0 : parsed.sections.length,
     );
 
     const { id: documentId } = db

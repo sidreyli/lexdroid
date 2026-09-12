@@ -17,6 +17,7 @@ import type { Db } from '../db/index.js';
 import type { Fetcher } from '../fetch/index.js';
 import { RobotsDisallowed, CacheMiss, HostSuspended } from '../fetch/index.js';
 import { parseDocument, storeDocument, verifyOffsets } from '../parse/index.js';
+import { namesAnInstrument } from '../parse/identity.js';
 import type { EconomyProfile } from '../profile/types.js';
 import { portalId } from '../profile/index.js';
 import { frlAdapter } from './frl.js';
@@ -307,8 +308,9 @@ export async function materialise(
         );
       }
 
-      // A document registered under an upload slug takes the name it calls itself by.
-      if (row.title_provisional && parsed.title) {
+      // A document registered under an upload slug, or under a title that names no instrument at
+      // all, takes the name it calls itself by.
+      if ((row.title_provisional || !namesAnInstrument(row.title)) && parsed.title) {
         db.prepare('UPDATE instrument SET title = ?, title_provisional = 0 WHERE id = ?')
           .run(parsed.title, row.id);
         log(`  [${n + 1}/${rows.length}] names itself "${parsed.title}"`);
