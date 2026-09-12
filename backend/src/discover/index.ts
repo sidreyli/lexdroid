@@ -208,6 +208,11 @@ export interface MaterialiseOptions {
    * only that stage.
    */
   reparse?: boolean;
+  /**
+   * Only the instruments nothing could be read out of. When the reason a document was unread is
+   * one the parser has since learned to handle, this retries exactly those and nothing else.
+   */
+  unreadOnly?: boolean;
   /** Only instruments whose title matches, case-insensitively. Used to prove a path quickly. */
   titleLike?: string;
   /**
@@ -241,7 +246,11 @@ export async function materialise(
     return portal?.adapter ? ADAPTERS[portal.adapter] ?? null : null;
   };
 
-  const where = opts.reparse
+  const where = opts.unreadOnly
+    ? `i.economy_code = ? AND EXISTS (
+         SELECT 1 FROM document d JOIN unread_document u ON u.document_id = d.id
+          WHERE d.instrument_id = i.id)`
+    : opts.reparse
     ? `i.economy_code = ? AND EXISTS (SELECT 1 FROM document d WHERE d.instrument_id = i.id)`
     : opts.refresh
       ? 'i.economy_code = ?'
