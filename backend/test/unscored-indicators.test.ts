@@ -103,10 +103,13 @@ describe('the foreign-equity ladder', () => {
     expect(score('5.2', two)).toBe(1);
   });
 
+  // The subject is given per call: 12.01 is the e-commerce rung of the same ladder, and the file's
+  // default names the telecommunications sector, which is 5.2's.
   it("puts a ban in 12.01's top band, whose ladder starts at a minority stake", () => {
-    expect(score('12.01', [ev('12.01', 'ecommerce-equity-ban', { definingWords: 'no shares may be held by a foreign person' })])).toBe(1);
-    expect(score('12.01', [ev('12.01', 'ecommerce-equity-minority')])).toBe(1);
-    expect(score('12.01', [ev('12.01', 'ecommerce-equity-controlling')])).toBe(0.5);
+    const online = { subjectWords: 'an online marketplace' };
+    expect(score('12.01', [ev('12.01', 'ecommerce-equity-ban', { ...online, definingWords: 'no shares may be held by a foreign person' })])).toBe(1);
+    expect(score('12.01', [ev('12.01', 'ecommerce-equity-minority', online)])).toBe(1);
+    expect(score('12.01', [ev('12.01', 'ecommerce-equity-controlling', online)])).toBe(0.5);
   });
 
   it("does not count a telecom cap under 3.1, which carves that sector out", () => {
