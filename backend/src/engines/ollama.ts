@@ -112,7 +112,23 @@ export class EngineSilent extends EngineFailure {
   }
 }
 
-async function post<T>(path: string, body: unknown, timeoutMs = 600_000, model = ''): Promise<T> {
+/**
+ * How long to keep trying while the engine is unreachable, and how long between attempts.
+ * A tunnel that drops for seconds is not an engine that has stopped; the difference is a pillar.
+ */
+const RECONNECT_WAITS_MS = (process.env['LEXDROID_RECONNECT_WAITS_MS'] ?? '2000,5000,10000,20000,40000,60000')
+  .split(',')
+  .map((n) => Number(n.trim()))
+  .filter((n) => Number.isFinite(n) && n >= 0);
+
+let reconnectAttempts = 0;
+
+/** How many times a request had to wait for the engine to come back. Reported, never silent. */
+export function engineReconnects(): number {
+  return reconnectAttempts;
+}
+
+async function once<T>(path: string, body: unknown, timeoutMs: number, model: string): Promise<T> {
   try {
     const res = await request(`${HOST}${path}`, {
       method: 'POST',
@@ -131,6 +147,26 @@ async function post<T>(path: string, body: unknown, timeoutMs = 600_000, model =
       throw new EngineTimeout(model, message);
     }
     throw err;
+  }
+}
+
+/**
+ * The same request, retried while the engine is only briefly away. Past the budget it really has
+ * gone, and the caller must stop rather than report a search that found nothing.
+ */
+async function post<T>(path: string, body: unknown, timeoutMs = 600_000, model = ''): Promise<T> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      const value = await once<T>(path, body, timeoutMs, model);
+      if (attempt > 0) console.warn(`  engine answered again after ${attempt} attempt(s) waiting`);
+      return value;
+    } catch (err) {
+      const wait = RECONNECT_WAITS_MS[attempt];
+      if (!(err instanceof OllamaUnavailable) || wait === undefined) throw err;
+      reconnectAttempts += 1;
+      console.warn(`  engine unreachable; waiting ${wait / 1000}s, then attempt ${attempt + 2}`);
+      await new Promise((r) => setTimeout(r, wait));
+    }
   }
 }
 
