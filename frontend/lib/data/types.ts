@@ -52,15 +52,39 @@ export interface Corpus {
   unread: { reason: string; count: number }[];
 }
 
+/** One rung of an economy's instrument hierarchy, as the profile declares it. */
+export interface InstrumentType {
+  rank: number;
+  kind: string;
+  localName: string;
+  bindingness: string;
+  note: string;
+}
+
+export interface Portal {
+  name: string;
+  url: string;
+  kind: string;
+  authority?: string;
+  pillars?: number[];
+  /** Null where nothing can enumerate this portal yet, which is a gap and shown as one. */
+  adapter?: string | null;
+  notes?: string;
+}
+
 export interface Economy {
   code: string;
   name: string;
   legalSystem: { family: string; note: string };
   officialLanguages: string[];
   languageNote?: string;
-  portals: { name: string; url: string; kind: string; authority?: string }[];
+  instrumentTypes?: InstrumentType[];
+  portals: Portal[];
   commitments?: { name: string; status?: string; sourceUrl?: string }[];
   notes?: string;
+  authoredBy?: string;
+  authoredOn?: string;
+  sources?: string[];
   corpus: Corpus;
 }
 
@@ -236,6 +260,8 @@ export interface QueueItem {
   score: number | null;
   hasQuote: boolean;
   failedGates: number;
+  /** The verdict a reviewer has already recorded on this row, if any. */
+  verdict: "accept" | "edit" | "reject" | null;
 }
 
 /** One economy against one indicator, as the coverage grid sees it. */

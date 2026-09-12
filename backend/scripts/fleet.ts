@@ -29,6 +29,7 @@ import { indicatorsOfPillar, loadRubric } from '../src/rubric/index.js';
 import { READING_MODEL } from '../src/engines/ollama.js';
 import { probeEngine, describeReport, usable, mismatchedEngine, fingerprintOf } from '../src/engines/probe.js';
 import { cacheEnabled } from '../src/engines/cache.js';
+import { defaultEngine, findEngine, type Engine } from '../src/engines/registry.js';
 
 interface Args {
   economies: string[];
@@ -42,6 +43,8 @@ interface Args {
   requireSerial: boolean;
   perEconomy: boolean;
   fanOut: boolean;
+  engine: Engine | undefined;
+  cacheOnly: boolean;
 }
 
 function parseArgs(argv: string[]): Args {
@@ -49,6 +52,10 @@ function parseArgs(argv: string[]): Args {
     const i = argv.indexOf(`--${name}`);
     return i >= 0 ? argv[i + 1] ?? null : null;
   };
+  // Named engine, or the one the interface last chose. Its hosts stand in for --hosts.
+  const engine = get('engine') ? findEngine(get('engine')!) : defaultEngine();
+  if (get('engine') && !engine) throw new Error(`No engine ${get('engine')} in data/engines.json`);
+
   return {
     economies: (get('economies') ?? 'SGP')
       .split(',')
@@ -58,7 +65,7 @@ function parseArgs(argv: string[]): Args {
       .split(',')
       .map((p) => Number(p.trim()))
       .filter((p) => Number.isInteger(p) && p > 0),
-    hosts: (get('hosts') ?? process.env['OLLAMA_HOST'] ?? 'http://127.0.0.1:11434')
+    hosts: (get('hosts') ?? engine?.hosts.join(',') ?? process.env['OLLAMA_HOST'] ?? 'http://127.0.0.1:11434')
       .split(',')
       .map((h) => h.trim().replace(/[/]+$/, ''))
       .filter((h) => h.length > 0),
@@ -70,6 +77,8 @@ function parseArgs(argv: string[]): Args {
     requireSerial: argv.includes('--require-serial'),
     perEconomy: argv.includes('--per-economy'),
     fanOut: argv.includes('--fan-out'),
+    engine,
+    cacheOnly: argv.includes('--cache-only'),
   };
 }
 
@@ -177,6 +186,8 @@ async function main(): Promise<void> {
     economies: args.economies,
     pillars: args.pillars,
     model: args.model,
+    ...(args.engine ? { engine: args.engine.id } : {}),
+    sourceMode: args.cacheOnly ? ('cache-only' as const) : ('fetch' as const),
     notes: `fleet of ${args.hosts.length} on ${args.hosts.join(', ')}`,
   });
 

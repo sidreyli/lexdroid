@@ -5,17 +5,20 @@
   "license": "Apache-2.0",
   "description": "Automated evidence discovery and regulatory mapping for the UN ESCAP Regulatory Digital Trade Integration Index",
   "workspaces": [
-    "backend"
+    "backend",
+    "frontend"
   ],
   "engines": {
     "node": ">=20.11"
   },
   "scripts": {
     "setup": "npm run -w backend setup",
-    "dev": "npm run -w backend dev",
-    "build": "npm run -w backend build",
-    "test": "npm run -w backend test",
-    "typecheck": "npm run -w backend typecheck"
+    "dev": "npm run -w frontend dev",
+    "api": "npm run -w backend dev",
+    "build": "npm run -w backend build && npm run -w frontend build",
+    "start": "npm run -w frontend start",
+    "test": "npm run -w backend test && npm run -w frontend test",
+    "typecheck": "npm run -w backend typecheck && npm run -w frontend typecheck"
   },
   "devDependencies": {
     "typescript": "^5.7.3"
