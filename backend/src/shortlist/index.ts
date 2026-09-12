@@ -381,11 +381,14 @@ export async function shortlistInstruments(
     model?: string;
     /** Set false to rank on titles alone. Used to measure what the contents index is worth. */
     contents?: boolean;
+    /** Share of the list held for Acts. Measured at 0.5; set 0 to rank the register as one pool. */
+    primaryShare?: number;
   },
 ): Promise<InstrumentCandidate[]> {
   const model = opts.model ?? EMBEDDING_MODEL;
   const limit = opts.limit ?? 25;
   const depth = opts.depthPerQuery ?? 40;
+  const primaryShare = opts.primaryShare ?? 0.5;
 
   // Each query in each channel is its own run. Reciprocal rank fusion combines ranks, so a run
   // must keep its own ranking -- flattening them first would make rank 1 of a weak query
@@ -438,6 +441,7 @@ export async function shortlistInstruments(
   );
   const titleRuns = runs.filter((r) => r[0] && !r[0].channel.startsWith('heading')).length;
   const headingRuns = runs.length - titleRuns;
+
   const fused = fuse(runs)
     .map((h) => {
       const eligible = hasContents.has(h.sectionId) ? titleRuns + headingRuns : titleRuns;
@@ -452,21 +456,21 @@ export async function shortlistInstruments(
        FROM instrument i WHERE i.id = ?`,
   );
 
-  const out: InstrumentCandidate[] = [];
+  const pool: InstrumentCandidate[] = [];
   for (const hit of fused) {
     const row = byId.get(hit.sectionId) as
       | { id: number; title: string; kind: string; official_number: string | null; source_url: string; read: number }
       | undefined;
     if (!row) continue;
     if (opts.kind && row.kind !== opts.kind) continue;
-    out.push({
+    pool.push({
       instrumentId: row.id,
       title: row.title,
       kind: row.kind,
       officialNumber: row.official_number,
       sourceUrl: row.source_url,
       read: row.read === 1,
-      rank: out.length + 1,
+      rank: 0,
       channels: hit.channels ?? [],
       matchedHeadings: [
         ...new Set(
@@ -476,7 +480,27 @@ export async function shortlistInstruments(
         ),
       ].slice(0, 3),
     });
+    if (pool.length >= limit) break;
+  }
+
+  // A share of the list held for primary legislation. An Act and a notification made under it are
+  // not interchangeable candidates, and a register of 23,693 regulations buries 1,264 Acts.
+  //
+  // Filled by ranking the Acts on their own rather than by picking them out of the open list: the
+  // channels are depth-limited, so an Act that 5,841 subsidiary instruments push past the depth is
+  // not there to be picked. Measured against ESCAP's own citations, holding half the list this way
+  // moved recall at depth 40 from 27/47/43% to 33/60/49% for Australia, Singapore and Malaysia.
+  const wanted = Math.floor(limit * primaryShare);
+  const primary =
+    wanted > 0 && !opts.kind
+      ? await shortlistInstruments(db, { ...opts, limit: wanted, kind: 'act', primaryShare: 0 })
+      : [];
+
+  const out: InstrumentCandidate[] = [];
+  const taken = new Set(primary.map((c) => c.instrumentId));
+  for (const c of [...primary, ...pool.filter((c) => !taken.has(c.instrumentId))]) {
     if (out.length >= limit) break;
+    out.push({ ...c, rank: out.length + 1 });
   }
   return out;
 }

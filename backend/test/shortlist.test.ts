@@ -89,3 +89,35 @@ describe('shortlisting the register', () => {
     db.close();
   });
 });
+
+describe('the share of the list held for Acts', () => {
+  it('keeps an Act on a list its own subsidiary legislation would fill', async () => {
+    // Singapore's Payment Services Act 2019 ranked 111th for "a licence to provide payment
+    // services" while its own Regulations ranked 4th, and 5,841 subsidiary instruments took the
+    // rest. ESCAP's bands turn on what binds, so an Act and a notification made under it are not
+    // interchangeable candidates.
+    const db = openDb(':memory:');
+    db.prepare(`INSERT INTO economy (code, name, official_languages) VALUES ('XXX', 'Test', '["en"]')`).run();
+    const ins = db.prepare(
+      `INSERT INTO instrument (economy_code, title, kind, status, language, source_url, discovered_via, discovered_at)
+       VALUES ('XXX', ?, ?, 'in-force', 'en', ?, 'test', '2026-09-06')`,
+    );
+    ins.run('Payment Services Act 2019', 'act', 'https://x/act');
+    // Each carries one more of the query's words than the Act does, which is why they outrank it.
+    for (let i = 0; i < 40; i += 1) {
+      ins.run(`Payment Services Licence (Exemption No ${i}) Regulations 2019`, 'regulation', `https://x/r${i}`);
+    }
+
+    const asOnePool = await shortlistInstruments(db, {
+      economy: 'XXX', queries: ['payment services licence'], limit: 6, primaryShare: 0, model: 'none',
+    });
+    expect(asOnePool.every((c) => c.kind === 'regulation')).toBe(true);
+
+    const held = await shortlistInstruments(db, {
+      economy: 'XXX', queries: ['payment services licence'], limit: 6, model: 'none',
+    });
+    expect(held[0]?.title).toBe('Payment Services Act 2019');
+    // And the rest of the list is still whatever ranked, not padded with Acts that did not.
+    expect(held.filter((c) => c.kind === 'regulation').length).toBe(5);
+  });
+});
