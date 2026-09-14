@@ -1146,3 +1146,73 @@ export const SUBJECT_DOMAIN: Readonly<Record<string, RegExp>> = {
   '12.7': new RegExp([DOMAIN_NAME.source, ONLINE.source].join('|'), 'i'),
   '12.8': ONLINE,
 };
+
+/**
+ * The word a provision has to use to be a given measure, where the measure is named by one.
+ *
+ * `defines` already says what a provision must state, and the reader copies those words out. What
+ * nothing asked was whether the words it copied say the thing at all. Australia's e-commerce
+ * licensing cell was decided by "The Commissioner must develop an APP code", filed as a licence to
+ * sell online; its online-content licensing cell by "keep a copy of any contracts". An APP code is
+ * not a licence and a contract is not a licence, and neither provision uses a word that means one.
+ *
+ * So this is not a list of instruments we do not want, and not a judgement about whether a reading
+ * is a good one. It is the measure's own name: a licensing measure is made out by a word meaning
+ * licence, a retention period by a word meaning time, a duty on imports by a word meaning duty.
+ * A measure whose word is absent has not been shown, which is a finding about the provision and
+ * is recorded as one.
+ *
+ * Only measures named by a legal term of art appear here. A measure whose name is a description
+ * rather than a term -- "other restriction on paying online" -- has no such word and gets none.
+ */
+const LICENCE = /\b(licen[cs]\w*|permit\w*|registrat\w*|register\w*|approval|authoris\w*|authoriz\w*|certificat\w*|accredit\w*)\b/i;
+const DUTY_OR_TAX = /\b(dut(y|ies)|tax\w*|tariff\w*|levy|levies|excise|customs charge|charge\w*)\b/i;
+const PERIOD = /\b(year|month|day|week|period|时|\d+\s*(year|month|day|week))\w*\b/i;
+const AMOUNT = /(\d|\bquota\b|\bceiling\b|\blimit\b|\bmaximum\b|\bexceed\b|\bnot more than\b)/i;
+const STANDARD = /\b(standard\w*|specification\w*|technical regulation\w*|conform\w*|compliance)\b/i;
+const TESTING = /\b(test\w*|assess\w*|certif\w*|verif\w*|examin\w*|inspect\w*|accredit\w*|conformity)\b/i;
+const ENCRYPTION = /\b(encrypt\w*|cryptograph\w*|cipher\w*|key length|AES|DES|RSA|ECC|FIPS)\b/i;
+const NATIONALITY = /\b(citizen\w*|national(ity|s)?\b|resident\w*|domicil\w*|permanent resident)\b/i;
+const TRADE_DEFENCE = /\b(dump\w*|countervail\w*|safeguard\w*|subsid\w*|injur\w*)\b/i;
+const SEPARATION = /\b(separat\w*|divest\w*|structural\w*|unbundl\w*|account\w*|divid\w*)\b/i;
+const JOINT_VENTURE = /\b(joint venture\w*|partner\w*|local equity|incorporat\w*|jointly)\b/i;
+
+export const MEASURE_NAMES: Readonly<Record<string, RegExp>> = {
+  // A licence measure needs a word meaning licence. Five indicators turn on one.
+  'content-licence': LICENCE,
+  'strict-content-licence': LICENCE,
+  'ecommerce-licence': LICENCE,
+  'payment-licence': LICENCE,
+  'strict-telecom-licence': LICENCE,
+  'import-quota': AMOUNT,
+  'import-compliance': /\b(comply|complian\w*|conform\w*|requirement\w*|standard\w*|licen[cs]\w*|permit\w*|approval)\b/i,
+  // A period measure needs a period. The two amount measures are deliberately absent: a threshold
+  // whose figure we could not read is still a threshold, and is already held rather than ruled out.
+  'minimum-retention': PERIOD,
+  'maximum-retention': PERIOD,
+  // Standards, testing and encryption are each named by their own term of art.
+  'deviating-encryption-standard': ENCRYPTION,
+  'mandated-encryption': ENCRYPTION,
+  'product-testing': TESTING,
+  'third-party-testing-accepted': TESTING,
+  'sdoc-allowed': /\b(self[- ]declar\w*|declaration of conformity|supplier'?s? declaration)\b/i,
+  'mra-certification-accepted': /\b(mutual recognition|foreign\w*|overseas|another (country|economy|jurisdiction)|recognis\w*|recogniz\w*)\b/i,
+  'foreign-exclusion-from-standards': /\b(foreign\w*|non-?resident\w*|overseas|nationa\w*)\b/i,
+  'national-payment-standard': STANDARD,
+  // Duties on transmission are duties; a trade defence measure names its own instrument.
+  'transmission-duty': DUTY_OR_TAX,
+  'transmission-duty-power': DUTY_OR_TAX,
+  'trade-defence-measure': TRADE_DEFENCE,
+  // Presence, nationality and structure.
+  'director-nationality': NATIONALITY,
+  'joint-venture': JOINT_VENTURE,
+  'accounting-separation': SEPARATION,
+  'functional-separation': SEPARATION,
+  'local-bank-account': /\b(bank\w*|account\w*|financial institution\w*)\b/i,
+  'local-representative': /\b(represent\w*|agent\w*|office\w*|establish\w*|resident\w*)\b/i,
+  'local-presence': /\b(present\w*|establish\w*|office\w*|branch\w*|subsidiar\w*|incorporat\w*|resident\w*)\b/i,
+  'local-domain-or-presence': /\b(domain\w*|present\w*|establish\w*|office\w*|branch\w*|subsidiar\w*|incorporat\w*)\b/i,
+  // The officer measure is a person put in a position, and the role words already carry that.
+  'sim-registration': LICENCE,
+  'patent-local-representative': /\b(represent\w*|agent\w*|attorney\w*|address for service)\b/i,
+};

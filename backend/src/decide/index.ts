@@ -18,7 +18,7 @@
  */
 import type { Indicator, ScoreBand } from '../rubric/types.js';
 import type { Finding } from '../read/index.js';
-import { MEASURES, SUBJECTS, SUBJECT_DOMAIN } from '../rubric/measures.js';
+import { MEASURES, MEASURE_NAMES, SUBJECTS, SUBJECT_DOMAIN } from '../rubric/measures.js';
 import { inUsd, moneyIn, type FxRates } from './currency.js';
 
 /** One finding, with enough of its origin to cite it. */
@@ -1098,9 +1098,12 @@ function applyException(indicator: Indicator, evidence: Evidence[]): {
 function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
   kept: Evidence[];
   held: { evidence: Evidence; reason: string }[];
+  /** Read and shown not to be this measure -- a finding of absence, not a failure to evaluate. */
+  ruledOut: { evidence: Evidence; reason: string }[];
 } {
   const kept: Evidence[] = [];
   const held: { evidence: Evidence; reason: string }[] = [];
+  const ruledOut: { evidence: Evidence; reason: string }[] = [];
 
   for (const e of evidence) {
     // Before any measure-specific test: a sentence that declares rather than obliges has not
@@ -1157,6 +1160,22 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
       held.push({
         evidence: e,
         reason: `the provision does not state ${definedBy(indicatorId, e.finding.measure)}, which is what makes it this measure`,
+      });
+      continue;
+    }
+    // And the words it did copy have to say the thing. "An APP code" was copied as the words
+    // making out a licence to sell online, and "keep a copy of any contracts" as the words making
+    // out a licence to provide online content: real words, from real provisions, saying no licence.
+    //
+    // Excluded rather than held, and the difference decides cells. A hold says we could not
+    // evaluate what we read, which rightly stops us reporting the subject as absent. This says the
+    // opposite -- we read the provision and it does not impose this measure -- which is a finding
+    // of absence in that provision and evidence for the zero rather than a bar to it.
+    const name = e.finding.measure ? MEASURE_NAMES[e.finding.measure] : undefined;
+    if (name && e.finding.definingWords && !name.test(e.finding.definingWords)) {
+      ruledOut.push({
+        evidence: e,
+        reason: `"${e.finding.definingWords}" does not say ${definedBy(indicatorId, e.finding.measure) ?? `what makes a provision ${e.finding.measure}`}`,
       });
       continue;
     }
@@ -1412,7 +1431,7 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     }
     kept.push(e);
   }
-  return { kept, held };
+  return { kept, held, ruledOut };
 }
 
 /**
@@ -1729,7 +1748,10 @@ export function decide(input: DecideInput): Decision {
   );
   const { kept: afterException, excluded } = applyException(indicator, mine);
   const ctx: RuleContext = { economy, rates: input.rates ?? null };
-  const { kept: qualifying, held } = hold(indicator.id, afterException, ctx);
+  const { kept: qualifying, held, ruledOut } = hold(indicator.id, afterException, ctx);
+  // Read and shown not to be the measure, which is a reason and belongs on the record beside the
+  // exception's. It never joins `held`: that would turn a finding of absence into a bar to one.
+  excluded.push(...ruledOut);
 
   // Nothing was read, so nothing can be concluded. This is the difference between a finding of
   // absence and a failure to look, and ESCAP's reviewers can tell them apart.

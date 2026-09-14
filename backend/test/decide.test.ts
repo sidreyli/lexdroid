@@ -1042,6 +1042,7 @@ describe('which sentence the row leads with', () => {
   const retention = (over: Partial<Finding>): Partial<Finding> => ({
     indicatorId: '7.3',
     measure: 'minimum-retention',
+    definingWords: 'a period of not less than 5 years',
     placeWords: null,
     locatedData: null,
     informationWords: null,
@@ -1367,12 +1368,22 @@ const indicator127 = indicator12('12.7', [
 ]);
 
 /** A pillar-12 finding: none of these measures is locational or appointing unless it says so. */
+/** Words that make each measure out, as the provision would put them. The catalogue checks these. */
+const DEFINING: Record<string, string> = {
+  'transmission-duty': 'a duty of customs on the transmission',
+  'transmission-duty-power': 'may impose a duty of customs',
+  'local-representative': 'a representative resident in Singapore',
+  'local-domain-or-presence': 'a registered office in Singapore',
+  'local-presence': 'a place of business in Singapore',
+};
+
 function p12(indicatorId: string, measure: string, over: Partial<Finding> = {}): Evidence {
   return {
     ...evidence(1, 'Electronic Commerce Act'),
     finding: finding({
       indicatorId,
       measure,
+      ...(DEFINING[measure] ? { definingWords: DEFINING[measure] } : {}),
       placeWords: null,
       locatedData: null,
       informationWords: null,
@@ -1482,6 +1493,7 @@ describe('an indicator whose top band is an absence', () => {
       finding: finding({
         indicatorId, measure, placeWords: null, locatedData: null, informationWords: null,
         dutyForce: 'requires', dutyAct: 'shall keep separate accounts', mandatory: true,
+        definingWords: measure === 'trade-defence-measure' ? 'a dumping duty' : 'separate accounts',
         subjectWords: 'a public telecommunications licensee', ...over,
       }),
     };
