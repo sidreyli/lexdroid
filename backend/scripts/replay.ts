@@ -7,6 +7,7 @@
  * function of them, so a rule change can be graded in seconds instead of a six-hour fleet.
  * Nothing is written: this reads the run and prints, so the graded run stays the record of itself.
  */
+import { writeFileSync } from 'node:fs';
 import { openDb } from '../src/db/index.js';
 import {
   decide,
@@ -129,6 +130,26 @@ const consideredFor = db.prepare(
 
 const storedAnswer = db.prepare('SELECT score FROM cell_answer WHERE cell_id = ?');
 
+/**
+ * The second reading's answers, where --confirmed asks for them.
+ *
+ * Off by default so the replay of a run reproduces that run. On, every finding the confirmation
+ * pass ruled out is a provision read twice and found not to carry the measure.
+ */
+const useConfirmed = process.argv.includes('--confirmed');
+const confirmations = new Map<string, boolean>();
+if (useConfirmed) {
+  for (const c of db
+    .prepare('SELECT section_id, indicator_id, measure, words, failure FROM measure_confirmation')
+    .all() as Record<string, any>[]) {
+    // A question the engine never answered is not a provision found wanting, so it is left alone.
+    if (c['failure']) continue;
+    confirmations.set(`${c['section_id']}/${c['indicator_id']}/${c['measure']}`, c['words'] !== null);
+  }
+  console.log(`
+  ${confirmations.size} banked confirmation(s) in play`);
+}
+
 const profiles = new Map<string, Map<string, 'binding' | 'binding-on-licensees' | 'advisory'>>();
 function bindingnessFor(economy: string) {
   let m = profiles.get(economy);
@@ -139,8 +160,20 @@ function bindingnessFor(economy: string) {
   return m;
 }
 
-type Replayed = { economy: string; indicator: string; was: number | null; now: number | null };
+type Replayed = {
+  economy: string;
+  indicator: string;
+  was: number | null;
+  now: number | null;
+  state: string;
+  decidingFact: string;
+  basis: number;
+  held: number;
+  excluded: number;
+  heldReasons: string;
+};
 const out: Replayed[] = [];
+const dispositions: { economy: string; indicator: string; disposition: string; measure: string; reason: string }[] = [];
 
 for (const cell of cells) {
   const indicator = indicators.get(cell.indicator_id);
@@ -179,6 +212,7 @@ for (const cell of cells) {
       );
       if (already) continue;
       const kind = binding.get(row['instrument_kind']);
+      const confirmed = confirmations.get(`${row['section_id']}/${finding.indicatorId}/${finding.measure}`);
       evidence.push({
         finding,
         sectionId: row['section_id'],
@@ -188,6 +222,7 @@ for (const cell of cells) {
         citation: citationUrl(row['source_url'], row['anchor']),
         amendsAnotherAct: amendsAnotherAct(row['text']),
         ...(kind ? { bindingness: kind } : {}),
+        ...(confirmed === undefined ? {} : { confirmed }),
       });
     }
   }
@@ -239,7 +274,42 @@ for (const cell of cells) {
     for (const h of d.held.slice(0, 5)) console.log(`    held: ${h.reason}`);
   }
   const was = (storedAnswer.get(cell.id) as { score: number | null } | undefined)?.score ?? null;
-  out.push({ economy: cell.economy_code, indicator: cell.indicator_id, was, now: d.score ?? null });
+  for (const [disposition, list] of [
+    ['held', d.held],
+    ['excluded', d.excluded],
+  ] as const) {
+    for (const h of list) {
+      dispositions.push({
+        economy: cell.economy_code,
+        indicator: cell.indicator_id,
+        disposition,
+        measure: h.evidence.finding.measure ?? '',
+        reason: h.reason,
+      });
+    }
+  }
+  for (const e of d.basis) {
+    dispositions.push({
+      economy: cell.economy_code,
+      indicator: cell.indicator_id,
+      disposition: 'basis',
+      measure: e.finding.measure ?? '',
+      reason: '',
+    });
+  }
+  const reasons = [...new Set([...d.held, ...d.excluded].map((h) => h.reason))];
+  out.push({
+    economy: cell.economy_code,
+    indicator: cell.indicator_id,
+    was,
+    now: d.score ?? null,
+    state: d.state,
+    decidingFact: d.decidingFact,
+    basis: d.basis.length,
+    held: d.held.length,
+    excluded: d.excluded.length,
+    heldReasons: reasons.slice(0, 6).join(' | '),
+  });
 }
 
 const moved = out.filter((r) => r.was !== r.now);
@@ -278,6 +348,36 @@ const replayed: CellResult[] = out.map((r) => {
     verdict: verdictFor(r.now, g?.theirs ?? null, findings),
   };
 });
+
+// --csv <path> writes the graded cells out, because a headline that did not move can still hide
+// forty that did, and the direction of each one is what a rule change is diagnosed from.
+const csvPath = arg('csv');
+if (csvPath) {
+  const cell = (v: unknown) => `"${String(v ?? '').replaceAll('"', "''")}"`;
+  const byKey = new Map(out.map((r) => [`${r.economy}/${r.indicator}`, r]));
+  const lines = [
+    'economy,indicator,pillar,ours,theirs,findings,instruments,verdict,state,basis,held,excluded,decidingFact,heldReasons',
+  ];
+  for (const r of replayed) {
+    const d = byKey.get(`${r.economy}/${r.indicator}`);
+    lines.push(
+      [
+        r.economy, r.indicator, r.pillar, r.ours ?? '', r.theirs ?? '', r.findings, r.instruments, r.verdict,
+        d?.state ?? '', d?.basis ?? '', d?.held ?? '', d?.excluded ?? '',
+        cell(d?.decidingFact), cell(d?.heldReasons),
+      ].join(','),
+    );
+  }
+  writeFileSync(csvPath, lines.join('\n') + '\n');
+  console.log(`  wrote ${replayed.length} graded cell(s) to ${csvPath}`);
+  const dlines = ['economy,indicator,disposition,measure,reason'];
+  for (const d of dispositions) {
+    dlines.push([d.economy, d.indicator, d.disposition, d.measure, cell(d.reason)].join(','));
+  }
+  const dPath = csvPath.replace(/\.csv$/, '-evidence.csv');
+  writeFileSync(dPath, dlines.join('\n') + '\n');
+  console.log(`  wrote ${dispositions.length} disposed finding(s) to ${dPath}`);
+}
 
 const t = tally(replayed);
 const g = t.cells - t.ungraded;

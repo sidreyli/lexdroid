@@ -41,6 +41,15 @@ export interface Evidence {
    * the behaviour every earlier run had.
    */
   bindingness?: 'binding' | 'binding-on-licensees' | 'advisory';
+  /**
+   * Whether the reader, asked about this one measure and nothing else, found it in the provision.
+   *
+   * The first reading chooses a label from a pillar's twelve, and asked that way it always chooses
+   * one. This is the same provision put to the reader again with one measure in front of it and
+   * "the words are not there" as the ordinary answer. Absent where the pass has not been run,
+   * which is every reading taken before it existed.
+   */
+  confirmed?: boolean;
 }
 
 /** What a framework-shaped indicator is decided from. One per candidate instrument. */
@@ -1180,6 +1189,17 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
       });
       continue;
     }
+    // Asked about this measure alone, with nothing to be nearest to, the reader did not find it in
+    // the provision. Ruled out rather than held: the provision was read, twice, and does not carry
+    // the measure. Absent confirmation is not a refusal, so a reading taken before the pass existed
+    // stands exactly as it did.
+    if (e.confirmed === false) {
+      ruledOut.push({
+        evidence: e,
+        reason: `asked about ${e.finding.measure} alone, the reader found no words in the provision stating it`,
+      });
+      continue;
+    }
     // And the words it did copy have to say the thing. "An APP code" was copied as the words
     // making out a licence to sell online, and "keep a copy of any contracts" as the words making
     // out a licence to provide online content: real words, from real provisions, saying no licence.
@@ -1212,19 +1232,19 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
       });
       continue;
     }
-    // And a subject answered with the words that impose the duty, or with the party bound. Those
-    // say what the provision does and to whom; neither says what it is about, and a provision
-    // whose subject can only be given in those words has not shown one.
+    // Who is bound says nothing about what a provision is about. The words that impose the duty
+    // were refused here too and that was wrong: sixty of the eighty measures define themselves by
+    // naming their own subject, so the honest answer to both questions is one set of words. The
+    // domain test below is what that reached for, and it names the words when they belong elsewhere.
     if (
       subject &&
       e.finding.subjectWords !== null &&
       e.finding.subjectWords !== undefined &&
-      (restates(e.finding.subjectWords, e.finding.definingWords) ||
-        restates(e.finding.subjectWords, e.finding.dutyBearer))
+      restates(e.finding.subjectWords, e.finding.dutyBearer)
     ) {
       ruledOut.push({
         evidence: e,
-        reason: `the words said to name ${subject} are the words that impose the duty or name the party bound`,
+        reason: `the words said to name ${subject} are the words naming the party bound`,
       });
       continue;
     }
@@ -1255,6 +1275,19 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
       held.push({
         evidence: e,
         reason: 'the provision states no proportion, and every band of this indicator is a proportion',
+      });
+      continue;
+    }
+    // And the other half of the same band: the proportion is what a FOREIGN person may hold. Four
+    // fifths of the evidence filed under these measures names no nationality at all -- a bank's 2%
+    // limit on equity investments, a fund's 20% concentration cap, "no individual shall hold more
+    // than ten per cent" -- which are limits on everyone, and a limit on everyone is not one on
+    // foreigners. Either side of the line will do, because the restriction is written both ways:
+    // a ceiling on foreign holding, or a floor on the share that must stay in local hands.
+    if (proportional(indicatorId, e.finding.measure) && !namesNationality(e.finding)) {
+      ruledOut.push({
+        evidence: e,
+        reason: 'the provision limits what anyone may hold, and every band of this indicator is a limit on foreign holding',
       });
       continue;
     }
@@ -1563,6 +1596,20 @@ function inDomain(indicatorId: string, measure: string | null): RegExp | null {
   return off ? null : declared;
 }
 
+/**
+ * Does this finding restrict holders by nationality or residence, either way round?
+ *
+ * Ruled out rather than held: a provision that caps every shareholder alike was read and does not
+ * carry a foreign equity limit, which is a finding about it. Read across every word the reader
+ * copied out, because the nationality can sit in the party bound, the limit, or the sector.
+ */
+const NATIONALITY =
+  /\b(foreign(er|ers|ly)?|non-?residents?|non-?citizens?|non-?nationals?|overseas|aliens?|citizens?|nationals?|nationality|residents?|residency|domestic|local(ly)?|indigenous|bumiputera|malaysian|singaporean|australian|incorporated in)\b/i;
+
+function namesNationality(f: Finding): boolean {
+  return [f.dutyBearer, f.definingWords, f.subjectWords, f.quote].some((w) => w && NATIONALITY.test(w));
+}
+
 /** Is every band of this indicator a proportion, so a provision stating none cannot be placed? */
 function proportional(indicatorId: string, measure: string | null): boolean {
   if (!measure) return false;
@@ -1847,10 +1894,17 @@ export function decide(input: DecideInput): Decision {
   // saw and could not evaluate is not a provision that is absent -- a customs threshold stated in
   // money this run had no rate for is still a threshold, and reporting "no de minimis" off it
   // would be the strongest claim in the rubric made on the weakest evidence.
-  const unevaluated = held.filter((h) =>
-    (MEASURES[indicator.id] ?? []).some((m) => m.token === h.evidence.finding.measure),
-  );
-  if (scoresOnAbsence(indicator, rule, chosen.ordinal) && (witness?.basis !== 'governing' || unevaluated.length > 0)) {
+  const ownMeasure = (e: Evidence) => (MEASURES[indicator.id] ?? []).some((m) => m.token === e.finding.measure);
+  const unevaluated = held.filter((h) => ownMeasure(h.evidence));
+  // The third is that the silence is the reader's and not our own. Asked about one measure alone
+  // the reader answers, and a no is a ruling this band may count. A provision one of our own tests
+  // turned away before that question was reached was never ruled on, and counting it as absent
+  // makes the strongest claim in the rubric out of our failure to place it.
+  const unasked = excluded.filter((x) => ownMeasure(x.evidence) && x.evidence.confirmed !== false);
+  if (
+    scoresOnAbsence(indicator, rule, chosen.ordinal) &&
+    (witness?.basis !== 'governing' || unevaluated.length > 0 || unasked.length > 0)
+  ) {
     const ungoverned = witness?.basis !== 'governing';
     return {
       indicatorId: indicator.id,
@@ -1866,15 +1920,22 @@ export function decide(input: DecideInput): Decision {
       coverage,
       decidingFact: ungoverned
         ? 'nothing read governs the subject whose absence this band asserts'
-        : 'a provision of this kind was read and could not be evaluated, so its absence is not established',
+        : unevaluated.length > 0
+          ? 'a provision of this kind was read and could not be evaluated, so its absence is not established'
+          : 'a provision of this kind was set aside before the reader was asked about it, so its absence is not established',
       rationale: ungoverned
         ? `This indicator scores ${band(indicator, chosen.ordinal).score} for the absence of something, and ` +
           `nothing among the ${coverage.sectionsRead} provision(s) read establishes an instrument that governs ` +
           `the subject. An economy without the measure and an economy nobody looked at produce the same silence, ` +
           `and only one of them is a finding.`
-        : `This indicator scores ${band(indicator, chosen.ordinal).score} for the absence of something, and ` +
-          `${unevaluated.length} provision(s) of exactly that kind were read and held: ` +
-          `${unevaluated[0]?.reason}. Something we could not evaluate is not something that is not there.`,
+        : unevaluated.length > 0
+          ? `This indicator scores ${band(indicator, chosen.ordinal).score} for the absence of something, and ` +
+            `${unevaluated.length} provision(s) of exactly that kind were read and held: ` +
+            `${unevaluated[0]?.reason}. Something we could not evaluate is not something that is not there.`
+          : `This indicator scores ${band(indicator, chosen.ordinal).score} for the absence of something, and ` +
+            `${unasked.length} provision(s) of exactly that kind were set aside before the reader was asked ` +
+            `whether the provision states the measure: ${unasked[0]?.reason}. A provision our own test turned ` +
+            `away was not found wanting by anyone who read it.`,
     };
   }
 

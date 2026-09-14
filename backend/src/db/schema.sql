@@ -573,3 +573,28 @@ CREATE TABLE IF NOT EXISTS review_action (
   reviewer        TEXT,
   acted_at        TEXT NOT NULL
 );
+
+-- Whether one provision states one measure, asked on its own.
+--
+-- Keyed by the question and not by the cell or the run: "does section 24 of the Payment Services
+-- Act state a licence to sell online" has one answer, and a second cell asking it should read the
+-- answer rather than pay for it again. That is also what makes the pass affordable to measure --
+-- it re-asks about provisions already read, with no fetching, parsing, indexing or searching.
+CREATE TABLE IF NOT EXISTS measure_confirmation (
+  id              INTEGER PRIMARY KEY,
+  section_id      INTEGER NOT NULL REFERENCES section(id) ON DELETE CASCADE,
+  indicator_id    TEXT NOT NULL,
+  measure         TEXT NOT NULL,
+  -- The provision's own words stating the measure, or NULL where it states none. NULL is the
+  -- ruling: read, and does not carry the measure.
+  words           TEXT,
+  -- Why it was not asked, when it was not. A provision nobody read is not one found wanting.
+  failure         TEXT,
+  model           TEXT NOT NULL,
+  prompt_tokens   INTEGER,
+  output_tokens   INTEGER,
+  latency_ms      INTEGER,
+  asked_at        TEXT NOT NULL,
+  UNIQUE (section_id, indicator_id, measure)
+);
+CREATE INDEX IF NOT EXISTS idx_confirmation_measure ON measure_confirmation(indicator_id, measure);

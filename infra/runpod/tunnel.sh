@@ -17,9 +17,20 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
+# A dropped link is a flake, not a dead pod, but the engine pool cannot tell the two apart and
+# retires the host for the rest of the run. So the tunnel comes back by itself.
+carry() {
+  local port="$1"; shift
+  while :; do
+    ssh -N -o ExitOnForwardFailure=yes -o ServerAliveInterval=20 -o ServerAliveCountMax=3 \
+        -o ConnectTimeout=15 -L "${port}:127.0.0.1:11434" $@ || true
+    echo "  ${port} dropped; reconnecting"
+    sleep 3
+  done
+}
+
 for pod in "$@"; do
-  # -N: no remote command, this process exists only to carry the port.
-  ssh -N -o ExitOnForwardFailure=yes -L "${PORT}:127.0.0.1:11434" $pod &
+  carry "$PORT" $pod &
   PIDS="$PIDS $!"
   HOSTS="${HOSTS:+$HOSTS,}http://127.0.0.1:${PORT}"
   echo "  ${PORT} -> ${pod}"

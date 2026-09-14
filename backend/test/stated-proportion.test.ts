@@ -127,4 +127,28 @@ describe('a band that is a proportion', () => {
     });
     expect(d.score).not.toBe(1);
   });
+  // The other half of the same band: the proportion is what a foreign person may hold. Malaysia's
+  // telecom equity cell was decided by the Financial Services Act, which caps every shareholder.
+  it('rules out a limit that binds every holder alike, whatever proportion it states', () => {
+    const d = at('5.2', {
+      measure: 'telecom-equity-controlling',
+      dutyBearer: 'no person',
+      definingWords: 'more than fifty per cent',
+      subjectWords: 'a licensed person',
+      quote: 'no person shall acquire any interest in shares of a licensed person by which he would hold more than fifty per cent',
+    });
+    expect(d.score).toBe(0);
+    expect(d.excluded.some((e) => e.reason.includes('limits what anyone may hold'))).toBe(true);
+  });
+
+  it('keeps a limit stated as a floor on the share that must stay in local hands', () => {
+    const d = at('3.1', {
+      measure: 'foreign-equity-minority',
+      dutyBearer: 'the licensee',
+      definingWords: 'at least 51% of the shares are held by Malaysian citizens',
+      subjectWords: 'a data centre operator',
+      quote: 'the licensee must ensure at least 51% of the shares are held by Malaysian citizens',
+    });
+    expect(d.excluded.some((e) => e.reason.includes('limits what anyone may hold'))).toBe(false);
+  });
 });
