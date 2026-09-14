@@ -30,7 +30,8 @@
     "audit-bands": "tsx scripts/audit-bands.ts",
     "basis": "tsx scripts/basis.ts",
     "shortlist-recall": "tsx scripts/shortlist-recall.ts",
-    "replay": "tsx scripts/replay.ts"
+    "replay": "tsx scripts/replay.ts",
+    "repair-economy": "tsx scripts/repair-economy.ts"
   },
   "dependencies": {
     "@tesseract.js-data/eng": "^1.0.0",

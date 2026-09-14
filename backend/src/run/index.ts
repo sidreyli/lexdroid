@@ -293,6 +293,24 @@ export function recordPillarAnswer(run: RunContext, answer: PillarAnswer): void 
         rationale, computed_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
   );
+  const cellIdentity = db.prepare('SELECT run_id, economy_code, indicator_id FROM cell WHERE id = ?');
+
+  // Whether a provision belongs to this economy at all. A unit writes only its own corpus, so a
+  // section from elsewhere is not a finding about this cell but another unit's row landing on it.
+  const economyOf = db.prepare(
+    `SELECT i.economy_code AS economy FROM section s
+       JOIN document d ON d.id = s.document_id JOIN instrument i ON i.id = d.instrument_id
+      WHERE s.id = ?`,
+  );
+  const owned = new Map<number, boolean>();
+  const ownsSection = (sectionId: number): boolean => {
+    let own = owned.get(sectionId);
+    if (own === undefined) {
+      own = (economyOf.get(sectionId) as { economy: string } | undefined)?.economy === answer.economy;
+      owned.set(sectionId, own);
+    }
+    return own;
+  };
 
   const sectionMeta = sectionOffsets(
     db,
@@ -323,9 +341,28 @@ export function recordPillarAnswer(run: RunContext, answer: PillarAnswer): void 
         ).lastInsertRowid,
       );
 
+      // That the row we are about to hang a cell's whole record on is the row we just made.
+      // Units run concurrently against one database, and in the twelve-pillar run one unit's
+      // readings landed on another's cell: 5,446 provisions of the wrong economy, scored.
+      const identity = cellIdentity.get(cellId) as
+        | { run_id: string; economy_code: string; indicator_id: string }
+        | undefined;
+      if (
+        !identity ||
+        identity.run_id !== run.id ||
+        identity.economy_code !== answer.economy ||
+        identity.indicator_id !== decision.indicatorId
+      ) {
+        throw new Error(
+          `cell ${cellId} is not the cell just created for ${answer.economy} ${decision.indicatorId}; ` +
+            'refusing to write another unit\'s record',
+        );
+      }
+
       // What this cell asked for, and what each question returned. The shortlist is the cell's own
       // retrieval; the readings below cover the pillar's whole union, which is larger by design.
       for (const s of record?.sections ?? []) {
+        if (!ownsSection(s.sectionId)) continue;
         for (const f of s.found) {
           insertShortlist.run(cellId, s.sectionId, f.channel, f.query, f.rank, f.score, now);
         }
@@ -334,6 +371,16 @@ export function recordPillarAnswer(run: RunContext, answer: PillarAnswer): void 
       // Every provision read against this cell, including -- especially -- the ones that said
       // nothing. A cell scoring zero is evidenced by these rows and by nothing else.
       for (const reading of answer.readings) {
+        // A provision of another economy is not evidence about this one, whatever it says.
+        if (!ownsSection(reading.sectionId)) {
+          recordDiscard(run, {
+            stage: 'read',
+            subject: `${decision.indicatorId} :: section ${reading.sectionId}`,
+            reason: `the provision is not in ${answer.economy}'s corpus`,
+
+          });
+          continue;
+        }
         // Filed the way the decision filed it, not the way the reader did. These rows are what a
         // later verification re-derives the score from, and a finding the rubric moved between two
         // indicators used to be written under the one the reader named -- so the cell that acted
@@ -391,6 +438,7 @@ export function recordPillarAnswer(run: RunContext, answer: PillarAnswer): void 
       // else, so a finding Zone 3 set aside cannot reappear as a measure in the deliverable.
       let ordinal = 0;
       for (const e of decision.basis) {
+        if (!ownsSection(e.sectionId)) continue;
         insertBasis.run(cellId, (ordinal += 1), e.instrumentId, e.sectionId, e.finding.measure);
       }
       // A framework is one measure however many instruments carry it, so the leading instrument is
@@ -469,7 +517,9 @@ export function recordPillarAnswer(run: RunContext, answer: PillarAnswer): void 
     }
 
     addCost(db, run, answer);
-  })();
+    // Immediate, not deferred: a deferred transaction reads first and asks for the write lock
+    // later, so two units can interleave between a cell being made and its record being written.
+  }).immediate();
 }
 
 /**
