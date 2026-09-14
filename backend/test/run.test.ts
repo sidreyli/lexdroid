@@ -182,6 +182,7 @@ function answer(): PillarAnswer {
     retrieval: [retrieval('7.3'), retrieval('7.5')],
     readings,
     frameworkReadings: [],
+    frameworkExamined: {},
     rejectedFindings: 1,
     rejectedQuotes: 1,
     model: 'gemma4-lex-16k',

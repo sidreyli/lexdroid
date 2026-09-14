@@ -61,6 +61,8 @@ const ADDED_COLUMNS: readonly { table: string; column: string; type: string }[] 
   { table: 'cell', column: 'sections_indexed', type: 'INTEGER' },
   { table: 'cell', column: 'sections_read', type: 'INTEGER' },
   { table: 'cell', column: 'governing', type: 'TEXT' },
+  { table: 'cell', column: 'surfaced_instruments', type: 'TEXT' },
+  { table: 'cell_answer', column: 'absence_basis', type: 'TEXT' },
   { table: 'reading', column: 'engine_call', type: 'TEXT' },
   { table: 'cell_answer', column: 'rationale', type: 'TEXT' },
   { table: 'export_row', column: 'quote_char_start', type: 'INTEGER' },

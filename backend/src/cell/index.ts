@@ -81,6 +81,11 @@ export interface PillarAnswer {
   retrieval: RetrievalRecord[];
   readings: SectionReading[];
   frameworkReadings: FrameworkReading[];
+  /**
+   * Every instrument examined as a possible framework, by indicator.
+   * A cell that establishes none still examined them, and the record has to say which.
+   */
+  frameworkExamined: Record<string, FrameworkEvidence[]>;
   /** Findings the engine returned that the check refused. A measurement, not noise. */
   rejectedFindings: number;
   /** Of those, the ones refused because the words were not in the provision. */
@@ -410,6 +415,7 @@ export async function answerPillar(
     retrieval,
     readings,
     frameworkReadings,
+    frameworkExamined: Object.fromEntries(frameworkByIndicator),
     rejectedFindings: readings.reduce((n, r) => n + r.rejected.length, 0),
     rejectedQuotes: readings.reduce(
       (n, r) => n + r.rejected.filter((x) => x.reason.includes('not in the provision')).length,

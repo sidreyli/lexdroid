@@ -382,6 +382,9 @@ CREATE TABLE IF NOT EXISTS cell (
   -- The instruments the register named as governing this question, best first. The decision is
   -- ordered by it, so it is recorded with the cell rather than re-derived from a later register.
   governing       TEXT,                       -- JSON array of instrument ids
+  -- The instruments this cell's own search surfaced, best rank first. A zero is cited against
+  -- these, and a count alone cannot say which Act was read -- so the run could not reproduce it.
+  surfaced_instruments TEXT,                  -- JSON [{instrumentId, instrumentTitle, rank, currentTo}]
   UNIQUE (run_id, economy_code, indicator_id)
 );
 
@@ -473,6 +476,9 @@ CREATE TABLE IF NOT EXISTS cell_answer (
   -- Why this band and not the one above: the attribute that decided it.
   deciding_fact   TEXT,
   controlling_instrument_id INTEGER REFERENCES instrument(id),
+  -- Whether that instrument was read to govern the subject or merely surfaced by the search.
+  -- Fourteen indicators score their maximum for an absence, and only the first sustains one.
+  absence_basis   TEXT CHECK (absence_basis IN ('governing', 'surfaced')),
   -- The sentence a reviewer reads, assembled from the band's own words and the evidence.
   -- Stored because it is what the export quotes; never written by a model.
   rationale       TEXT,

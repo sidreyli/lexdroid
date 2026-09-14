@@ -101,6 +101,7 @@ function answer(): PillarAnswer {
     model: 'gemma4-lex-16k',
     readings: [reading(20), reading(10)],
     frameworkReadings: [],
+    frameworkExamined: {},
     retrieval: [retrieval('12.3', 'AUS')],
     decisions: [decision('12.3', 'AUS')],
     rejectedFindings: 0,

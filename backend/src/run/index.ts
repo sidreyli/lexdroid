@@ -24,6 +24,7 @@ import type { PillarAnswer } from '../cell/index.js';
 import { refile, type Decision, type Evidence } from '../decide/index.js';
 import type { FxRates } from '../decide/currency.js';
 import { locateQuote } from '../util/locate.js';
+import type { RetrievalRecord } from '../retrieve/index.js';
 import type { RunEvent } from './events.js';
 
 /** The name a run answers to. Local engines cost nothing, and that is recorded rather than assumed. */
@@ -263,8 +264,9 @@ export function recordPillarAnswer(run: RunContext, answer: PillarAnswer): void 
 
   const insertCell = db.prepare(
     `INSERT INTO cell (run_id, economy_code, indicator_id, state, unresolved_reason, answered_at,
-                       queries, depth, surfaced, sections_indexed, sections_read, governing)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                       queries, depth, surfaced, sections_indexed, sections_read, governing,
+                       surfaced_instruments)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   );
   const insertShortlist = db.prepare(
     `INSERT OR IGNORE INTO shortlist_entry (cell_id, section_id, channel, query, rank, score, read_at)
@@ -290,10 +292,33 @@ export function recordPillarAnswer(run: RunContext, answer: PillarAnswer): void 
   const insertAnswer = db.prepare(
     `INSERT OR REPLACE INTO cell_answer
        (cell_id, score, band_ordinal, band_criterion, deciding_fact, controlling_instrument_id,
-        rationale, computed_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        absence_basis, rationale, computed_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   );
   const cellIdentity = db.prepare('SELECT run_id, economy_code, indicator_id FROM cell WHERE id = ?');
+  const currentTo = new Map(
+    (
+      db.prepare('SELECT id, last_amended_on FROM instrument WHERE economy_code = ?').all(answer.economy) as {
+        id: number;
+        last_amended_on: string | null;
+      }[]
+    ).map((r) => [r.id, r.last_amended_on]),
+  );
+
+  /** One entry per instrument the cell's search returned, best rank first, as the decision saw it. */
+  const surfacedOf = (record: RetrievalRecord | undefined) => {
+    const out: { instrumentId: number; instrumentTitle: string; rank: number; currentTo: string | null }[] = [];
+    for (const s of record?.sections ?? []) {
+      if (out.some((x) => x.instrumentId === s.instrumentId)) continue;
+      out.push({
+        instrumentId: s.instrumentId,
+        instrumentTitle: s.instrumentTitle,
+        rank: s.rank,
+        currentTo: currentTo.get(s.instrumentId) ?? null,
+      });
+    }
+    return out;
+  };
 
   // Whether a provision belongs to this economy at all. A unit writes only its own corpus, so a
   // section from elsewhere is not a finding about this cell but another unit's row landing on it.
@@ -338,6 +363,10 @@ export function recordPillarAnswer(run: RunContext, answer: PillarAnswer): void 
           // The register's verdict on which instruments govern the question. Recorded because the
           // score is derived from it, and a score that cannot be re-derived is not computed.
           JSON.stringify((record?.governing ?? []).map((g) => g.instrumentId)),
+          // The instruments this cell's search surfaced, best first. A zero is cited against one
+          // of these, and a count cannot say which -- so a zero could not be reproduced from the
+          // record that was meant to evidence it.
+          JSON.stringify(surfacedOf(record)),
         ).lastInsertRowid,
       );
 
@@ -409,7 +438,14 @@ export function recordPillarAnswer(run: RunContext, answer: PillarAnswer): void 
         );
       }
 
-      for (const f of decision.frameworkBasis) {
+      // Every instrument examined for a framework, not only the ones that became a basis. A cell
+      // saying "none of the 5 instruments examined establishes such a framework" held no rows at
+      // all for those five, so the strongest claim in the rubric had no record behind it.
+      const examined =
+        decision.frameworkBasis.length > 0
+          ? decision.frameworkBasis
+          : (answer.frameworkExamined[decision.indicatorId] ?? []);
+      for (const f of examined) {
         const reading = frameworkByInstrument.get(f.instrumentId);
         insertFrameworkReading.run(
           cellId,
@@ -454,6 +490,9 @@ export function recordPillarAnswer(run: RunContext, answer: PillarAnswer): void 
         decision.band?.criterion ?? null,
         decision.decidingFact,
         controllingInstrument(decision),
+        // Whether the zero stands on an instrument read to govern the subject or one the search
+        // merely returned. Only the first sustains a band that scores for an absence.
+        decision.absence?.basis ?? null,
         decision.rationale,
         now,
       );
