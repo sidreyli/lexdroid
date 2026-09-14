@@ -101,19 +101,30 @@ describe('a provision that does the right thing to the wrong subject', () => {
     expect(d.excluded[0]?.reason).toContain(SUBJECTS['12.4.1']);
   });
 
-  it('holds a subject answered with the words that impose the duty', () => {
+  // The subject answered with the measure's own words is not refused for being those words --
+  // sixty of the eighty measures define themselves by naming their subject. It is refused when
+  // the words name nothing in this indicator's world, which is what the domain test asks.
+  it('holds a subject whose words belong to another world, however they were arrived at', () => {
     const d = at('12.3', {
       definingWords: 'a licence, an approval or a certificate of authorization',
       subjectWords: 'a licence, an approval or a certificate',
     });
     expect(d.score).toBe(0);
-    expect(d.excluded[0]?.reason).toContain('impose the duty or name the party bound');
+    expect(d.excluded[0]?.reason).toContain('is not the online selling');
+  });
+
+  it('lets through a subject given in the measure own words, where it is in the domain', () => {
+    const d = at('12.3', {
+      definingWords: 'a licence to sell goods online',
+      subjectWords: 'a licence to sell goods online',
+    });
+    expect(d.score).toBe(1);
   });
 
   it('holds a subject answered with the party bound', () => {
     const d = at('12.3', { dutyBearer: 'the Board', subjectWords: 'the Board' });
     expect(d.score).toBe(0);
-    expect(d.excluded[0]?.reason).toContain('impose the duty or name the party bound');
+    expect(d.excluded[0]?.reason).toContain('naming the party bound');
   });
 
   it('leaves pillars 6 and 7 alone, where the subject is already asked three other ways', () => {

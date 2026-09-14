@@ -1232,19 +1232,19 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
       });
       continue;
     }
-    // And a subject answered with the words that impose the duty, or with the party bound. Those
-    // say what the provision does and to whom; neither says what it is about, and a provision
-    // whose subject can only be given in those words has not shown one.
+    // Who is bound says nothing about what a provision is about. The words that impose the duty
+    // were refused here too and that was wrong: sixty of the eighty measures define themselves by
+    // naming their own subject, so the honest answer to both questions is one set of words. The
+    // domain test below is what that reached for, and it names the words when they belong elsewhere.
     if (
       subject &&
       e.finding.subjectWords !== null &&
       e.finding.subjectWords !== undefined &&
-      (restates(e.finding.subjectWords, e.finding.definingWords) ||
-        restates(e.finding.subjectWords, e.finding.dutyBearer))
+      restates(e.finding.subjectWords, e.finding.dutyBearer)
     ) {
       ruledOut.push({
         evidence: e,
-        reason: `the words said to name ${subject} are the words that impose the duty or name the party bound`,
+        reason: `the words said to name ${subject} are the words naming the party bound`,
       });
       continue;
     }

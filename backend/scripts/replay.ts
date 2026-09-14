@@ -7,6 +7,7 @@
  * function of them, so a rule change can be graded in seconds instead of a six-hour fleet.
  * Nothing is written: this reads the run and prints, so the graded run stays the record of itself.
  */
+import { writeFileSync } from 'node:fs';
 import { openDb } from '../src/db/index.js';
 import {
   decide,
@@ -159,8 +160,20 @@ function bindingnessFor(economy: string) {
   return m;
 }
 
-type Replayed = { economy: string; indicator: string; was: number | null; now: number | null };
+type Replayed = {
+  economy: string;
+  indicator: string;
+  was: number | null;
+  now: number | null;
+  state: string;
+  decidingFact: string;
+  basis: number;
+  held: number;
+  excluded: number;
+  heldReasons: string;
+};
 const out: Replayed[] = [];
+const dispositions: { economy: string; indicator: string; disposition: string; measure: string; reason: string }[] = [];
 
 for (const cell of cells) {
   const indicator = indicators.get(cell.indicator_id);
@@ -261,7 +274,42 @@ for (const cell of cells) {
     for (const h of d.held.slice(0, 5)) console.log(`    held: ${h.reason}`);
   }
   const was = (storedAnswer.get(cell.id) as { score: number | null } | undefined)?.score ?? null;
-  out.push({ economy: cell.economy_code, indicator: cell.indicator_id, was, now: d.score ?? null });
+  for (const [disposition, list] of [
+    ['held', d.held],
+    ['excluded', d.excluded],
+  ] as const) {
+    for (const h of list) {
+      dispositions.push({
+        economy: cell.economy_code,
+        indicator: cell.indicator_id,
+        disposition,
+        measure: h.evidence.finding.measure ?? '',
+        reason: h.reason,
+      });
+    }
+  }
+  for (const e of d.basis) {
+    dispositions.push({
+      economy: cell.economy_code,
+      indicator: cell.indicator_id,
+      disposition: 'basis',
+      measure: e.finding.measure ?? '',
+      reason: '',
+    });
+  }
+  const reasons = [...new Set([...d.held, ...d.excluded].map((h) => h.reason))];
+  out.push({
+    economy: cell.economy_code,
+    indicator: cell.indicator_id,
+    was,
+    now: d.score ?? null,
+    state: d.state,
+    decidingFact: d.decidingFact,
+    basis: d.basis.length,
+    held: d.held.length,
+    excluded: d.excluded.length,
+    heldReasons: reasons.slice(0, 6).join(' | '),
+  });
 }
 
 const moved = out.filter((r) => r.was !== r.now);
@@ -300,6 +348,36 @@ const replayed: CellResult[] = out.map((r) => {
     verdict: verdictFor(r.now, g?.theirs ?? null, findings),
   };
 });
+
+// --csv <path> writes the graded cells out, because a headline that did not move can still hide
+// forty that did, and the direction of each one is what a rule change is diagnosed from.
+const csvPath = arg('csv');
+if (csvPath) {
+  const cell = (v: unknown) => `"${String(v ?? '').replaceAll('"', "''")}"`;
+  const byKey = new Map(out.map((r) => [`${r.economy}/${r.indicator}`, r]));
+  const lines = [
+    'economy,indicator,pillar,ours,theirs,findings,instruments,verdict,state,basis,held,excluded,decidingFact,heldReasons',
+  ];
+  for (const r of replayed) {
+    const d = byKey.get(`${r.economy}/${r.indicator}`);
+    lines.push(
+      [
+        r.economy, r.indicator, r.pillar, r.ours ?? '', r.theirs ?? '', r.findings, r.instruments, r.verdict,
+        d?.state ?? '', d?.basis ?? '', d?.held ?? '', d?.excluded ?? '',
+        cell(d?.decidingFact), cell(d?.heldReasons),
+      ].join(','),
+    );
+  }
+  writeFileSync(csvPath, lines.join('\n') + '\n');
+  console.log(`  wrote ${replayed.length} graded cell(s) to ${csvPath}`);
+  const dlines = ['economy,indicator,disposition,measure,reason'];
+  for (const d of dispositions) {
+    dlines.push([d.economy, d.indicator, d.disposition, d.measure, cell(d.reason)].join(','));
+  }
+  const dPath = csvPath.replace(/\.csv$/, '-evidence.csv');
+  writeFileSync(dPath, dlines.join('\n') + '\n');
+  console.log(`  wrote ${dispositions.length} disposed finding(s) to ${dPath}`);
+}
 
 const t = tally(replayed);
 const g = t.cells - t.ungraded;
