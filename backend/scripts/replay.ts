@@ -274,19 +274,19 @@ console.log(`    over-claim   ${String(t['over-claim']).padStart(4)}`);
 console.log(`    recall-miss  ${String(t['recall-miss']).padStart(4)}`);
 console.log(`    abstained    ${String(t.abstained).padStart(4)}`);
 
-// What the gate actually did: a gate that wins overall can still be losing cells it should keep.
-if (gateName !== 'none') {
+// What the change actually did: a change that wins overall can still be losing cells it should keep.
+{
   const before = new Map([...graded].map(([k, c]) => [k, c.verdict]));
-  const moves = new Map<string, number>();
+  const moves = new Map<string, string[]>();
   for (const r of replayed) {
     const was = before.get(`${r.economy}/${r.indicator}`);
     if (!was || was === r.verdict) continue;
     const key = `${was} -> ${r.verdict}`;
-    moves.set(key, (moves.get(key) ?? 0) + 1);
+    moves.set(key, [...(moves.get(key) ?? []), `${r.economy} ${r.indicator}`]);
   }
   console.log(`\n  what the gate moved, against the ungated run`);
-  for (const [k, n] of [...moves].sort((a, b) => b[1] - a[1])) {
-    console.log(`    ${String(n).padStart(4)}  ${k}`);
+  for (const [k, cs] of [...moves].sort((a, b) => b[1].length - a[1].length)) {
+    console.log(`    ${String(cs.length).padStart(4)}  ${k.padEnd(26)} ${cs.join(', ')}`);
   }
 }
 console.log('');
