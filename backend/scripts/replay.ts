@@ -72,26 +72,43 @@ type CellRow = {
   economy_code: string;
   indicator_id: string;
   governing: string | null;
+  surfaced_instruments: string | null;
   sections_read: number | null;
   sections_indexed: number | null;
 };
 
 const cells = db
   .prepare(
-    `SELECT id, economy_code, indicator_id, governing, sections_read, sections_indexed
+    `SELECT id, economy_code, indicator_id, governing, surfaced_instruments, sections_read, sections_indexed
      FROM cell WHERE run_id = ? ORDER BY economy_code, indicator_id`,
   )
   .all(runId) as CellRow[];
 
+const pillarOfIndicator = (id: string) => id.split('.')[0] ?? '';
+const siblings = new Map<string, string[]>();
+for (const c of cells) {
+  const key = `${c.economy_code}/${pillarOfIndicator(c.indicator_id)}`;
+  siblings.set(key, [...(siblings.get(key) ?? []), c.indicator_id]);
+}
+
+/**
+ * Every reading of the pillar this cell belongs to, not only this cell's own.
+ *
+ * Reading is pillar-scoped and the decision is handed the pillar's whole evidence, so an
+ * indicator with no findings of its own still has a witness that its subject was governed. The
+ * record files each finding under the indicator that acted on it, which is right for the row and
+ * wrong for the replay: taking one cell's rows back would leave three zeros unreproducible.
+ */
 const readingsFor = db.prepare(
-  `SELECT r.section_id, r.attributes, s.heading_path, s.text, s.anchor,
+  `SELECT r.cell_id, r.section_id, r.attributes, s.heading_path, s.text, s.anchor,
           d.instrument_id, i.title AS instrument_title, i.kind AS instrument_kind,
           i.source_url, i.last_amended_on
    FROM reading r
+   JOIN cell c ON c.id = r.cell_id
    JOIN section s ON s.id = r.section_id
    JOIN document d ON d.id = s.document_id
    JOIN instrument i ON i.id = d.instrument_id
-   WHERE r.cell_id = ?
+   WHERE c.run_id = ? AND c.economy_code = ? AND c.indicator_id IN (SELECT value FROM json_each(?))
    ORDER BY r.applies DESC, r.id`,
 );
 
@@ -105,8 +122,9 @@ const frameworkFor = db.prepare(
 // A cell that read forty Acts and found nothing has searched; one that read none has not.
 const consideredFor = db.prepare(
   `SELECT COUNT(DISTINCT d.instrument_id) AS n
-   FROM reading r JOIN section s ON s.id = r.section_id JOIN document d ON d.id = s.document_id
-   WHERE r.cell_id = ?`,
+   FROM reading r JOIN cell c ON c.id = r.cell_id
+   JOIN section s ON s.id = r.section_id JOIN document d ON d.id = s.document_id
+   WHERE c.run_id = ? AND c.economy_code = ? AND c.indicator_id IN (SELECT value FROM json_each(?))`,
 );
 
 const storedAnswer = db.prepare('SELECT score FROM cell_answer WHERE cell_id = ?');
@@ -130,10 +148,18 @@ for (const cell of cells) {
   const binding = bindingnessFor(cell.economy_code);
 
   const evidence: Evidence[] = [];
-  const surfaced: SurfacedInstrument[] = [];
+  // The cell's own search, where the run recorded it. Older runs kept only its size, and a zero
+  // cited against a count cannot be reproduced -- so those fall back to everything read.
+  const surfaced: SurfacedInstrument[] = cell.surfaced_instruments
+    ? (JSON.parse(cell.surfaced_instruments) as SurfacedInstrument[])
+    : [];
+  const recorded = surfaced.length > 0;
 
-  for (const row of readingsFor.all(cell.id) as Record<string, any>[]) {
-    if (!surfaced.some((s) => s.instrumentId === row['instrument_id'])) {
+  const pillarIndicators = siblings.get(`${cell.economy_code}/${pillarOfIndicator(cell.indicator_id)}`) ?? [];
+  const rows = readingsFor.all(runId, cell.economy_code, JSON.stringify(pillarIndicators)) as Record<string, any>[];
+
+  for (const row of rows) {
+    if (!recorded && !surfaced.some((s) => s.instrumentId === row['instrument_id'])) {
       surfaced.push({
         instrumentId: row['instrument_id'],
         instrumentTitle: row['instrument_title'],
@@ -185,7 +211,7 @@ for (const cell of cells) {
     sectionsIndexed: cell.sections_indexed ?? 0,
     instrumentsConsidered: isFramework
       ? frameworkEvidence.length
-      : ((consideredFor.get(cell.id) as { n: number }).n ?? 0),
+      : ((consideredFor.get(runId, cell.economy_code, JSON.stringify(pillarIndicators)) as { n: number }).n ?? 0),
   };
 
   const governing: number[] = cell.governing ? JSON.parse(cell.governing) : [];
