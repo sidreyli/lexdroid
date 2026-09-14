@@ -85,7 +85,7 @@ describe('a provision that does the right thing to the wrong subject', () => {
       subjectWords: null,
     });
     expect(d.score).toBe(0);
-    expect(d.held[0]?.reason).toContain(SUBJECTS['12.3']);
+    expect(d.excluded[0]?.reason).toContain(SUBJECTS['12.3']);
   });
 
   it('holds a commission’s own bank account, which names no online payment', () => {
@@ -98,7 +98,7 @@ describe('a provision that does the right thing to the wrong subject', () => {
       subjectWords: null,
     });
     expect(d.score).toBe(0);
-    expect(d.held[0]?.reason).toContain(SUBJECTS['12.4.1']);
+    expect(d.excluded[0]?.reason).toContain(SUBJECTS['12.4.1']);
   });
 
   it('holds a subject answered with the words that impose the duty', () => {
@@ -107,13 +107,13 @@ describe('a provision that does the right thing to the wrong subject', () => {
       subjectWords: 'a licence, an approval or a certificate',
     });
     expect(d.score).toBe(0);
-    expect(d.held[0]?.reason).toContain('impose the duty or name the party bound');
+    expect(d.excluded[0]?.reason).toContain('impose the duty or name the party bound');
   });
 
   it('holds a subject answered with the party bound', () => {
     const d = at('12.3', { dutyBearer: 'the Board', subjectWords: 'the Board' });
     expect(d.score).toBe(0);
-    expect(d.held[0]?.reason).toContain('impose the duty or name the party bound');
+    expect(d.excluded[0]?.reason).toContain('impose the duty or name the party bound');
   });
 
   it('leaves pillars 6 and 7 alone, where the subject is already asked three other ways', () => {

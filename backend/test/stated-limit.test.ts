@@ -85,6 +85,6 @@ describe('a ceiling stated rather than commanded', () => {
       quote: 'a recipient outside Singapore is taken to be bound by legally enforceable obligations',
     });
     expect(d.score).toBe(0);
-    expect(d.held[0]?.reason).toContain('declares what is the case');
+    expect(d.excluded[0]?.reason).toContain('declares what is the case');
   });
 });

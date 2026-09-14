@@ -91,7 +91,7 @@ describe('a subject outside the indicator’s domain', () => {
     const d = score(licensing, [ev('12.3', 'ecommerce-licence', 'bank')]);
     expect(d.score).toBe(0);
     expect(d.basis).toHaveLength(0);
-    expect(d.held[0]?.reason).toContain('is not the online selling');
+    expect(d.excluded[0]?.reason).toContain('is not the online selling');
   });
 
   it('scores the same licence where the subject names the online service', () => {

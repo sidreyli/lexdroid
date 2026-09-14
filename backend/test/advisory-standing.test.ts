@@ -67,7 +67,7 @@ describe('a duty worded in an advisory document', () => {
     expect(d.state).toBe('no-restriction');
     expect(d.basis).toEqual([]);
     // Held with its reason, not discarded: it is good evidence of how the binding rule is read.
-    expect(d.held.map((h) => h.reason).join(' ')).toContain('advisory');
+    expect(d.excluded.map((h) => h.reason).join(' ')).toContain('advisory');
   });
 
   it('still counts where the same words are in an instrument that binds', () => {

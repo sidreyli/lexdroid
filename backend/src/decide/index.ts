@@ -1098,7 +1098,24 @@ function applyException(indicator: Indicator, evidence: Evidence[]): {
 function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
   kept: Evidence[];
   held: { evidence: Evidence; reason: string }[];
-  /** Read and shown not to be this measure -- a finding of absence, not a failure to evaluate. */
+  /**
+   * Read and shown not to be this measure, which is a finding about the provision.
+   *
+   * The distinction from a hold decides cells, and getting it wrong is what made every attempt to
+   * subtract bad evidence end in an abstention instead of a zero. Fourteen indicators score their
+   * maximum for an absence, and the guard on that band refuses to call anything absent while a
+   * provision of the kind sits unevaluated -- rightly, because a customs threshold stated in money
+   * this run had no rate for is still a threshold.
+   *
+   * But "the provision declares what is the case rather than requiring anyone to do anything", or
+   * "the provision names no place and this measure is about where data must be", is not a fact we
+   * failed to establish. It is a fact we established: we read the provision and it does not impose
+   * the measure. That is evidence for the zero, not a bar to it.
+   *
+   * Three stay held, and each says something is missing rather than something is so: the party the
+   * duty falls on may be in the provision and unread; a cap whose proportion we could not read is
+   * still a cap; a threshold in a currency this run had no rate for is still a threshold.
+   */
   ruledOut: { evidence: Evidence; reason: string }[];
 } {
   const kept: Evidence[] = [];
@@ -1127,7 +1144,7 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     // declaration by grammar. The reader was right about the verb; the gate was asking the wrong
     // measures for one.
     if (e.finding.dutyForce === 'declares' && !permits(indicatorId, e.finding.measure)) {
-      held.push({
+      ruledOut.push({
         evidence: e,
         reason: `the provision declares what is the case -- "${e.finding.dutyAct}" -- rather than requiring anyone to do anything`,
       });
@@ -1136,7 +1153,7 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     // A duty not to do the act is not the duty to do it. Secrecy provisions -- "shall not
     // disclose", "nothing requires the giving of information" -- were making out 4.9 in all three.
     if (commanded(indicatorId, e.finding.measure) && e.finding.dutyForce === 'forbids') {
-      held.push({
+      ruledOut.push({
         evidence: e,
         reason: `the provision forbids the act -- "${e.finding.dutyAct}" -- that this measure is a requirement to perform`,
       });
@@ -1157,7 +1174,7 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     // wrongly in more than one way. Held, not dropped: the provision is real and may be evidence
     // for another indicator.
     if (!e.finding.definingWords && definedBy(indicatorId, e.finding.measure)) {
-      held.push({
+      ruledOut.push({
         evidence: e,
         reason: `the provision does not state ${definedBy(indicatorId, e.finding.measure)}, which is what makes it this measure`,
       });
@@ -1189,7 +1206,7 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     // every finding in an earlier run rather than report anything about it.
     const subject = aboutness(indicatorId, e.finding.measure);
     if (subject && e.finding.subjectWords === null) {
-      held.push({
+      ruledOut.push({
         evidence: e,
         reason: `the provision never names ${subject}, which is what this indicator is about`,
       });
@@ -1205,7 +1222,7 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
       (restates(e.finding.subjectWords, e.finding.definingWords) ||
         restates(e.finding.subjectWords, e.finding.dutyBearer))
     ) {
-      held.push({
+      ruledOut.push({
         evidence: e,
         reason: `the words said to name ${subject} are the words that impose the duty or name the party bound`,
       });
@@ -1215,9 +1232,14 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     // what the e-commerce licensing cell is about; so does "note, coin" for online payments. Each
     // is a real subject copied out of a real provision, and neither is the one asked for. Where
     // the indicator's subject is a domain, the words have to put the subject in it.
+    // Ruled out rather than held, for the reason the naming words are: the provision was read and
+    // its subject belongs elsewhere, which is a finding about it and not a failure to evaluate it.
+    // Against the subject alone. Reading the words that make the measure out alongside it was
+    // tried and is wrong: "licence to sell online" carries the domain into every subject beside it,
+    // so a licence whose subject is a bank passed the test the words "sell online" had answered.
     const domain = inDomain(indicatorId, e.finding.measure);
     if (domain && e.finding.subjectWords && !domain.test(e.finding.subjectWords)) {
-      held.push({
+      ruledOut.push({
         evidence: e,
         reason: `"${e.finding.subjectWords}" is not ${subject ?? "this indicator's subject"}`,
       });
@@ -1243,7 +1265,7 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
       !beyondPlace(e.finding.definingWords, e.finding.placeWords) &&
       !beyondPlace(e.finding.exceptionWords, e.finding.placeWords)
     ) {
-      held.push({
+      ruledOut.push({
         evidence: e,
         reason: `the words said to state the condition only name where the data goes, which is no condition`,
       });
@@ -1252,7 +1274,7 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     // A power to require is not a requirement -- unless the measure the rubric names is itself a
     // power, where nothing is imposed and this hold would swallow every genuine finding.
     if (!e.finding.imposingWords && !permits(indicatorId, e.finding.measure)) {
-      held.push({
+      ruledOut.push({
         evidence: e,
         reason: `the provision does not impose the requirement itself; it empowers another instrument to impose one`,
       });
@@ -1261,7 +1283,7 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     // And the same words cannot both impose the duty and confer the power to impose it. Australia
     // answered both questions with the DATA Act stem listing conditions that may be prescribed.
     if (restates(e.finding.imposingWords, e.finding.prescribingWords)) {
-      held.push({
+      ruledOut.push({
         evidence: e,
         reason: `the words said to impose the requirement are the words empowering another instrument to impose one`,
       });
@@ -1273,7 +1295,7 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     // them -- it authorises a condition rather than imposing one, and says nothing about location.
     // Held rather than dropped: the provision is real, it is simply not evidence of this measure.
     if (locational(indicatorId, e.finding.measure) && !e.finding.placeWords) {
-      held.push({
+      ruledOut.push({
         evidence: e,
         reason: 'the provision names no place, and this measure is a requirement about where data must be',
       });
@@ -1284,7 +1306,7 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     // data. These measures are all about where data has to be, so a provision that never names
     // the data has not made one out however locational its language is.
     if (locational(indicatorId, e.finding.measure) && !e.finding.locatedData) {
-      held.push({
+      ruledOut.push({
         evidence: e,
         reason: 'the provision names a place but no data that has to be there',
       });
@@ -1296,7 +1318,7 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     // The thing is a virus. Every measure marked locational is about where *data* has to be, so
     // a provision whose own words never call the located thing information has not made one out.
     if (locational(indicatorId, e.finding.measure) && !e.finding.informationWords) {
-      held.push({
+      ruledOut.push({
         evidence: e,
         reason: 'the provision says where something must be, but never calls that thing information',
       });
@@ -1305,7 +1327,7 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     // And a place that describes the party rather than binds the data. Section 47A of the Banking
     // Act makes a branch "protect all customer information of the bank in Singapore".
     if (locational(indicatorId, e.finding.measure) && !e.finding.keepingWords) {
-      held.push({
+      ruledOut.push({
         evidence: e,
         reason: 'the provision names a place and names data, but never says the data has to be there',
       });
@@ -1324,7 +1346,7 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
       e.finding.dutyBearer &&
       sameWords(e.finding.dutyBearer, e.finding.locatedData)
     ) {
-      held.push({
+      ruledOut.push({
         evidence: e,
         reason: 'the party said to be bound and the data said to be located are the same words, so the provision binds no one',
       });
@@ -1333,7 +1355,7 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     // A measure defined by a border crossing is not made out by a provision where nothing crosses.
     // A consumer-goods safety ban and a power to detain goods already here are not import measures.
     if (crossing(indicatorId, e.finding.measure) && !e.finding.borderWords) {
-      held.push({
+      ruledOut.push({
         evidence: e,
         reason: 'nothing in the provision enters or leaves the economy, and this measure is a restriction on trade across the border',
       });
@@ -1344,7 +1366,7 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     // obtained" and "a data subject shall be given access to his personal data" both scored 7.4,
     // and neither appoints anyone: they are duties about data, not about who is answerable for it.
     if (appointing(indicatorId, e.finding.measure) && !e.finding.roleWords) {
-      held.push({
+      ruledOut.push({
         evidence: e,
         reason: 'the provision appoints no one, and this measure is a duty to put someone in that position',
       });
@@ -1358,7 +1380,7 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
       actorKindOf(indicatorId, e.finding.measure) === 'private' &&
       e.finding.dutyBearerKind === 'government'
     ) {
-      held.push({
+      ruledOut.push({
         evidence: e,
         reason: `the duty falls on ${e.finding.dutyBearer}, which is the State, and this measure binds the party the law regulates`,
       });
@@ -1367,7 +1389,7 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     // The words inserted by an amendment are law, but they are the principal Act's law. Cited
     // here they would name the vehicle instead of the statute that carries the duty.
     if (e.amendsAnotherAct) {
-      held.push({
+      ruledOut.push({
         evidence: e,
         reason: 'the provision amends another Act rather than imposing the duty itself, so the duty belongs to the principal Act',
       });
@@ -1377,7 +1399,7 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     // it says how the regulator reads an obligation that lives somewhere else. Held rather than
     // dropped, because it is good evidence of what the binding instrument is understood to mean.
     if (e.bindingness === 'advisory') {
-      held.push({
+      ruledOut.push({
         evidence: e,
         reason:
           'the instrument is advisory, so it states how a binding instrument is read rather than ' +
@@ -1388,14 +1410,14 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     // A power is not a duty, and two measures in the rubric are written as powers: government
     // access, and a power to impose customs duties on an electronic transmission.
     if (!isRequirement(e.finding) && !permits(indicatorId, e.finding.measure)) {
-      held.push({ evidence: e, reason: 'the provision permits rather than requires' });
+      ruledOut.push({ evidence: e, reason: 'the provision permits rather than requires' });
       continue;
     }
     // A duty to stop retaining is the opposite of a minimum period, and the band scores the
     // minimum. The PDPA's obligation to cease retaining personal data once its purpose has ended
     // is a real requirement and belongs on the record; it is not this one.
     if (indicatorId === '7.3' && e.finding.measure === 'maximum-retention') {
-      held.push({ evidence: e, reason: 'a duty to stop retaining, which is a ceiling and not a minimum' });
+      ruledOut.push({ evidence: e, reason: 'a duty to stop retaining, which is a ceiling and not a minimum' });
       continue;
     }
     // "any measure that allows government to access data without court orders". A power a police

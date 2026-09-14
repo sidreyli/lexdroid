@@ -226,6 +226,18 @@ for (const cell of cells) {
     rates,
   });
 
+  // WHY=AUS/12.3 says why one cell answered as it did. A cell that moved is a question, and the
+  // deciding fact answers it without a second run.
+  if (process.env['WHY'] === `${cell.economy_code}/${cell.indicator_id}`) {
+    console.log(`
+  ${cell.economy_code} ${cell.indicator_id}: ${d.state}, score ${d.score}`);
+    console.log(`  because: ${d.decidingFact}`);
+    console.log(
+      `  evidence ${evidence.length}, basis ${d.basis.length}, held ${d.held.length}, ` +
+        `ruled out ${d.excluded.length}, surfaced ${surfaced.length}`,
+    );
+    for (const h of d.held.slice(0, 5)) console.log(`    held: ${h.reason}`);
+  }
   const was = (storedAnswer.get(cell.id) as { score: number | null } | undefined)?.score ?? null;
   out.push({ economy: cell.economy_code, indicator: cell.indicator_id, was, now: d.score ?? null });
 }

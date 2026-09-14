@@ -1131,7 +1131,7 @@ const PAYMENT = new RegExp(
 /** 12.7 asks about the domain name itself, which is narrower than the pillar around it. */
 const DOMAIN_NAME = /\b(domain|url|website|web address|hostname|dns|registrar|registry)\b/i;
 
-export const SUBJECT_DOMAIN: Readonly<Record<string, RegExp>> = {
+const PILLAR_12_DOMAINS: Readonly<Record<string, RegExp>> = {
   '12.01': ONLINE,
   '12.2': ONLINE,
   '12.3': ONLINE,
@@ -1215,4 +1215,70 @@ export const MEASURE_NAMES: Readonly<Record<string, RegExp>> = {
   // The officer measure is a person put in a position, and the role words already carry that.
   'sim-registration': LICENCE,
   'patent-local-representative': /\b(represent\w*|agent\w*|attorney\w*|address for service)\b/i,
+};
+
+/**
+ * The domains for indicators whose subject is a term of art rather than a sector.
+ *
+ * Thirteen indicators had this check and forty-eight did not, so a provision could be about
+ * anything and still answer them as long as it named something: a broadcasting licence answered
+ * the telecom licensing cell, and anti-dumping duty on goods generally answered the ICT-goods one.
+ *
+ * Writing a domain for each of the forty-eight was tried and measured, and it does not work. A
+ * domain is a list of the words a subject must use, and a sector is worded differently in every
+ * legal system: Malaysia's online content services are "content applications services", Australia's
+ * telecommunications operators are "carriage service providers", and a list that recognises one
+ * jurisdiction's phrase rules out the other's real findings. Across the twelve-pillar run the full
+ * set won thirteen cells and lost fourteen, and each regex fitted to recover a loss is a word list
+ * shaped by the answer key rather than by the indicator.
+ *
+ * So the domains kept are the ones a legal system cannot word its own way. A patent is a patent, a
+ * copyright a copyright, a trade secret a trade secret, and an encryption standard names the
+ * standard. Telling a broadcasting service from a telecommunications one is a question about the
+ * provision in its own vocabulary, which is a reader's question and not a word list's.
+ *
+ * Pillars 6 and 7 stay out, as they do in SUBJECTS: their subject is already asked for three ways
+ * -- the data located, the words calling it information, the words keeping it there.
+ */
+const ICT_GOODS = new RegExp(
+  [
+    ONLINE.source,
+    /\b(ict|telecom\w*|radiocommunication\w*|semiconductor\w*|hardware|server\w*|handset\w*|equipment|device\w*|component\w*|circuit\w*|encryption|technolog\w*|information technology)\b/.source,
+  ].join('|'),
+  'i',
+);
+const PROCUREMENT = /\b(procure\w*|tender\w*|bid\w*|public contract\w*|government contract\w*|supply to the (Government|State)|Commonwealth contract\w*|purchas\w* by (a|the) (public|government)\w*)\b/i;
+const SECRETS = /\b(trade secret\w*|source code\w*|algorithm\w*|confidential (business )?information|proprietary information|encrypt\w*|cryptograph\w*|know-how)\b/i;
+const PATENT = /\b(patent\w*|invention\w*|utility model\w*|patentee\w*)\b/i;
+const COPYRIGHT = /\b(copyright\w*|author\w*|literary|artistic|musical|cinematograph\w*|performer\w*|work\w*|broadcast\w*|infring\w*)\b/i;
+const TELECOM = new RegExp(
+  [
+    /\b(telecom\w*|telephon\w*|carrier\w*|carriage service\w*|network service\w*|spectrum|radiocommunication\w*|licensee\w*|operator\w*|subscriber\w*|broadband|mobile)\b/.source,
+    ONLINE.source,
+  ].join('|'),
+  'i',
+);
+const INVESTMENT = /\b(invest\w*|acquisi\w*|acquire\w*|takeover\w*|merger\w*|shareholding\w*|share\w*|stake\w*|interest in|control\w*|entit\w*|business\w*|compan\w*|asset\w*|undertaking\w*)\b/i;
+const DIGITAL_SECTOR = new RegExp([ONLINE.source, TELECOM.source, /\b(sector\w*|industry|business\w*|service\w*)\b/.source].join('|'), 'i');
+const ADVERTISING = new RegExp([/\b(advertis\w*|promotion\w*|marketing|sponsor\w*)\b/.source, ONLINE.source].join('|'), 'i');
+const PRODUCT_CERT = /\b(product\w*|goods|equipment|device\w*|apparatus|appliance\w*|radiocommunication\w*|emission\w*|electromagnetic|safety|conformity|standard\w*)\b/i;
+const TECHNICAL_STANDARD = /\b(standard\w*|specification\w*|technical regulation\w*|code of practice|conformity)\b/i;
+const CUSTOMS = /\b(import\w*|consign\w*|customs|duty|duties|goods|parcel\w*|shipment\w*|value of the goods|declaration\w*)\b/i;
+
+export const SUBJECT_DOMAIN: Readonly<Record<string, RegExp>> = {
+  ...PILLAR_12_DOMAINS,
+  // Terms of art: a patent is a patent, a copyright a copyright, a trade secret a trade secret and
+  // an encryption standard an encryption standard, in every one of these legal systems. The sector
+  // domains that were here with them are gone -- see the note above.
+  '2.1': PROCUREMENT,
+  '2.2': SECRETS,
+  '2.3': PROCUREMENT,
+  '4.01': PATENT,
+  '4.2': PATENT,
+  '4.3': PATENT,
+  '4.5': COPYRIGHT,
+  '4.6': COPYRIGHT,
+  '4.9': SECRETS,
+  '4.1': SECRETS,
+  '11.4': /(encrypt\w*|cryptograph\w*|cipher\w*|key length|algorithm\w*|AES|DES|RSA|ECC|FIPS|ISO|IEC|ITU)/i,
 };

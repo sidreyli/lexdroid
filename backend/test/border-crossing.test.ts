@@ -86,14 +86,14 @@ describe('a trade measure is defined by the crossing', () => {
     // The Competition and Consumer Act's consumer-goods ban: a real prohibition, no border.
     const d = at('10.1', [evidence({ borderWords: null })]);
     expect(d.score).toBe(0);
-    expect(d.held).toHaveLength(1);
-    expect(d.held[0]?.reason).toContain('enters or leaves');
+    expect(d.excluded).toHaveLength(1);
+    expect(d.excluded[0]?.reason).toContain('enters or leaves');
   });
 
   it('scores when something does cross', () => {
     const d = at('10.1', [evidence()]);
     expect(d.score).toBe(0.5);
-    expect(d.held).toHaveLength(0);
+    expect(d.excluded).toHaveLength(0);
   });
 
   it('rejects a crossing the provision does not contain', () => {
@@ -119,7 +119,7 @@ describe('the goods are the defining element', () => {
     // The Digital ID Act's "Simplified outline", whose whole defining quote was "prohibited".
     const d = at('10.1', [evidence({ definingWords: null })]);
     expect(d.score).toBe(0);
-    expect(d.held[0]?.reason).toContain(MEASURES['10.1']![0]!.defines);
+    expect(d.excluded[0]?.reason).toContain(MEASURES['10.1']![0]!.defines);
   });
 });
 
@@ -127,7 +127,7 @@ describe('a restriction on other goods has somewhere true to go', () => {
   it('is a finding, and is not this indicator', () => {
     const d = at('10.1', [evidence({ measure: 'other-import-ban', definingWords: 'any hazardous waste' })]);
     expect(d.score).toBe(0);
-    expect(d.held).toHaveLength(0);
+    expect(d.excluded).toHaveLength(0);
     expect(d.basis).toHaveLength(0);
   });
 

@@ -110,8 +110,8 @@ describe('a finding that does not carry those words', () => {
       coverage,
     });
     expect(d.score).toBe(0);
-    expect(d.held).toHaveLength(1);
-    expect(d.held[0]?.reason).toContain(MEASURES['6.2']![0]!.defines);
+    expect(d.excluded).toHaveLength(1);
+    expect(d.excluded[0]?.reason).toContain(MEASURES['6.2']![0]!.defines);
   });
 
   it('scores when it does carry them', () => {
@@ -125,7 +125,7 @@ describe('a finding that does not carry those words', () => {
       coverage,
     });
     expect(d.score).toBe(0.5);
-    expect(d.held).toHaveLength(0);
+    expect(d.excluded).toHaveLength(0);
   });
 
   it('is rejected outright when the words are not in the provision', () => {
