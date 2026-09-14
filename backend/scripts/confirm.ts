@@ -92,8 +92,14 @@ let refused = 0;
 let failed = 0;
 const started = Date.now();
 
-async function worker(slice: Question[]): Promise<void> {
-  for (const q of slice) {
+// A shared queue rather than a slice each: rented engines are not the same speed, and a fixed
+// slice makes the whole pass wait for the slowest card.
+let next = 0;
+
+async function worker(): Promise<void> {
+  for (;;) {
+    const q = todo[next++];
+    if (!q) return;
     const measure = measureOf(q.indicatorId, q.measure)!;
     const c = await confirmMeasure(
       { instrumentTitle: q.instrumentTitle, headingPath: q.headingPath, text: q.text },
@@ -127,10 +133,7 @@ async function worker(slice: Question[]): Promise<void> {
   }
 }
 
-// Round-robin rather than contiguous blocks, so one slow instrument does not leave a worker idle.
-const slices: Question[][] = Array.from({ length: Math.max(1, workers) }, () => []);
-todo.forEach((q, i) => slices[i % slices.length]!.push(q));
-await Promise.all(slices.map(worker));
+await Promise.all(Array.from({ length: Math.max(1, workers) }, () => worker()));
 
 const mins = (Date.now() - started) / 60000;
 console.log(`\n  asked ${done} in ${mins.toFixed(1)} min`);
