@@ -1,0 +1,266 @@
+/**
+ * Re-score a finished run from its stored readings, with no engine and no network.
+ *
+ *   npm run -w backend replay -- --run <id>
+ *
+ * The readings are the expensive part of a run and they are already banked. Scoring is a pure
+ * function of them, so a rule change can be graded in seconds instead of a six-hour fleet.
+ * Nothing is written: this reads the run and prints, so the graded run stays the record of itself.
+ */
+import { openDb } from '../src/db/index.js';
+import {
+  decide,
+  type Evidence,
+  type FrameworkEvidence,
+  type SurfacedInstrument,
+  type Coverage,
+} from '../src/decide/index.js';
+import { loadRubric } from '../src/rubric/index.js';
+import { loadProfile } from '../src/profile/index.js';
+import { citationUrl } from '../src/export/index.js';
+import { amendsAnotherAct } from '../src/parse/identity.js';
+import { scorecard, tally, verdictFor, pillarOf, type CellResult } from '../src/eval/scorecard.js';
+import type { Finding } from '../src/read/index.js';
+
+function arg(name: string): string | null {
+  const i = process.argv.indexOf(`--${name}`);
+  return i >= 0 ? (process.argv[i + 1] ?? null) : null;
+}
+
+/**
+ * Candidate qualifications to try before writing one into the scorer.
+ * Each says which findings may support a band; the point is to measure a rule, not to adopt it.
+ */
+const GATES: Record<string, (e: Evidence, governing: number[]) => boolean> = {
+  none: () => true,
+  governing: (e, g) => g.length === 0 || g.includes(e.instrumentId),
+  mandatory: (e) => e.finding.mandatory !== false,
+  imposes: (e) => e.finding.dutyForce !== 'declares',
+  'governing+imposes': (e, g) => (g.length === 0 || g.includes(e.instrumentId)) && e.finding.dutyForce !== 'declares',
+  'mandatory+imposes': (e) => e.finding.mandatory !== false && e.finding.dutyForce !== 'declares',
+};
+const gateName = arg('gate') ?? 'none';
+const gate = GATES[gateName];
+const prefersGoverning = gateName.startsWith('prefer-governing');
+if (!gate && !prefersGoverning) {
+  console.error(`unknown gate "${gateName}"; try: ${Object.keys(GATES).join(', ')}, prefer-governing`);
+  process.exit(1);
+}
+
+/**
+ * The register's verdict as a preference rather than a veto: read only the instruments it named,
+ * unless it named none that were read, in which case its silence should not silence the cell.
+ */
+function qualify(evidence: Evidence[], governing: number[]): Evidence[] {
+  if (prefersGoverning) {
+    const named = evidence.filter((e) => governing.includes(e.instrumentId));
+    return named.length > 0 ? named : evidence;
+  }
+  return evidence.filter((e) => gate!(e, governing));
+}
+
+const db = openDb();
+const runId =
+  arg('run') ?? (db.prepare('SELECT id FROM run ORDER BY started_at DESC LIMIT 1').get() as { id: string }).id;
+const indicators = new Map(loadRubric().indicators.map((i) => [i.id as string, i]));
+
+const ratesRow = db.prepare('SELECT fx_rates FROM run WHERE id = ?').get(runId) as { fx_rates: string | null } | undefined;
+const rates = ratesRow?.fx_rates ? JSON.parse(ratesRow.fx_rates) : null;
+
+type CellRow = {
+  id: number;
+  economy_code: string;
+  indicator_id: string;
+  governing: string | null;
+  sections_read: number | null;
+  sections_indexed: number | null;
+};
+
+const cells = db
+  .prepare(
+    `SELECT id, economy_code, indicator_id, governing, sections_read, sections_indexed
+     FROM cell WHERE run_id = ? ORDER BY economy_code, indicator_id`,
+  )
+  .all(runId) as CellRow[];
+
+const readingsFor = db.prepare(
+  `SELECT r.section_id, r.attributes, s.heading_path, s.text, s.anchor,
+          d.instrument_id, i.title AS instrument_title, i.kind AS instrument_kind,
+          i.source_url, i.last_amended_on
+   FROM reading r
+   JOIN section s ON s.id = r.section_id
+   JOIN document d ON d.id = s.document_id
+   JOIN instrument i ON i.id = d.instrument_id
+   WHERE r.cell_id = ?
+   ORDER BY r.applies DESC, r.id`,
+);
+
+const frameworkFor = db.prepare(
+  `SELECT f.instrument_id, i.title, i.source_url, f.establishes_framework, f.horizontal,
+          f.dedicated, f.dedicated_shown, f.sectoral_shown, f.sector, f.quote
+   FROM framework_reading f JOIN instrument i ON i.id = f.instrument_id WHERE f.cell_id = ?`,
+);
+
+// Coverage counts every instrument the reader looked at, not only the ones it found something in.
+// A cell that read forty Acts and found nothing has searched; one that read none has not.
+const consideredFor = db.prepare(
+  `SELECT COUNT(DISTINCT d.instrument_id) AS n
+   FROM reading r JOIN section s ON s.id = r.section_id JOIN document d ON d.id = s.document_id
+   WHERE r.cell_id = ?`,
+);
+
+const storedAnswer = db.prepare('SELECT score FROM cell_answer WHERE cell_id = ?');
+
+const profiles = new Map<string, Map<string, 'binding' | 'binding-on-licensees' | 'advisory'>>();
+function bindingnessFor(economy: string) {
+  let m = profiles.get(economy);
+  if (!m) {
+    m = new Map(loadProfile(economy).instrumentTypes.map((t) => [t.kind, t.bindingness]));
+    profiles.set(economy, m);
+  }
+  return m;
+}
+
+type Replayed = { economy: string; indicator: string; was: number | null; now: number | null };
+const out: Replayed[] = [];
+
+for (const cell of cells) {
+  const indicator = indicators.get(cell.indicator_id);
+  if (!indicator) continue;
+  const binding = bindingnessFor(cell.economy_code);
+
+  const evidence: Evidence[] = [];
+  const surfaced: SurfacedInstrument[] = [];
+
+  for (const row of readingsFor.all(cell.id) as Record<string, any>[]) {
+    if (!surfaced.some((s) => s.instrumentId === row['instrument_id'])) {
+      surfaced.push({
+        instrumentId: row['instrument_id'],
+        instrumentTitle: row['instrument_title'],
+        rank: surfaced.length,
+        currentTo: row['last_amended_on'] ?? null,
+      });
+    }
+    // A zero is cited against what the search surfaced, which is every instrument read, not only
+    // the ones something was found in -- a cell that finds nothing still has to cite the Act it read.
+    for (const finding of JSON.parse(row['attributes']) as Finding[]) {
+      // The same provision reported twice for one measure is one measure, as the live pipeline has it.
+      const already = evidence.some(
+        (e) =>
+          e.sectionId === row['section_id'] &&
+          e.finding.indicatorId === finding.indicatorId &&
+          e.finding.measure === finding.measure,
+      );
+      if (already) continue;
+      const kind = binding.get(row['instrument_kind']);
+      evidence.push({
+        finding,
+        sectionId: row['section_id'],
+        instrumentId: row['instrument_id'],
+        instrumentTitle: row['instrument_title'],
+        headingPath: row['heading_path'],
+        citation: citationUrl(row['source_url'], row['anchor']),
+        amendsAnotherAct: amendsAnotherAct(row['text']),
+        ...(kind ? { bindingness: kind } : {}),
+      });
+    }
+  }
+
+  const frameworkEvidence: FrameworkEvidence[] = (frameworkFor.all(cell.id) as Record<string, any>[]).map((f) => ({
+    instrumentId: f['instrument_id'],
+    instrumentTitle: f['title'],
+    citation: f['source_url'],
+    establishesFramework: f['establishes_framework'] === 1,
+    horizontal: f['horizontal'] === 1,
+    dedicated: f['dedicated'] === 1,
+    dedicatedShown: f['dedicated_shown'] === 1,
+    sectoralShown: f['sectoral_shown'] === 1,
+    sector: f['sector'],
+    quote: f['quote'],
+  }));
+
+  const isFramework = indicator.shape === 'framework';
+  const coverage: Coverage = {
+    sectionsRead: cell.sections_read ?? 0,
+    sectionsIndexed: cell.sections_indexed ?? 0,
+    instrumentsConsidered: isFramework
+      ? frameworkEvidence.length
+      : ((consideredFor.get(cell.id) as { n: number }).n ?? 0),
+  };
+
+  const governing: number[] = cell.governing ? JSON.parse(cell.governing) : [];
+  const d = decide({
+    indicator,
+    economy: cell.economy_code,
+    evidence: qualify(evidence, governing),
+    frameworkEvidence,
+    surfaced,
+    governing,
+    coverage,
+    rates,
+  });
+
+  const was = (storedAnswer.get(cell.id) as { score: number | null } | undefined)?.score ?? null;
+  out.push({ economy: cell.economy_code, indicator: cell.indicator_id, was, now: d.score ?? null });
+}
+
+const moved = out.filter((r) => r.was !== r.now);
+const pct = (n: number, of: number) => (of === 0 ? '  -  ' : `${((100 * n) / of).toFixed(1)}%`);
+
+console.log(`\nReplay of ${runId}   gate: ${gateName}`);
+console.log(`\n  ${out.length} cell(s) re-scored from banked readings, no engine`);
+console.log(
+  `  fidelity: ${out.length - moved.length} of ${out.length} reproduce the stored score` +
+    (moved.length === 0 ? '  (exact)' : `  -- ${moved.length} differ`),
+);
+
+if (moved.length > 0) {
+  console.log(`\n    economy  indicator   stored   replay`);
+  for (const r of moved.slice(0, 40)) {
+    const was = String(r.was ?? '-').padStart(6);
+    const now = String(r.now ?? '-').padStart(6);
+    console.log(`    ${r.economy.padEnd(7)}  ${r.indicator.padEnd(9)}  ${was}   ${now}`);
+  }
+  if (moved.length > 40) console.log(`    ... and ${moved.length - 40} more`);
+}
+
+// Grade the replayed scores exactly as the scorecard grades a run, so the two numbers compare.
+const graded = new Map(scorecard(db, runId).map((c) => [`${c.economy}/${c.indicator}`, c]));
+const replayed: CellResult[] = out.map((r) => {
+  const g = graded.get(`${r.economy}/${r.indicator}`);
+  const findings = g?.findings ?? 0;
+  return {
+    economy: r.economy,
+    indicator: r.indicator,
+    pillar: pillarOf(r.indicator),
+    ours: r.now,
+    theirs: g?.theirs ?? null,
+    findings,
+    instruments: g?.instruments ?? 0,
+    verdict: verdictFor(r.now, g?.theirs ?? null, findings),
+  };
+});
+
+const t = tally(replayed);
+const g = t.cells - t.ungraded;
+console.log(`\n  replayed scorecard: ${g} graded, ${t.agree} agree (${pct(t.agree, g)})`);
+console.log(`    over-claim   ${String(t['over-claim']).padStart(4)}`);
+console.log(`    recall-miss  ${String(t['recall-miss']).padStart(4)}`);
+console.log(`    abstained    ${String(t.abstained).padStart(4)}`);
+
+// What the gate actually did: a gate that wins overall can still be losing cells it should keep.
+if (gateName !== 'none') {
+  const before = new Map([...graded].map(([k, c]) => [k, c.verdict]));
+  const moves = new Map<string, number>();
+  for (const r of replayed) {
+    const was = before.get(`${r.economy}/${r.indicator}`);
+    if (!was || was === r.verdict) continue;
+    const key = `${was} -> ${r.verdict}`;
+    moves.set(key, (moves.get(key) ?? 0) + 1);
+  }
+  console.log(`\n  what the gate moved, against the ungated run`);
+  for (const [k, n] of [...moves].sort((a, b) => b[1] - a[1])) {
+    console.log(`    ${String(n).padStart(4)}  ${k}`);
+  }
+}
+console.log('');
