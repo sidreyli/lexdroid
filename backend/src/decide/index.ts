@@ -1278,6 +1278,19 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
       });
       continue;
     }
+    // And the other half of the same band: the proportion is what a FOREIGN person may hold. Four
+    // fifths of the evidence filed under these measures names no nationality at all -- a bank's 2%
+    // limit on equity investments, a fund's 20% concentration cap, "no individual shall hold more
+    // than ten per cent" -- which are limits on everyone, and a limit on everyone is not one on
+    // foreigners. Either side of the line will do, because the restriction is written both ways:
+    // a ceiling on foreign holding, or a floor on the share that must stay in local hands.
+    if (proportional(indicatorId, e.finding.measure) && !namesNationality(e.finding)) {
+      ruledOut.push({
+        evidence: e,
+        reason: 'the provision limits what anyone may hold, and every band of this indicator is a limit on foreign holding',
+      });
+      continue;
+    }
     // Where the measure is a condition, the place the data goes is not one. The condition may be
     // stated outright or carved out as an exception, so either will do; naming neither will not.
     if (
@@ -1581,6 +1594,20 @@ function inDomain(indicatorId: string, measure: string | null): RegExp | null {
   if (!declared) return null;
   const off = (MEASURES[indicatorId] ?? []).some((m) => m.token === measure && m.offSubject === true);
   return off ? null : declared;
+}
+
+/**
+ * Does this finding restrict holders by nationality or residence, either way round?
+ *
+ * Ruled out rather than held: a provision that caps every shareholder alike was read and does not
+ * carry a foreign equity limit, which is a finding about it. Read across every word the reader
+ * copied out, because the nationality can sit in the party bound, the limit, or the sector.
+ */
+const NATIONALITY =
+  /\b(foreign(er|ers|ly)?|non-?residents?|non-?citizens?|non-?nationals?|overseas|aliens?|citizens?|nationals?|nationality|residents?|residency|domestic|local(ly)?|indigenous|bumiputera|malaysian|singaporean|australian|incorporated in)\b/i;
+
+function namesNationality(f: Finding): boolean {
+  return [f.dutyBearer, f.definingWords, f.subjectWords, f.quote].some((w) => w && NATIONALITY.test(w));
 }
 
 /** Is every band of this indicator a proportion, so a provision stating none cannot be placed? */
