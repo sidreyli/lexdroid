@@ -8,13 +8,21 @@ import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-/** A server that closes the socket on its first `refusals` requests, then answers properly. */
-function flaky(refusals: number): Promise<{ server: Server; port: number; seen: () => number }> {
+/**
+ * A server that drops the socket on its first `refusals` requests, then answers properly.
+ * `reset` sends an RST rather than a close, which is what a dropped SSH tunnel actually does.
+ */
+function flaky(
+  refusals: number,
+  how: 'close' | 'reset' = 'close',
+): Promise<{ server: Server; port: number; seen: () => number }> {
   let seen = 0;
   const server = createServer((req, res) => {
     seen += 1;
     if (seen <= refusals) {
-      res.socket?.destroy();
+      const socket = res.socket as (typeof res.socket & { resetAndDestroy?: () => void }) | null;
+      if (how === 'reset' && socket?.resetAndDestroy) socket.resetAndDestroy();
+      else socket?.destroy();
       return;
     }
     let body = '';
@@ -65,6 +73,19 @@ describe('an engine that goes away and comes back', () => {
     await expect(embed(['a provision'])).rejects.toBeInstanceOf(OllamaUnavailable);
     // The first attempt plus one per wait, and then it stops rather than trying forever.
     expect(seen()).toBe(3);
+  });
+
+  // The night of 13 September: the tunnels reset rather than closed, ECONNRESET was not on the
+  // list, and the reads that hit the gap took their pillars down instead of waiting.
+  it('is waited for when the link is reset rather than closed', async () => {
+    const { server, port } = await flaky(2, 'reset');
+    open.push(server);
+    const { embed, engineReconnects } = await engineAt(port, '10,10,10,10');
+
+    const vectors = await embed(['a provision']);
+
+    expect(vectors).toHaveLength(1);
+    expect(engineReconnects()).toBe(2);
   });
 
   it('does not retry a stall, because the engine took the request and the wait was already spent', async () => {

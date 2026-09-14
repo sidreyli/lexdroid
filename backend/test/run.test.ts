@@ -105,6 +105,7 @@ const readings: SectionReading[] = [
     completionTokens: 120,
     durationMs: 5200,
     fromCache: false,
+    fromResume: false,
   },
   {
     // Read, and it said nothing. This row is the whole evidence base for a cell scoring zero.
@@ -118,6 +119,7 @@ const readings: SectionReading[] = [
     completionTokens: 20,
     durationMs: 1100,
     fromCache: false,
+    fromResume: false,
   },
 ];
 
@@ -186,6 +188,7 @@ function answer(): PillarAnswer {
     durationMs: 9000,
     engineMs: 6300,
     cachedCalls: 0,
+    resumedCalls: 0,
     stages: [
       { stage: 'retrieve', seconds: 1.5, items: 2 },
       { stage: 'read', seconds: 6.3, items: 2 },

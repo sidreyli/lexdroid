@@ -491,14 +491,24 @@ export function recordRent(db: Db, runId: string, engine: string, model: string,
  */
 export const CACHED_RUN_NOTE = 'SERVED FROM THE DEVELOPMENT CACHE -- not a measurement, not quotable as a result';
 
-function markCached(db: Db, run: RunContext): void {
+/**
+ * What a run says when a unit was killed and picked up where it stopped.
+ *
+ * Not the note above and not the same claim. Every reading here was asked for once and answered
+ * once by this run's own engine; what the restart avoided was paying a second time for provisions
+ * already read. Wall-clock for that pillar is no longer a measurement, and engine time still is.
+ */
+export const RESUMED_RUN_NOTE =
+  'RESUMED AFTER AN INTERRUPTION -- every reading was performed by this run; per-pillar wall-clock is not a measurement';
+
+function note(db: Db, run: RunContext, text: string): void {
   db.prepare(
     `UPDATE run SET notes = CASE
        WHEN notes IS NULL OR notes = '' THEN ?
        WHEN notes LIKE ? THEN notes
        ELSE notes || ' | ' || ? END
      WHERE id = ?`,
-  ).run(CACHED_RUN_NOTE, `%${CACHED_RUN_NOTE}%`, CACHED_RUN_NOTE, run.id);
+  ).run(text, `%${text}%`, text, run.id);
 }
 
 /** One engine call per provision per pillar, plus one per framework candidate. */
@@ -524,7 +534,8 @@ function addCost(db: Db, run: RunContext, answer: PillarAnswer): void {
 
   // A run that replayed even one answer says so on its own record, not only in a column someone
   // has to know to look at.
-  if (answer.cachedCalls > 0) markCached(db, run);
+  if (answer.cachedCalls > 0) note(db, run, CACHED_RUN_NOTE);
+  if (answer.resumedCalls > 0) note(db, run, RESUMED_RUN_NOTE);
 }
 
 /**

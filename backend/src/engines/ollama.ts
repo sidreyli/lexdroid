@@ -12,7 +12,7 @@
  * later.
  */
 import { request } from 'undici';
-import { cacheEnabled, cacheGet, cacheKey, cachePut } from './cache.js';
+import { cacheEnabled, cacheGet, cacheKey, cachePut, resumePath } from './cache.js';
 import { enginePool, engineHosts } from './pool.js';
 import { OllamaUnavailable } from './errors.js';
 export { OllamaUnavailable, NoEnginesLeft } from './errors.js';
@@ -126,6 +126,36 @@ export function engineReconnects(): number {
   return reconnectAttempts;
 }
 
+/**
+ * A connection that broke, told apart from an engine that stopped.
+ *
+ * An SSH tunnel to a rented pod resets whatever is in flight when it flaps, and the reset arrives
+ * as ECONNRESET rather than a refusal. Unlisted, it escaped the reconnect ladder below and the
+ * pool's retirement above, so a blink that the keeper healed in fifteen seconds still cost the
+ * whole pillar -- most of one night's engine time, for four banked answers.
+ */
+const CONNECTION_LOST =
+  /ECONNRESET|ECONNREFUSED|ECONNABORTED|EPIPE|ETIMEDOUT|EHOSTUNREACH|ENETUNREACH|ENETDOWN|ENOTFOUND|EAI_AGAIN|UND_ERR_SOCKET|SocketError|socket hang up|other side closed|fetch failed|terminated/i;
+
+/** The engine said the request timed out, which is about this prompt and not about the link. */
+const STALLED = /UND_ERR_(HEADERS|BODY)_TIMEOUT|Headers Timeout|Body Timeout/i;
+
+/**
+ * Every message and code down the cause chain.
+ * undici reports the interesting part as the cause: the outer message is often just "fetch failed".
+ */
+function failureText(err: unknown): string {
+  const parts: string[] = [];
+  let e: unknown = err;
+  for (let depth = 0; e instanceof Error && depth < 5; depth += 1) {
+    parts.push(e.message);
+    const code = (e as { code?: unknown }).code;
+    if (typeof code === 'string') parts.push(code);
+    e = (e as { cause?: unknown }).cause;
+  }
+  return parts.length > 0 ? parts.join(' | ') : String(err);
+}
+
 async function once<T>(host: string, path: string, body: unknown, timeoutMs: number, model: string): Promise<T> {
   try {
     const res = await request(`${host}${path}`, {
@@ -139,11 +169,10 @@ async function once<T>(host: string, path: string, body: unknown, timeoutMs: num
     if (res.statusCode >= 400) throw new Error(`HTTP ${res.statusCode}: ${text.slice(0, 300)}`);
     return JSON.parse(text) as T;
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    if (/ECONNREFUSED|fetch failed|other side closed/i.test(message)) throw new OllamaUnavailable(message, host);
-    if (/UND_ERR_(HEADERS|BODY)_TIMEOUT|Headers Timeout|Body Timeout/i.test(message)) {
-      throw new EngineTimeout(model, message);
-    }
+    const message = failureText(err);
+    // Stall first: a prompt the engine took and did not answer costs that provision, not the link.
+    if (STALLED.test(message)) throw new EngineTimeout(model, message);
+    if (CONNECTION_LOST.test(message)) throw new OllamaUnavailable(message, host);
     throw err;
   }
 }
@@ -242,6 +271,8 @@ export interface Generated {
   model: string;
   /** Whether this answer was replayed rather than asked for. A run that used one is not a measurement. */
   fromCache: boolean;
+  /** Replayed from this unit's own interrupted attempt: asked once, answered once, paid for once. */
+  fromResume: boolean;
 }
 
 /**
@@ -280,7 +311,15 @@ export async function generate(
   const key = cacheEnabled() ? cacheKey(body) : null;
   if (key) {
     const hit = cacheGet(key);
-    if (hit) return { ...hit, fromCache: true };
+    if (hit) return { ...hit, fromCache: true, fromResume: false };
+  }
+
+  // What this unit already read before it was interrupted. Same key, so a changed prompt misses.
+  const resume = resumePath();
+  const resumeKey = resume ? (key ?? cacheKey(body)) : null;
+  if (resume && resumeKey) {
+    const hit = cacheGet(resumeKey, resume);
+    if (hit) return { ...hit, fromCache: false, fromResume: true };
   }
 
   const res = await onAnyEngine<{
@@ -306,5 +345,6 @@ export async function generate(
 
   const answer = { text, promptTokens, completionTokens, durationMs, model };
   if (key) cachePut(key, answer);
-  return { ...answer, fromCache: false };
+  if (resume && resumeKey) cachePut(resumeKey, answer, resume);
+  return { ...answer, fromCache: false, fromResume: false };
 }

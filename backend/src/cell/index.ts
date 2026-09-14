@@ -91,6 +91,8 @@ export interface PillarAnswer {
   engineMs: number;
   /** Calls replayed from the development cache. Any number above zero disqualifies the run. */
   cachedCalls: number;
+  /** Calls this unit had already made before it was interrupted, replayed instead of paid for twice. */
+  resumedCalls: number;
   /** Where the wall time went, stage by stage. */
   stages: StageTiming[];
 }
@@ -420,6 +422,8 @@ export async function answerPillar(
       frameworkReadings.reduce((n, r) => n + r.durationMs, 0),
     cachedCalls:
       readings.filter((r) => r.fromCache).length + frameworkReadings.filter((r) => r.fromCache).length,
+    resumedCalls:
+      readings.filter((r) => r.fromResume).length + frameworkReadings.filter((r) => r.fromResume).length,
     stages,
   };
 }
