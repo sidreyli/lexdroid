@@ -19,7 +19,7 @@ import {
 import { loadRubric } from '../src/rubric/index.js';
 import { loadProfile } from '../src/profile/index.js';
 import { citationUrl } from '../src/export/index.js';
-import { amendsAnotherAct } from '../src/parse/identity.js';
+import { amendsAnotherAct, citesADefinition } from '../src/parse/identity.js';
 import { scorecard, tally, verdictFor, pillarOf, type CellResult } from '../src/eval/scorecard.js';
 import type { Finding } from '../src/read/index.js';
 
@@ -221,6 +221,7 @@ for (const cell of cells) {
         headingPath: row['heading_path'],
         citation: citationUrl(row['source_url'], row['anchor']),
         amendsAnotherAct: amendsAnotherAct(row['text']),
+        definesATerm: citesADefinition(row['text'], finding.definingWords ?? finding.quote),
         ...(kind ? { bindingness: kind } : {}),
         ...(confirmed === undefined ? {} : { confirmed }),
       });

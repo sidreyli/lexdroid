@@ -15,7 +15,7 @@ import type { Db } from '../db/index.js';
 import type { Emit } from '../run/events.js';
 import { citationUrl } from '../export/index.js';
 import { enginePool } from '../engines/pool.js';
-import { amendsAnotherAct } from '../parse/identity.js';
+import { amendsAnotherAct, citesADefinition } from '../parse/identity.js';
 import { loadProfile } from '../profile/index.js';
 import type { InstrumentType } from '../profile/types.js';
 import type { Indicator } from '../rubric/types.js';
@@ -264,6 +264,7 @@ export async function answerPillar(
         headingPath: row.heading_path,
         citation: citationFor(row),
         amendsAnotherAct: amendsAnotherAct(row.text),
+        definesATerm: citesADefinition(row.text, finding.definingWords ?? finding.quote),
         ...(bindingness.get(row.instrument_kind) ? { bindingness: bindingness.get(row.instrument_kind)! } : {}),
       });
     }
