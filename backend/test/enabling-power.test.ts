@@ -85,8 +85,8 @@ describe('a provision that empowers rather than requires', () => {
   it('is held rather than scored, and the hold says why', () => {
     const d = decide({ indicator: indicator('6.1'), economy: 'AUS', evidence: [evidence()], surfaced, coverage });
     expect(d.score).toBe(0);
-    expect(d.held).toHaveLength(1);
-    expect(d.held[0]?.reason).toContain('empowers another instrument');
+    expect(d.excluded).toHaveLength(1);
+    expect(d.excluded[0]?.reason).toContain('empowers another instrument');
   });
 
   it('scores when the provision does impose the thing itself', () => {
@@ -99,7 +99,7 @@ describe('a provision that empowers rather than requires', () => {
       coverage,
     });
     expect(d.score).toBeGreaterThan(0);
-    expect(d.held).toHaveLength(0);
+    expect(d.excluded).toHaveLength(0);
   });
 
   it('is rejected when the imposing words are not in the provision', () => {
@@ -168,7 +168,7 @@ describe('a measure the rubric itself writes as a power', () => {
       surfaced,
       coverage,
     });
-    expect(d.held.map((h) => h.reason).join(' ')).not.toContain('empowers another instrument');
+    expect(d.excluded.map((h) => h.reason).join(' ')).not.toContain('empowers another instrument');
     expect(d.score).toBe(1);
   });
 
@@ -199,7 +199,7 @@ describe('the enabling words, asked in their own right', () => {
       coverage,
     });
     expect(d.score).toBe(0);
-    expect(d.held[0]?.reason).toContain('empowering another instrument');
+    expect(d.excluded[0]?.reason).toContain('empowering another instrument');
   });
 
   it('scores a provision that does both, imposing a duty and empowering rules about it', () => {
@@ -216,7 +216,7 @@ describe('the enabling words, asked in their own right', () => {
       coverage,
     });
     expect(d.score).toBeGreaterThan(0);
-    expect(d.held).toHaveLength(0);
+    expect(d.excluded).toHaveLength(0);
   });
 
   it('is rejected when the enabling words are not in the provision', () => {

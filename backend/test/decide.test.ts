@@ -315,7 +315,7 @@ describe('what makes a transfer conditional', () => {
   it('holds a finding whose condition is only the place the data goes', () => {
     const d = conditional({ definingWords: 'outside Singapore', placeWords: 'outside Singapore', exceptionWords: null });
     expect(d.score).toBe(0);
-    expect(d.held.map((h) => h.reason)).toContain(
+    expect(d.excluded.map((h) => h.reason)).toContain(
       'the words said to state the condition only name where the data goes, which is no condition',
     );
   });
@@ -327,7 +327,7 @@ describe('what makes a transfer conditional', () => {
       exceptionWords: 'except in accordance with requirements prescribed under this Act',
     });
     expect(d.score).toBe(1);
-    expect(d.held).toHaveLength(0);
+    expect(d.excluded).toHaveLength(0);
   });
 
   it('takes a condition worded around the place, rather than reading the overlap as a repeat', () => {
@@ -441,7 +441,7 @@ describe('what counts as reaching broadly, which is not one test', () => {
       coverage,
     });
     expect(d.score).toBe(0.5);
-    expect(d.held).toHaveLength(0);
+    expect(d.excluded).toHaveLength(0);
   });
 
   // The mirror on the other axis. Australia's motor-vehicle repair scheme binds only its own
@@ -575,8 +575,8 @@ describe('a measure about where data must be', () => {
       coverage,
     });
     expect(d.score).toBe(0);
-    expect(d.held).toHaveLength(1);
-    expect(d.held[0]?.reason).toContain('names no place');
+    expect(d.excluded).toHaveLength(1);
+    expect(d.excluded[0]?.reason).toContain('names no place');
   });
 
   // Section 13N of the Income Tax Act, verbatim. It names a place and a duty, and what has to be
@@ -601,7 +601,7 @@ describe('a measure about where data must be', () => {
       coverage,
     });
     expect(d.score).toBe(0);
-    expect(d.held[0]?.reason).toContain('no data that has to be there');
+    expect(d.excluded[0]?.reason).toContain('no data that has to be there');
   });
 
   // Section 10 of the Biological Agents and Toxins Act, verbatim. A duty, a place, and a thing
@@ -629,7 +629,7 @@ describe('a measure about where data must be', () => {
       coverage,
     });
     expect(d.score).toBe(0);
-    expect(d.held[0]?.reason).toContain('never calls that thing information');
+    expect(d.excluded[0]?.reason).toContain('never calls that thing information');
   });
 
   // Section 47A of the Banking Act, verbatim. A place, data, and a word for information -- and the
@@ -658,7 +658,7 @@ describe('a measure about where data must be', () => {
       coverage,
     });
     expect(d.score).toBe(0);
-    expect(d.held[0]?.reason).toContain('never says the data has to be there');
+    expect(d.excluded[0]?.reason).toContain('never says the data has to be there');
   });
 
   // Section 13N of the Income Tax Act, verbatim, as the reader returned it: "any income" bound by
@@ -683,7 +683,7 @@ describe('a measure about where data must be', () => {
       coverage,
     });
     expect(d.score).toBe(0);
-    expect(d.held[0]?.reason).toContain('binds no one');
+    expect(d.excluded[0]?.reason).toContain('binds no one');
   });
 
   // Section 82A(5) of Malaysia's Income Tax Act: "All documents that relate to any income in
@@ -710,7 +710,7 @@ describe('a measure about where data must be', () => {
       surfaced,
       coverage,
     });
-    expect(d.held).toHaveLength(0);
+    expect(d.excluded).toHaveLength(0);
     expect(d.score).toBeGreaterThan(0);
   });
 
@@ -815,7 +815,7 @@ describe('a measure about where data must be', () => {
       coverage,
     });
     expect(d.score).toBe(1);
-    expect(d.held).toHaveLength(0);
+    expect(d.excluded).toHaveLength(0);
   });
 });
 
@@ -903,7 +903,7 @@ describe('a prohibition, and the two things that are not one', () => {
       coverage,
     });
     expect(d.score).toBe(0);
-    expect(d.held[0]?.reason).toContain('rather than requiring anyone to do anything');
+    expect(d.excluded[0]?.reason).toContain('rather than requiring anyone to do anything');
   });
 
   // The rule is not about pillar 6. Section 16P of the Electronic Transactions Act is the same
@@ -961,7 +961,7 @@ describe('a prohibition, and the two things that are not one', () => {
       coverage,
     });
     expect(d.score).toBe(0);
-    expect(d.held[0]?.reason).toContain('enters or leaves the economy');
+    expect(d.excluded[0]?.reason).toContain('enters or leaves the economy');
   });
 
   // The record has to hold the decision's own inputs, or the score cannot be re-derived from it
@@ -1111,7 +1111,7 @@ describe('which sentence the row leads with', () => {
     expect(d.score).toBe(1);
     expect(d.basis).toHaveLength(1);
     expect(d.basis[0]!.finding.quote).toContain('must designate');
-    expect(d.held.map((h) => h.reason)).toContain('the provision permits rather than requires');
+    expect(d.excluded.map((h) => h.reason)).toContain('the provision permits rather than requires');
   });
 
   it('will not count a duty that appoints nobody', () => {
@@ -1144,8 +1144,8 @@ describe('which sentence the row leads with', () => {
     });
     expect(d.score).toBe(0);
     expect(d.basis).toHaveLength(0);
-    expect(d.held).toHaveLength(2);
-    expect(d.held[0]!.reason).toContain('appoints no one');
+    expect(d.excluded).toHaveLength(2);
+    expect(d.excluded[0]!.reason).toContain('appoints no one');
   });
 
   it('will not count the State appointing its own regulator', () => {
@@ -1173,7 +1173,7 @@ describe('which sentence the row leads with', () => {
     });
     expect(d.score).toBe(0);
     expect(d.basis).toHaveLength(0);
-    expect(d.held[0]!.reason).toContain('which is the State');
+    expect(d.excluded[0]!.reason).toContain('which is the State');
   });
 });
 
@@ -1472,7 +1472,7 @@ describe('12.7, where being here and sending someone here are different burdens'
       coverage,
     });
     expect(d.score).toBe(0);
-    expect(d.held[0]?.reason).toContain('appoints no one');
+    expect(d.excluded[0]?.reason).toContain('appoints no one');
   });
 });
 
@@ -1619,7 +1619,7 @@ describe('an indicator whose top band is an absence', () => {
     });
     const d = at(i14, [power]);
     expect(d.score).toBe(0);
-    expect(d.held).toHaveLength(1);
+    expect(d.excluded).toHaveLength(1);
   });
 });
 
@@ -1729,8 +1729,8 @@ describe('a measure only a command can make out', () => {
       imposingWords: 'must not',
     });
     expect(d.score).toBe(0);
-    expect(d.held[0]?.reason).toContain('forbids the act');
-    expect(d.held[0]?.reason).toContain('must not... be required to disclose');
+    expect(d.excluded[0]?.reason).toContain('forbids the act');
+    expect(d.excluded[0]?.reason).toContain('must not... be required to disclose');
   });
 
   it('takes the same provision when it commands the disclosure instead', () => {
@@ -1744,7 +1744,7 @@ describe('a measure only a command can make out', () => {
       sectorScope: 'all',
     });
     expect(d.score).toBe(1);
-    expect(d.held).toHaveLength(0);
+    expect(d.excluded).toHaveLength(0);
   });
 
   it('leaves a measure the rubric writes as a prohibition alone', () => {
@@ -1790,6 +1790,6 @@ describe('a finding the rubric moves into 6.4', () => {
       coverage,
     });
     expect(d.score).toBe(1);
-    expect(d.held).toHaveLength(0);
+    expect(d.excluded).toHaveLength(0);
   });
 });
