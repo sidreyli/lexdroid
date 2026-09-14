@@ -1894,10 +1894,17 @@ export function decide(input: DecideInput): Decision {
   // saw and could not evaluate is not a provision that is absent -- a customs threshold stated in
   // money this run had no rate for is still a threshold, and reporting "no de minimis" off it
   // would be the strongest claim in the rubric made on the weakest evidence.
-  const unevaluated = held.filter((h) =>
-    (MEASURES[indicator.id] ?? []).some((m) => m.token === h.evidence.finding.measure),
-  );
-  if (scoresOnAbsence(indicator, rule, chosen.ordinal) && (witness?.basis !== 'governing' || unevaluated.length > 0)) {
+  const ownMeasure = (e: Evidence) => (MEASURES[indicator.id] ?? []).some((m) => m.token === e.finding.measure);
+  const unevaluated = held.filter((h) => ownMeasure(h.evidence));
+  // The third is that the silence is the reader's and not our own. Asked about one measure alone
+  // the reader answers, and a no is a ruling this band may count. A provision one of our own tests
+  // turned away before that question was reached was never ruled on, and counting it as absent
+  // makes the strongest claim in the rubric out of our failure to place it.
+  const unasked = excluded.filter((x) => ownMeasure(x.evidence) && x.evidence.confirmed !== false);
+  if (
+    scoresOnAbsence(indicator, rule, chosen.ordinal) &&
+    (witness?.basis !== 'governing' || unevaluated.length > 0 || unasked.length > 0)
+  ) {
     const ungoverned = witness?.basis !== 'governing';
     return {
       indicatorId: indicator.id,
@@ -1913,15 +1920,22 @@ export function decide(input: DecideInput): Decision {
       coverage,
       decidingFact: ungoverned
         ? 'nothing read governs the subject whose absence this band asserts'
-        : 'a provision of this kind was read and could not be evaluated, so its absence is not established',
+        : unevaluated.length > 0
+          ? 'a provision of this kind was read and could not be evaluated, so its absence is not established'
+          : 'a provision of this kind was set aside before the reader was asked about it, so its absence is not established',
       rationale: ungoverned
         ? `This indicator scores ${band(indicator, chosen.ordinal).score} for the absence of something, and ` +
           `nothing among the ${coverage.sectionsRead} provision(s) read establishes an instrument that governs ` +
           `the subject. An economy without the measure and an economy nobody looked at produce the same silence, ` +
           `and only one of them is a finding.`
-        : `This indicator scores ${band(indicator, chosen.ordinal).score} for the absence of something, and ` +
-          `${unevaluated.length} provision(s) of exactly that kind were read and held: ` +
-          `${unevaluated[0]?.reason}. Something we could not evaluate is not something that is not there.`,
+        : unevaluated.length > 0
+          ? `This indicator scores ${band(indicator, chosen.ordinal).score} for the absence of something, and ` +
+            `${unevaluated.length} provision(s) of exactly that kind were read and held: ` +
+            `${unevaluated[0]?.reason}. Something we could not evaluate is not something that is not there.`
+          : `This indicator scores ${band(indicator, chosen.ordinal).score} for the absence of something, and ` +
+            `${unasked.length} provision(s) of exactly that kind were set aside before the reader was asked ` +
+            `whether the provision states the measure: ${unasked[0]?.reason}. A provision our own test turned ` +
+            `away was not found wanting by anyone who read it.`,
     };
   }
 

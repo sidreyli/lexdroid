@@ -1539,6 +1539,28 @@ describe('an indicator whose top band is an absence', () => {
     expect(d.decidingFact).toContain('governs the subject');
   });
 
+  it('says nothing when a provision of the kind was set aside before the reader was asked', () => {
+    // Australia's independent-regulator cell claimed the maximum after our own test discarded a
+    // provision the reader had confirmed. A silence our machinery made is not the statute's.
+    const confirmed = { ...p5('5.4', 'accounting-separation', { dutyForce: 'declares' }), confirmed: true };
+    const d = decide({
+      indicator: i54, economy: 'SGP', evidence: [...alsoInPillar, confirmed], surfaced: governing, coverage: read,
+    });
+    expect(d.state).toBe('unresolved');
+    expect(d.score).toBeNull();
+    expect(d.decidingFact).toContain('before the reader was asked');
+  });
+
+  it('still scores the absence when the reader itself ruled the provision out', () => {
+    // The reader, asked about the measure alone, found no words for it. That is a ruling about the
+    // provision and it is what this band is entitled to count.
+    const ruled = { ...p5('5.4', 'accounting-separation', { dutyForce: 'declares' }), confirmed: false };
+    const d = decide({
+      indicator: i54, economy: 'SGP', evidence: [...alsoInPillar, ruled], surfaced: governing, coverage: read,
+    });
+    expect(d.score).toBe(1);
+  });
+
   it('will not take a merely surfaced instrument as the witness for an absence', () => {
     const d = decide({
       indicator: i54, economy: 'SGP', evidence: [], surfaced: governing, coverage: read,
