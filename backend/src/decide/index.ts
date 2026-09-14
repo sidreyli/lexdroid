@@ -41,6 +41,15 @@ export interface Evidence {
    * the behaviour every earlier run had.
    */
   bindingness?: 'binding' | 'binding-on-licensees' | 'advisory';
+  /**
+   * Whether the reader, asked about this one measure and nothing else, found it in the provision.
+   *
+   * The first reading chooses a label from a pillar's twelve, and asked that way it always chooses
+   * one. This is the same provision put to the reader again with one measure in front of it and
+   * "the words are not there" as the ordinary answer. Absent where the pass has not been run,
+   * which is every reading taken before it existed.
+   */
+  confirmed?: boolean;
 }
 
 /** What a framework-shaped indicator is decided from. One per candidate instrument. */
@@ -1177,6 +1186,17 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
       ruledOut.push({
         evidence: e,
         reason: `the provision does not state ${definedBy(indicatorId, e.finding.measure)}, which is what makes it this measure`,
+      });
+      continue;
+    }
+    // Asked about this measure alone, with nothing to be nearest to, the reader did not find it in
+    // the provision. Ruled out rather than held: the provision was read, twice, and does not carry
+    // the measure. Absent confirmation is not a refusal, so a reading taken before the pass existed
+    // stands exactly as it did.
+    if (e.confirmed === false) {
+      ruledOut.push({
+        evidence: e,
+        reason: `asked about ${e.finding.measure} alone, the reader found no words in the provision stating it`,
       });
       continue;
     }

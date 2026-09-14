@@ -129,6 +129,26 @@ const consideredFor = db.prepare(
 
 const storedAnswer = db.prepare('SELECT score FROM cell_answer WHERE cell_id = ?');
 
+/**
+ * The second reading's answers, where --confirmed asks for them.
+ *
+ * Off by default so the replay of a run reproduces that run. On, every finding the confirmation
+ * pass ruled out is a provision read twice and found not to carry the measure.
+ */
+const useConfirmed = process.argv.includes('--confirmed');
+const confirmations = new Map<string, boolean>();
+if (useConfirmed) {
+  for (const c of db
+    .prepare('SELECT section_id, indicator_id, measure, words, failure FROM measure_confirmation')
+    .all() as Record<string, any>[]) {
+    // A question the engine never answered is not a provision found wanting, so it is left alone.
+    if (c['failure']) continue;
+    confirmations.set(`${c['section_id']}/${c['indicator_id']}/${c['measure']}`, c['words'] !== null);
+  }
+  console.log(`
+  ${confirmations.size} banked confirmation(s) in play`);
+}
+
 const profiles = new Map<string, Map<string, 'binding' | 'binding-on-licensees' | 'advisory'>>();
 function bindingnessFor(economy: string) {
   let m = profiles.get(economy);
@@ -179,6 +199,7 @@ for (const cell of cells) {
       );
       if (already) continue;
       const kind = binding.get(row['instrument_kind']);
+      const confirmed = confirmations.get(`${row['section_id']}/${finding.indicatorId}/${finding.measure}`);
       evidence.push({
         finding,
         sectionId: row['section_id'],
@@ -188,6 +209,7 @@ for (const cell of cells) {
         citation: citationUrl(row['source_url'], row['anchor']),
         amendsAnotherAct: amendsAnotherAct(row['text']),
         ...(kind ? { bindingness: kind } : {}),
+        ...(confirmed === undefined ? {} : { confirmed }),
       });
     }
   }
