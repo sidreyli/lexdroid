@@ -31,6 +31,23 @@ export function cacheEnabled(): boolean {
   return v === '1' || v === 'true';
 }
 
+/**
+ * Where one unit of work keeps the readings it has already paid for, so a kill costs minutes.
+ *
+ * This is not the development cache above and does not carry its danger. A pillar is the unit of
+ * reading, so nothing is banked until every provision in it has been read, and an interruption at
+ * provision six hundred throws away six hundred readings that the engine really performed and the
+ * account really paid for. Replaying those is not a substitute for a fresh reading -- they *are*
+ * this run's fresh readings, asked once and answered once.
+ *
+ * Scoped to one file per unit by the caller, and empty unless a unit is being restarted, so it can
+ * never answer a question a changed prompt is asking. Deleting the file loses nothing but time.
+ */
+export function resumePath(): string | null {
+  const p = process.env['LEXDROID_ENGINE_RESUME'];
+  return p && p.trim() ? p.trim() : null;
+}
+
 export interface CachedResponse {
   text: string;
   promptTokens: number;
@@ -39,16 +56,16 @@ export interface CachedResponse {
   model: string;
 }
 
-let handle: Database.Database | null = null;
-let openedAt = '';
+// One handle per file, because the development cache and a unit's resume store are two files and
+// a single handle that swapped between them would reopen on every call.
+const handles = new Map<string, Database.Database>();
 
-function db(): Database.Database {
-  const path = cachePath();
-  if (handle && openedAt === path) return handle;
-  if (handle) handle.close();
+function db(path: string): Database.Database {
+  const open = handles.get(path);
+  if (open) return open;
   if (!existsSync(dirname(path))) mkdirSync(dirname(path), { recursive: true });
-  handle = new Database(path);
-  openedAt = path;
+  const handle = new Database(path);
+  handles.set(path, handle);
   handle.pragma('journal_mode = WAL');
   handle.exec(
     `CREATE TABLE IF NOT EXISTS response (
@@ -83,8 +100,8 @@ function canonical(value: unknown): string {
   return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${canonical(v)}`).join(',')}}`;
 }
 
-export function cacheGet(key: string): CachedResponse | null {
-  const row = db()
+export function cacheGet(key: string, path: string = cachePath()): CachedResponse | null {
+  const row = db(path)
     .prepare('SELECT model, text, prompt_tokens, output_tokens, duration_ms FROM response WHERE key = ?')
     .get(key) as
     | { model: string; text: string; prompt_tokens: number; output_tokens: number; duration_ms: number }
@@ -99,8 +116,8 @@ export function cacheGet(key: string): CachedResponse | null {
   };
 }
 
-export function cachePut(key: string, value: CachedResponse): void {
-  db()
+export function cachePut(key: string, value: CachedResponse, path: string = cachePath()): void {
+  db(path)
     .prepare(
       `INSERT OR REPLACE INTO response (key, model, text, prompt_tokens, output_tokens, duration_ms, stored_at)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
@@ -109,13 +126,12 @@ export function cachePut(key: string, value: CachedResponse): void {
 }
 
 /** How many answers are stored, for the banner that says a run was not measured. */
-export function cacheSize(): number {
-  if (!existsSync(cachePath())) return 0;
-  return (db().prepare('SELECT COUNT(*) c FROM response').get() as { c: number }).c;
+export function cacheSize(path: string = cachePath()): number {
+  if (!existsSync(path)) return 0;
+  return (db(path).prepare('SELECT COUNT(*) c FROM response').get() as { c: number }).c;
 }
 
 export function closeCache(): void {
-  handle?.close();
-  handle = null;
-  openedAt = '';
+  for (const h of handles.values()) h.close();
+  handles.clear();
 }

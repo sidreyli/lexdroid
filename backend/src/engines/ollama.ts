@@ -12,7 +12,7 @@
  * later.
  */
 import { request } from 'undici';
-import { cacheEnabled, cacheGet, cacheKey, cachePut } from './cache.js';
+import { cacheEnabled, cacheGet, cacheKey, cachePut, resumePath } from './cache.js';
 import { enginePool, engineHosts } from './pool.js';
 import { OllamaUnavailable } from './errors.js';
 export { OllamaUnavailable, NoEnginesLeft } from './errors.js';
@@ -242,6 +242,8 @@ export interface Generated {
   model: string;
   /** Whether this answer was replayed rather than asked for. A run that used one is not a measurement. */
   fromCache: boolean;
+  /** Replayed from this unit's own interrupted attempt: asked once, answered once, paid for once. */
+  fromResume: boolean;
 }
 
 /**
@@ -280,7 +282,15 @@ export async function generate(
   const key = cacheEnabled() ? cacheKey(body) : null;
   if (key) {
     const hit = cacheGet(key);
-    if (hit) return { ...hit, fromCache: true };
+    if (hit) return { ...hit, fromCache: true, fromResume: false };
+  }
+
+  // What this unit already read before it was interrupted. Same key, so a changed prompt misses.
+  const resume = resumePath();
+  const resumeKey = resume ? (key ?? cacheKey(body)) : null;
+  if (resume && resumeKey) {
+    const hit = cacheGet(resumeKey, resume);
+    if (hit) return { ...hit, fromCache: false, fromResume: true };
   }
 
   const res = await onAnyEngine<{
@@ -306,5 +316,6 @@ export async function generate(
 
   const answer = { text, promptTokens, completionTokens, durationMs, model };
   if (key) cachePut(key, answer);
-  return { ...answer, fromCache: false };
+  if (resume && resumeKey) cachePut(resumeKey, answer, resume);
+  return { ...answer, fromCache: false, fromResume: false };
 }
