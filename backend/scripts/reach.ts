@@ -13,17 +13,22 @@
  *   unregistered  the register never listed the instrument
  *   unfetched     listed, never retrieved
  *   unparsed      retrieved, no sections came out of it
- *   unshortlisted parsed, but no section of it was ever a candidate for this cell
+ *   unread        parsed, but no section of it was ever put in front of the reader for this cell
  *   read          a section of it was read for this cell, and the measure was still missed
+ *
+ * "Unread" is asked of the reading table, not the shortlist. The shortlist is the cell's own
+ * retrieval; reading covers the pillar's whole union, and 83% of what was read never appeared
+ * in the cell's own shortlist. Asking the shortlist reports provisions as never offered that
+ * the reader did in fact see.
  */
 import { readFileSync } from 'node:fs';
 import { openDb } from '../src/db/index.js';
-import { openBaseline, sameInstrument } from '../src/baseline/index.js';
+import { citedInstruments, openBaseline, sameInstrument } from '../src/baseline/index.js';
 import { scorecard, type CellResult } from '../src/eval/scorecard.js';
 
 const ESCAP_NAME: Record<string, string> = { AUS: 'Australia', MYS: 'Malaysia', SGP: 'Singapore' };
 
-type Reach = 'unregistered' | 'unfetched' | 'unparsed' | 'unshortlisted' | 'read' | 'uncited';
+type Reach = 'unregistered' | 'unfetched' | 'unparsed' | 'unread' | 'read' | 'uncited';
 
 function arg(name: string): string | undefined {
   const i = process.argv.indexOf(`--${name}`);
@@ -58,9 +63,18 @@ const citedFor = baseline.prepare(
       AND act_or_practice IS NOT NULL AND act_or_practice != ''`,
 );
 
-/** Did any section of this instrument become a candidate for this cell, and was it read? */
+/** Was any section of this instrument actually read for this cell, and did the reader tick it? */
+const readFor = db.prepare(
+  `SELECT COUNT(*) AS n, SUM(r.applies) AS applied
+     FROM reading r
+     JOIN section s ON s.id = r.section_id
+     JOIN document d ON d.id = s.document_id
+    WHERE r.cell_id = ? AND d.instrument_id = ?`,
+);
+
+/** Kept only to report how often retrieval's own shortlist missed a law the reader then saw. */
 const shortlisted = db.prepare(
-  `SELECT COUNT(*) AS n, COUNT(se.read_at) AS read
+  `SELECT COUNT(*) AS n
      FROM shortlist_entry se
      JOIN section s ON s.id = se.section_id
      JOIN document d ON d.id = s.document_id
@@ -112,15 +126,16 @@ const cells = (from ? fromCsv(from) : scorecard(db, runId)).filter(
 
 const corpus = new Map<string, ReturnType<typeof corpusOf>>();
 const tally: Record<Reach, number> = {
-  unregistered: 0, unfetched: 0, unparsed: 0, unshortlisted: 0, read: 0, uncited: 0,
+  unregistered: 0, unfetched: 0, unparsed: 0, unread: 0, read: 0, uncited: 0,
 };
 const lines: string[] = [];
+let readButNotShortlisted = 0;
+let readAndTicked = 0;
 
 for (const c of cells) {
   const escapEconomy = ESCAP_NAME[c.economy] ?? c.economy;
   const cited = (citedFor.all(escapEconomy, c.indicator) as { act_or_practice: string }[])
-    .map((r) => r.act_or_practice.trim())
-    .filter((t) => t.length > 0);
+    .flatMap((r) => citedInstruments(r.act_or_practice));
 
   if (cited.length === 0) {
     tally.uncited++;
@@ -135,27 +150,42 @@ for (const c of cells) {
   // Best reach across every instrument ESCAP cites: one of them arriving is enough.
   let best: Reach = 'unregistered';
   let via = cited[0]!;
-  const rank: Reach[] = ['unregistered', 'unfetched', 'unparsed', 'unshortlisted', 'read'];
+  let note = '';
+  let ticked = 0;
+  let shortlistedToo = false;
+  const rank: Reach[] = ['unregistered', 'unfetched', 'unparsed', 'unread', 'read'];
   for (const title of cited) {
     const match = ours.find((o) => sameInstrument(o.title, title));
     let reach: Reach = 'unregistered';
+    let mark = '', applied = 0, onList = false;
     if (match) {
       if (match.docs === 0) reach = 'unfetched';
       else if (match.sections === 0) reach = 'unparsed';
+      else if (!cellId) reach = 'unread';
       else {
-        const s = cellId
-          ? (shortlisted.get(cellId, match.id) as { n: number; read: number })
-          : { n: 0, read: 0 };
-        reach = s.n === 0 ? 'unshortlisted' : 'read';
+        const r = readFor.get(cellId, match.id) as { n: number; applied: number | null };
+        reach = r.n === 0 ? 'unread' : 'read';
+        if (reach === 'read') {
+          applied = r.applied ?? 0;
+          onList = (shortlisted.get(cellId, match.id) as { n: number }).n > 0;
+          mark = `${r.n} read, ${applied} ticked` + (onList ? '' : ', never shortlisted');
+        }
       }
     }
-    if (rank.indexOf(reach) > rank.indexOf(best)) { best = reach; via = match?.title ?? title; }
+    if (rank.indexOf(reach) > rank.indexOf(best)) {
+      best = reach; via = match?.title ?? title; note = mark; ticked = applied; shortlistedToo = onList;
+    }
   }
 
   tally[best]++;
+  if (best === 'read') {
+    if (ticked > 0) readAndTicked++;
+    if (!shortlistedToo) readButNotShortlisted++;
+  }
   lines.push(
     `  ${c.economy} ${c.indicator.padEnd(8)} ${best.padEnd(13)} ` +
-      `ours=${c.ours ?? '-'} escap=${c.theirs ?? '-'}  ${via.slice(0, 58)}`,
+      `ours=${c.ours ?? '-'} escap=${c.theirs ?? '-'}  ${via.slice(0, 48)}` +
+      (note ? `  [${note}]` : ''),
   );
 }
 
@@ -163,7 +193,11 @@ console.log(`\nReach of ESCAP's own citation, run ${runId}`);
 console.log(`\n  ${cells.length} cell(s) that do not agree\n`);
 lines.sort().forEach((l) => console.log(l));
 console.log('\n  where the measure-bearing instrument got to:');
-for (const k of ['unregistered', 'unfetched', 'unparsed', 'unshortlisted', 'read', 'uncited'] as Reach[]) {
+for (const k of ['unregistered', 'unfetched', 'unparsed', 'unread', 'read', 'uncited'] as Reach[]) {
   if (tally[k]) console.log(`    ${k.padEnd(14)} ${String(tally[k]).padStart(3)}`);
 }
-console.log('\n  only the last is a reading defect; the rest are upstream of the reader.\n');
+console.log('\n  only the last is a reading defect; the rest are upstream of the reader.');
+console.log(
+  `  of the ${tally.read} read: ${readAndTicked} had the right law ticked as applying, ` +
+    `${readButNotShortlisted} reached the reader without retrieval shortlisting it.\n`,
+);

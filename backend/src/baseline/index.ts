@@ -100,14 +100,32 @@ function stems(title: string): string[] {
  * says what kind of instrument it is has to agree -- without that, the Copyright Act and the
  * Copyright Regulations are two thirds of the same title.
  */
+/**
+ * The instruments one cell cites, as separate titles.
+ *
+ * 105 of ESCAP's 250 cited rows pack several instruments into the one field, separated by a
+ * semicolon and a blank line. Read whole, the field names nothing: no register entry matches
+ * "Companies Act 2016;\n\nCommunications and Multimedia Act 1998", so the cell reports the law
+ * as never registered when both Acts are held.
+ */
+export function citedInstruments(field: string): string[] {
+  return field
+    .split(/\s*;?\s*\n\s*\n\s*|\s*;\s+(?=[A-Z0-9])/)
+    .map((s) => s.replace(/^[\s;]+|[\s;]+$/g, ''))
+    .filter((s) => s.length > 0);
+}
+
 export function sameInstrument(candidate: string, cited: string): boolean {
   const a = normaliseTitle(candidate);
   // A parenthesised run of capitals is the writer abbreviating their own citation, not part of
   // the name: "Government Procurement Act (GPA) 1997".
   const b = normaliseTitle(cited.replace(/\([A-Z]{2,6}\)/g, ' '));
   if (a === b) return true;
-  if (b.length < 12) return false;
-  if (a.includes(b) || b.includes(a)) return true;
+  // Containment answers a citation that drops or adds a trailing year. Both sides have to be long
+  // enough to name something: our register holds an instrument titled "2023", and every Malaysian
+  // citation carrying that year contained it.
+  if (a.length < 12 || b.length < 12) return false;
+  if (contains(a, b) || contains(b, a)) return true;
 
   const at = stems(a);
   const bt = stems(b);
@@ -147,11 +165,24 @@ export function sameInstrument(candidate: string, cited: string): boolean {
   return covers(want, held) && covers(held, want);
 }
 
-/** Within one or two characters, scaled so short words are not allowed to become other words. */
+/**
+ * A misspelling of a word, not another word. The first letter has to agree: a typo transposes and
+ * drops letters inside a word, while "imports" and "exports" differ by two edits and are opposites.
+ */
 function near(a: string, b: string): boolean {
   if (Math.abs(a.length - b.length) > 2) return false;
-  const budget = Math.min(a.length, b.length) >= 5 ? 2 : 1;
+  if (a[0] !== b[0]) return false;
+  const budget = Math.min(a.length, b.length) >= 8 ? 2 : 1;
   return distance(a, b, budget) <= budget;
+}
+
+/** Containment on whole words, so "port" does not find itself inside "airport". */
+function contains(haystack: string, needle: string): boolean {
+  const i = haystack.indexOf(needle);
+  if (i < 0) return false;
+  const before = i === 0 || haystack[i - 1] === ' ';
+  const end = i + needle.length;
+  return before && (end === haystack.length || haystack[end] === ' ');
 }
 
 /** Levenshtein, abandoned once the budget is exceeded. */

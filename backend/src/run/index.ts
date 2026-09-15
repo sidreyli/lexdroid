@@ -390,10 +390,14 @@ export function recordPillarAnswer(run: RunContext, answer: PillarAnswer): void 
 
       // What this cell asked for, and what each question returned. The shortlist is the cell's own
       // retrieval; the readings below cover the pillar's whole union, which is larger by design.
+      // read_at is documented as NULL when a candidate never reached the model, and was being
+      // stamped on every row. It is the only record of whether retrieval's own pick was used.
+      const wasRead = new Set(answer.readings.map((r) => r.sectionId));
       for (const s of record?.sections ?? []) {
         if (!ownsSection(s.sectionId)) continue;
         for (const f of s.found) {
-          insertShortlist.run(cellId, s.sectionId, f.channel, f.query, f.rank, f.score, now);
+          insertShortlist.run(cellId, s.sectionId, f.channel, f.query, f.rank, f.score,
+            wasRead.has(s.sectionId) ? now : null);
         }
       }
 
