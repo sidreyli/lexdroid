@@ -3,7 +3,7 @@
  *
  * The trap it exists to avoid: reading direction as meaning. Some indicators score the presence of
  * a framework as zero, so the same over-claim that lands above ESCAP on one indicator lands below
- * on another. What separates the two kinds is whether we found anything at all.
+ * on another. Direction is read through the indicator's own direction, never on its own.
  */
 import { describe, expect, it } from 'vitest';
 import { movement, pillarOf, tally, verdictFor, type CellResult } from '../src/eval/scorecard.js';
@@ -24,7 +24,25 @@ describe('which kind of disagreement', () => {
 
   it('calls it an over-claim when the over-claim scored us BELOW ESCAP', () => {
     // 8.2: finding a horizontal framework scores 0. Claiming one we do not have lands under, not over.
-    expect(verdictFor(0, 1, 9)).toBe('over-claim');
+    expect(verdictFor(0, 1, 9, true)).toBe('over-claim');
+  });
+
+  it('separates reading the right law and crediting none of it from reading too much into it', () => {
+    // 24 cells scored below ESCAP holding twelve to ninety-one findings, and were reported as
+    // over-claims. No rule that rejects evidence can fix one of them.
+    expect(verdictFor(0, 1, 33)).toBe('under-claim');
+    expect(verdictFor(0.5, 1, 91)).toBe('under-claim');
+  });
+
+  it('reads the same direction the other way where the top band scores an absence', () => {
+    // There, the cell that credits too much is the one that lands below, so the labels swap.
+    expect(verdictFor(1, 0, 12, true)).toBe('under-claim');
+    expect(verdictFor(1, 0, 12, false)).toBe('over-claim');
+  });
+
+  it('still calls an empty cell a recall miss whichever way the indicator runs', () => {
+    expect(verdictFor(0, 1, 0, true)).toBe('recall-miss');
+    expect(verdictFor(0, 1, 0, false)).toBe('recall-miss');
   });
 
   it('calls it a recall miss when we found nothing and ESCAP found a measure', () => {

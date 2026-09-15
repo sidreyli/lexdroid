@@ -1,19 +1,21 @@
 /**
  * How a run compares with ESCAP's own answers, and why each cell differs.
  *
- * A disagreement is only useful if we can say which kind it is. Two kinds matter and they need
- * opposite fixes: we read an instrument and claimed more than it says, or we never found the
- * instrument at all. Direction alone cannot tell them apart, because some indicators score the
- * presence of a framework as zero -- there, over-claiming lands us below ESCAP, not above.
+ * A disagreement is only useful if we can say which kind it is. Three kinds matter and each needs a
+ * different fix: we read an instrument and claimed more than it says, we read the right instrument
+ * and credited none of it, or we never found the instrument at all. Direction alone cannot tell the
+ * first two apart, because some indicators score the presence of a framework as zero -- there,
+ * over-claiming lands us below ESCAP, not above. So the indicator is asked which way it runs.
  */
 import type { Database } from 'better-sqlite3';
 import { openBaseline, escapScore } from '../baseline/index.js';
 import { loadRubric } from '../rubric/index.js';
+import { topBandScoresAbsence } from '../decide/index.js';
 
 /** ESCAP name each economy code. Their sheets are keyed by name, ours by code. */
 const ESCAP_NAME: Record<string, string> = { AUS: 'Australia', MYS: 'Malaysia', SGP: 'Singapore' };
 
-export type Verdict = 'agree' | 'over-claim' | 'recall-miss' | 'abstained' | 'ungraded';
+export type Verdict = 'agree' | 'over-claim' | 'under-claim' | 'recall-miss' | 'abstained' | 'ungraded';
 
 export type CellResult = {
   economy: string;
@@ -34,14 +36,28 @@ export function pillarOf(indicator: string): number {
 /**
  * Which kind of disagreement this is.
  *
- * Nothing found and still wrong means we never saw the instrument; findings and still wrong means
- * we saw one and read too much into it. That split is what decides which fix a cell belongs to.
+ * Nothing found and still wrong means we never saw the instrument. Findings and still wrong splits
+ * two ways that need opposite fixes, and calling both of them an over-claim hid one of them: of 52
+ * cells this reported as over-claims, 24 scored *below* ESCAP while holding twelve to ninety-one
+ * findings. Those did not read too much into a provision. They read the right instrument, excluded
+ * every provision of it, and landed a band low -- and no rule that rejects evidence can help them.
+ *
+ * Direction alone cannot make the split, which is why it was not used: where the top band scores an
+ * absence, finding too much lands us below ESCAP rather than above. So ask the indicator which way
+ * it runs, and read the direction through it.
  */
-export function verdictFor(ours: number | null, theirs: number | null, findings: number): Verdict {
+export function verdictFor(
+  ours: number | null,
+  theirs: number | null,
+  findings: number,
+  topBandScoresAbsence = false,
+): Verdict {
   if (theirs === null) return 'ungraded';
   if (ours === null) return 'abstained';
   if (ours === theirs) return 'agree';
-  return findings === 0 ? 'recall-miss' : 'over-claim';
+  if (findings === 0) return 'recall-miss';
+  const claimedMore = topBandScoresAbsence ? ours < theirs : ours > theirs;
+  return claimedMore ? 'over-claim' : 'under-claim';
 }
 
 export function scorecard(db: Database, runId: string, baselinePath?: string): CellResult[] {
@@ -61,6 +77,10 @@ export function scorecard(db: Database, runId: string, baselinePath?: string): C
     else rowsOf.set(key, [row.raw_score]);
   }
   baseline.close();
+
+  // Which way each indicator runs, asked of the indicator once rather than per cell.
+  const absence = new Map<string, boolean>();
+  for (const [id, ind] of indicators) absence.set(id, topBandScoresAbsence(ind));
 
   const theirs = new Map<string, number>();
   for (const [key, scores] of rowsOf) {
@@ -90,7 +110,7 @@ export function scorecard(db: Database, runId: string, baselinePath?: string): C
       theirs: their,
       findings: r.findings,
       instruments: r.instruments,
-      verdict: verdictFor(r.ours, their, r.findings),
+      verdict: verdictFor(r.ours, their, r.findings, absence.get(r.indicator) ?? false),
     };
   });
 }
@@ -98,7 +118,10 @@ export function scorecard(db: Database, runId: string, baselinePath?: string): C
 export type Tally = Record<Verdict, number> & { cells: number; findings: number };
 
 export function tally(cells: CellResult[]): Tally {
-  const t: Tally = { cells: 0, findings: 0, agree: 0, 'over-claim': 0, 'recall-miss': 0, abstained: 0, ungraded: 0 };
+  const t: Tally = {
+    cells: 0, findings: 0, agree: 0, 'over-claim': 0, 'under-claim': 0, 'recall-miss': 0,
+    abstained: 0, ungraded: 0,
+  };
   for (const c of cells) {
     t.cells += 1;
     t.findings += c.findings;

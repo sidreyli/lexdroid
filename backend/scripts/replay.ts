@@ -11,6 +11,7 @@ import { writeFileSync } from 'node:fs';
 import { openDb } from '../src/db/index.js';
 import {
   decide,
+  topBandScoresAbsence,
   type Evidence,
   type FrameworkEvidence,
   type SurfacedInstrument,
@@ -34,6 +35,9 @@ function arg(name: string): string | null {
  */
 const GATES: Record<string, (e: Evidence, governing: number[]) => boolean> = {
   none: () => true,
+  // Not a candidate rule. It is the ceiling for any rule that works by rejecting findings: what a
+  // cell scores when none survive. A cell it does not fix cannot be fixed by rejecting better.
+  'reject-all': () => false,
   governing: (e, g) => g.length === 0 || g.includes(e.instrumentId),
   mandatory: (e) => e.finding.mandatory !== false,
   imposes: (e) => e.finding.dutyForce !== 'declares',
@@ -64,6 +68,18 @@ const db = openDb();
 const runId =
   arg('run') ?? (db.prepare('SELECT id FROM run ORDER BY started_at DESC LIMIT 1').get() as { id: string }).id;
 const indicators = new Map(loadRubric().indicators.map((i) => [i.id as string, i]));
+
+/** Which way an indicator runs, so a disagreement can be read as over- or under-claiming. */
+const absenceCache = new Map<string, boolean>();
+function absenceScored(id: string): boolean {
+  let v = absenceCache.get(id);
+  if (v === undefined) {
+    const ind = indicators.get(id);
+    v = ind ? topBandScoresAbsence(ind) : false;
+    absenceCache.set(id, v);
+  }
+  return v;
+}
 
 const ratesRow = db.prepare('SELECT fx_rates FROM run WHERE id = ?').get(runId) as { fx_rates: string | null } | undefined;
 const rates = ratesRow?.fx_rates ? JSON.parse(ratesRow.fx_rates) : null;
@@ -346,7 +362,7 @@ const replayed: CellResult[] = out.map((r) => {
     theirs: g?.theirs ?? null,
     findings,
     instruments: g?.instruments ?? 0,
-    verdict: verdictFor(r.now, g?.theirs ?? null, findings),
+    verdict: verdictFor(r.now, g?.theirs ?? null, findings, absenceScored(r.indicator)),
   };
 });
 
@@ -384,6 +400,7 @@ const t = tally(replayed);
 const g = t.cells - t.ungraded;
 console.log(`\n  replayed scorecard: ${g} graded, ${t.agree} agree (${pct(t.agree, g)})`);
 console.log(`    over-claim   ${String(t['over-claim']).padStart(4)}`);
+console.log(`    under-claim  ${String(t['under-claim']).padStart(4)}`);
 console.log(`    recall-miss  ${String(t['recall-miss']).padStart(4)}`);
 console.log(`    abstained    ${String(t.abstained).padStart(4)}`);
 
