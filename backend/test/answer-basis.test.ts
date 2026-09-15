@@ -54,7 +54,7 @@ const dataProtection: Indicator = {
 /** A customs provision that says duty is payable, and states no threshold. */
 const customs: Evidence = {
   finding: {
-    indicatorId: '12.5', measure: 'de-minimis', quote: 'duty is payable on imported goods',
+    indicatorId: '12.5', measure: 'de-minimis-threshold', quote: 'duty is payable on imported goods',
     dutyBearer: 'an importer', dutyAct: 'must pay', dutyForce: 'requires',
     requirement: 'Duty is payable.', sectorScope: 'all', sector: null, dataScope: 'none',
     dataDescription: null, appliesOnlyToGovernmentData: false, mandatory: true,
@@ -66,6 +66,9 @@ const customs: Evidence = {
   headingPath: 'Part V > 132 Duty payable',
   citation: 'https://legislation.gov.au/C1901A00006#s132',
   amendsAnotherAct: false,
+  // Read twice and ruled not to state a threshold. That ruling is what entitles the band to say
+  // the threshold is missing, rather than saying it about a question nobody was asked.
+  confirmed: false,
 };
 
 const surfaced: SurfacedInstrument[] = [

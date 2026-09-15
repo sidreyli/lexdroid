@@ -1523,11 +1523,17 @@ describe('an indicator whose top band is an absence', () => {
   const governing: SurfacedInstrument[] = [{ instrumentId: 1, instrumentTitle: 'Telecommunications Act', rank: 1 }];
   const alsoInPillar = [p5('5.5', 'strict-licence')];
 
-  it('scores the top band when nothing was found in an instrument that governs', () => {
+  it('says nothing when no provision was ever evaluated against the missing measure', () => {
+    // A pillar is a dozen questions and the witness qualifies on any of them, so an Act read for
+    // its licensing rules can carry a claim about separation that nobody ever asked about.
+    // Singapore's "no de minimis threshold" scored the rubric's maximum that way, with not one
+    // provision in the corpus ever evaluated for a threshold.
     const d = decide({
       indicator: i54, economy: 'SGP', evidence: alsoInPillar, surfaced: governing, coverage: read,
     });
-    expect(d.score).toBe(1);
+    expect(d.state).toBe('unresolved');
+    expect(d.score).toBeNull();
+    expect(d.decidingFact).toContain('evaluated against the measure');
   });
 
   it('says nothing when the absence rests on no instrument that governs the subject', () => {
