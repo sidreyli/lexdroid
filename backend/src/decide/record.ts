@@ -13,7 +13,7 @@ import { citationUrl } from '../export/index.js';
 import { loadRubric } from '../rubric/index.js';
 import { decide, type Decision, type Evidence, type FrameworkEvidence, type SurfacedInstrument } from './index.js';
 import type { FxRates } from './currency.js';
-import { amendsAnotherAct } from '../parse/identity.js';
+import { amendsAnotherAct, citesADefinition } from '../parse/identity.js';
 
 export interface RecordedCell {
   id: number;
@@ -135,6 +135,7 @@ export function recordedDecider(
             instrumentTitle: r.title,
             headingPath: r.heading_path,
             amendsAnotherAct: amendsAnotherAct(r.text),
+            definesATerm: citesADefinition(r.text, finding.definingWords ?? finding.quote),
             citation: citationUrl(r.doc_url, r.anchor),
           });
         }

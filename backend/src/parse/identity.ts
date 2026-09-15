@@ -121,3 +121,46 @@ const AMENDMENT_INSTRUCTION =
 export function amendsAnotherAct(text: string): boolean {
   return AMENDMENT_INSTRUCTION.test(text.slice(0, 400));
 }
+
+/**
+ * Whether the words a finding is built on are the words of a definition.
+ *
+ * A definition says what a term means. It does not require anybody to do anything -- the duty
+ * lives in the operative section that uses the term, and a definition that names one is a pointer
+ * to it. Singapore's content-licensing cell was answered out of the Broadcasting Act's
+ * interpretation section, quoting "a licence granted under section 8 or 9": section 8 is where the
+ * requirement is, and the words cited are the dictionary entry that points at it. Australia's
+ * cybersecurity cell cited "any cybersecurity officer appointed under section 4(3)" the same way.
+ *
+ * This is the citation defect ESCAP marks directly -- "section 125 did not mention the minimum 7
+ * years period" -- arrived at from the other end: the section cited is real and the words are
+ * really in it, but they are not the words that impose anything.
+ *
+ * The test is on drafting form rather than on heading words, because a definition is a definition
+ * wherever it sits: most live under "Interpretation", but operative sections carry them too, in a
+ * closing subsection that begins "In this section". So the question asked is not whether the
+ * provision is a definitions clause, but whether these particular words fall inside a definition
+ * entry in it.
+ */
+const DEFINITION_ENTRY = /["“]([^"”]{1,90})["”]\s{0,4}(?:means|includes|has the (?:same )?meaning)/gi;
+
+/** Where one definition entry stops: the drafting break between them, or a blank line. */
+const ENTRY_END = /[;.]\s*\n|\n\s*\n/;
+
+export function citesADefinition(text: string, words: string | null): boolean {
+  const quote = words?.trim();
+  if (!quote || quote.length < 3) return false;
+  const at = text.indexOf(quote);
+  if (at < 0) return false;
+
+  const entries = [...text.matchAll(DEFINITION_ENTRY)];
+  const opener = entries.filter((m) => m.index !== undefined && m.index <= at).pop();
+  if (!opener || opener.index === undefined) return false;
+
+  // The entry runs until the next one opens, or until the drafting break, whichever comes first.
+  const next = entries.find((m) => m.index !== undefined && m.index > at);
+  let stop = next?.index ?? text.length;
+  const brk = ENTRY_END.exec(text.slice(opener.index + opener[0].length));
+  if (brk) stop = Math.min(stop, opener.index + opener[0].length + brk.index);
+  return at < stop;
+}

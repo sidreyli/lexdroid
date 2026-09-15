@@ -50,6 +50,13 @@ export interface Evidence {
    * which is every reading taken before it existed.
    */
   confirmed?: boolean;
+  /**
+   * Whether the words this finding rests on are a definition of a term rather than a requirement.
+   *
+   * Computed from the provision's own drafting, beside amendsAnotherAct and for the same reason:
+   * it is a fact about the document, so it is read off the document once and carried.
+   */
+  definesATerm?: boolean;
 }
 
 /** What a framework-shaped indicator is decided from. One per candidate instrument. */
@@ -1186,6 +1193,17 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
       ruledOut.push({
         evidence: e,
         reason: `the provision does not state ${definedBy(indicatorId, e.finding.measure)}, which is what makes it this measure`,
+      });
+      continue;
+    }
+    // A definition says what a term means and requires nothing of anybody. It comes before the
+    // confirmation below because that pass rightly answers no -- and the reason it answers no is
+    // that the duty is elsewhere in the Act, which is evidence the requirement exists, not evidence
+    // the economy imposes none.
+    if (e.definesATerm) {
+      held.push({
+        evidence: e,
+        reason: 'the words cited define a term rather than impose a duty, so the requirement is in the provision that uses it',
       });
       continue;
     }
