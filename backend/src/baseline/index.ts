@@ -124,11 +124,51 @@ export function sameInstrument(candidate: string, cited: string): boolean {
   const kb = kindWord(bt);
   if (ka && kb && ka !== kb) return false;
 
-  const have = new Set(at);
-  const shared = bt.filter((t) => have.has(t)).length;
-  // Two thirds where both name a kind of instrument, which is the check that makes room for a
-  // typo; four fifths where neither does and there is nothing else holding them apart.
-  return shared / bt.length >= (ka && kb ? 2 / 3 : 0.8);
+  // The kind word and the year are carried by almost every title, so counting them as agreement
+  // let one distinguishing word differ: the Banking Act 1959 matched the Civil Aviation
+  // (Carriers' Liability) Act 1959 on "act" and "1959" alone, and the Australian Jobs Act 2013
+  // matched the Australian Education Act 2013. Identity is in what is left when both are removed.
+  // Numbers other than the year are the statutory number -- "(Act 708)", "No.88", "P.U.(A) 123" --
+  // and words of two letters are joins. Neither names the instrument; Malaysia's sheet cites both.
+  const identifying = (t: string[]) =>
+    t.filter((x) => !KIND_WORDS.includes(x) && !/^\d+$/.test(x) && x.length > 2);
+  const want = identifying(bt);
+  const held = identifying(at);
+  if (want.length === 0) return false;
+
+  // A hand-written citation misspells a word; it does not replace it. So a word is accounted for
+  // by a near spelling, and "challenage" reaches "challenge" where "jobs" never reaches "education".
+  // Both directions, because a qualifier the citation does not carry names a different instrument:
+  // the Broadcasting Services (Transitional Provisions) Act is not the Broadcasting Services Act.
+  const covers = (from: string[], by: string[]) => {
+    const missing = from.filter((w) => !by.some((h) => h === w || near(h, w))).length;
+    return missing <= Math.floor(from.length / 5);
+  };
+  return covers(want, held) && covers(held, want);
+}
+
+/** Within one or two characters, scaled so short words are not allowed to become other words. */
+function near(a: string, b: string): boolean {
+  if (Math.abs(a.length - b.length) > 2) return false;
+  const budget = Math.min(a.length, b.length) >= 5 ? 2 : 1;
+  return distance(a, b, budget) <= budget;
+}
+
+/** Levenshtein, abandoned once the budget is exceeded. */
+function distance(a: string, b: string, budget: number): number {
+  let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    const row = [i];
+    let best = i;
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      row[j] = Math.min(row[j - 1]! + 1, prev[j]! + 1, prev[j - 1]! + cost);
+      best = Math.min(best, row[j]!);
+    }
+    if (best > budget) return budget + 1;
+    prev = row;
+  }
+  return prev[b.length]!;
 }
 
 /** Scheme, host and path only. Query strings and fragments differ without meaning anything. */

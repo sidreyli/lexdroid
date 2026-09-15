@@ -32,7 +32,8 @@
     "shortlist-recall": "tsx scripts/shortlist-recall.ts",
     "replay": "tsx scripts/replay.ts",
     "repair-economy": "tsx scripts/repair-economy.ts",
-    "confirm": "tsx scripts/confirm.ts"
+    "confirm": "tsx scripts/confirm.ts",
+    "reach": "tsx scripts/reach.ts"
   },
   "dependencies": {
     "@tesseract.js-data/eng": "^1.0.0",
