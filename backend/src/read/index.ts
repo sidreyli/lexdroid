@@ -1206,7 +1206,30 @@ export async function readFramework(
 
 export { READING_MODEL };
 
-/** The opening of an instrument: enough to say what it is for, without reading the whole Act. */
+/**
+ * The opening of an instrument: enough to say what it is for, without reading the whole Act.
+ *
+ * Six sections is not enough to say what it *does*, and that has a visible cost: every positive
+ * framework reading in Singapore's pillar 8 is reasoned "the title indicates it is dedicated to
+ * this purpose", because the title is the only evidence in the prompt. Singapore's 8.2 cites the
+ * Online Safety Act where ESCAP cites the Electronic Transactions Act, whose Part 6 is headed
+ * "Liability of network service providers" and is unreachable from here. The Copyright Act 2021
+ * was asked about copyright safe harbour and answered, correctly for the Part 1 it was shown, that
+ * the text "does not contain any provisions regarding the liability of online intermediaries".
+ *
+ * Widening it has been tried and measured. Passing the framework reader the provisions of the same
+ * instrument that the indicator's own search returned -- alongside this opening, with the two
+ * questions about what an instrument is *for* still asked of the opening alone -- moved **0 cells
+ * of 58**: all 45 of pillar 12, both framework indicators of pillar 7 and of pillar 8 in Singapore,
+ * and pillar 8 in Australia. It doubled the framework prompt (2,182 to 4,400 tokens on average)
+ * and the reader went on answering from the title. Its one measurable effect was to make a quote
+ * of "No findings." verify, because widening the haystack widens what a weak quote can match.
+ *
+ * So the defect is real and this is not the fix for it. Supplying the provisions is not enough;
+ * the reader has to be made to answer question 1 *from* them, which is prompt design with its own
+ * validation, not a wider window. A change that moves nothing is not free -- see scripts/grade.ts,
+ * which records the same verdict for the rule changes that measured +0.
+ */
 export function openingOf(db: Db, instrumentId: number, sections = 6): string {
   const rows = db
     .prepare(
