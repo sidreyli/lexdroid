@@ -102,6 +102,22 @@ export class EngineOverran extends EngineFailure {
   }
 }
 
+/**
+ * The engine stopped its own prediction and returned an error instead of an answer.
+ *
+ * Ollama aborts a generation that repeats itself past a limit, and reports it as HTTP 500 rather
+ * than as a completed call. Unclassified it left the client as a plain error, which no caller
+ * treats as one provision's failure, so it escaped the read stage's catch and took the pillar with
+ * it -- measured on Australia's pillar 6, twice, at the same provision both times. It is
+ * deterministic at temperature zero: re-running is not a remedy, recording it is.
+ */
+export class EngineAborted extends EngineFailure {
+  constructor(model: string, detail: string) {
+    super(model, `${model} stopped its own prediction on this prompt: ${detail}`);
+    this.name = 'EngineAborted';
+  }
+}
+
 /** The engine answered with nothing at all. Observed once, at 81 seconds and zero output tokens. */
 export class EngineSilent extends EngineFailure {
   constructor(model: string, promptTokens: number, durationMs: number) {
@@ -140,6 +156,9 @@ const CONNECTION_LOST =
 /** The engine said the request timed out, which is about this prompt and not about the link. */
 const STALLED = /UND_ERR_(HEADERS|BODY)_TIMEOUT|Headers Timeout|Body Timeout/i;
 
+/** The engine gave up on this generation. One provision's fact, like a stall, not the link's. */
+const ABORTED = /prediction aborted|token repeat limit/i;
+
 /**
  * Every message and code down the cause chain.
  * undici reports the interesting part as the cause: the outer message is often just "fetch failed".
@@ -172,6 +191,7 @@ async function once<T>(host: string, path: string, body: unknown, timeoutMs: num
     const message = failureText(err);
     // Stall first: a prompt the engine took and did not answer costs that provision, not the link.
     if (STALLED.test(message)) throw new EngineTimeout(model, message);
+    if (ABORTED.test(message)) throw new EngineAborted(model, message);
     if (CONNECTION_LOST.test(message)) throw new OllamaUnavailable(message, host);
     throw err;
   }
