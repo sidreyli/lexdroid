@@ -34,6 +34,9 @@ docs/_manifest.tsv
 
 .env
 .env.*
+# The template is the one that must be committed: Quick Start says `cp .env.example .env`, and a
+# reviewer who does not get this file has nothing to copy.
+!.env.example
 .DS_Store
 Thumbs.db
 backend/data/*.log

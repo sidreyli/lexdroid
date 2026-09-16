@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Hanken_Grotesk } from "next/font/google";
+import localFont from "next/font/local";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AppShell } from "@/components/shell/app-shell";
@@ -10,10 +10,17 @@ import "./globals.css";
 // prerendered, or the interface would serve whatever the build machine happened to see.
 export const dynamic = "force-dynamic";
 
-const sans = Hanken_Grotesk({
+// Vendored rather than fetched. `next/font/google` self-hosts the file it serves, but it downloads
+// it from Google at build time, so a clean machine that cannot reach fonts.googleapis.com fails the
+// build -- and "a competent programmer reaches a working system on a clean machine in under 30
+// minutes" is criterion C4a, tested literally. One variable file covers 400 to 700.
+// SIL Open Font License 1.1; the text is beside it in fonts/OFL.txt.
+const sans = localFont({
+  src: "./fonts/hanken-grotesk-latin.woff2",
   variable: "--font-sans",
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
+  weight: "400 700",
+  display: "swap",
+  fallback: ["system-ui", "Segoe UI", "Helvetica Neue", "Arial", "sans-serif"],
 });
 
 export const metadata: Metadata = {

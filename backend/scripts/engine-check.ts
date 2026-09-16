@@ -22,9 +22,13 @@
  * whole of "keep source fragments, interpretations and scoring decisions separate", demonstrated
  * on one sentence -- and it is why this check asks in the order the reading stage asks.
  */
+import { loadEnv } from '../src/env.js';
 import { loadEngines, type Engine } from '../src/engines/registry.js';
 import { hostedGenerate } from '../src/engines/hosted.js';
 import { generate } from '../src/engines/ollama.js';
+
+// Before anything reads process.env: the hosted key lives in .env, never in engines.json.
+loadEnv();
 
 function arg(name: string): string | null {
   const i = process.argv.indexOf(`--${name}`);

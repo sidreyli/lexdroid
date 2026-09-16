@@ -13,6 +13,7 @@
 import { spawn } from 'node:child_process';
 import { createWriteStream, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { loadEnv } from '../src/env.js';
 import { openDb } from '../src/db/index.js';
 import { openRun, joinRun, finishRun, runEvents, recordRent, recordEvent } from '../src/run/index.js';
 import { rescoreRun } from '../src/run/rescore.js';
@@ -37,6 +38,10 @@ import { buildExportRows } from '../src/export/index.js';
 import { verifyRun } from '../src/verify/index.js';
 import { tagRun } from '../src/baseline/tag.js';
 import { defaultEngine, findEngine, type Engine } from '../src/engines/registry.js';
+
+// Before any engine is chosen: a hosted engine needs its key from .env, and the workers this
+// process spawns inherit whatever it loads here.
+loadEnv();
 
 interface Args {
   economies: string[];
