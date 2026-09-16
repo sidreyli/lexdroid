@@ -489,10 +489,12 @@ export async function answerPillar(
 }
 
 /** Which subject a framework indicator is about, read off its own category text. */
-const FRAMEWORK_OF: Record<string, FrameworkSubject> = {
+export const FRAMEWORK_OF: Record<string, FrameworkSubject> = {
   '7.1': 'data-protection',
   '7.2': 'cybersecurity',
-  '8.1': 'intermediary-liability',
+  // 8.1 is "Lack of safe harbour for copyright infringements" and 8.2 is "...for other illegal
+  // activities". Asked as one subject they returned one candidate list and one answer per economy.
+  '8.1': 'copyright-safe-harbour',
   '8.2': 'intermediary-liability',
   '12.9': 'consumer-protection',
 };
@@ -523,21 +525,60 @@ async function frameworkCandidates(
   rows: Map<number, SectionRow>,
   embeddingModel?: string,
 ): Promise<{ instrumentId: number; title: string; url: string }[]> {
-  const out: { instrumentId: number; title: string; url: string }[] = [];
+  // A framework can only be established by something the record could cite, and 'in-force' is the
+  // only status a row may cite. Without this the register answers a framework question with the
+  // pages of the site it was harvested from: all five instruments examined for Singapore's 8.1 and
+  // 8.2 were Monetary Authority press releases -- "Person charged for false trading under the
+  // Securities and Futures Act" -- registered as Acts with status unknown, and all five for its 7.1
+  // were PDPC advisory-guideline pages sitting in front of the Personal Data Protection Act itself.
+  // The reader was right about every one of them and the cell was wrong anyway.
+  const inForce = new Set(
+    (
+      db
+        .prepare(`SELECT id FROM instrument WHERE economy_code = ? AND status = 'in-force'`)
+        .all(economy) as { id: number }[]
+    ).map((r) => r.id),
+  );
+
   const ranked = await shortlistInstruments(db, {
     economy,
     queries: subjectQueries(subject),
     limit: FRAMEWORK_CANDIDATES * 4,
     ...(embeddingModel ? { model: embeddingModel } : {}),
   });
-  for (const c of ranked) {
+  const fromRegister = ranked
     // Only what has actually been read. An unread instrument cannot be examined, and naming one
     // here would put a framework on the record that nothing in the corpus supports.
-    if (!c.read) continue;
-    out.push({ instrumentId: c.instrumentId, title: c.title, url: c.sourceUrl });
-  }
-  for (const c of candidateInstruments(record, rows)) {
-    if (!out.some((o) => o.instrumentId === c.instrumentId)) out.push(c);
+    .filter((c) => c.read && inForce.has(c.instrumentId))
+    .map((c) => ({ instrumentId: c.instrumentId, title: c.title, url: c.sourceUrl }));
+  const fromRetrieval = candidateInstruments(record, rows).filter((c) => inForce.has(c.instrumentId));
+
+  // Taken alternately rather than register-first. The two lists know different things, and the
+  // caller keeps only the first few: appended, the retrieval's candidates were never reached at
+  // all, whatever the comment above says. Ranking instrument titles and contents against the
+  // subject cannot find Singapore's Electronic Transactions Act 2010, whose Part 6 is headed
+  // "Liability of network service providers" -- but a search for pillar 8's own band prose put it
+  // sixth, with eight provisions returned. A register knows what an Act is called; a retrieval
+  // knows what answered the question.
+  return interleave(fromRegister, fromRetrieval);
+}
+
+/**
+ * Two ranked lists taken alternately, each instrument once, the first list leading.
+ *
+ * Exported because the defect it fixes was invisible: appending the second list to the first is
+ * correct in isolation and useless in place, because the caller keeps five and the first list
+ * seldom runs short of five.
+ */
+export function interleave<T extends { instrumentId: number }>(first: T[], second: T[]): T[] {
+  const out: T[] = [];
+  const seen = new Set<number>();
+  for (let i = 0; i < Math.max(first.length, second.length); i += 1) {
+    for (const c of [first[i], second[i]]) {
+      if (!c || seen.has(c.instrumentId)) continue;
+      seen.add(c.instrumentId);
+      out.push(c);
+    }
   }
   return out;
 }

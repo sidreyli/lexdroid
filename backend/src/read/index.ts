@@ -996,11 +996,30 @@ export interface FrameworkReading {
   fromResume: boolean;
 }
 
+/**
+ * What each framework indicator is a question about.
+ *
+ * 8.1 and 8.2 were both asked about intermediary liability at large, and so were handed the same
+ * five instruments and gave the same answer in all three economies. ESCAP's own category text
+ * separates them: 8.1 is "Lack of safe harbour for copyright infringements" and 8.2 is "...for
+ * other illegal activities". The separation is the whole of the difference between Australia's two
+ * answers -- 0 for 8.1, where the Copyright Act 1968 has a safe harbour, and 1 for 8.2, where
+ * nothing outside copyright does -- and one subject cannot produce both. So 8.1 asks about
+ * copyright and 8.2 asks about everything else, in those words.
+ */
 const FRAMEWORK_SUBJECTS = {
   'data-protection': 'the protection of personal data: how it may be collected, used, disclosed and kept',
   cybersecurity: 'cybersecurity: the security and resilience of computer systems, networks and information',
+  'copyright-safe-harbour':
+    'when an online intermediary -- a network service provider, host or platform -- is shielded from liability for copyright infringement committed by the users of its service',
+  // Both of these ask for the shield, not for liability at large, because that is what the band
+  // asks for: "framework in place that limits liability for intermediaries". Asked the wider
+  // question the reader called Australia's Online Safety Act 2021 an intermediary liability
+  // framework and scored the cell 0, where ESCAP scores 1 -- and it was not wrong about the Act,
+  // which is full of duties owed by service providers. An Act that imposes liability on
+  // intermediaries is the opposite of the one this indicator is looking for.
   'intermediary-liability':
-    'when an intermediary -- a host, platform, network or marketplace -- is liable for what its users do, and when it is shielded from that liability',
+    'when an online intermediary -- a network service provider, host or platform -- is shielded from liability for unlawful content or conduct of the users of its service, other than copyright infringement',
   'consumer-protection':
     'the protection of consumers buying goods or services, including when they buy online or at a distance',
 } as const;
@@ -1030,7 +1049,20 @@ export function subjectQueries(subject: FrameworkSubject): string[] {
 const SUBJECT_NAMES: Record<FrameworkSubject, string[]> = {
   'data-protection': ['personal data', 'personal information', 'data protection', 'privacy'],
   cybersecurity: ['cyber', 'computer misuse', 'computer crime', 'information security', 'network security'],
-  'intermediary-liability': ['intermediary', 'service provider', 'safe harbour', 'safe harbor', 'host', 'platform'],
+  // "host" and "platform" were ranking the register on substrings: they returned Singapore's
+  // Hostage-Taking Act 2010 and Australia's Crimes (Ships and Fixed Platforms) Act 1992 ahead of
+  // anything about intermediaries. The term of art they were standing in for is the one the
+  // statutes actually use, and it is shared by Singapore's Electronic Transactions Act Part 6 and
+  // Malaysia's Communications and Multimedia Act.
+  'copyright-safe-harbour': ['copyright', 'safe harbour', 'safe harbor', 'network service provider', 'service provider'],
+  'intermediary-liability': [
+    'intermediary',
+    'network service provider',
+    'online service provider',
+    'service provider',
+    'safe harbour',
+    'safe harbor',
+  ],
   'consumer-protection': ['consumer', 'unfair practice', 'fair trading', 'sale of goods'],
 };
 

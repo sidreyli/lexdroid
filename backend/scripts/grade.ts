@@ -20,11 +20,12 @@
  * It loses when the measure is defined by a *topic*. Gating pillar 4's enforcement measures on the
  * word "patent", and the copyright ones on "copyright", is what each measure's own `defines`
  * sentence asks for and what its gloss warns about twice ("a design, a copyright work or property
- * at large is not a patent"). It measured +0 -3 across the two halves, separately: a section of the
- * Patents Act headed "Infringement proceedings" says "the court may grant an injunction restraining
- * the infringement" and never says "patent", because the instrument's title already did. A topic is
- * carried by the document; only a modality has to appear in the words. That is what SUBJECT_DOMAIN
- * is for, and asking the name side to do the subject side's job costs cells both times it is tried.
+ * at large is not a patent"). It measured +0 -2, one cell lost by each half graded on its own: a
+ * section of the Patents Act headed "Infringement proceedings" says "the court may grant an
+ * injunction restraining the infringement" and never says "patent", because the instrument's title
+ * already did. A topic is carried by the document; only a modality has to appear in the words. That
+ * is what SUBJECT_DOMAIN is for, and asking the name side to do the subject side's job costs cells
+ * both times it is tried.
  *
  * Gating 3.1's two equity caps on a proportion -- which is a modality, and which their `defines`
  * asks for in those words -- measured +0 -0: every reading already stated one, so whatever is wrong
