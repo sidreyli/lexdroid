@@ -14,7 +14,7 @@ import { spawn } from 'node:child_process';
 import { createWriteStream, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { openDb } from '../src/db/index.js';
-import { openRun, finishRun, runEvents, recordRent } from '../src/run/index.js';
+import { openRun, joinRun, finishRun, runEvents, recordRent } from '../src/run/index.js';
 import { describe } from '../src/run/events.js';
 import {
   childEngineEnv,
@@ -38,6 +38,7 @@ interface Args {
   model: string;
   depth: number | null;
   carryFrom: string | null;
+  joinRunId: string | null;
   compare: boolean;
   probe: boolean;
   usdPerHour: number;
@@ -73,6 +74,7 @@ function parseArgs(argv: string[]): Args {
     model: get('model') ?? READING_MODEL,
     depth: get('depth') !== null ? Number(get('depth')) : null,
     carryFrom: get('carry'),
+    joinRunId: get('run'),
     compare: !argv.includes('--no-compare'),
     probe: !argv.includes('--no-probe'),
     usdPerHour: Number(get('usd-per-hour') ?? 0),
@@ -117,6 +119,24 @@ function runUnit(unit: Unit, hosts: string[], runId: string, logDir: string, arg
       resolve(code ?? 1);
     });
   });
+}
+
+/**
+ * Whether this unit has already answered inside the run being joined.
+ *
+ * A unit banks nothing until every cell in it has an answer, so a cell without one is a unit that
+ * was interrupted. Those are cleared and run again; the ones that finished are left alone.
+ */
+function alreadyAnswered(db: ReturnType<typeof openDb>, runId: string, unit: Unit): boolean {
+  const row = db
+    .prepare(
+      `SELECT COUNT(*) AS cells, COUNT(a.cell_id) AS answered
+         FROM cell c LEFT JOIN cell_answer a ON a.cell_id = c.id
+        WHERE c.run_id = ? AND c.economy_code = ?
+          AND CAST(substr(c.indicator_id, 1, instr(c.indicator_id, '.') - 1) AS INTEGER) = ?`,
+    )
+    .get(runId, unit.economy, unit.pillar) as { cells: number; answered: number };
+  return row.cells > 0 && row.cells === row.answered;
 }
 
 /**
@@ -185,21 +205,34 @@ async function main(): Promise<void> {
   );
 
   const db = openDb();
-  const run = openRun(db, {
-    economies: args.economies,
-    pillars: args.pillars,
-    model: args.model,
-    ...(args.engine ? { engine: args.engine.id } : {}),
-    sourceMode: args.cacheOnly ? ('cache-only' as const) : ('fetch' as const),
-    notes: `fleet of ${args.hosts.length} on ${args.hosts.join(', ')}`,
-  });
+  // Joining rather than opening lets a fleet be restarted onto more engines without throwing away
+  // the units that already answered. A unit every cell of which has an answer is not run again.
+  const run = args.joinRunId
+    ? joinRun(db, args.joinRunId, args.engine?.id)
+    : openRun(db, {
+        economies: args.economies,
+        pillars: args.pillars,
+        model: args.model,
+        ...(args.engine ? { engine: args.engine.id } : {}),
+        sourceMode: args.cacheOnly ? ('cache-only' as const) : ('fetch' as const),
+        notes: `fleet of ${args.hosts.length} on ${args.hosts.join(', ')}`,
+      });
+
+  // A joined run keeps what it already answered and clears what it was part way through.
+  let todo = units;
+  if (args.joinRunId) {
+    const done = units.filter((u) => alreadyAnswered(db, run.id, u));
+    todo = units.filter((u) => !alreadyAnswered(db, run.id, u));
+    for (const u of todo) clearUnit(db, run.id, u);
+    console.log(`joining run ${run.id}: ${done.length} unit(s) already answered, ${todo.length} to do`);
+  }
 
   const logDir = join('data', 'fleet', run.id);
   mkdirSync(logDir, { recursive: true });
 
   console.log(`run ${run.id}`);
-  const pinned = args.perEconomy ? pinByEconomy(units, args.hosts) : null;
-  console.log(`${units.length} unit(s) across ${args.hosts.length} engine(s): ${args.hosts.join(', ')}`);
+  const pinned = args.perEconomy ? pinByEconomy(todo, args.hosts) : null;
+  console.log(`${todo.length} unit(s) across ${args.hosts.length} engine(s): ${args.hosts.join(', ')}`);
   if (args.fanOut) console.log('  every engine reads each pillar together, one pillar at a time');
   if (pinned) {
     for (const [host, own] of pinned) {
@@ -243,14 +276,14 @@ async function main(): Promise<void> {
   if (args.fanOut) {
     // Every engine reads one pillar together. The biggest pillar is then divided rather than
     // setting the floor, which is the whole of the tail on a run of this shape.
-    for (const unit of units) await attempt(unit, args.hosts, `${args.hosts.length} engine(s)`);
+    for (const unit of todo) await attempt(unit, args.hosts, `${args.hosts.length} engine(s)`);
   } else {
     await Promise.all(
       args.hosts.map(async (host) => {
         // Pinned, a host reads its own economies and stops; unpinned, it takes whatever is next.
         const own = pinned?.get(host);
         for (;;) {
-          const unit = own ? own.shift() : units[next++];
+          const unit = own ? own.shift() : todo[next++];
           if (!unit) return;
           await attempt(unit, [host], host);
         }
