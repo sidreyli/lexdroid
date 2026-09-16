@@ -67,6 +67,25 @@ function line(e: RunEvent): Line | null {
       detail: e.detail ?? "",
     };
   }
+  // Building the corpus, and making the answers submittable. These are the longest parts of a cold
+  // run and used to say nothing at all, because the ledger only knew the stages between them.
+  const PHASE: Record<string, [string, string]> = {
+    discover: ["Read the official portals", "Looked for what this economy publishes"],
+    fetch: ["Downloaded the law", "Fetched and parsed what the questions asked for"],
+    index: ["Indexed the new provisions", "Made them reachable by search"],
+    confirm: ["Checked each finding again", "Asked whether the provision really says it"],
+    export: ["Built the evidence rows", "One row per provision, ready to review"],
+    verify: ["Checked every row", "Quote, citation, link and score, without a model"],
+  };
+  const phase = PHASE[e.stage];
+  if (phase) {
+    return {
+      ...base,
+      lead: e.economy ?? "",
+      subject: e.kind === "started" ? `${phase[0]}…` : phase[0],
+      detail: e.detail ?? phase[1],
+    };
+  }
   return null;
 }
 

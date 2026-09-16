@@ -19,7 +19,6 @@
  */
 import { openDb } from '../src/db/index.js';
 import { scoredWithConfirmations } from '../src/decide/record.js';
-import { loadConfirmations } from '../src/read/confirmations.js';
 import { recomputeScores } from '../src/verify/index.js';
 import { scorecard, tally } from '../src/eval/scorecard.js';
 
@@ -74,15 +73,35 @@ const state = db
   )
   .get(run.id) as { recorded: number; asked: number; applied: number };
 
-const banked = loadConfirmations(db).size;
+// Verdicts banked for *this run's* questions, not every run's. The table is keyed by the question
+// rather than the run, so its grand total says nothing about whether this run's answers are current.
+const answerable = (
+  db
+    .prepare(
+      `SELECT COUNT(*) AS n
+         FROM (SELECT DISTINCT r.section_id AS sid,
+                      json_extract(j.value, '$.indicatorId') AS ind,
+                      json_extract(j.value, '$.measure') AS m
+                 FROM reading r JOIN cell c ON c.id = r.cell_id, json_each(r.attributes) j
+                WHERE c.run_id = ? AND json_extract(j.value, '$.measure') IS NOT NULL) q
+         JOIN measure_confirmation mc
+           ON mc.section_id = q.sid AND mc.indicator_id = q.ind AND mc.measure = q.m
+        WHERE mc.failure IS NULL`,
+    )
+    .get(run.id) as { n: number }
+).n;
+
 console.log('\n  confirmation state');
 if (!scoredWithConfirmations(db, run.id)) {
   console.log(`    the stored scores were computed without the second reading's verdicts`);
-  console.log(`    ${banked} verdict(s) are banked now and would change this run if it were re-scored`);
+  console.log(`    ${answerable} verdict(s) apply to this run and would change it if it were re-scored`);
 } else {
   console.log(`    ${pad(state.asked, 6)} finding(s) carried a verdict when this run scored`);
   console.log(`    ${pad(state.applied, 6)} of them were ruled out, which is what moved the scores`);
-  console.log(`    ${pad(banked, 6)} banked now${banked === state.asked ? '  (same set)' : '  -- the set has grown since'}`);
+  console.log(
+    `    ${pad(answerable, 6)} apply to it now` +
+      (answerable === state.asked ? '  (unchanged since)' : '  -- RE-SCORE: more have been banked'),
+  );
 }
 
 // --- Stored, re-derived, exported ---------------------------------------------------------------

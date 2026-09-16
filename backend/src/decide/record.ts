@@ -16,7 +16,7 @@ import type { FxRates } from './currency.js';
 import { amendsAnotherAct, citesADefinition } from '../parse/identity.js';
 import { loadProfile } from '../profile/index.js';
 import type { InstrumentType } from '../profile/types.js';
-import { loadConfirmations, noConfirmations, confirmedFlag } from '../read/confirmations.js';
+import { loadConfirmations, noConfirmations, confirmedFlag, type ConfirmationSet } from '../read/confirmations.js';
 
 export interface RecordedCell {
   id: number;
@@ -58,12 +58,24 @@ export function scoredWithConfirmations(db: Db, runId: string): boolean {
   return (row?.recorded ?? 0) > 0;
 }
 
+export interface RebuildOptions {
+  /**
+   * The verdicts to rebuild against, where the caller knows better than the stored state does.
+   *
+   * The re-score that follows a confirmation pass is the case: it is about to write the state this
+   * would otherwise be read from, so it must say what it is writing rather than ask.
+   */
+  confirmations?: ConfirmationSet;
+}
+
 export function recordedDecider(
   db: Db,
   runId: string,
   rates: FxRates | null,
+  opts: RebuildOptions = {},
 ): { cells: RecordedCell[]; rebuild: (cell: RecordedCell) => Decision | null } {
-  const confirmations = scoredWithConfirmations(db, runId) ? loadConfirmations(db) : noConfirmations();
+  const confirmations =
+    opts.confirmations ?? (scoredWithConfirmations(db, runId) ? loadConfirmations(db) : noConfirmations());
   const cells = db
     .prepare(
       `SELECT c.id, c.economy_code, c.indicator_id, c.sections_read, c.sections_indexed, c.surfaced,

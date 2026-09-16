@@ -32,6 +32,8 @@
  */
 import type { Db } from '../db/index.js';
 import { locateQuote } from '../util/locate.js';
+import { detectLanguage } from '../parse/language.js';
+import { loadProfile } from '../profile/index.js';
 
 export interface BuildResult {
   rows: number;
@@ -138,6 +140,43 @@ export function timeframe(commencedOn: string | null, lastAmendedOn: string | nu
   if (!since && !amended) return null;
   if (!since) return `Last amended in ${amended}`;
   return amended ? `Since ${since}, last amended in ${amended}` : `Since ${since}`;
+}
+
+/**
+ * The Language of Source column, in the order the answers are worth believing.
+ *
+ * What the parser recorded for that provision, then what the portal said about the instrument,
+ * then the provision's own words read against the languages the economy publishes law in. The
+ * column was blank on every Malaysian row in the store, because the first two are null for that
+ * whole economy and there was no third.
+ *
+ * The profile supplies the candidates rather than a fixed list: Malay and Indonesian share most of
+ * their function words, and the economy is what separates them. A provision that still cannot be
+ * classified stays null, because this column is a statement about a source document and a wrong
+ * one is worse than an empty one.
+ */
+const profileLanguages = new Map<string, readonly string[]>();
+function languageOf(
+  sectionLanguage: string | null,
+  instrumentLanguage: string | null,
+  text: string,
+  economy: string,
+): string | null {
+  if (sectionLanguage) return sectionLanguage;
+  if (instrumentLanguage) return instrumentLanguage;
+
+  let candidates = profileLanguages.get(economy);
+  if (!candidates) {
+    try {
+      candidates = loadProfile(economy).officialLanguages;
+    } catch {
+      // An economy with no profile yet is the live-test case. Detection still runs; it just has
+      // the whole Latin set to choose from, and abstains where that is not decisive.
+      candidates = [];
+    }
+    profileLanguages.set(economy, candidates);
+  }
+  return detectLanguage(text, { candidates });
 }
 
 /**
@@ -250,6 +289,23 @@ export function buildExportRows(db: Db, runId: string): BuildResult {
       ORDER BY f.id`,
   );
 
+  // A few of an instrument's own provisions, for a row that has no quote of its own to read a
+  // language out of. Cached per instrument: one Act cited by forty zero rows is one question.
+  const instrumentSample = db.prepare(
+    `SELECT s.text FROM section s JOIN document d ON d.id = s.document_id
+      WHERE d.instrument_id = ? AND length(s.text) > 200 ORDER BY s.id LIMIT 5`,
+  );
+  const samples = new Map<number, string>();
+  const sampleOf = (instrumentId: number | null): string => {
+    if (!instrumentId) return '';
+    let text = samples.get(instrumentId);
+    if (text === undefined) {
+      text = (instrumentSample.all(instrumentId) as { text: string }[]).map((r) => r.text).join(' ');
+      samples.set(instrumentId, text);
+    }
+    return text;
+  };
+
   const instrument = db.prepare(
     `SELECT i.id, i.title, i.official_number, i.commenced_on, i.last_amended_on, i.source_url,
             i.language
@@ -298,7 +354,7 @@ export function buildExportRows(db: Db, runId: string): BuildResult {
             citationUrl(b.doc_url, b.anchor),
             confidenceOf({ quote, offsetsResolved: at !== null, extraction: b.extraction }),
             noteFor(f ?? (b.measure ? { measure: b.measure } : {}), b.extraction),
-            b.language ?? b.instrument_language,
+            languageOf(b.language, b.instrument_language, b.section_text, cell.economy_code),
             b.section_id,
             b.reading_id,
             now,
@@ -359,7 +415,11 @@ export function buildExportRows(db: Db, runId: string): BuildResult {
           cell.rationale ?? 'No requirement found.',
           inst?.source_url ?? null,
           'no requirement found',
-          null, inst?.language ?? null, null, null, now,
+          // A zero row has no quote to read a language out of, so the instrument it was read
+          // against answers for it -- sampled from its own provisions, not assumed.
+          null,
+          languageOf(null, inst?.language ?? null, sampleOf(cell.controlling_instrument_id), cell.economy_code),
+          null, null, now,
         );
         rows += 1;
         made += 1;

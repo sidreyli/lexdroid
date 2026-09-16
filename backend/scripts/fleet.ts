@@ -14,7 +14,8 @@ import { spawn } from 'node:child_process';
 import { createWriteStream, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { openDb } from '../src/db/index.js';
-import { openRun, joinRun, finishRun, runEvents, recordRent } from '../src/run/index.js';
+import { openRun, joinRun, finishRun, runEvents, recordRent, recordEvent } from '../src/run/index.js';
+import { rescoreRun } from '../src/run/rescore.js';
 import { describe } from '../src/run/events.js';
 import {
   childEngineEnv,
@@ -29,6 +30,10 @@ import { indicatorsOfPillar, loadRubric } from '../src/rubric/index.js';
 import { READING_MODEL } from '../src/engines/ollama.js';
 import { probeEngine, describeReport, usable, mismatchedEngine, fingerprintOf } from '../src/engines/probe.js';
 import { cacheEnabled } from '../src/engines/cache.js';
+import { prepareCorpus, describePrepare, type PrepareResult } from '../src/run/prepare.js';
+import { confirmPass } from '../src/read/confirm-pass.js';
+import { buildExportRows } from '../src/export/index.js';
+import { verifyRun } from '../src/verify/index.js';
 import { defaultEngine, findEngine, type Engine } from '../src/engines/registry.js';
 
 interface Args {
@@ -47,6 +52,12 @@ interface Args {
   fanOut: boolean;
   engine: Engine | undefined;
   cacheOnly: boolean;
+  /** Answer out of the corpus as it stands, without discovering or fetching anything first. */
+  skipPrepare: boolean;
+  /** Stop after the cells are answered, without confirming, exporting or verifying them. */
+  skipFinish: boolean;
+  /** How many instruments each of the run's questions may pull into the corpus. */
+  top: number;
 }
 
 function parseArgs(argv: string[]): Args {
@@ -83,6 +94,9 @@ function parseArgs(argv: string[]): Args {
     fanOut: argv.includes('--fan-out'),
     engine,
     cacheOnly: argv.includes('--cache-only'),
+    skipPrepare: argv.includes('--skip-prepare'),
+    skipFinish: argv.includes('--skip-finish'),
+    top: get('top') !== null ? Number(get('top')) : 15,
   };
 }
 
@@ -259,6 +273,39 @@ async function main(): Promise<void> {
   const following_ = follow();
 
   const started = Date.now();
+
+  // Zone 0 and Zone 1, before anything is asked of the corpus.
+  //
+  // This is what "Fetch new documents" promised and did not do. A fleet that joined a run does not
+  // repeat it -- the fleet that opened the run has already walked the portals -- and a cache-only
+  // pass does not do it at all, which is what makes its document list empty.
+  const prepared: PrepareResult[] = [];
+  if (!args.skipPrepare && !args.joinRunId) {
+    console.log(`preparing the corpus for ${args.economies.join(', ')}`);
+    for (const economy of args.economies) {
+      try {
+        const result = await prepareCorpus(db, {
+          economy,
+          pillars: args.pillars,
+          sourceMode: args.cacheOnly ? 'cache-only' : 'fetch',
+          top: args.top,
+          emit: (e) => recordEvent(run, e),
+          log: (l) => console.log(`  ${l}`),
+        });
+        prepared.push(result);
+        console.log(describePrepare(result));
+        for (const note of result.notes) console.log(`    ${note}`);
+      } catch (err) {
+        // A portal that will not answer is not a reason to abandon the cells: the corpus already
+        // on disk still answers them, and the run says what it could not reach.
+        const detail = err instanceof Error ? err.message : String(err);
+        console.log(`  ${economy}: could not be prepared -- ${detail}`);
+        recordEvent(run, { stage: 'discover', kind: 'failed', economy, detail });
+      }
+    }
+    console.log('');
+  }
+
   let next = 0;
   const done: { unit: Unit; host: string; code: number }[] = [];
 
@@ -303,6 +350,64 @@ async function main(): Promise<void> {
   // A fleet that joined a run it did not open does not close it. Two fleets sharing a run finish at
   // different times, and the first to finish closing it locked the second out of its own remaining
   // units -- three pillars refused entry to a run that was still being worked on.
+
+  // The three stages that turn answers into something a person can review and submit. They used to
+  // be three commands somebody had to remember, so the runs that produced the submission had none
+  // of them and the latest complete run had zero export rows in it.
+  //
+  // A fleet that joined a run does not do this either: the fleet that opened it closes it, and
+  // confirming half a run's findings while another fleet is still producing them scores a moving
+  // target.
+  if (!args.skipFinish && !args.joinRunId) {
+    try {
+      console.log('confirming what each provision actually states');
+      const pass = await confirmPass(db, {
+        runId: run.id,
+        model: args.model,
+        workers: args.hosts.length,
+        emit: (e) => recordEvent(run, e),
+        log: (l) => console.log(l),
+      });
+      console.log(
+        `  asked ${pass.asked} of ${pass.questions}; ${pass.confirmed} confirmed, ` +
+          `${pass.ruledOut} ruled out, ${pass.failed} failed`,
+      );
+
+      // The findings have moved, so the scores have to be taken again from them. Nothing is
+      // re-read and nothing is re-fetched: this is the same decision over the same record.
+      console.log('re-scoring against what the second reading found');
+      const rescored = rescoreRun(db, run.id);
+      console.log(`  ${rescored.changed} of ${rescored.cells} cell(s) changed`);
+
+      console.log('building the export rows');
+      recordEvent(run, { stage: 'export', kind: 'started' });
+      const built = buildExportRows(db, run.id);
+      console.log(`  ${built.rows} row(s) from ${built.cells} cell(s)`);
+      if (built.cellsWithoutRow > 0) console.log(`  WARNING: ${built.cellsWithoutRow} cell(s) produced no row`);
+      recordEvent(run, { stage: 'export', kind: 'finished', detail: `${built.rows} row(s)`, total: built.rows });
+
+      console.log('verifying every row against the gates');
+      recordEvent(run, { stage: 'verify', kind: 'started', total: built.rows });
+      const verified = verifyRun(db, run.id);
+      console.log(`  ${verified.held} of ${verified.rows} row(s) held for a reviewer`);
+      recordEvent(run, {
+        stage: 'verify',
+        kind: 'finished',
+        detail: `${verified.held} of ${verified.rows} held for review`,
+        done: verified.rows - verified.held,
+        total: verified.rows,
+      });
+      console.log('');
+    } catch (err) {
+      // The cells are answered and recorded either way. A failure here costs the export, not the
+      // run, and saying which is the difference between a rerun and a six-hour rerun.
+      const detail = err instanceof Error ? err.message : String(err);
+      console.log(`
+  the answers are recorded, but they could not be made submittable: ${detail}`);
+      recordEvent(run, { stage: 'export', kind: 'failed', detail });
+    }
+  }
+
   if (!args.joinRunId) finishRun(run, failed.length > 0 ? 'failed' : 'complete');
 
   console.log('');

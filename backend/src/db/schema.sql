@@ -83,7 +83,8 @@ CREATE TABLE IF NOT EXISTS run_event (
   economy_code    TEXT,
   pillar_id       INTEGER,
   indicator_id    TEXT,
-  stage           TEXT NOT NULL,              -- retrieve | read | framework | decide | record | run
+  stage           TEXT NOT NULL,              -- run | discover | fetch | index | retrieve | read
+                                              -- | framework | decide | record | confirm | export | verify
   -- started | finished | refused | failed. A refusal is the engine declining to produce a reading
   -- and is not a failure of the run; both are recorded, and neither is silent.
   kind            TEXT NOT NULL CHECK (kind IN ('started', 'finished', 'refused', 'failed')),
