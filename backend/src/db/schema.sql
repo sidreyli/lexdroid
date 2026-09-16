@@ -482,6 +482,13 @@ CREATE TABLE IF NOT EXISTS cell_answer (
   -- The sentence a reviewer reads, assembled from the band's own words and the evidence.
   -- Stored because it is what the export quotes; never written by a model.
   rationale       TEXT,
+  -- The confirmation state this score was computed under. A score is a function of the readings
+  -- and the second reading's verdicts, and the same run scored 105 cells one way and 118 the other
+  -- with nothing written down to say which. These say which: how many of the cell's findings
+  -- carried a verdict, and how many that pass ruled out. A re-derivation that sees different
+  -- numbers reports a mismatch rather than a different answer.
+  confirmations_asked   INTEGER,
+  confirmations_applied INTEGER,
   computed_at     TEXT NOT NULL
 );
 

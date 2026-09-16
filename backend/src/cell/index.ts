@@ -35,6 +35,7 @@ import {
   type SectionReading,
 } from '../read/index.js';
 import { carriedReadings } from '../read/carry.js';
+import { loadConfirmations, confirmedFlag, tallyConfirmations, type ConfirmationSet } from '../read/confirmations.js';
 import type { FxRates } from '../decide/currency.js';
 import {
   decide,
@@ -125,6 +126,11 @@ export interface AnswerOptions {
    * carriedReadings for why that is the same call and not a replay of a different question.
    */
   carryFrom?: string;
+  /**
+   * The banked second-reading verdicts to score against. Loaded from the store when not given;
+   * a caller passes one to hold the set steady across a pillar, or an empty one to score without.
+   */
+  confirmations?: ConfirmationSet;
 }
 
 interface SectionRow {
@@ -170,6 +176,10 @@ export async function answerPillar(
   // What this economy says each kind of instrument can do. Declared per economy because the answer
   // differs: a Malaysian Order is subsidiary legislation, and an ACMA guide binds nobody.
   const bindingness = new Map(loadProfile(economy).instrumentTypes.map((t) => [t.kind, t.bindingness]));
+  // The second question's banked answers, read once for the pillar. A provision the pass read and
+  // found not to carry the measure is evidence for a zero, and the live run has to see that at the
+  // moment it scores -- otherwise the stored score and every later re-derivation of it disagree.
+  const confirmations = opts.confirmations ?? loadConfirmations(db);
   const indicators = indicatorsOfPillar(pillarId, rubric);
   if (indicators.length === 0) throw new Error(`No indicators in pillar ${pillarId}`);
   const pillarName = indicators[0]!.pillarName;
@@ -295,6 +305,7 @@ export async function answerPillar(
         amendsAnotherAct: amendsAnotherAct(row.text),
         definesATerm: citesADefinition(row.text, finding.definingWords ?? finding.quote),
         ...(bindingness.get(row.instrument_kind) ? { bindingness: bindingness.get(row.instrument_kind)! } : {}),
+        ...confirmedFlag(confirmations.verdict(row.id, finding.indicatorId, finding.measure)),
       });
     }
   }

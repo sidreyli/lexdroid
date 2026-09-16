@@ -14,6 +14,9 @@ import { loadRubric } from '../rubric/index.js';
 import { decide, type Decision, type Evidence, type FrameworkEvidence, type SurfacedInstrument } from './index.js';
 import type { FxRates } from './currency.js';
 import { amendsAnotherAct, citesADefinition } from '../parse/identity.js';
+import { loadProfile } from '../profile/index.js';
+import type { InstrumentType } from '../profile/types.js';
+import { loadConfirmations, noConfirmations, confirmedFlag } from '../read/confirmations.js';
 
 export interface RecordedCell {
   id: number;
@@ -38,11 +41,29 @@ export function parseGoverning(raw: string | null): number[] {
   }
 }
 
+/**
+ * Whether this run's stored scores were computed against the second reading's verdicts.
+ *
+ * Asked of the run rather than assumed, because the answer differs by run and getting it wrong
+ * makes every score look wrong. A run recorded before the pass was consulted wrote no confirmation
+ * state at all, and must be re-derived the way it was decided or the check is of the wrong thing.
+ */
+export function scoredWithConfirmations(db: Db, runId: string): boolean {
+  const row = db
+    .prepare(
+      `SELECT COUNT(a.confirmations_asked) AS recorded
+         FROM cell c JOIN cell_answer a ON a.cell_id = c.id WHERE c.run_id = ?`,
+    )
+    .get(runId) as { recorded: number } | undefined;
+  return (row?.recorded ?? 0) > 0;
+}
+
 export function recordedDecider(
   db: Db,
   runId: string,
   rates: FxRates | null,
 ): { cells: RecordedCell[]; rebuild: (cell: RecordedCell) => Decision | null } {
+  const confirmations = scoredWithConfirmations(db, runId) ? loadConfirmations(db) : noConfirmations();
   const cells = db
     .prepare(
       `SELECT c.id, c.economy_code, c.indicator_id, c.sections_read, c.sections_indexed, c.surfaced,
@@ -58,7 +79,7 @@ export function recordedDecider(
   // de minimis cell is where that showed: recorded as answered, re-derived as unanswerable.
   const evidenceForPillar = db.prepare(
     `SELECT r.attributes, r.section_id, s.heading_path, s.text, s.anchor, d.url AS doc_url,
-            i.id AS instrument_id, i.title
+            i.id AS instrument_id, i.title, i.kind AS instrument_kind
        FROM reading r
        JOIN cell c ON c.id = r.cell_id
        JOIN section s ON s.id = r.section_id
@@ -95,6 +116,17 @@ export function recordedDecider(
 
   const byId = new Map(loadRubric().indicators.map((i) => [i.id, i]));
 
+  const profiles = new Map<string, Map<string, InstrumentType['bindingness']>>();
+  const bindingnessFor = (economy: string, kind: InstrumentType['kind']) => {
+    let m = profiles.get(economy);
+    if (!m) {
+      m = new Map(loadProfile(economy).instrumentTypes.map((t) => [t.kind, t.bindingness]));
+      profiles.set(economy, m);
+    }
+    const bindingness = m.get(kind);
+    return bindingness ? { bindingness } : {};
+  };
+
   const rebuild = (cell: RecordedCell): Decision | null => {
     const indicator = byId.get(cell.indicator_id);
     if (!indicator) return null;
@@ -107,6 +139,7 @@ export function recordedDecider(
       for (const r of evidenceForPillar.all(runId, cell.economy_code, `${pillar}.%`) as {
         attributes: string; section_id: number; heading_path: string; text: string;
         anchor: string | null; doc_url: string; instrument_id: number; title: string;
+        instrument_kind: InstrumentType['kind'];
       }[]) {
         let findings: unknown = [];
         try {
@@ -137,6 +170,13 @@ export function recordedDecider(
             amendsAnotherAct: amendsAnotherAct(r.text),
             definesATerm: citesADefinition(r.text, finding.definingWords ?? finding.quote),
             citation: citationUrl(r.doc_url, r.anchor),
+            // What this economy says an instrument of that kind can do. The live run reads it from
+            // the profile and this rebuild did not, so a guideline that binds nobody was counted
+            // here and discounted there -- one cell, and the only one the two paths disagreed on.
+            ...bindingnessFor(cell.economy_code, r.instrument_kind),
+            // The second reading's verdict, from the same set the live run scored against. Without
+            // it this rebuild answers a different question from the one it is checking.
+            ...confirmedFlag(confirmations.verdict(r.section_id, finding.indicatorId, finding.measure)),
           });
         }
       }

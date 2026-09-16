@@ -2,6 +2,11 @@
  * Re-score a finished run from its stored readings, with no engine and no network.
  *
  *   npm run -w backend replay -- --run <id>
+ *   npm run -w backend replay -- --run <id> --no-confirmed    score as if the second reading never ran
+ *
+ * The banked second-reading verdicts are in play by default, because the live run scores against
+ * them too. --no-confirmed is for reproducing a run recorded before that was true, and the fidelity
+ * line says when a run is one of those.
  *
  * The readings are the expensive part of a run and they are already banked. Scoring is a pure
  * function of them, so a rule change can be graded in seconds instead of a six-hour fleet.
@@ -23,6 +28,7 @@ import { citationUrl } from '../src/export/index.js';
 import { amendsAnotherAct, citesADefinition } from '../src/parse/identity.js';
 import { scorecard, tally, verdictFor, pillarOf, type CellResult } from '../src/eval/scorecard.js';
 import type { Finding } from '../src/read/index.js';
+import { loadConfirmations, noConfirmations } from '../src/read/confirmations.js';
 
 function arg(name: string): string | null {
   const i = process.argv.indexOf(`--${name}`);
@@ -152,19 +158,10 @@ const storedAnswer = db.prepare('SELECT score FROM cell_answer WHERE cell_id = ?
  * Off by default so the replay of a run reproduces that run. On, every finding the confirmation
  * pass ruled out is a provision read twice and found not to carry the measure.
  */
-const useConfirmed = process.argv.includes('--confirmed');
-const confirmations = new Map<string, boolean>();
-if (useConfirmed) {
-  for (const c of db
-    .prepare('SELECT section_id, indicator_id, measure, words, failure FROM measure_confirmation')
-    .all() as Record<string, any>[]) {
-    // A question the engine never answered is not a provision found wanting, so it is left alone.
-    if (c['failure']) continue;
-    confirmations.set(`${c['section_id']}/${c['indicator_id']}/${c['measure']}`, c['words'] !== null);
-  }
-  console.log(`
+const bare = process.argv.includes('--no-confirmed');
+const confirmations = bare ? noConfirmations() : loadConfirmations(db);
+console.log(`
   ${confirmations.size} banked confirmation(s) in play`);
-}
 
 const profiles = new Map<string, Map<string, 'binding' | 'binding-on-licensees' | 'advisory'>>();
 function bindingnessFor(economy: string) {
@@ -186,6 +183,8 @@ type Replayed = {
   basis: number;
   held: number;
   excluded: number;
+  /** Findings this cell's decision saw a second-reading refusal for. */
+  applied: number;
   heldReasons: string;
 };
 const out: Replayed[] = [];
@@ -228,7 +227,7 @@ for (const cell of cells) {
       );
       if (already) continue;
       const kind = binding.get(row['instrument_kind']);
-      const confirmed = confirmations.get(`${row['section_id']}/${finding.indicatorId}/${finding.measure}`);
+      const confirmed = confirmations.verdict(row['section_id'], finding.indicatorId, finding.measure);
       evidence.push({
         finding,
         sectionId: row['section_id'],
@@ -325,6 +324,7 @@ for (const cell of cells) {
     basis: d.basis.length,
     held: d.held.length,
     excluded: d.excluded.length,
+    applied: d.confirmations?.applied ?? 0,
     heldReasons: reasons.slice(0, 6).join(' | '),
   });
 }
@@ -338,6 +338,30 @@ console.log(
   `  fidelity: ${out.length - moved.length} of ${out.length} reproduce the stored score` +
     (moved.length === 0 ? '  (exact)' : `  -- ${moved.length} differ`),
 );
+
+// A run scored before confirmations were consulted cannot be reproduced by a replay that consults
+// them, and saying so is the point of recording the state. Without this line the mismatch above
+// looks like a scoring bug rather than two different questions.
+const storedState = db
+  .prepare(
+    `SELECT COUNT(a.confirmations_asked) AS recorded, COALESCE(SUM(a.confirmations_applied), 0) AS applied
+       FROM cell c JOIN cell_answer a ON a.cell_id = c.id WHERE c.run_id = ?`,
+  )
+  .get(runId) as { recorded: number; applied: number };
+if (storedState.recorded === 0 && confirmations.size > 0 && !bare) {
+  console.log(
+    `  the stored scores recorded no confirmation state, so they were computed without one.
+` +
+      `  Re-run with --no-confirmed to reproduce them, or treat the difference as the pass's effect.`,
+  );
+} else if (storedState.recorded > 0) {
+  const replayApplied = out.reduce((n, r) => n + r.applied, 0);
+  const same = replayApplied === storedState.applied;
+  console.log(
+    `  confirmation state: ${storedState.applied} finding(s) ruled out when stored, ` +
+      `${replayApplied} now${same ? '  (same set)' : '  -- THE SET HAS CHANGED'}`,
+  );
+}
 
 if (moved.length > 0) {
   console.log(`\n    economy  indicator   stored   replay`);

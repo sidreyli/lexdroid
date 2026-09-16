@@ -19,6 +19,7 @@
 import type { Indicator, ScoreBand } from '../rubric/types.js';
 import type { Finding } from '../read/index.js';
 import { MEASURES, MEASURE_NAMES, SUBJECTS, SUBJECT_DOMAIN } from '../rubric/measures.js';
+import { tallyConfirmations, type ConfirmationTally } from '../read/confirmations.js';
 import { inUsd, moneyIn, type FxRates } from './currency.js';
 
 /** One finding, with enough of its origin to cite it. */
@@ -160,6 +161,11 @@ export interface Decision {
   decidingFact: string;
   /** Assembled from the band's own words and the evidence. Not written by a model. */
   rationale: string;
+  /**
+   * How many of this cell's findings carried a second-reading verdict, and how many that pass
+   * ruled out. Filled by `decide`; the inner decision does not set it.
+   */
+  confirmations?: ConfirmationTally;
 }
 
 /* ---------------------------------------------------------------------------------------------
@@ -1809,7 +1815,21 @@ function leadWithWhatWasCounted(qualifying: Evidence[], counted?: Evidence[]): E
   return [...counted, ...qualifying.filter((e) => !counted.includes(e))];
 }
 
+/**
+ * The decision, with a note of what the second reading contributed to it.
+ *
+ * The tally is taken here rather than by each caller because here is the only place that knows
+ * which findings this indicator actually saw. A score and the confirmation state it was computed
+ * under travel together from this point on, so a re-derivation that reads a different set reports
+ * a mismatch instead of quietly returning a different number.
+ */
 export function decide(input: DecideInput): Decision {
+  const decision = decideOn(input);
+  const mine = input.evidence.filter((e) => refile(e.finding).indicatorId === input.indicator.id);
+  return { ...decision, confirmations: tallyConfirmations(mine) };
+}
+
+function decideOn(input: DecideInput): Decision {
   const { indicator, economy, coverage } = input;
 
   if (indicator.shape === 'framework') {

@@ -34,7 +34,8 @@
     "replay": "tsx scripts/replay.ts",
     "repair-economy": "tsx scripts/repair-economy.ts",
     "confirm": "tsx scripts/confirm.ts",
-    "reach": "tsx scripts/reach.ts"
+    "reach": "tsx scripts/reach.ts",
+    "benchmark": "tsx scripts/benchmark.ts"
   },
   "dependencies": {
     "@tesseract.js-data/eng": "^1.0.0",

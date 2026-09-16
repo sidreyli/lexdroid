@@ -292,8 +292,8 @@ export function recordPillarAnswer(run: RunContext, answer: PillarAnswer): void 
   const insertAnswer = db.prepare(
     `INSERT OR REPLACE INTO cell_answer
        (cell_id, score, band_ordinal, band_criterion, deciding_fact, controlling_instrument_id,
-        absence_basis, rationale, computed_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        absence_basis, rationale, confirmations_asked, confirmations_applied, computed_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   );
   const cellIdentity = db.prepare('SELECT run_id, economy_code, indicator_id FROM cell WHERE id = ?');
   const currentTo = new Map(
@@ -498,6 +498,8 @@ export function recordPillarAnswer(run: RunContext, answer: PillarAnswer): void 
         // merely returned. Only the first sustains a band that scores for an absence.
         decision.absence?.basis ?? null,
         decision.rationale,
+        decision.confirmations?.asked ?? null,
+        decision.confirmations?.applied ?? null,
         now,
       );
 
