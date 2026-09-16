@@ -113,7 +113,9 @@ interface BasisRow {
   label: string | null;
   anchor: string | null;
   language: string | null;
+  page: number | null;
   doc_url: string;
+  media_type: string | null;
   extraction: string | null;
   title: string;
   official_number: string | null;
@@ -233,12 +235,39 @@ function languageOf(
  * else's submission, and the anchor is the difference between a citation a reviewer can check in
  * one click and one they have to go hunting in.
  */
-export function citationUrl(docUrl: string, anchor: string | null): string {
-  if (!anchor) return docUrl;
+export interface CitationTarget {
+  /** The page the provision sits on, where the parser counted pages. PDFs only. */
+  page?: number | null | undefined;
+  /** What the server said it served, so a PDF is recognised as one. */
+  mediaType?: string | null | undefined;
+}
+
+/** A PDF, by what the server called it or by what the URL ends in. */
+function isPdf(docUrl: string, mediaType: string | null | undefined): boolean {
+  if (mediaType) return mediaType.toLowerCase().includes('pdf');
+  return /\.pdf(?:$|[?#])/i.test(docUrl);
+}
+
+export function citationUrl(docUrl: string, anchor: string | null, target: CitationTarget = {}): string {
   if (docUrl.includes('#')) return docUrl;
-  // An anchor carrying a path of its own is a link, not a fragment: a compilation published in
-  // several volumes gives each provision the volume it is actually in.
-  return anchor.includes('#') ? new URL(anchor, docUrl).toString() : `${docUrl}#${anchor}`;
+  if (anchor) {
+    // An anchor carrying a path of its own is a link, not a fragment: a compilation published in
+    // several volumes gives each provision the volume it is actually in.
+    return anchor.includes('#') ? new URL(anchor, docUrl).toString() : `${docUrl}#${anchor}`;
+  }
+
+  // A PDF has no anchors to offer, which is why 183 of Malaysia's 225 rows cited the top of an Act
+  // and the pinpoint gate held every one of them. But `#page=` is the PDF viewer's own convention
+  // and every browser that renders a PDF honours it, so a provision the parser counted a page for
+  // can still be cited at the page it is on. The page is already in the store: it was recorded for
+  // 36,272 of 36,273 Malaysian sections and then never used.
+  //
+  // Only for a PDF. On an HTML page `#page=12` is a fragment matching nothing, which would leave
+  // the reviewer where they started while telling the gate the citation was pinpoint.
+  if (target.page != null && target.page > 0 && isPdf(docUrl, target.mediaType)) {
+    return `${docUrl}#page=${target.page}`;
+  }
+  return docUrl;
 }
 
 /**
@@ -389,8 +418,8 @@ export function buildExportRows(db: Db, runId: string): BuildResult {
   const basisFor = db.prepare(
     `SELECT b.section_id, b.measure, r.id AS reading_id, r.quote AS reading_quote, r.attributes,
             s.text AS section_text, s.char_start AS section_char_start,
-            s.heading_path, s.label, s.anchor, s.language,
-            d.url AS doc_url, d.extraction,
+            s.heading_path, s.label, s.anchor, s.language, s.page,
+            d.url AS doc_url, d.media_type, d.extraction,
             i.title, i.official_number, i.commenced_on, i.last_amended_on,
             i.language AS instrument_language
        FROM answer_basis b
@@ -515,7 +544,7 @@ export function buildExportRows(db: Db, runId: string): BuildResult {
             at ? b.section_char_start + at.start : null,
             at ? b.section_char_start + at.end : null,
             mappingRationale(quote, f?.requirement ?? null),
-            citationUrl(b.doc_url, b.anchor),
+            citationUrl(b.doc_url, b.anchor, { page: b.page, mediaType: b.media_type }),
             confidenceValue(confidence),
             noteWith(
               confidence.because,
@@ -558,7 +587,12 @@ export function buildExportRows(db: Db, runId: string): BuildResult {
               confidence.because,
               frameworkNote(b, (alsoCarrying.all(cell.id, cell.id) as { title: string }[]).map((x) => x.title)),
             ),
-            b.instrument_language,
+            // Through the same ladder as every other row. This path used to pass the portal's
+            // answer straight out, so a framework row whose instrument carried no declared
+            // language went out blank while holding a quotation plainly in one -- seven rows of
+            // "An Act to provide for the protection of consumers", read against an economy that
+            // publishes in two languages and never asked which.
+            languageOf(null, b.instrument_language, b.quote ?? '', cell.economy_code),
             null,
             null,
             now,

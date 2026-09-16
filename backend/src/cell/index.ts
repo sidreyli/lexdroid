@@ -139,14 +139,24 @@ interface SectionRow {
   instrument_title: string;
   instrument_kind: InstrumentType['kind'];
   source_url: string;
+  media_type: string | null;
   heading_path: string;
   text: string;
   anchor: string | null;
+  page: number | null;
 }
 
-/** The link a reviewer follows. One official URL, and the provision's own anchor on it. */
-function citationFor(row: { source_url: string; anchor: string | null }): string {
-  return citationUrl(row.source_url, row.anchor);
+/**
+ * The link a reviewer follows. One official URL, and the provision's own anchor on it -- or, in a
+ * PDF, the page it is on, so the workbench and the workbook send a reviewer to the same place.
+ */
+function citationFor(row: {
+  source_url: string;
+  anchor: string | null;
+  page?: number | null;
+  media_type?: string | null;
+}): string {
+  return citationUrl(row.source_url, row.anchor, { page: row.page, mediaType: row.media_type });
 }
 
 async function inPool<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
@@ -560,8 +570,9 @@ function sectionRows(db: Db, ids: number[]): SectionRow[] {
   const placeholders = ids.map(() => '?').join(',');
   return db
     .prepare(
-      `SELECT s.id, s.heading_path, s.text, s.anchor,
-              d.instrument_id, i.title AS instrument_title, i.kind AS instrument_kind, d.url AS source_url
+      `SELECT s.id, s.heading_path, s.text, s.anchor, s.page,
+              d.instrument_id, i.title AS instrument_title, i.kind AS instrument_kind, d.url AS source_url,
+              d.media_type
          FROM section s
          JOIN document d ON d.id = s.document_id
          JOIN instrument i ON i.id = d.instrument_id

@@ -90,7 +90,8 @@ export function recordedDecider(
   // per-cell rebuild produces a smaller input and can land on a different answer. Australia's
   // de minimis cell is where that showed: recorded as answered, re-derived as unanswerable.
   const evidenceForPillar = db.prepare(
-    `SELECT r.attributes, r.section_id, s.heading_path, s.text, s.anchor, d.url AS doc_url,
+    `SELECT r.attributes, r.section_id, s.heading_path, s.text, s.anchor, s.page,
+            d.url AS doc_url, d.media_type,
             i.id AS instrument_id, i.title, i.kind AS instrument_kind
        FROM reading r
        JOIN cell c ON c.id = r.cell_id
@@ -150,8 +151,8 @@ export function recordedDecider(
       evidence = [];
       for (const r of evidenceForPillar.all(runId, cell.economy_code, `${pillar}.%`) as {
         attributes: string; section_id: number; heading_path: string; text: string;
-        anchor: string | null; doc_url: string; instrument_id: number; title: string;
-        instrument_kind: InstrumentType['kind'];
+        anchor: string | null; page: number | null; doc_url: string; media_type: string | null;
+        instrument_id: number; title: string; instrument_kind: InstrumentType['kind'];
       }[]) {
         let findings: unknown = [];
         try {
@@ -181,7 +182,7 @@ export function recordedDecider(
             headingPath: r.heading_path,
             amendsAnotherAct: amendsAnotherAct(r.text),
             definesATerm: citesADefinition(r.text, finding.definingWords ?? finding.quote),
-            citation: citationUrl(r.doc_url, r.anchor),
+            citation: citationUrl(r.doc_url, r.anchor, { page: r.page, mediaType: r.media_type }),
             // What this economy says an instrument of that kind can do. The live run reads it from
             // the profile and this rebuild did not, so a guideline that binds nobody was counted
             // here and discounted there -- one cell, and the only one the two paths disagreed on.

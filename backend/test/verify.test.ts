@@ -411,3 +411,46 @@ describe('deriving the score again from the record', () => {
     db.close();
   });
 });
+
+/**
+ * A PDF has no anchors, and 183 of Malaysia's 225 rows cited the top of an Act because of it --
+ * every one held by the pinpoint gate, which exists for the reviewer comment "none of the reference
+ * links lead to the right document".
+ *
+ * `#page=` is the PDF viewer's own convention and every browser that renders a PDF honours it. The
+ * page was already recorded for 36,272 of 36,273 Malaysian sections and never used.
+ */
+describe('citing a provision inside a PDF', () => {
+  const PDF = 'https://lom.agc.gov.my/ilims/upload/portal/akta/LOM/EN/Act%20504.pdf';
+
+  it('cites the page when the PDF offers no anchor', () => {
+    expect(citationUrl(PDF, null, { page: 12, mediaType: 'application/pdf' })).toBe(`${PDF}#page=12`);
+  });
+
+  it('recognises a PDF by its extension when the server said nothing', () => {
+    expect(citationUrl(PDF, null, { page: 3 })).toBe(`${PDF}#page=3`);
+  });
+
+  it('prefers a real anchor to a page number', () => {
+    // An anchor names the provision; a page only narrows it to one page of several provisions.
+    expect(citationUrl(PDF, 'pr26-', { page: 12, mediaType: 'application/pdf' })).toBe(`${PDF}#pr26-`);
+  });
+
+  it('never puts a page fragment on an HTML page', () => {
+    // "#page=12" on HTML matches nothing: the reviewer lands where they started, and the gate is
+    // told the citation was pinpoint when it was not.
+    const html = 'https://sso.agc.gov.sg/Act/CoA1967';
+    expect(citationUrl(html, null, { page: 12, mediaType: 'text/html' })).toBe(html);
+    expect(citationUrl(html, null, { page: 12 })).toBe(html);
+  });
+
+  it('leaves a document that already carries a fragment alone', () => {
+    expect(citationUrl(`${PDF}#page=4`, null, { page: 12, mediaType: 'application/pdf' })).toBe(`${PDF}#page=4`);
+  });
+
+  it('says nothing where there is no page to say', () => {
+    expect(citationUrl(PDF, null, { page: null, mediaType: 'application/pdf' })).toBe(PDF);
+    expect(citationUrl(PDF, null, { page: 0, mediaType: 'application/pdf' })).toBe(PDF);
+    expect(citationUrl(PDF, null)).toBe(PDF);
+  });
+});
