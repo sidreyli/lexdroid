@@ -41,6 +41,52 @@ export interface BuildResult {
   cells: number;
   /** Cells that produced no row at all. Should always be zero; reported so it cannot hide. */
   cellsWithoutRow: number;
+  /** Reviewer decisions carried across the rebuild onto a row that did not change. */
+  reviewsCarried: number;
+  /**
+   * Reviewer decisions that could not be carried, because the row they were about is no longer
+   * there or no longer says the same thing. Reported rather than swallowed: it is somebody's work.
+   */
+  reviewsDropped: number;
+}
+
+/**
+ * What identifies a row across a rebuild.
+ *
+ * `export_row.id` does not: this function deletes the run's rows and reinserts them, so every id
+ * changes, and `gate_result` and `review_action` both cascade off it. The gates are recomputed by
+ * verifyRun afterwards, so they heal. A reviewer's accept or reject is not recomputable by anything
+ * -- it is a person's judgement, and a re-export was silently destroying it.
+ *
+ * Keyed by what the reviewer actually looked at. A row whose quotation or citation changed is not
+ * the row they approved, and it correctly loses the approval rather than inheriting it.
+ */
+function rowIdentity(r: {
+  cell_id: number;
+  section_id: number | null;
+  article: string | null;
+  verbatim_snippet: string | null;
+  source_url: string | null;
+}): string {
+  // JSON rather than a joined string: a separator has to be a character no field can contain, and
+  // the obvious choice is a NUL, which makes the source file binary to git and invisible to grep.
+  // JSON escaping makes the parts unambiguous without one.
+  return JSON.stringify([
+    r.cell_id,
+    r.section_id,
+    (r.article ?? '').trim(),
+    (r.verbatim_snippet ?? '').trim(),
+    (r.source_url ?? '').trim(),
+  ]);
+}
+
+interface CarriedReview {
+  identity: string;
+  action: string;
+  attestation: string | null;
+  changed_fields: string | null;
+  reviewer: string | null;
+  acted_at: string;
 }
 
 interface CellRow {
@@ -419,7 +465,24 @@ export function buildExportRows(db: Db, runId: string): BuildResult {
   // confirmation pass; a run that never ran one simply finds nothing here and says so.
   const confirmations = loadConfirmations(db);
 
+  let reviewsCarried = 0;
+  let reviewsDropped = 0;
+
   db.transaction(() => {
+    // Taken before the delete, because the delete cascades them away.
+    const priorReviews = (
+      db
+        .prepare(
+          `SELECT e.cell_id, e.section_id, e.article, e.verbatim_snippet, e.source_url,
+                  r.action, r.attestation, r.changed_fields, r.reviewer, r.acted_at
+             FROM review_action r
+             JOIN export_row e ON e.id = r.export_row_id
+             JOIN cell c ON c.id = e.cell_id
+            WHERE c.run_id = ?`,
+        )
+        .all(runId) as (Parameters<typeof rowIdentity>[0] & Omit<CarriedReview, 'identity'>)[]
+    ).map((r) => ({ ...r, identity: rowIdentity(r) }));
+
     db.prepare('DELETE FROM export_row WHERE cell_id IN (SELECT id FROM cell WHERE run_id = ?)').run(runId);
 
     for (const cell of cells) {
@@ -556,9 +619,39 @@ export function buildExportRows(db: Db, runId: string): BuildResult {
 
       if (made === 0) cellsWithoutRow += 1;
     }
+
+    // Put the reviewers' decisions back on the rows that still say the same thing.
+    if (priorReviews.length > 0) {
+      const rebuilt = new Map<string, number>();
+      for (const row of db
+        .prepare(
+          `SELECT e.id, e.cell_id, e.section_id, e.article, e.verbatim_snippet, e.source_url
+             FROM export_row e JOIN cell c ON c.id = e.cell_id WHERE c.run_id = ?`,
+        )
+        .all(runId) as (Parameters<typeof rowIdentity>[0] & { id: number })[]) {
+        // First writer wins: two identical rows are indistinguishable to a reviewer anyway.
+        const key = rowIdentity(row);
+        if (!rebuilt.has(key)) rebuilt.set(key, row.id);
+      }
+
+      const reinsert = db.prepare(
+        `INSERT INTO review_action
+           (export_row_id, action, attestation, changed_fields, reviewer, acted_at)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+      );
+      for (const r of priorReviews) {
+        const id = rebuilt.get(r.identity);
+        if (id === undefined) {
+          reviewsDropped += 1;
+          continue;
+        }
+        reinsert.run(id, r.action, r.attestation, r.changed_fields, r.reviewer, r.acted_at);
+        reviewsCarried += 1;
+      }
+    }
   })();
 
-  return { rows, cells: cells.length, cellsWithoutRow };
+  return { rows, cells: cells.length, cellsWithoutRow, reviewsCarried, reviewsDropped };
 }
 
 /**

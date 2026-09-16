@@ -44,6 +44,14 @@ if (built.cellsWithoutRow > 0) {
   // question we were asked and did not answer, which is the one thing the design forbids.
   console.log(`  WARNING: ${built.cellsWithoutRow} cell(s) produced no row at all`);
 }
+if (built.reviewsCarried > 0 || built.reviewsDropped > 0) {
+  // Somebody's judgement, carried across a rebuild that changes every row id. Said out loud
+  // because the alternative -- losing it quietly -- is what this reporting exists to rule out.
+  console.log(`  ${built.reviewsCarried} reviewer decision(s) carried onto the rebuilt rows`);
+  if (built.reviewsDropped > 0) {
+    console.log(`  WARNING: ${built.reviewsDropped} decision(s) dropped; those rows changed`);
+  }
+}
 
 // NEW or KNOWN, against the sample kit. Here rather than in src/export, because no module under
 // src/ outside the quarantine may read the kit -- which is why this column was null on every row.

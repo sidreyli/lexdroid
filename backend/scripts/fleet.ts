@@ -421,6 +421,10 @@ async function main(): Promise<void> {
       const built = buildExportRows(db, run.id);
       console.log(`  ${built.rows} row(s) from ${built.cells} cell(s)`);
       if (built.cellsWithoutRow > 0) console.log(`  WARNING: ${built.cellsWithoutRow} cell(s) produced no row`);
+      if (built.reviewsCarried > 0) console.log(`  ${built.reviewsCarried} reviewer decision(s) carried`);
+      if (built.reviewsDropped > 0) {
+        console.log(`  WARNING: ${built.reviewsDropped} reviewer decision(s) dropped; those rows changed`);
+      }
       recordEvent(run, { stage: 'export', kind: 'finished', detail: `${built.rows} row(s)`, total: built.rows });
 
       // NEW or KNOWN, against ESCAP's sample kit. Last, and from a script rather than from src/,
