@@ -34,6 +34,7 @@ import type { Db } from '../db/index.js';
 import { locateQuote } from '../util/locate.js';
 import { detectLanguage } from '../parse/language.js';
 import { loadProfile } from '../profile/index.js';
+import { loadConfirmations } from '../read/confirmations.js';
 
 export interface BuildResult {
   rows: number;
@@ -197,19 +198,91 @@ export function citationUrl(docUrl: string, anchor: string | null): string {
 /**
  * How much of this row stands on checkable ground -- stated from facts, never from a feeling.
  *
- * A confidence that is a model's opinion of itself is worth nothing to a reviewer. This one is a
- * statement about the evidence: whether the quoted words were located character-for-character in
- * the stored source, and whether the text they were located in was read or guessed at by OCR.
+ * A confidence that is a model's opinion of itself is worth nothing to a reviewer, so the ladder
+ * below is a statement about the evidence: whether the quoted words were located
+ * character-for-character in the stored source, whether the text they were located in was read or
+ * guessed at by OCR, and whether a second, independent reading was asked to confirm the measure and
+ * said yes.
+ *
+ * The template wants column L as a number between 0.00 and 1.00 and validates it programmatically,
+ * so the number goes there and the sentence that earned it goes in Notes, which is free text.
+ *
+ * **These are ordinal, not calibrated probabilities.** `npm run -w backend calibration` measures the
+ * agreement behind each rung against ESCAP's published answers; on run 82673dbf the two rungs
+ * holding 89% of rows came out at 0.755 (CONFIRMED) and 0.694 (LOCATED). The ordering is real and
+ * the separation is 0.061, which is why a reviewer should read the sentence in Notes rather than
+ * threshold on the number. Anything at or below LOCATED deserves a human check.
  */
+export const CONFIDENCE = {
+  /** Quoted words located in the stored source, and a second reading confirmed the measure. */
+  CONFIRMED: 0.9,
+  /** Quoted words located in the stored source; no second reading was asked. */
+  LOCATED: 0.75,
+  /** Located, but in text recovered by OCR, which may have misread the characters. */
+  OCR: 0.65,
+  /** A quotation the stored source does not contain character-for-character. */
+  UNLOCATED: 0.5,
+  /** No requirement found, stated against an instrument that was actually read. */
+  ABSENT: 0.6,
+  /** A claim with no quotation behind it. */
+  UNQUOTED: 0.4,
+  /** The question could not be answered from the corpus. */
+  UNRESOLVED: 0.2,
+} as const;
+
+/** The rung at or below which a row is worth a human's time. Quoted in the README. */
+export const CHECK_BELOW = CONFIDENCE.LOCATED;
+
+export interface Confidence {
+  /** Column L, as the template wants it: 0.00 to 1.00. */
+  value: number;
+  /** Why it earned that, for Notes. Never null, so a row always says what it stands on. */
+  because: string;
+}
+
 export function confidenceOf(opts: {
   quote: string | null;
   offsetsResolved: boolean;
   extraction: string | null;
-}): string {
-  if (!opts.quote) return 'no quotation';
-  if (!opts.offsetsResolved) return 'medium -- quoted words not located in the stored source';
-  if (opts.extraction === 'ocr') return 'medium -- located in text recovered by OCR';
-  return 'high -- quoted words located in the stored source';
+  /** The second reading's verdict, where one was asked. `undefined` means it never was. */
+  confirmed?: boolean | undefined;
+}): Confidence {
+  if (!opts.quote) return { value: CONFIDENCE.UNQUOTED, because: 'No quotation.' };
+  if (!opts.offsetsResolved) {
+    return {
+      value: CONFIDENCE.UNLOCATED,
+      because: 'Quoted words not located in the stored source.',
+    };
+  }
+  if (opts.extraction === 'ocr') {
+    return {
+      value: CONFIDENCE.OCR,
+      because: 'Quoted words located in text recovered by OCR.',
+    };
+  }
+  if (opts.confirmed === true) {
+    return {
+      value: CONFIDENCE.CONFIRMED,
+      because: 'Quoted words located in the stored source, and confirmed by a second reading.',
+    };
+  }
+  return {
+    value: CONFIDENCE.LOCATED,
+    because: 'Quoted words located in the stored source; no second reading was asked.',
+  };
+}
+
+/**
+ * Column L, as the template formats it. Two decimals, so 0.9 is written 0.90 and a validator
+ * reading the column as a number gets one.
+ */
+export function confidenceValue(c: Confidence): string {
+  return c.value.toFixed(2);
+}
+
+/** The evidentiary sentence in front of whatever else the row had to say. */
+export function noteWith(because: string, existing: string | null): string {
+  return existing ? `${because} ${existing}` : because;
 }
 
 /**
@@ -220,9 +293,27 @@ export function confidenceOf(opts: {
  * the interpretation, never the quotation: the quotation is the evidence and our sentence is the
  * claim, and a claim shortened past sense is better than evidence shortened past checking.
  */
+const RATIONALE_MAX = 300;
+
+/**
+ * The template's cap, for the rows that have no quotation to build a rationale around.
+ *
+ * A zero row and an unresolved row state their reasoning in prose rather than through
+ * `mappingRationale`, and so used to reach the workbook uncapped -- 78 of run 82673dbf's rows were
+ * over the limit for exactly that reason. Trimmed on a word boundary, because a sentence cut
+ * mid-word reads as corruption rather than as a limit.
+ */
+export function cappedRationale(text: string): string {
+  if (text.length <= RATIONALE_MAX) return text;
+  const room = RATIONALE_MAX - 3;
+  const cut = text.slice(0, room);
+  const space = cut.lastIndexOf(' ');
+  return `${(space > room - 40 ? cut.slice(0, space) : cut).trimEnd()}...`;
+}
+
 export function mappingRationale(quote: string | null, requirement: string | null): string {
-  const MAX = 300;
-  if (!quote) return (requirement ?? '').slice(0, MAX);
+  const MAX = RATIONALE_MAX;
+  if (!quote) return cappedRationale(requirement ?? '');
   const quoted = `"${quote}"`;
   if (!requirement) return quoted.slice(0, MAX);
   const full = `${quoted} -- ${requirement}`;
@@ -324,6 +415,10 @@ export function buildExportRows(db: Db, runId: string): BuildResult {
   let rows = 0;
   let cellsWithoutRow = 0;
 
+  // The second reading's verdicts, so a row can say whether anything checked it. Banked by the
+  // confirmation pass; a run that never ran one simply finds nothing here and says so.
+  const confirmations = loadConfirmations(db);
+
   db.transaction(() => {
     db.prepare('DELETE FROM export_row WHERE cell_id IN (SELECT id FROM cell WHERE run_id = ?)').run(runId);
 
@@ -337,6 +432,12 @@ export function buildExportRows(db: Db, runId: string): BuildResult {
           // Located per finding, because the quote differs per finding and the reading carries
           // only the first one's span.
           const at = quote ? locateQuote(b.section_text, quote) : null;
+          const confidence = confidenceOf({
+            quote,
+            offsetsResolved: at !== null,
+            extraction: b.extraction,
+            confirmed: confirmations.verdict(b.section_id, cell.indicator_id, b.measure),
+          });
           insert.run(
             cell.id,
             cell.economy_code,
@@ -352,8 +453,11 @@ export function buildExportRows(db: Db, runId: string): BuildResult {
             at ? b.section_char_start + at.end : null,
             mappingRationale(quote, f?.requirement ?? null),
             citationUrl(b.doc_url, b.anchor),
-            confidenceOf({ quote, offsetsResolved: at !== null, extraction: b.extraction }),
-            noteFor(f ?? (b.measure ? { measure: b.measure } : {}), b.extraction),
+            confidenceValue(confidence),
+            noteWith(
+              confidence.because,
+              noteFor(f ?? (b.measure ? { measure: b.measure } : {}), b.extraction),
+            ),
             languageOf(b.language, b.instrument_language, b.section_text, cell.economy_code),
             b.section_id,
             b.reading_id,
@@ -364,6 +468,13 @@ export function buildExportRows(db: Db, runId: string): BuildResult {
         }
 
         for (const b of frameworkBasisFor.all(cell.id) as FrameworkBasisRow[]) {
+          // No confirmation is asked of a framework row: the second reading asks whether a
+          // provision states a measure, and this row's claim is about an instrument as a whole.
+          const confidence = confidenceOf({
+            quote: b.quote,
+            offsetsResolved: b.quote_verified === 1,
+            extraction: null,
+          });
           insert.run(
             cell.id,
             cell.economy_code,
@@ -379,12 +490,11 @@ export function buildExportRows(db: Db, runId: string): BuildResult {
             null,
             mappingRationale(b.quote, cell.rationale),
             b.source_url,
-            b.quote
-              ? b.quote_verified === 1
-                ? 'high -- quoted words located in the stored source'
-                : 'medium -- quoted words not located in the stored source'
-              : 'no quotation',
-            frameworkNote(b, (alsoCarrying.all(cell.id, cell.id) as { title: string }[]).map((x) => x.title)),
+            confidenceValue(confidence),
+            noteWith(
+              confidence.because,
+              frameworkNote(b, (alsoCarrying.all(cell.id, cell.id) as { title: string }[]).map((x) => x.title)),
+            ),
             b.instrument_language,
             null,
             null,
@@ -412,12 +522,17 @@ export function buildExportRows(db: Db, runId: string): BuildResult {
           inst?.official_number ?? null,
           timeframe(inst?.commenced_on ?? null, inst?.last_amended_on ?? null),
           cell.indicator_id, null, null, null, null, null, null,
-          cell.rationale ?? 'No requirement found.',
+          cappedRationale(cell.rationale ?? 'No requirement found.'),
           inst?.source_url ?? null,
-          'no requirement found',
+          CONFIDENCE.ABSENT.toFixed(2),
+          noteWith(
+            inst
+              ? 'No requirement found in the instrument read.'
+              : 'No requirement found, and no instrument was identified to state it against.',
+            null,
+          ),
           // A zero row has no quote to read a language out of, so the instrument it was read
           // against answers for it -- sampled from its own provisions, not assumed.
-          null,
           languageOf(null, inst?.language ?? null, sampleOf(cell.controlling_instrument_id), cell.economy_code),
           null, null, now,
         );
@@ -429,8 +544,11 @@ export function buildExportRows(db: Db, runId: string): BuildResult {
         insert.run(
           cell.id, cell.economy_code, 'Not determined', null, null, cell.indicator_id,
           null, null, null, null, null, null,
-          cell.unresolved_reason ?? 'The question could not be answered from the corpus.',
-          null, 'unresolved', cell.unresolved_reason, null, null, null, now,
+          cappedRationale(cell.unresolved_reason ?? 'The question could not be answered from the corpus.'),
+          null,
+          CONFIDENCE.UNRESOLVED.toFixed(2),
+          noteWith('The question could not be answered from the corpus.', cell.unresolved_reason),
+          null, null, null, now,
         );
         rows += 1;
         made += 1;

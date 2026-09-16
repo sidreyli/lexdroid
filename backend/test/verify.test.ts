@@ -8,7 +8,8 @@
 import { describe, expect, it } from 'vitest';
 import { openDb, type Db } from '../src/db/index.js';
 import {
-  buildExportRows, citationUrl, confidenceOf, mappingRationale, timeframe,
+  buildExportRows, cappedRationale, citationUrl, CONFIDENCE, confidenceOf, confidenceValue,
+  mappingRationale, noteWith, timeframe,
 } from '../src/export/index.js';
 import { isOfficialHost, quoteLeads, recomputeScores, verifyRun } from '../src/verify/index.js';
 
@@ -207,10 +208,50 @@ describe('the export row', () => {
   });
 
   it('states confidence from the evidence, not from a feeling', () => {
-    expect(confidenceOf({ quote: QUOTE, offsetsResolved: true, extraction: 'html' })).toContain('high');
-    expect(confidenceOf({ quote: QUOTE, offsetsResolved: false, extraction: 'html' })).toContain('medium');
-    expect(confidenceOf({ quote: QUOTE, offsetsResolved: true, extraction: 'ocr' })).toContain('OCR');
-    expect(confidenceOf({ quote: null, offsetsResolved: false, extraction: null })).toBe('no quotation');
+    const located = confidenceOf({ quote: QUOTE, offsetsResolved: true, extraction: 'html' });
+    const unlocated = confidenceOf({ quote: QUOTE, offsetsResolved: false, extraction: 'html' });
+    const ocr = confidenceOf({ quote: QUOTE, offsetsResolved: true, extraction: 'ocr' });
+    const confirmed = confidenceOf({
+      quote: QUOTE, offsetsResolved: true, extraction: 'html', confirmed: true,
+    });
+
+    // The ordering is the claim: a second reading beats none, clean text beats OCR, and words the
+    // source does not contain rank below words it does.
+    expect(confirmed.value).toBeGreaterThan(located.value);
+    expect(located.value).toBeGreaterThan(ocr.value);
+    expect(ocr.value).toBeGreaterThan(unlocated.value);
+
+    expect(located.because).toContain('located');
+    expect(ocr.because).toContain('OCR');
+    expect(confirmed.because).toContain('second reading');
+    expect(confidenceOf({ quote: null, offsetsResolved: false, extraction: null }).because)
+      .toBe('No quotation.');
+  });
+
+  it('writes confidence as a number between 0.00 and 1.00, as the template validates it', () => {
+    // Column L used to carry a sentence. The secretariat validates the column programmatically, so
+    // the number goes here and the sentence that earned it goes in Notes.
+    for (const value of Object.values(CONFIDENCE)) {
+      const written = confidenceValue({ value, because: '' });
+      expect(written).toMatch(/^[01]\.\d{2}$/);
+      expect(Number(written)).toBeGreaterThan(0);
+      expect(Number(written)).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it('puts the evidentiary sentence in front of whatever else the row had to say', () => {
+    expect(noteWith('Located.', 'Measure: LICENCE.')).toBe('Located. Measure: LICENCE.');
+    expect(noteWith('Located.', null)).toBe('Located.');
+  });
+
+  it('caps a rationale that never passed through the quotation path', () => {
+    // 78 of run 82673dbf's rows were over the template's 300 characters because a zero row states
+    // its reasoning in prose and so skipped the capping that mappingRationale does.
+    const long = `${'word '.repeat(100)}end`;
+    const capped = cappedRationale(long);
+    expect(capped.length).toBeLessThanOrEqual(300);
+    expect(capped.endsWith('...')).toBe(true);
+    expect(cappedRationale('short')).toBe('short');
   });
 });
 
