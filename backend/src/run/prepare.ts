@@ -35,6 +35,14 @@ export interface PrepareOptions {
   economy: string;
   pillars: number[];
   sourceMode: SourceMode;
+  /**
+   * The run these fetches belong to.
+   *
+   * Not bookkeeping: ESCAP's Run Record sheet asks for every document downloaded during the hour
+   * and checks the second engine's count is zero. A fetch recorded against no run cannot answer
+   * that question, so the claim would rest on our word rather than on the log.
+   */
+  runId?: string;
   /** How many instruments each question may pull into the corpus. */
   top?: number;
   minDelayMs?: number;
@@ -104,6 +112,7 @@ export async function prepareCorpus(db: Db, opts: PrepareOptions): Promise<Prepa
   const fetcher = new Fetcher({
     db,
     sourceMode: opts.sourceMode,
+    ...(opts.runId ? { runId: opts.runId } : {}),
     ...(opts.minDelayMs ? { minDelayMs: opts.minDelayMs } : {}),
     onLog: log,
   });

@@ -317,6 +317,7 @@ async function main(): Promise<void> {
       try {
         const result = await prepareCorpus(db, {
           economy,
+          runId: run.id,
           pillars: args.pillars,
           sourceMode: args.cacheOnly ? 'cache-only' : 'fetch',
           top: args.top,

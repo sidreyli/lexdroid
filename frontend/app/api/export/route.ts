@@ -10,6 +10,9 @@ export async function GET(request: Request) {
   const selection = {
     runId: url.searchParams.get("run") ?? undefined,
     economies: economies?.length ? economies : undefined,
+    // The other engine's pass, for the Engine Comparison sheet. Named rather than guessed: on the
+    // day there are several runs and the comparison is between the two the short note describes.
+    compareRunId: url.searchParams.get("compare") ?? undefined,
   };
 
   if (rowsFor(selection).length === 0) {

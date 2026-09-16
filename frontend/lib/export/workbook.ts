@@ -12,7 +12,15 @@ import {
   getVerdicts,
   compareIndicatorIds,
 } from "@/lib/data";
-import type { ExportRow } from "@/lib/data/types";
+import type { ExportRow, Run } from "@/lib/data/types";
+import {
+  addEngineComparison,
+  addInstructions,
+  addSubmissionChecklist,
+  checklist,
+  type EnginePass,
+} from "./sheets";
+import { getEngines, documentsFetchedBy, zeroFetchDemonstrated } from "@/lib/data/submission";
 
 export const OUTPUT_COLUMNS = [
   "Economy",
@@ -35,6 +43,13 @@ export const OUTPUT_COLUMNS = [
 export interface Selection {
   runId?: string | undefined;
   economies?: string[] | undefined;
+  /**
+   * The other engine's pass, for the Engine Comparison sheet.
+   *
+   * Named rather than guessed: on the day there will be several runs and the comparison has to be
+   * between the two the short note describes, not between whichever two happen to be most recent.
+   */
+  compareRunId?: string | undefined;
 }
 
 const pillarOf = (indicatorId: string): number => Number(indicatorId.split(".")[0]);
@@ -200,6 +215,49 @@ export async function buildWorkbook(selection: Selection): Promise<Buffer> {
     ]);
   }
   record.columns.forEach((c, i) => (c.width = i === 0 ? 38 : 16));
+
+  // The three sheets the template has and this file did not. Engine Comparison is filled during
+  // the live hour; it is built here so the hour is not spent diffing rows by hand.
+  const allRuns = getRuns();
+  const runOf = (id: string | undefined): Run | null =>
+    (id ? allRuns.find((r) => r.id === id) : undefined) ?? null;
+
+  const passA: EnginePass = {
+    run: runOf(selection.runId) ?? allRuns[0] ?? null,
+    rows,
+    documentsFetched: documentsFetchedBy(selection.runId ?? allRuns[0]?.id),
+  };
+  const passB: EnginePass = {
+    run: runOf(selection.compareRunId),
+    rows: selection.compareRunId
+      ? rowsFor({ ...selection, runId: selection.compareRunId, compareRunId: undefined })
+      : [],
+    documentsFetched: documentsFetchedBy(selection.compareRunId),
+  };
+  addEngineComparison(book, passA, passB);
+
+  const engines = getEngines();
+  const pillars = new Set(rows.map((r) => pillarOf(r.indicatorId)));
+  addSubmissionChecklist(
+    book,
+    checklist({
+      economies: economies.length,
+      pillars,
+      rows: rows.length,
+      rowsWithQuote: rows.filter((r) => (r.verbatimSnippet ?? "").trim().length > 0).length,
+      rowsWithUrl: rows.filter((r) => (r.sourceUrl ?? "").trim().length > 0).length,
+      // Not "not English": a row whose language could not be established is not evidence of a
+      // non-English source, and counting it as one is the claim C1c is marked on.
+      nonEnglishRows: rows.filter((r) => r.languageOfSource && r.languageOfSource !== "en").length,
+      taggedRows: rows.filter((r) => r.discoveryTag !== null).length,
+      declaredEngines: engines,
+      zeroFetchDemonstrated: zeroFetchDemonstrated(),
+      costRecorded: (passA.run?.usd ?? 0) > 0 || (passA.run?.calls ?? 0) > 0,
+      rejectionsApplied: getVerdicts().filter((v) => v.action === "reject").length,
+    }),
+  );
+
+  addInstructions(book);
 
   return Buffer.from(await book.xlsx.writeBuffer());
 }

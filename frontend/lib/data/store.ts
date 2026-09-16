@@ -36,6 +36,19 @@ function query<T>(sql: string): T[] {
   return d.prepare(sql).all() as T[];
 }
 
+/**
+ * The same, with values bound rather than interpolated.
+ *
+ * Everything above reads ids the store itself produced, so the SQL is written inline. This is for
+ * the callers whose value arrived in a URL -- the export takes a run id from a query string, and a
+ * run id is not something to concatenate into a statement.
+ */
+export function queryWith<T>(sql: string, params: unknown[]): T[] {
+  const d = db();
+  if (!d) return [];
+  return d.prepare(sql).all(...params) as T[];
+}
+
 function jsonOr<T>(raw: unknown, fallback: T): T {
   try {
     return raw ? (JSON.parse(String(raw)) as T) : fallback;
