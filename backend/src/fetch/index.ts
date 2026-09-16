@@ -75,7 +75,21 @@ const dispatcher = new Agent({
 }).compose(interceptors.redirect({ maxRedirections: 5 }));
 
 const here = dirname(fileURLToPath(import.meta.url));
-export const CACHE_DIR = join(here, '..', '..', 'data', 'cache');
+
+/**
+ * Where fetched bytes are kept, and why a test is allowed to move it.
+ *
+ * The cache is keyed by URL, and the fetcher's own tests serve their fixtures from a local server
+ * on an ephemeral port -- so they were writing records for `http://127.0.0.1:<port>/a-page` into
+ * the real cache, 1,046 of them beside the 8,383 real ones. The operating system reuses those
+ * ports. When it handed a later test a port an earlier one had cached, the fetcher answered the
+ * page from disk and never asked the host for robots.txt at all, which is why the robots tests
+ * failed roughly one run in three and passed every time they were run alone.
+ *
+ * So the tests get their own directory. This is read once, at import, because that is before any
+ * test body runs: vitest.config.ts sets it for the whole suite.
+ */
+export const CACHE_DIR = process.env['LEXDROID_CACHE_DIR'] ?? join(here, '..', '..', 'data', 'cache');
 
 /**
  * We identify ourselves, and we also have to get through.
