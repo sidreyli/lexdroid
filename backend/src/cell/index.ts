@@ -28,11 +28,13 @@ import {
   readFramework,
   readSection,
   subjectQueries,
+  READING_MODEL,
   type FrameworkReading,
   type FrameworkSubject,
   type SectionInput,
   type SectionReading,
 } from '../read/index.js';
+import { carriedReadings } from '../read/carry.js';
 import type { FxRates } from '../decide/currency.js';
 import {
   decide,
@@ -98,6 +100,8 @@ export interface PillarAnswer {
   cachedCalls: number;
   /** Calls this unit had already made before it was interrupted, replayed instead of paid for twice. */
   resumedCalls: number;
+  /** Readings an earlier named run performed, reused rather than bought a second time. */
+  carriedCalls: number;
   /** Where the wall time went, stage by stage. */
   stages: StageTiming[];
 }
@@ -113,6 +117,14 @@ export interface AnswerOptions {
   emit?: Emit;
   /** The rates the run settled on. Only indicator 12.5 consults them. */
   rates?: FxRates | null;
+  /**
+   * An earlier run whose readings this one may reuse rather than pay for again.
+   *
+   * For measuring a retrieval change: the provisions it adds are read by this run's own engine,
+   * and every provision the earlier run already read against this pillar is carried across. See
+   * carriedReadings for why that is the same call and not a replay of a different question.
+   */
+  carryFrom?: string;
 }
 
 interface SectionRow {
@@ -211,10 +223,20 @@ export async function answerPillar(
     text: r.text,
   }));
 
-  emit({ stage: 'read', kind: 'started', economy, pillarId, total: inputs.length });
+  // What an earlier run already read against this pillar. Matched on the model, because a
+  // different model is a different answer to the same question.
+  const carried = opts.carryFrom
+    ? carriedReadings(db, opts.carryFrom, pillarId, indicators.map((i) => i.id), opts.model ?? READING_MODEL)
+    : new Map<number, SectionReading>();
+  const toRead = inputs.filter((i) => !carried.has(i.sectionId));
+  if (opts.carryFrom) {
+    log(`  ${inputs.length - toRead.length} carried from ${opts.carryFrom.slice(0, 8)}, ${toRead.length} to read`);
+  }
+
+  emit({ stage: 'read', kind: 'started', economy, pillarId, total: toRead.length });
 
   let readsDone = 0;
-  const readings = await inPool(inputs, readWidth(), async (input) => {
+  const fresh = await inPool(toRead, readWidth(), async (input) => {
     const reading = await readSection(input, pillarId, pillarName, indicators, {
       ...(opts.model ? { model: opts.model } : {}),
       ...(opts.contextTokens ? { contextTokens: opts.contextTokens } : {}),
@@ -228,13 +250,20 @@ export async function answerPillar(
       subject: `${input.instrumentTitle} :: ${input.headingPath}`,
       detail: reading.failure ?? `${reading.findings.length} finding(s), ${reading.rejected.length} refused`,
       done: readsDone,
-      total: inputs.length,
+      total: toRead.length,
       seconds: reading.durationMs / 1000,
       promptTokens: reading.promptTokens,
       outputTokens: reading.completionTokens,
     });
     return reading;
   });
+
+  // In the order the provisions were retrieved, so nothing downstream can tell a carried reading
+  // from a fresh one by where it sits.
+  const freshById = new Map(fresh.map((r) => [r.sectionId, r]));
+  const readings = inputs
+    .map((i) => carried.get(i.sectionId) ?? freshById.get(i.sectionId))
+    .filter((r): r is SectionReading => r !== undefined);
 
   // 3. Findings, carrying enough of their origin to be cited.
   const byId = new Map(rows.map((r) => [r.id, r]));
@@ -273,12 +302,14 @@ export async function answerPillar(
   // A stalled engine looks exactly like a corpus with nothing in it, and the second is a claim we
   // would be publishing. If nothing at all was read, the run stops instead of reporting an empty
   // search -- the one failure mode a reviewer cannot detect from the output.
-  const unread = readings.filter((r) => r.failure !== null);
+  // Judged on what the engine was asked, not on what was carried: a carried reading says nothing
+  // about whether this run's engine is alive, and counting it would hide a dead one.
+  const unread = fresh.filter((r) => r.failure !== null);
   if (unread.length > 0) {
-    log(`  ${unread.length} of ${readings.length} provision(s) went unread -- the engine did not answer`);
-    if (unread.length === readings.length && readings.length > 0) {
+    log(`  ${unread.length} of ${fresh.length} provision(s) went unread -- the engine did not answer`);
+    if (unread.length === fresh.length && fresh.length > 0) {
       throw new Error(
-        `The engine answered on none of ${readings.length} provision(s) for pillar ${pillarId}. ` +
+        `The engine answered on none of ${fresh.length} provision(s) for pillar ${pillarId}. ` +
           `Stopping rather than reporting an empty search. First: ${unread[0]!.failure}`,
       );
     }
@@ -431,6 +462,7 @@ export async function answerPillar(
       readings.filter((r) => r.fromCache).length + frameworkReadings.filter((r) => r.fromCache).length,
     resumedCalls:
       readings.filter((r) => r.fromResume).length + frameworkReadings.filter((r) => r.fromResume).length,
+    carriedCalls: readings.filter((r) => r.carriedFrom).length,
     stages,
   };
 }

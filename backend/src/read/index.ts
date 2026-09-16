@@ -297,6 +297,13 @@ export interface SectionReading {
   fromCache: boolean;
   /** Replayed from this unit's own interrupted attempt, which already asked and already paid. */
   fromResume: boolean;
+  /**
+   * The earlier run that performed this reading, when this run did not perform it itself.
+   *
+   * The call id on the record points at that run rather than this one, so a reading is always
+   * attributable to the run whose engine actually produced it.
+   */
+  carriedFrom?: string;
 }
 
 /** What a reading is about: the provision, and the instrument it sits in. */

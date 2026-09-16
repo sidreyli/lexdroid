@@ -437,7 +437,7 @@ export function recordPillarAnswer(run: RunContext, answer: PillarAnswer): void 
           reading.promptTokens,
           reading.completionTokens,
           reading.durationMs,
-          `${run.id}:p${answer.pillarId}:s${reading.sectionId}`,
+          `${reading.carriedFrom ?? run.id}:p${answer.pillarId}:s${reading.sectionId}`,
           now,
         );
       }
@@ -594,6 +594,17 @@ export const CACHED_RUN_NOTE = 'SERVED FROM THE DEVELOPMENT CACHE -- not a measu
 export const RESUMED_RUN_NOTE =
   'RESUMED AFTER AN INTERRUPTION -- every reading was performed by this run; per-pillar wall-clock is not a measurement';
 
+/**
+ * What a run says when it reused an earlier run's readings.
+ *
+ * Neither of the two above. Nothing here was replayed from a cache and nothing was asked twice:
+ * the provisions this run added were read by its own engine, and the provisions the named run had
+ * already read keep that run's answers and that run's call ids. It is a valid measurement of a
+ * retrieval change against the run it names, and it is not a fresh reading of the whole corpus.
+ */
+export const CARRIED_RUN_NOTE =
+  'CARRIED READINGS FROM AN EARLIER RUN -- only the provisions this change added were read afresh; compare against that run, not as a standalone corpus read';
+
 function note(db: Db, run: RunContext, text: string): void {
   db.prepare(
     `UPDATE run SET notes = CASE
@@ -623,12 +634,22 @@ function addCost(db: Db, run: RunContext, answer: PillarAnswer): void {
        output_tokens = output_tokens + excluded.output_tokens,
        cached_calls = cached_calls + excluded.cached_calls,
        wall_seconds = wall_seconds + excluded.wall_seconds`,
-  ).run(run.id, run.engine, answer.model, calls, prompt, output, answer.cachedCalls, answer.engineMs / 1000);
+  ).run(
+    run.id,
+    run.engine,
+    answer.model,
+    calls,
+    prompt,
+    output,
+    answer.cachedCalls + answer.carriedCalls,
+    answer.engineMs / 1000,
+  );
 
   // A run that replayed even one answer says so on its own record, not only in a column someone
   // has to know to look at.
   if (answer.cachedCalls > 0) note(db, run, CACHED_RUN_NOTE);
   if (answer.resumedCalls > 0) note(db, run, RESUMED_RUN_NOTE);
+  if (answer.carriedCalls > 0) note(db, run, CARRIED_RUN_NOTE);
 }
 
 /**

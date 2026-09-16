@@ -37,6 +37,7 @@ interface Args {
   hosts: string[];
   model: string;
   depth: number | null;
+  carryFrom: string | null;
   compare: boolean;
   probe: boolean;
   usdPerHour: number;
@@ -71,6 +72,7 @@ function parseArgs(argv: string[]): Args {
       .filter((h) => h.length > 0),
     model: get('model') ?? READING_MODEL,
     depth: get('depth') !== null ? Number(get('depth')) : null,
+    carryFrom: get('carry'),
     compare: !argv.includes('--no-compare'),
     probe: !argv.includes('--no-probe'),
     usdPerHour: Number(get('usd-per-hour') ?? 0),
@@ -100,6 +102,7 @@ function runUnit(unit: Unit, hosts: string[], runId: string, logDir: string, arg
     args.model,
   ];
   if (args.depth) argv.push('--depth', String(args.depth));
+  if (args.carryFrom) argv.push('--carry', args.carryFrom);
   if (!args.compare) argv.push('--no-compare');
 
   return new Promise((resolve) => {

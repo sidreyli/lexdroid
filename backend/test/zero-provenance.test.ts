@@ -133,6 +133,7 @@ function answer(): PillarAnswer {
     engineMs: 500,
     cachedCalls: 0,
     resumedCalls: 0,
+  carriedCalls: 0,
     stages: [],
   };
 }

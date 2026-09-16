@@ -190,6 +190,7 @@ function answer(): PillarAnswer {
     engineMs: 6300,
     cachedCalls: 0,
     resumedCalls: 0,
+  carriedCalls: 0,
     stages: [
       { stage: 'retrieve', seconds: 1.5, items: 2 },
       { stage: 'read', seconds: 6.3, items: 2 },
