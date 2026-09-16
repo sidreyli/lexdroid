@@ -1201,6 +1201,35 @@ const WITHOUT_PUBLICITY = new RegExp(
   'i',
 );
 
+/**
+ * A measure defined as a restriction has to be made out by words that restrict something.
+ *
+ * 12.4.7 is the residual band of pillar 12's payment group -- "any other restriction on making or
+ * receiving payment online" -- and it was answered 1 in all three economies where ESCAP answers 0.
+ * Every one of the six provisions it rested on was made out on a noun phrase. Malaysia's Online
+ * Safety Act was read on a seizure power's list of seizable things, "Any book, account, document,
+ * computerized data, signboard, card, letter, pamphlet, leaflet, notice, facility, apparatus,
+ * equipment, device, thing or matter"; its Price Control Act on a production power's "any
+ * information (including, but not limited to, records, accounts and computerized data)"; Singapore
+ * on "electronic transaction system" and on "information or material"; Australia on the single
+ * adjective "excessive". A catch-all with no term of art to ask for will take anything, and what it
+ * took was the enforcement machinery of acts that mention accounts and cards in passing.
+ *
+ * So ask for the only thing every restriction has in common: a word that does the restricting. The
+ * lookbehind is not decoration -- "including, but not limited to" is drafting boilerplate that
+ * appears in exactly the production powers this is meant to exclude, and matching "limited" there
+ * would readmit them.
+ */
+const RESTRICTION = new RegExp(
+  [
+    /\b(prohibit\w*|forbid\w*|ban(?:s|ned|ning)?|restrict\w*|(?<!not\s)limit\w*|cap(?:s|ped|ping)?)\b/.source,
+    /\b(?:shall|must|may|can)\s+not\b|\bnot\s+(?:be\s+)?(?:permit\w*|allow\w*|entitled)\b/.source,
+    /\b(no person|nobody|only|unless|except (?:with|where|if)|subject to)\b/.source,
+    /\b(requir\w*|oblig\w*|mandat\w*|condition(?:al|ed)? (?:on|upon))\b/.source,
+  ].join('|'),
+  'i',
+);
+
 export const MEASURE_NAMES: Readonly<Record<string, RegExp>> = {
   // A licence measure needs a word meaning licence. Five indicators turn on one.
   'content-licence': LICENCE,
@@ -1225,6 +1254,11 @@ export const MEASURE_NAMES: Readonly<Record<string, RegExp>> = {
   'national-payment-standard': STANDARD,
   // Named by its negation rather than by a term of art: see WITHOUT_PUBLICITY above.
   'opaque-standard-setting': WITHOUT_PUBLICITY,
+  // A residual band with no term of art to ask for: see RESTRICTION above.
+  'other-payment-restriction': RESTRICTION,
+  // 12.2's two measures say "restricting" in their own `defines` as well.
+  'online-purchase-limit': RESTRICTION,
+  'online-delivery-limit': RESTRICTION,
   // Duties on transmission are duties; a trade defence measure names its own instrument.
   'transmission-duty': DUTY_OR_TAX,
   'transmission-duty-power': DUTY_OR_TAX,

@@ -87,3 +87,70 @@ describe('the two identity measures in pillar 8', () => {
     expect(gate('user-identity').source).toBe(gate('sim-registration').source);
   });
 });
+
+describe('a residual band with no term of art to ask for', () => {
+  const other = gate('other-payment-restriction');
+
+  it('turns away the list of nouns an enforcement power is made of', () => {
+    // All six provisions behind 12.4.7 were made out on a noun phrase, and ESCAP scores all three
+    // economies 0. Two of them are the seizable-things list of a search power, which mentions
+    // accounts and cards for reasons that have nothing to do with paying for anything.
+    expect(
+      other.test(
+        'Any book, account, document, computerized data, signboard, card, letter, pamphlet, ' +
+          'leaflet, notice, facility, apparatus, equipment, device, thing or matter',
+      ),
+    ).toBe(false);
+    expect(other.test('electronic transaction system')).toBe(false);
+    expect(other.test('information or material')).toBe(false);
+    expect(other.test('excessive')).toBe(false);
+    expect(other.test('the virtual asset wallet to which the virtual asset is being transferred')).toBe(false);
+  });
+
+  it('is not fooled by the boilerplate inside a production power', () => {
+    // "including, but not limited to" is drafting furniture that appears in exactly the provisions
+    // this turns away, and a bare /limit/ would have readmitted every one of them.
+    expect(
+      other.test('any information (including, but not limited to, records, accounts and computerized data) or any document'),
+    ).toBe(false);
+    expect(other.test('including but not limited to the following')).toBe(false);
+  });
+
+  it('admits words that actually restrict a payment', () => {
+    expect(other.test('no person shall make a payment online except through a licensed provider')).toBe(true);
+    expect(other.test('a merchant must not impose a surcharge exceeding the cost of acceptance')).toBe(true);
+    expect(other.test('online payments are restricted to amounts below $500')).toBe(true);
+    expect(other.test('payment may only be made in the national currency')).toBe(true);
+  });
+
+  it('gates the two online-sales limits the same way, because they are defined the same way', () => {
+    // 12.2's measures say "the words restricting what may be bought online" and "...restricting
+    // delivery of what was bought online". Same modality, same gate.
+    expect(gate('online-purchase-limit').source).toBe(other.source);
+    expect(gate('online-delivery-limit').source).toBe(other.source);
+  });
+});
+
+describe('what a name gate can and cannot be asked', () => {
+  it('is a modality the sentence must utter, not a topic the document carries', () => {
+    // Measured, both ways. Gating pillar 4's enforcement measures on "patent" and "copyright" is
+    // what their own `defines` sentences ask for -- and it lost two cells and won none, because a
+    // section of the Patents Act headed "Infringement proceedings" says "the court may grant an
+    // injunction restraining the infringement" and never needs to say "patent". The topic is
+    // supplied by the instrument; only a modality has to appear in the words copied out.
+    const topical = /\bpatent\w*\b/i;
+    expect(topical.test('the court may grant an injunction restraining the infringement')).toBe(false);
+
+    // Every gate that has paid for itself asks for a modality: a period, a licence, an identity,
+    // an absence, a restriction.
+    for (const token of [
+      'minimum-retention',
+      'content-licence',
+      'user-identity',
+      'opaque-standard-setting',
+      'other-payment-restriction',
+    ]) {
+      expect(MEASURE_NAMES[token]).toBeDefined();
+    }
+  });
+});

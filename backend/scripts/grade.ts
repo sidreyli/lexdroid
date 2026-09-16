@@ -14,6 +14,23 @@
  * fetch. Narrowing the online-payment domain looked obviously right and measured +0 -3; the gate on
  * opaque standard-setting measured +3 -0. Nothing distinguished them beforehand.
  *
+ * Four changes have now been graded, and the two that lost say something the two that won do not.
+ * A name gate pays when the measure is defined by a *modality* -- a period, a licence, an identity,
+ * an absence -- because a provision imposing one has to utter it in the sentence that imposes it.
+ * It loses when the measure is defined by a *topic*. Gating pillar 4's enforcement measures on the
+ * word "patent", and the copyright ones on "copyright", is what each measure's own `defines`
+ * sentence asks for and what its gloss warns about twice ("a design, a copyright work or property
+ * at large is not a patent"). It measured +0 -3 across the two halves, separately: a section of the
+ * Patents Act headed "Infringement proceedings" says "the court may grant an injunction restraining
+ * the infringement" and never says "patent", because the instrument's title already did. A topic is
+ * carried by the document; only a modality has to appear in the words. That is what SUBJECT_DOMAIN
+ * is for, and asking the name side to do the subject side's job costs cells both times it is tried.
+ *
+ * Gating 3.1's two equity caps on a proportion -- which is a modality, and which their `defines`
+ * asks for in those words -- measured +0 -0: every reading already stated one, so whatever is wrong
+ * with 3.1 in all three economies is not that the cap was never named. Reverted too. A change that
+ * moves nothing is not free; it is a rule to maintain that buys no accuracy.
+ *
  * The rescore runs inside a transaction that is rolled back, so the stored answers are unchanged
  * and running this never needs to be undone. With the rules untouched it must print 0 cells moved:
  * that is the check that the stored scores really are a function of the record, and if it ever

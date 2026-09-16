@@ -1375,6 +1375,12 @@ const DEFINING: Record<string, string> = {
   'local-representative': 'a representative resident in Singapore',
   'local-domain-or-presence': 'a registered office in Singapore',
   'local-presence': 'a place of business in Singapore',
+  // 12.2's two measures are gated on a word that restricts something, so the fixture has to state
+  // one. Without these they fell back to 'outside Singapore', which names a place and forbids
+  // nothing -- and the band that requires both was being satisfied by evidence that restricts
+  // neither.
+  'online-purchase-limit': 'alcohol and tobacco may not be sold online',
+  'online-delivery-limit': 'goods bought online must not be delivered to a residential address',
 };
 
 function p12(indicatorId: string, measure: string, over: Partial<Finding> = {}): Evidence {
