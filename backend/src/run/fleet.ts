@@ -78,7 +78,23 @@ export function replayingWhilePaying(cacheOn: boolean, usdPerHour: number): bool
  * a stray environment variable must not be able to lift it. Reading wide means more engines, never
  * a larger number here.
  */
-export function childEngineEnv(hosts: string[]): Record<string, string> {
+export function childEngineEnv(hosts: string[], engine?: HostedEngine): Record<string, string> {
+  // A hosted engine has no hosts of its own to hand out, so the pool is given the placeholder it
+  // needs to exist and every request goes out over the chat-completions client instead.
+  if (engine?.hosted) {
+    return {
+      OLLAMA_HOSTS: hosts[0] ?? 'http://127.0.0.1:11434',
+      OLLAMA_HOST: hosts[0] ?? 'http://127.0.0.1:11434',
+      LEXDROID_READ_CONCURRENCY: '1',
+      LEXDROID_HOSTED_BASE_URL: engine.baseUrl,
+      LEXDROID_HOSTED_MODEL: engine.model,
+      LEXDROID_HOSTED_PROVIDER: engine.provider,
+      // Read from this process's own environment and passed on, never from the registry file.
+      ...(process.env['LEXDROID_HOSTED_API_KEY']
+        ? { LEXDROID_HOSTED_API_KEY: process.env['LEXDROID_HOSTED_API_KEY'] }
+        : {}),
+    };
+  }
   if (hosts.length === 0) throw new Error('a child needs at least one engine');
   return {
     OLLAMA_HOSTS: hosts.join(','),
@@ -86,6 +102,14 @@ export function childEngineEnv(hosts: string[]): Record<string, string> {
     LLM_PROVIDER: 'ollama',
     LEXDROID_READ_CONCURRENCY: '1',
   };
+}
+
+/** What a child needs to know to reach a hosted engine. The key never travels in here. */
+export interface HostedEngine {
+  hosted: boolean;
+  baseUrl: string;
+  model: string;
+  provider: string;
 }
 
 /**

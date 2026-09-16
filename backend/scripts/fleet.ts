@@ -29,11 +29,13 @@ import {
 import { indicatorsOfPillar, loadRubric } from '../src/rubric/index.js';
 import { READING_MODEL } from '../src/engines/ollama.js';
 import { probeEngine, describeReport, usable, mismatchedEngine, fingerprintOf } from '../src/engines/probe.js';
+import { probeHosted } from '../src/engines/hosted.js';
 import { cacheEnabled } from '../src/engines/cache.js';
 import { prepareCorpus, describePrepare, type PrepareResult } from '../src/run/prepare.js';
 import { confirmPass } from '../src/read/confirm-pass.js';
 import { buildExportRows } from '../src/export/index.js';
 import { verifyRun } from '../src/verify/index.js';
+import { tagRun } from '../src/baseline/tag.js';
 import { defaultEngine, findEngine, type Engine } from '../src/engines/registry.js';
 
 interface Args {
@@ -124,7 +126,20 @@ function runUnit(unit: Unit, hosts: string[], runId: string, logDir: string, arg
   return new Promise((resolve) => {
     const child = spawn('npx', argv, {
       shell: true,
-      env: { ...process.env, ...childEngineEnv(hosts) },
+      env: {
+        ...process.env,
+        ...childEngineEnv(
+          hosts,
+          args.engine?.hosted
+            ? {
+                hosted: true,
+                baseUrl: args.engine.hosts[0] ?? '',
+                model: args.engine.model,
+                provider: args.engine.provider,
+              }
+            : undefined,
+        ),
+      },
     });
     child.stdout.pipe(out);
     child.stderr.pipe(out);
@@ -189,27 +204,43 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  console.log(`\nChecking ${args.hosts.length} engine(s)...\n`);
-  const reports = await Promise.all(
-    args.hosts.map((h) => probeEngine(h, args.model, { quick: !args.probe })),
-  );
-  for (const r of reports) console.log(`  ${describeReport(r)}`);
-
-  const unusable = reports.filter((r) => !usable(r, args.requireSerial));
-  if (unusable.length > 0) {
-    console.error(
-      `\n${unusable.length} of ${reports.length} engine(s) cannot be used. Fix them, or drop them from --hosts.\n`,
+  // A hosted engine has no Ollama server to probe, so it is asked the only question that matters:
+  // does it answer, with the model it was declared as. The checks below are about a machine we are
+  // renting by the hour, and there is no machine here.
+  if (args.engine?.hosted) {
+    process.env['LEXDROID_HOSTED_BASE_URL'] = args.engine.hosts[0] ?? '';
+    process.env['LEXDROID_HOSTED_MODEL'] = args.engine.model;
+    process.env['LEXDROID_HOSTED_PROVIDER'] = args.engine.provider;
+    console.log(`\nChecking ${args.engine.label}: ${args.engine.provider} / ${args.engine.model}\n`);
+    const probe = await probeHosted();
+    console.log(`  ${probe.detail}`);
+    if (!probe.ok) {
+      console.error(`\n${args.engine.label} cannot be reached. Fix it, or run on the other engine.\n`);
+      process.exit(1);
+    }
+  } else {
+    console.log(`\nChecking ${args.hosts.length} engine(s)...\n`);
+    const reports = await Promise.all(
+      args.hosts.map((h) => probeEngine(h, args.model, { quick: !args.probe })),
     );
-    process.exit(1);
-  }
+    for (const r of reports) console.log(`  ${describeReport(r)}`);
 
-  // The cloud failure a laptop cannot have: the same tag built differently on two machines. Half
-  // the run would be answered by one model and half by the other, and neither half would say so.
-  const odd = mismatchedEngine(reports);
-  if (odd) {
-    console.error(`\n${odd.host} serves ${fingerprintOf(odd)}, but ${reports[0]!.host} serves`);
-    console.error(`${fingerprintOf(reports[0]!)}. One run answered by two models is two runs.\n`);
-    process.exit(1);
+    const unusable = reports.filter((r) => !usable(r, args.requireSerial));
+    if (unusable.length > 0) {
+      console.error(
+        `\n${unusable.length} of ${reports.length} engine(s) cannot be used. Fix them, or drop them from --hosts.\n`,
+      );
+      process.exit(1);
+    }
+
+    // The cloud failure a laptop cannot have: the same tag built differently on two machines. Half
+    // the run would be answered by one model and half by the other, and neither half would say so.
+    const odd = mismatchedEngine(reports);
+    if (odd) {
+      console.error(`\n${odd.host} serves ${fingerprintOf(odd)}, but ${reports[0]!.host} serves`);
+      console.error(`${fingerprintOf(reports[0]!)}. One run answered by two models is two runs.\n`);
+      process.exit(1);
+    }
   }
 
   // How many indicators a pillar asks about is the size signal available before any of it runs.
@@ -385,6 +416,13 @@ async function main(): Promise<void> {
       console.log(`  ${built.rows} row(s) from ${built.cells} cell(s)`);
       if (built.cellsWithoutRow > 0) console.log(`  WARNING: ${built.cellsWithoutRow} cell(s) produced no row`);
       recordEvent(run, { stage: 'export', kind: 'finished', detail: `${built.rows} row(s)`, total: built.rows });
+
+      // NEW or KNOWN, against ESCAP's sample kit. Last, and from a script rather than from src/,
+      // because nothing in the pipeline may see the kit: if discovery could, every instrument
+      // would be KNOWN by construction and the sealed economy would be the one that collapsed.
+      console.log('tagging each row against the published sample kit');
+      const tagged = tagRun(db, run.id);
+      console.log(`  ${tagged.isNew} NEW, ${tagged.known} KNOWN, ${tagged.newInstruments.length} instrument(s) the kit does not have`);
 
       console.log('verifying every row against the gates');
       recordEvent(run, { stage: 'verify', kind: 'started', total: built.rows });

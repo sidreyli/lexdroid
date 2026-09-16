@@ -10,6 +10,7 @@
 import { openDb } from '../src/db/index.js';
 import { buildExportRows } from '../src/export/index.js';
 import { verifyRun, recomputeScores } from '../src/verify/index.js';
+import { tagRun } from '../src/baseline/tag.js';
 
 function arg(name: string): string | null {
   const i = process.argv.indexOf(`--${name}`);
@@ -43,6 +44,11 @@ if (built.cellsWithoutRow > 0) {
   // question we were asked and did not answer, which is the one thing the design forbids.
   console.log(`  WARNING: ${built.cellsWithoutRow} cell(s) produced no row at all`);
 }
+
+// NEW or KNOWN, against the sample kit. Here rather than in src/export, because no module under
+// src/ outside the quarantine may read the kit -- which is why this column was null on every row.
+const tagged = tagRun(db, run.id);
+console.log(`  ${tagged.isNew} NEW, ${tagged.known} KNOWN, ${tagged.newInstruments.length} instrument(s) not in the kit`);
 
 const scores = recomputeScores(db, run.id);
 console.log(`\nScores derived again from the record: ${scores.agreed}/${scores.cells} agree`);

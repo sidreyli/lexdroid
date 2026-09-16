@@ -36,7 +36,8 @@
     "confirm": "tsx scripts/confirm.ts",
     "reach": "tsx scripts/reach.ts",
     "benchmark": "tsx scripts/benchmark.ts",
-    "rescore": "tsx scripts/rescore.ts"
+    "rescore": "tsx scripts/rescore.ts",
+    "engine-check": "tsx scripts/engine-check.ts"
   },
   "dependencies": {
     "@tesseract.js-data/eng": "^1.0.0",
