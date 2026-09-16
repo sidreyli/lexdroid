@@ -21,6 +21,7 @@
     "engines": "tsx scripts/engines.ts",
     "concurrency": "tsx scripts/concurrency.ts",
     "runs": "tsx scripts/runs.ts",
+    "close-run": "tsx scripts/close-run.ts",
     "watch": "tsx scripts/watch.ts",
     "discovery": "tsx scripts/discovery.ts",
     "contents": "tsx scripts/contents.ts",

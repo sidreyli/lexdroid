@@ -300,7 +300,10 @@ async function main(): Promise<void> {
   // charge is hosts x wall time. Zero for a laptop, which is why the default is zero.
   const rent = args.usdPerHour * args.hosts.length * (seconds / 3600);
   if (rent > 0) recordRent(db, run.id, run.engine, args.model, rent);
-  finishRun(run, failed.length > 0 ? 'failed' : 'complete');
+  // A fleet that joined a run it did not open does not close it. Two fleets sharing a run finish at
+  // different times, and the first to finish closing it locked the second out of its own remaining
+  // units -- three pillars refused entry to a run that was still being worked on.
+  if (!args.joinRunId) finishRun(run, failed.length > 0 ? 'failed' : 'complete');
 
   console.log('');
   console.log(`=== ${done.length} unit(s) in ${(seconds / 60).toFixed(1)} minutes ===`);
@@ -310,7 +313,11 @@ async function main(): Promise<void> {
     console.log(`  ${d.unit.economy} pillar ${d.unit.pillar}  ${d.host}  ${verdict}`);
   }
   console.log('');
-  console.log(`  run ${run.id} recorded as ${failed.length > 0 ? 'failed' : 'complete'}`);
+  console.log(
+    args.joinRunId
+      ? `  run ${run.id} left open: this fleet joined it and does not close what it did not open`
+      : `  run ${run.id} recorded as ${failed.length > 0 ? 'failed' : 'complete'}`,
+  );
   if (rent > 0) {
     console.log(`  rent: $${rent.toFixed(2)} for ${args.hosts.length} host(s) at $${args.usdPerHour}/hour`);
   }
