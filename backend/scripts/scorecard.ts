@@ -3,7 +3,11 @@
  *
  *   npm run -w backend scorecard -- --run <id>
  *   npm run -w backend scorecard -- --run <id> --against <id>     what moved between two runs
- *   npm run -w backend scorecard -- --run <id> --cells over-claim listing, worst pillar first
+ *   npm run -w backend scorecard -- --run <id> --cells under-claim   one verdict, worst pillar first
+ *
+ * The four verdicts are over-claim, under-claim, recall-miss and abstained. Under-claim was left
+ * out of every table here until 17 September 2026, which hid 21 of 61 wrong cells and sorted the
+ * pillars by two of the four ways of being wrong.
  */
 import { openDb } from '../src/db/index.js';
 import { scorecard, tally, groupBy, movement, type Verdict, type CellResult } from '../src/eval/scorecard.js';
@@ -31,29 +35,32 @@ const graded = all.cells - all.ungraded;
 console.log(`\nRun ${runId}`);
 console.log(`\n  ${graded} graded cell(s): ${all.agree} agree (${pct(all.agree, graded)})`);
 console.log(`    over-claim   ${pad(all['over-claim'], 4)}   read an instrument and claimed more than it says`);
+console.log(`    under-claim  ${pad(all['under-claim'], 4)}   read an instrument and claimed less than it says`);
 console.log(`    recall-miss  ${pad(all['recall-miss'], 4)}   found nothing where ESCAP found a measure`);
 console.log(`    abstained    ${pad(all.abstained, 4)}   no answer offered`);
 console.log(`    findings     ${pad(all.findings, 4)}   ESCAP writes about 250 rows for these three economies`);
 
 console.log('\n  by economy');
-console.log('    economy  cells  agree         over  miss  abst  findings');
+console.log('    economy  cells  agree         over  under  miss  abst  findings');
 for (const [economy, group] of groupBy(cells, (c) => c.economy)) {
   const t = tally(group);
   const g = t.cells - t.ungraded;
   console.log(
-    `    ${economy.padEnd(7)}  ${pad(g, 5)}  ${pad(t.agree, 5)} ${pct(t.agree, g).padStart(6)}  ${pad(t['over-claim'], 4)}  ${pad(t['recall-miss'], 4)}  ${pad(t.abstained, 4)}  ${pad(t.findings, 8)}`,
+    `    ${economy.padEnd(7)}  ${pad(g, 5)}  ${pad(t.agree, 5)} ${pct(t.agree, g).padStart(6)}  ${pad(t['over-claim'], 4)}  ${pad(t['under-claim'], 5)}  ${pad(t['recall-miss'], 4)}  ${pad(t.abstained, 4)}  ${pad(t.findings, 8)}`,
   );
 }
 
 console.log('\n  by pillar, worst first');
 const byPillar = [...groupBy(cells, (c) => c.pillar)]
   .map(([pillar, group]) => ({ pillar, t: tally(group) }))
-  .sort((a, b) => b.t['over-claim'] + b.t['recall-miss'] - (a.t['over-claim'] + a.t['recall-miss']));
-console.log('    pillar  cells  agree         over  miss  abst  findings');
+  // Worst means most wrong, and a cell is wrong four ways. Ranking on two of them put a pillar
+  // whose errors are all under-claims at the bottom of a list headed "worst first".
+  .sort((a, b) => b.t.cells - b.t.ungraded - b.t.agree - (a.t.cells - a.t.ungraded - a.t.agree));
+console.log('    pillar  cells  agree         over  under  miss  abst  findings');
 for (const { pillar, t } of byPillar) {
   const g = t.cells - t.ungraded;
   console.log(
-    `    ${pad(pillar, 6)}  ${pad(g, 5)}  ${pad(t.agree, 5)} ${pct(t.agree, g).padStart(6)}  ${pad(t['over-claim'], 4)}  ${pad(t['recall-miss'], 4)}  ${pad(t.abstained, 4)}  ${pad(t.findings, 8)}`,
+    `    ${pad(pillar, 6)}  ${pad(g, 5)}  ${pad(t.agree, 5)} ${pct(t.agree, g).padStart(6)}  ${pad(t['over-claim'], 4)}  ${pad(t['under-claim'], 5)}  ${pad(t['recall-miss'], 4)}  ${pad(t.abstained, 4)}  ${pad(t.findings, 8)}`,
   );
 }
 
