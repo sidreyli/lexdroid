@@ -1176,6 +1176,30 @@ const NATIONALITY = /\b(citizen\w*|national(ity|s)?\b|resident\w*|domicil\w*|per
 const TRADE_DEFENCE = /\b(dump\w*|countervail\w*|safeguard\w*|subsid\w*|injur\w*)\b/i;
 const SEPARATION = /\b(separat\w*|divest\w*|structural\w*|unbundl\w*|account\w*|divid\w*)\b/i;
 const JOINT_VENTURE = /\b(joint venture\w*|partner\w*|local equity|incorporat\w*|jointly)\b/i;
+const IDENTITY = /\b(identit\w*|identif\w*|authenticat\w*|verif\w*|know your customer|kyc|proof of (?:name|age|address))\b/i;
+
+/**
+ * A measure defined by what a rule lets happen *without* is named by the absence, not by the topic.
+ *
+ * 11.1's top band is "standards set, adopted or changed without publication, notice or an
+ * opportunity to comment". Every word naming the topic also appears in a rule mandating the
+ * opposite, so topic is no test at all: section 132 of Australia's Telecommunications Act, headed
+ * "Public consultation on industry standards", was filed as opaque standard-setting on the words
+ * "free copies of the draft will be made available to members of the public" -- a transparency
+ * duty read as its own negation. Singapore's accounting-standards objects clause went the same way
+ * on "must have the following objects". ESCAP scores both economies 0.
+ *
+ * So what a provision must say to be this measure is that the publicity need not happen. That is
+ * the measure's own definition and not a list of instruments to exclude, and a provision that
+ * publishes, consults or invites comment fails it on the very words it was cited for.
+ */
+const WITHOUT_PUBLICITY = new RegExp(
+  [
+    /\b(without|absent|other than|need not|not (?:be )?(?:required|obliged|necessary)|no (?:requirement|obligation|need|notice)|exempt\w*|dispens\w*|waiv\w*)\b/.source,
+    /\b(confidential\w*|secret\w*|closed|in camera|unpublished)\b/.source,
+  ].join('|'),
+  'i',
+);
 
 export const MEASURE_NAMES: Readonly<Record<string, RegExp>> = {
   // A licence measure needs a word meaning licence. Five indicators turn on one.
@@ -1199,6 +1223,8 @@ export const MEASURE_NAMES: Readonly<Record<string, RegExp>> = {
   'mra-certification-accepted': /\b(mutual recognition|foreign\w*|overseas|another (country|economy|jurisdiction)|recognis\w*|recogniz\w*)\b/i,
   'foreign-exclusion-from-standards': /\b(foreign\w*|non-?resident\w*|overseas|nationa\w*)\b/i,
   'national-payment-standard': STANDARD,
+  // Named by its negation rather than by a term of art: see WITHOUT_PUBLICITY above.
+  'opaque-standard-setting': WITHOUT_PUBLICITY,
   // Duties on transmission are duties; a trade defence measure names its own instrument.
   'transmission-duty': DUTY_OR_TAX,
   'transmission-duty-power': DUTY_OR_TAX,
@@ -1213,7 +1239,15 @@ export const MEASURE_NAMES: Readonly<Record<string, RegExp>> = {
   'local-presence': /\b(present\w*|establish\w*|office\w*|branch\w*|subsidiar\w*|incorporat\w*|resident\w*)\b/i,
   'local-domain-or-presence': /\b(domain\w*|present\w*|establish\w*|office\w*|branch\w*|subsidiar\w*|incorporat\w*)\b/i,
   // The officer measure is a person put in a position, and the role words already carry that.
-  'sim-registration': LICENCE,
+  // Pillar 8's two identity measures are named by identity, and were not asked for it. The top
+  // band took a customs declaration for imported timber, a duty to keep a record of "personal
+  // data", and a university rule about staff asking for proof of ID; the 0.5 band was asked for a
+  // word meaning licence, which is what a SIM rule is least likely to say -- it says the
+  // subscriber's identity must be recorded. So the top band admitted provisions that identify
+  // nobody while the band below it turned away the ones that do, and all three economies scored
+  // the top band where ESCAP scores the one under it.
+  'user-identity': IDENTITY,
+  'sim-registration': IDENTITY,
   'patent-local-representative': /\b(represent\w*|agent\w*|attorney\w*|address for service)\b/i,
 };
 

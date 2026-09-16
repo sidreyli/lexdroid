@@ -28,6 +28,7 @@
     "verify": "tsx scripts/verify.ts",
     "scorecard": "tsx scripts/scorecard.ts",
     "misses": "tsx scripts/misses.ts",
+    "grade": "tsx scripts/grade.ts",
     "audit-rules": "tsx scripts/audit-rules.ts",
     "audit-bands": "tsx scripts/audit-bands.ts",
     "basis": "tsx scripts/basis.ts",
