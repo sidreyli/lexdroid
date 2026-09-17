@@ -20,7 +20,7 @@ import { loadProfile } from '../profile/index.js';
 import type { InstrumentType } from '../profile/types.js';
 import type { Indicator } from '../rubric/types.js';
 import { indicatorsOfPillar, loadRubric } from '../rubric/index.js';
-import { loadVectors, type LoadedVectors } from '../index/index.js';
+import { fuse, loadVectors, searchLexical, type LoadedVectors } from '../index/index.js';
 import { retrieveForIndicator, type RetrievalRecord } from '../retrieve/index.js';
 import { shortlistInstruments } from '../shortlist/index.js';
 import {
@@ -62,6 +62,20 @@ function readWidth(): number {
 
 /** How many instruments a framework indicator examines. */
 const FRAMEWORK_CANDIDATES = 5;
+
+/**
+ * An instrument a framework indicator will look at, and the sections that put it on the list.
+ *
+ * `sectionIds` is empty for the two channels that rank instruments rather than provisions; it
+ * carries the hits for the one that searches sections, so the reader is shown the provision that
+ * made the instrument a candidate in the first place.
+ */
+interface FrameworkCandidate {
+  instrumentId: number;
+  title: string;
+  url: string;
+  sectionIds: number[];
+}
 
 /**
  * How long one stage took, and what it bought.
@@ -352,7 +366,12 @@ export async function answerPillar(
 
     const readingsHere = await inPool(candidates, readWidth(), (c) =>
       readFramework(
-        { instrumentId: c.instrumentId, title: c.title, openingText: openingOf(db, c.instrumentId) },
+        {
+          instrumentId: c.instrumentId,
+          title: c.title,
+          openingText: openingOf(db, c.instrumentId),
+          provisionsText: provisionsOf(record, c.instrumentId, sectionsById(db, c.sectionIds)),
+        },
         subject,
         {
           ...(opts.model ? { model: opts.model } : {}),
@@ -394,6 +413,7 @@ export async function answerPillar(
         instrumentTitle: c.title,
         citation: c.url,
         establishesFramework: r.establishesFramework,
+        frameworkShown: r.frameworkWordsVerified,
         horizontal: r.horizontal,
         dedicated: r.dedicated,
         dedicatedShown: r.dedicatedWordsVerified,
@@ -524,7 +544,7 @@ async function frameworkCandidates(
   record: RetrievalRecord | undefined,
   rows: Map<number, SectionRow>,
   embeddingModel?: string,
-): Promise<{ instrumentId: number; title: string; url: string }[]> {
+): Promise<FrameworkCandidate[]> {
   // A framework can only be established by something the record could cite, and 'in-force' is the
   // only status a row may cite. Without this the register answers a framework question with the
   // pages of the site it was harvested from: all five instruments examined for Singapore's 8.1 and
@@ -550,17 +570,28 @@ async function frameworkCandidates(
     // Only what has actually been read. An unread instrument cannot be examined, and naming one
     // here would put a framework on the record that nothing in the corpus supports.
     .filter((c) => c.read && inForce.has(c.instrumentId))
-    .map((c) => ({ instrumentId: c.instrumentId, title: c.title, url: c.sourceUrl }));
-  const fromRetrieval = candidateInstruments(record, rows).filter((c) => inForce.has(c.instrumentId));
+    .map((c) => ({ instrumentId: c.instrumentId, title: c.title, url: c.sourceUrl, sectionIds: [] }));
+  const fromRetrieval = candidateInstruments(record, rows)
+    .filter((c) => inForce.has(c.instrumentId))
+    .map((c) => ({ ...c, sectionIds: [] }));
 
-  // Taken alternately rather than register-first. The two lists know different things, and the
-  // caller keeps only the first few: appended, the retrieval's candidates were never reached at
-  // all, whatever the comment above says. Ranking instrument titles and contents against the
-  // subject cannot find Singapore's Electronic Transactions Act 2010, whose Part 6 is headed
-  // "Liability of network service providers" -- but a search for pillar 8's own band prose put it
-  // sixth, with eight provisions returned. A register knows what an Act is called; a retrieval
-  // knows what answered the question.
-  return interleave(fromRegister, fromRetrieval);
+  // The third channel, and the one that finds the rule: sections asked the subject directly.
+  //
+  // A framework indicator searched instruments by its subject and sections by its band prose, and
+  // never searched sections for its subject. So Singapore's Electronic Transactions Act 2010 --
+  // whose section 26 reads "a network service provider shall not be subject to any civil or
+  // criminal liability", which is the provision ESCAP cites for 8.2 -- was unreachable from both.
+  // Not ranked low: absent, under every wording tried, because its title says "Electronic
+  // Transactions" and 8.2's band prose is about unlawful content. Asked of sections, the subject
+  // puts it fourth. The comment this replaces asserted the band prose found it sixth; that was
+  // true of the pillar before 8.1 and 8.2 were given separate subjects, and is no longer.
+  const fromSections = subjectSections(db, economy, subject, inForce);
+
+  // Taken alternately rather than in series. The three lists know different things and the caller
+  // keeps five: appended, the later channels were never reached at all. A register knows what an
+  // Act is called, a retrieval knows what answered this indicator's question, and a section search
+  // on the subject knows which Act contains the rule.
+  return interleave(fromRegister, fromSections, fromRetrieval);
 }
 
 /**
@@ -570,17 +601,105 @@ async function frameworkCandidates(
  * correct in isolation and useless in place, because the caller keeps five and the first list
  * seldom runs short of five.
  */
-export function interleave<T extends { instrumentId: number }>(first: T[], second: T[]): T[] {
+export function interleave<T extends { instrumentId: number }>(...lists: T[][]): T[] {
   const out: T[] = [];
   const seen = new Set<number>();
-  for (let i = 0; i < Math.max(first.length, second.length); i += 1) {
-    for (const c of [first[i], second[i]]) {
+  const longest = Math.max(0, ...lists.map((l) => l.length));
+  for (let i = 0; i < longest; i += 1) {
+    for (const list of lists) {
+      const c = list[i];
       if (!c || seen.has(c.instrumentId)) continue;
       seen.add(c.instrumentId);
       out.push(c);
     }
   }
   return out;
+}
+
+/**
+ * Instruments holding a section that answers the subject itself, best first.
+ *
+ * Lexical only, and deliberately. The subject's own names are terms of art -- "network service
+ * provider", "safe harbour" -- and a provision that grants the immunity uses them; this is the one
+ * place in the pipeline where matching the words is the point rather than a weakness. The dense
+ * channel is what the indicator's own retrieval already contributes through the third list.
+ */
+function subjectSections(
+  db: Db,
+  economy: string,
+  subject: FrameworkSubject,
+  inForce: Set<number>,
+): FrameworkCandidate[] {
+  const out: FrameworkCandidate[] = [];
+  const byInstrument = new Map<number, FrameworkCandidate>();
+  const owner = db.prepare(
+    `SELECT i.id, i.title, i.source_url FROM section s
+       JOIN document d ON d.id = s.document_id
+       JOIN instrument i ON i.id = d.instrument_id
+      WHERE s.id = ?`,
+  );
+  // Fused, not taken in turn. Round-robin across the queries gives a section that matched one
+  // generic name the same standing as one that matched the subject sentence and three of its
+  // terms, and the generic names are generic: "safe harbour" put Malaysia's Safeguards Act 2006
+  // and Finance (No. 2) Act 2023 among the five instruments examined for its copyright safe
+  // harbour, displacing the Communications and Multimedia Act. Fusion is what the rest of Zone 1
+  // uses for the same reason, and it puts that Act first and the Copyright Act 1987 second.
+  const runs = subjectQueries(subject).map((q) => searchLexical(db, q, { economy, limit: SUBJECT_SECTION_DEPTH }));
+  for (const hit of fuse(runs)) {
+    const row = owner.get(hit.sectionId) as { id: number; title: string; source_url: string } | undefined;
+    if (!row || !inForce.has(row.id)) continue;
+    // The sections are kept, not only the instruments they belong to. An instrument reached by
+    // this channel is one the indicator's own retrieval did not return, so provisionsOf has
+    // nothing of it to show and the reader would be handed a long title and asked for a rule.
+    // Singapore's Electronic Transactions Act was examined that way and said, correctly for the
+    // six sections it was given, that it established nothing.
+    const already = byInstrument.get(row.id);
+    if (already) {
+      if (!already.sectionIds.includes(hit.sectionId)) already.sectionIds.push(hit.sectionId);
+      continue;
+    }
+    const candidate = {
+      instrumentId: row.id,
+      title: row.title,
+      url: row.source_url,
+      sectionIds: [hit.sectionId],
+    };
+    byInstrument.set(row.id, candidate);
+    out.push(candidate);
+  }
+  return out;
+}
+
+/** How deep each subject query goes when looking for the instrument that holds the rule. */
+const SUBJECT_SECTION_DEPTH = 12;
+
+/**
+ * What this indicator's own search returned of one instrument, as text for the framework reader.
+ *
+ * The register ranks instruments by what they are called and the opening says what they are for;
+ * neither reaches the provision that does the governing. This is the third thing: the sections a
+ * search for the subject actually returned out of this instrument, which is where the rule is if
+ * the instrument has one.
+ */
+export function provisionsOf(
+  record: RetrievalRecord | undefined,
+  instrumentId: number,
+  extra: { headingPath: string; text: string }[] = [],
+): string {
+  const fromRecord = (record?.sections ?? []).filter((s) => s.instrumentId === instrumentId);
+  const seen = new Set(fromRecord.map((s) => s.headingPath));
+  return [...fromRecord, ...extra.filter((s) => !seen.has(s.headingPath))]
+    .map((s) => `${s.headingPath}\n${s.text}`)
+    .join('\n\n');
+}
+
+/** The text of the sections a subject search found, for an instrument the retrieval did not. */
+function sectionsById(db: Db, ids: number[]): { headingPath: string; text: string }[] {
+  if (ids.length === 0) return [];
+  const rows = db
+    .prepare(`SELECT heading_path, text FROM section WHERE id IN (${ids.map(() => '?').join(',')})`)
+    .all(...ids) as { heading_path: string; text: string }[];
+  return rows.map((r) => ({ headingPath: r.heading_path, text: r.text }));
 }
 
 /**
