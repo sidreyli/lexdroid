@@ -17,8 +17,36 @@ const MIN_CHARS_PER_PAGE = 80;
 const PROVISION_LINE = /^\s*(\d+[A-Z]{0,2})\.\s*(?:—|-|–)?\s*(?:\(1\))?\s*(?=\S)/;
 /** India notifications sometimes number a paragraph "12.5 Definitions" without a second dot. */
 const DECIMAL_PROVISION_LINE = /^\s*[‘'"]?(\d+\.\d+[A-Z]{0,2})(?:\s+(?=\S)|\s*$)/;
-const provisionAt = (line: string): RegExpExecArray | null =>
+/**
+ * A tariff code is not a provision.
+ *
+ * A customs or sales tax order is a table of Harmonised System codes, and an HS code is written
+ * exactly like a numbered clause: "0705.29.00 00 - - Other". `DECIMAL_PROVISION_LINE` was added for
+ * Indian notifications that number a paragraph "12.5 Definitions", and it matches every line of
+ * every tariff schedule. Malaysia's corpus carried 31,812 of these -- 36% of the economy, spread
+ * over nine orders, one of which alone minted 5,224 "provisions" of which 92% were under 200
+ * characters. They are real text and they stay in the document; what they are not is a rule that
+ * can be retrieved, cited and read on its own.
+ *
+ * Two shapes say so from the label alone, and neither costs Australia or Singapore a single
+ * section: an integer part that starts with a zero ("0705.29", "05", the bare "0.41" of a price
+ * schedule), and four digits before the dot ("6811.82"), which is an HS heading and subheading.
+ * A bare four-digit label cannot be separated this way -- Australia's Corporations Act has a
+ * section 1274 and its Social Security Act a section 1190 -- so that one is left to `tableHeadings`
+ * below, which reads the document rather than the label.
+ */
+const TARIFF_LABEL = /^(?:0|\d{4}\.\d)/;
+const numberedAt = (line: string): RegExpExecArray | null =>
   DECIMAL_PROVISION_LINE.exec(line) ?? PROVISION_LINE.exec(line);
+const provisionAt = (line: string): RegExpExecArray | null => {
+  const found = numberedAt(line);
+  return found && TARIFF_LABEL.test(found[1]!) ? null : found;
+};
+/** The label a numbered line carries when that label is a tariff code and not a provision. */
+const tariffLabelAt = (line: string): string | null => {
+  const found = numberedAt(line);
+  return found && TARIFF_LABEL.test(found[1]!) ? found[1]! : null;
+};
 const PART_LINE = /^\s*(PART\s+[IVXLC0-9]+[A-Z]?\b.*|Part\s+\d+[A-Z]?\b.*)$/;
 /** A PDF's text layer can split a heading's letters -- Malaysia's Acts render "Part II" as
  *  "P art II" -- so the test is on the letters, not on how the page happened to space them. */
@@ -237,6 +265,9 @@ export function sectionise(pages: PageText[]): SectionBuilder {
     language: string | null;
   }
   const items: ({ prose: string } | Candidate)[] = [];
+  // Every dotted number the document carries, provision or tariff code, kept by its integer part.
+  // This is what tells an HS heading from a section numbered in the thousands, further down.
+  const dotted = new Set<string>();
   let part = '';
   let titlePending = false;
   let open: Candidate | null = null;
@@ -280,6 +311,10 @@ export function sectionise(pages: PageText[]): SectionBuilder {
         open = null;
         continue;
       }
+      // A tariff row is not opened as a provision, but its number is still evidence about what the
+      // numbers around it are: "2208.20" is why the bare "2208" above it is a heading.
+      const tariff = tariffLabelAt(line);
+      if (tariff !== null && tariff.includes('.')) dotted.add(tariff.slice(0, tariff.indexOf('.')));
       const provMatch = provisionAt(line);
       if (provMatch) {
         open = {
@@ -292,6 +327,39 @@ export function sectionise(pages: PageText[]): SectionBuilder {
       if (open) open.lines.push(line);
       else items.push({ prose: line });
     }
+  }
+
+  // The heading of a tariff table, folded back into the text it heads.
+  //
+  // "2208" opens a run of "2208.20", "2208.30", "2208.40" -- it is the HS heading those subheadings
+  // hang under, and on its own it says nothing a search could use. No label shape separates it from
+  // a real provision numbered in the thousands: the Corporations Act has a section 1274 and the
+  // Social Security Act a section 1190, both of them substantial. The document does separate them.
+  // A statute that has a section 1190 does not also have a section 1190.2, and a tariff schedule
+  // always does. Measured across all three economies, this drops 4,310 Malaysian table headings and
+  // leaves every one of Australia's 638 four-digit sections standing.
+  for (const it of items) {
+    if (!('lines' in it) || !it.label) continue;
+    const dot = it.label.indexOf('.');
+    if (dot > 0) dotted.add(it.label.slice(0, dot));
+  }
+  const heads = (label: string | null): boolean =>
+    label !== null && /^\d{4}$/.test(label) && dotted.has(label);
+  if (items.some((it) => 'lines' in it && heads(it.label))) {
+    const folded: typeof items = [];
+    for (const it of items) {
+      if ('lines' in it && heads(it.label)) {
+        // The words stay in the document: they are the table's own heading, and the rows beneath
+        // them are read with them. What they stop being is a provision of their own.
+        const prev = folded[folded.length - 1];
+        if (prev && 'lines' in prev) prev.lines.push(...it.lines);
+        else for (const line of it.lines) folded.push({ prose: line });
+        continue;
+      }
+      folded.push(it);
+    }
+    items.length = 0;
+    items.push(...folded);
   }
 
   // A document that opens with its own arrangement of sections lists every provision twice: once
