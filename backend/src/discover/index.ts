@@ -53,11 +53,23 @@ export interface RegisterResult {
   error?: string;
 }
 
+export interface RegisterOptions {
+  /**
+   * Walk only the portals whose name or URL contains this, case-insensitively.
+   *
+   * Fixing one portal's adapter and re-walking the whole profile to see whether it worked costs
+   * every other portal a crawl it did not need, and Malaysia's three Laws of Malaysia listings
+   * are sixteen thousand instruments between them. A repair is scoped to the thing repaired.
+   */
+  portalLike?: string;
+}
+
 export async function register(
   db: Db,
   profile: EconomyProfile,
   fetcher: Fetcher,
   log: (line: string) => void = () => {},
+  opts: RegisterOptions = {},
 ): Promise<RegisterResult[]> {
   const results: RegisterResult[] = [];
   const now = new Date().toISOString();
@@ -76,7 +88,15 @@ export async function register(
      WHERE excluded.status_basis IS NOT NULL OR excluded.also_at IS NOT NULL`,
   );
 
-  for (const portal of profile.portals) {
+  const want = opts.portalLike?.toLowerCase();
+  const portals = want
+    ? profile.portals.filter((p) => `${p.name} ${p.url}`.toLowerCase().includes(want))
+    : profile.portals;
+  if (want && portals.length === 0) {
+    throw new Error(`No portal of ${profile.code} has "${opts.portalLike}" in its name or URL.`);
+  }
+
+  for (const portal of portals) {
     // A declared portal nothing can read is a hole in the corpus, and it was skipped in silence.
     // Malaysia declares its customs department, its communications commission and seven more
     // regulators, and registers not one document from any of them -- so the orders, guidelines and

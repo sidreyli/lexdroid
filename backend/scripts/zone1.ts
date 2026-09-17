@@ -2,6 +2,7 @@
  * Zone 0 and Zone 1 for one economy, from the command line.
  *
  *   npm run -w backend zone1 -- --economy SGP --register
+ *   npm run -w backend zone1 -- --economy MYS --register --portal mcmc
  *   npm run -w backend zone1 -- --economy SGP --read 20 --title "Personal Data"
  *   npm run -w backend zone1 -- --economy AUS --pillars 6,7 --top 25
  *   npm run -w backend zone1 -- --economy SGP --unread
@@ -28,6 +29,8 @@ import { EMBEDDING_MODEL, haveModel, OllamaUnavailable } from '../src/engines/ol
 interface Args {
   economy: string;
   register: boolean;
+  /** Walk only the portals whose name or URL contains this. For re-walking one repaired adapter. */
+  portal: string | null;
   read: number | null;
   title: string | null;
   kind: string | null;
@@ -62,6 +65,7 @@ function parseArgs(argv: string[]): Args {
   return {
     economy: (get('economy') ?? 'SGP').toUpperCase(),
     register: has('register') || !anyStage,
+    portal: get('portal'),
     read: readArg !== null ? (readArg === 'all' ? 0 : Number(readArg))
       : (get('about') !== null || get('pillars') !== null || has('reparse') || has('unread')) ? 0 : anyStage ? null : 0,
     title: get('title'),
@@ -170,8 +174,10 @@ async function main(): Promise<void> {
   });
 
   if (args.register) {
-    console.log(`\nRegister -- walking the portals`);
-    const results = await register(db, profile, fetcher, (l) => console.log(l));
+    console.log(`\nRegister -- walking the portals${args.portal ? ` matching "${args.portal}"` : ''}`);
+    const results = await register(db, profile, fetcher, (l) => console.log(l), {
+      ...(args.portal ? { portalLike: args.portal } : {}),
+    });
     for (const r of results) {
       if (r.error) console.log(`  ${r.portal}: ${r.error}`);
     }
