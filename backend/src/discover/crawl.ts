@@ -53,6 +53,33 @@ export function leadsToLaw(path: string, text: string): boolean {
   return LEADS_TO_LAW.test(`${path} ${text}`) && !LEADS_AWAY.test(path);
 }
 
+/** A listing that says it holds what is in force now, in the portal's own words. */
+const CURRENT_LISTING = /\b(?:current|in[- ]force|existing|active)\b/i;
+/** And one that says the opposite, which is the same evidence read the other way. */
+const HISTORICAL_LISTING = /\b(?:repealed|revoked|superseded|rescinded|historical|archive[ds]?|expired|previous|past)\b/i;
+
+/**
+ * What the heading a link sits under says about the standing of what is listed beneath it.
+ *
+ * `status` defaults to 'unknown', and `frameworkCandidates` admits only instruments recorded
+ * 'in-force' -- deliberately, because the crawl once put Monetary Authority press releases into
+ * the register as Acts and all five instruments examined for Singapore's 8.1 were press releases.
+ * The cost of that filter is that everything a regulator publishes is permanently invisible to a
+ * framework indicator: all 120 instruments the MCMC crawl registers are 'unknown', the Content
+ * Code 2022 among them, so fetching it changed nothing on its own.
+ *
+ * A regulator's register answers this itself. The MCMC files the Content Code under "Register Of
+ * Current Voluntary Industry Codes", and "Current" is the portal's word, not ours -- which is what
+ * `statusBasis` is for. This reads only that: no inference from a title, a date or a file name.
+ */
+export function standingFromHeading(heading: string | null): Pick<DiscoveredInstrument, 'status' | 'statusBasis'> {
+  const line = (heading ?? '').replace(/\s+/g, ' ').trim();
+  if (!line || line.length > 200) return {};
+  // A heading that says both is saying neither usefully: "Current and Repealed Codes".
+  if (HISTORICAL_LISTING.test(line)) return CURRENT_LISTING.test(line) ? {} : { status: 'repealed', statusBasis: line };
+  return CURRENT_LISTING.test(line) ? { status: 'in-force', statusBasis: line } : {};
+}
+
 export const crawlAdapter: Adapter = {
   name: 'crawl',
   async discover(ctx: DiscoverContext): Promise<DiscoveredInstrument[]> {
@@ -78,7 +105,15 @@ export const crawlAdapter: Adapter = {
 
       const $ = cheerio.load(html);
       const next: { url: string; depth: number }[] = [];
-      $('a[href]').each((_, el) => {
+      // Headings and links together, in document order, so a link is read under the heading it
+      // actually sits beneath. Selecting the anchors alone loses that, and the heading is the only
+      // place the portal states what it is listing.
+      let heading: string | null = null;
+      $('h1, h2, h3, h4, caption, legend, a[href]').each((_, el) => {
+        if (el.tagName.toLowerCase() !== 'a') {
+          heading = $(el).text().replace(/\s+/g, ' ').trim() || heading;
+          return;
+        }
         const href = $(el).attr('href');
         // An icon font puts its ligature name in the link's text: "south_east About the Privacy
         // Act". It is markup, not part of the name, and it is always a lowercase_underscore word.
@@ -100,7 +135,13 @@ export const crawlAdapter: Adapter = {
 
         const named = instrumentTitle(text);
         if (named && !found.has(at)) {
-          found.set(at, { title: named.title, url: at, kind: named.kind, titleProvisional: true });
+          found.set(at, {
+            title: named.title,
+            url: at,
+            kind: named.kind,
+            titleProvisional: true,
+            ...standingFromHeading(heading),
+          });
           return;
         }
         // Not an instrument itself: worth opening only if it leads where instruments are kept.

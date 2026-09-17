@@ -15,7 +15,7 @@
  * instruments named before, 111 after, the three editions of the Content Code among them.
  */
 import { describe, expect, it } from 'vitest';
-import { leadsToLaw } from '../src/discover/crawl.js';
+import { leadsToLaw, standingFromHeading } from '../src/discover/crawl.js';
 import { instrumentTitle } from '../src/discover/titles.js';
 
 describe('the pages a crawl opens looking for instruments', () => {
@@ -64,6 +64,33 @@ describe('the pages a crawl opens looking for instruments', () => {
     // link. The path is what separates them, and it is why LEADS_AWAY is tested on the path.
     expect(leadsToLaw('/subscribe/register', 'Register for updates')).toBe(false);
     expect(leadsToLaw('/login/register', 'Register')).toBe(false);
+  });
+
+  it('reads standing off the heading the register writes, and only off that', () => {
+    // Reaching the instrument is still not enough: `frameworkCandidates` admits only what is
+    // recorded 'in-force', and the crawl recorded every one of the MCMC's 120 instruments as
+    // 'unknown'. So the Content Code was fetched, parsed and embedded, and remained invisible to
+    // the indicator that needed it. The portal answers the question in its own heading.
+    expect(standingFromHeading('Social Regulation - Register Of Current Voluntary Industry Codes')).toEqual({
+      status: 'in-force',
+      statusBasis: 'Social Regulation - Register Of Current Voluntary Industry Codes',
+    });
+    expect(standingFromHeading('Repealed Determinations')).toEqual({
+      status: 'repealed',
+      statusBasis: 'Repealed Determinations',
+    });
+  });
+
+  it('says nothing where the heading says nothing, rather than guessing', () => {
+    // The filter exists because the crawl once registered Monetary Authority press releases as
+    // Acts, and all five instruments examined for Singapore's 8.1 were press releases. Inferring
+    // "in force" from a title, a date or a file name would put that back.
+    expect(standingFromHeading('Guidelines')).toEqual({});
+    expect(standingFromHeading('Content Code 2022')).toEqual({});
+    expect(standingFromHeading(null)).toEqual({});
+    expect(standingFromHeading('')).toEqual({});
+    // A heading that says both says neither usefully.
+    expect(standingFromHeading('Current and Repealed Codes')).toEqual({});
   });
 
   it('names the Content Code from the link the register writes', () => {
