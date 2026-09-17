@@ -28,13 +28,10 @@ if ([detach, attach, offsets].filter(Boolean).length !== 1 || ((detach || offset
 }
 
 if (offsets) {
-  console.log(`
-Offsets -- re-anchoring ${economy}'s export rows on the words they exported
-`);
+  console.log(`\nOffsets -- re-anchoring ${economy}'s export rows on the words they exported\n`);
   const r = reanchorOffsets(db, economy);
   console.log(`  ${String(r.fixed).padStart(6)}  row(s) located in the document as it now parses`);
-  console.log(`  ${String(r.unresolved).padStart(6)}  row(s) whose quote is not there, left without offsets
-`);
+  console.log(`  ${String(r.unresolved).padStart(6)}  row(s) whose quote is not there, left without offsets\n`);
   process.exit(0);
 }
 
