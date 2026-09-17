@@ -323,6 +323,25 @@ export interface SectionInput {
  * quietly answered from the first tenth.
  */
 const MAX_SECTION_CHARS = 12_000;
+/**
+ * How much of an instrument's own provisions the framework reader is shown beside its opening.
+ *
+ * Smaller than a section budget because this is several sections of one instrument, five
+ * instruments to a framework indicator, and the reader's job here is to find one governing rule
+ * rather than to read the Act.
+ */
+const MAX_PROVISIONS_CHARS = 6_000;
+/**
+ * How much of the opening the framework reader is shown.
+ *
+ * MAX_SECTION_CHARS is twelve thousand, which is a budget for reading a provision closely. The
+ * opening is here to answer what an instrument is *for*, which its long title and purpose clause
+ * say in a few hundred characters, and the rest is arrangement-of-sections. Left at twelve
+ * thousand it made the prompt for Malaysia's Copyright Act 1987 nearly five thousand tokens, and
+ * the answer to it was 810 tokens of prose that never closed its JSON -- against 87 to 339 tokens
+ * for the four shorter prompts in the same cell.
+ */
+const MAX_FRAMEWORK_OPENING_CHARS = 4_000;
 
 const SYSTEM = [
   'You read legislation and report what it says. You never assign a score, a rating or a band.',
@@ -631,6 +650,14 @@ const MIN_PHRASE_CHARS = 3;
  */
 const MIN_FRAGMENT_CHARS = 3;
 const MIN_ANCHOR_CHARS = 12;
+/**
+ * The floor for a quote that has to be a rule rather than a phrase.
+ *
+ * MIN_QUOTE_CHARS is eight, which is right for a phrase naming one element of a snippet already
+ * checked. A provision said to establish a framework is a clause, and at eight characters the
+ * check is satisfied by almost any words the instrument happens to contain.
+ */
+const MIN_RULE_CHARS = 40;
 const ELIDED_WEIGHT = 5;
 
 /**
@@ -957,6 +984,19 @@ export interface FrameworkReading {
   subject: FrameworkSubject;
   /** Does this instrument establish a legal framework for the subject at all. */
   establishesFramework: boolean;
+  /**
+   * The words of the provision that governs the subject, quoted from the instrument's own text.
+   *
+   * The other three claims below are each shown before they are made; this one, which is the only
+   * one `decideFramework` gates on, was asserted. Measured on the readings of 16 September, 39 of
+   * 49 came back with establishesFramework true and 7 of those 39 gave a reason that denied it in
+   * its own words -- Australia's Copyright Act 1968 answering "the provided text does not contain
+   * any provisions regarding the liability of online intermediaries for copyright infringement"
+   * and claiming the framework in the same breath. A framework that exists has a provision that
+   * makes it, and a provision has words to copy.
+   */
+  frameworkWords: string | null;
+  frameworkWordsVerified: boolean;
   /** Horizontal -- every sector -- against a framework for one sector only. */
   horizontal: boolean;
   sector: string | null;
@@ -1075,6 +1115,8 @@ function namesSubject(words: string, subject: FrameworkSubject): boolean {
 const FRAMEWORK_SCHEMA = {
   type: 'object',
   properties: {
+    // Before the boolean, so the provision that makes the framework is found before it is claimed.
+    frameworkWords: { type: ['string', 'null'] },
     establishesFramework: { type: 'boolean' },
     // Before the boolean, so a narrowing is quoted before reach is claimed to be narrow.
     sectorWords: { type: ['string', 'null'] },
@@ -1086,7 +1128,17 @@ const FRAMEWORK_SCHEMA = {
     quote: { type: 'string' },
     reasoning: { type: 'string' },
   },
-  required: ['establishesFramework', 'sectorWords', 'sector', 'horizontal', 'dedicatedWords', 'dedicated', 'quote', 'reasoning'],
+  required: [
+    'frameworkWords',
+    'establishesFramework',
+    'sectorWords',
+    'sector',
+    'horizontal',
+    'dedicatedWords',
+    'dedicated',
+    'quote',
+    'reasoning',
+  ],
 } as const;
 
 export interface FrameworkInput {
@@ -1094,26 +1146,80 @@ export interface FrameworkInput {
   title: string;
   /** The opening provisions: long title, purpose, application. Where an Act says what it is for. */
   openingText: string;
+  /**
+   * The provisions of this instrument that the indicator's own search returned. Where an Act says
+   * what it *does*.
+   *
+   * Supplying these alone was tried on 16 September and moved nothing: the reader went on
+   * answering from the title because nothing obliged it to do otherwise. They are here as the
+   * place `frameworkWords` must be copied from -- the Copyright Act 1968's section 116AG is not
+   * in any opening, and a reader asked to quote the governing provision cannot find it in a long
+   * title. Empty where the search returned none of this instrument, which is itself an answer:
+   * an instrument the indicator's own search never reached governs nothing it was asked about.
+   */
+  provisionsText: string;
 }
 
-export async function readFramework(
-  input: FrameworkInput,
-  subject: FrameworkSubject,
-  opts: ReadOptions = {},
-): Promise<FrameworkReading> {
-  const body = [
+/**
+ * A quoted-words field, or null where there were none to quote.
+ *
+ * Asked for words it could not find, the reader writes the word "Null" as often as it writes a
+ * JSON null -- Singapore's 8.1 and 8.2 each did on 17 September. Stored as given, that is a
+ * four-character quotation of an Act that does not contain it, and a reviewer reading the column
+ * has to know the convention to see that it means nothing. It fails the quote check either way;
+ * this is so the record says so rather than implying an answer.
+ */
+function wordsOrNull(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const words = value.trim();
+  if (!words) return null;
+  return /^(null|none|n\/a|nil)$/i.test(words) ? null : words;
+}
+
+/**
+ * The framework reader's prompt, built apart from the call that sends it.
+ *
+ * Exported as `__frameworkPrompt` for the same reason `__prompt` is: the question this reader asks
+ * is the thing under test, and a test that has to stand up an engine in order to read the question
+ * does not get written. The reverted experiment of 16 September was measured this way -- 2,182
+ * prompt tokens against 4,400 -- without a GPU.
+ */
+function frameworkBody(input: FrameworkInput, subject: FrameworkSubject): string {
+  return [
     `Subject: ${FRAMEWORK_SUBJECTS[subject]}`,
     '',
     `Instrument: ${input.title}`,
     '',
     'Its opening provisions -- long title, purpose and application:',
     '"""',
-    input.openingText.slice(0, MAX_SECTION_CHARS),
+    input.openingText.slice(0, MAX_FRAMEWORK_OPENING_CHARS),
     '"""',
     '',
+    ...(input.provisionsText.trim()
+      ? [
+          'Provisions of the same instrument returned by a search for this subject:',
+          '"""',
+          input.provisionsText.slice(0, MAX_PROVISIONS_CHARS),
+          '"""',
+          '',
+        ]
+      : ['A search for this subject returned no provision of this instrument.', '']),
     'Answer three questions about this instrument as a whole.',
+    'frameworkWords: copy the words of the provision that governs that subject -- the rule that',
+    'confers the right, imposes the duty, creates the authority or grants the immunity. Take them',
+    'from the provisions above, or from the opening if the rule is there. Null if no provision',
+    'above states such a rule.',
+    'Copy a whole statement of the rule: who must do what, or who is not liable for what. A term',
+    'the instrument happens to use is not a rule -- "online service provider" names somebody the',
+    'rule might be about and says nothing about what the law does to them. A heading, a section',
+    'number and a table of contents entry are not rules either.',
+    'Copy one run of consecutive words from a single provision, and stop: about fifteen to forty',
+    'words is enough to state a rule. Do not join words from two provisions, do not carry on into',
+    'the conditions and exceptions that follow, and do not tidy the wording as you copy it.',
+    'Do not write words that are not in the text above.',
     '1. Does it establish a legal framework governing that subject, as opposed to mentioning it or',
-    '   dealing with it incidentally?',
+    '   dealing with it incidentally? Answer from the words you just copied: if there are none,',
+    '   the answer is no, whatever the instrument is called.',
     '2. Does it apply across every sector of the economy, or only to one named sector?',
     'sectorWords: if it is confined to one named sector -- an industry or line of business, such',
     'as banking or telecommunications -- copy the words above that confine it. Null if it applies',
@@ -1125,6 +1231,14 @@ export async function readFramework(
     'deals with this subject along the way. Do not write words that are not in the text above.',
     'Quote the words of the instrument that show it, exactly as they appear above.',
   ].join('\n');
+}
+
+export async function readFramework(
+  input: FrameworkInput,
+  subject: FrameworkSubject,
+  opts: ReadOptions = {},
+): Promise<FrameworkReading> {
+  const body = frameworkBody(input, subject);
 
   const started = Date.now();
   let res;
@@ -1145,6 +1259,8 @@ export async function readFramework(
       instrumentId: input.instrumentId,
       subject,
       establishesFramework: false,
+      frameworkWords: null,
+      frameworkWordsVerified: false,
       horizontal: false,
       sector: null,
       dedicated: false,
@@ -1169,18 +1285,68 @@ export async function readFramework(
   try {
     p = JSON.parse(res.text) as Record<string, unknown>;
   } catch {
-    p = {};
+    // An answer that did not parse is an answer we do not have, and the rule a dozen lines above
+    // applies to it exactly as it applies to an engine that refused: a framework indicator scores 0
+    // when the instruments examined establish nothing, and an instrument whose answer was lost is
+    // not evidence of that. Reported as a failure, which drops it, rather than as every field false,
+    // which votes.
+    //
+    // It happens on the longest prompts. Malaysia's Copyright Act 1987 -- whose Part VIB is headed
+    // "LIMITATION OF LIABILITIES OF THE SERVICE PROVIDER", and which is the answer to its 8.1 --
+    // answered 810 output tokens of unparseable text where the other four instruments of that cell
+    // answered 87 to 339, and was counted as establishing nothing at all.
+    return {
+      instrumentId: input.instrumentId,
+      subject,
+      establishesFramework: false,
+      frameworkWords: null,
+      frameworkWordsVerified: false,
+      horizontal: false,
+      sector: null,
+      dedicated: false,
+      dedicatedWords: null,
+      dedicatedWordsVerified: false,
+      sectorWords: null,
+      sectorWordsVerified: false,
+      quote: '',
+      reasoning: '',
+      quoteVerified: false,
+      failure: `the engine's answer did not parse as JSON (${res.completionTokens} output tokens)`,
+      model: res.model,
+      promptTokens: res.promptTokens,
+      completionTokens: res.completionTokens,
+      durationMs: res.durationMs,
+      fromCache: res.fromCache,
+      fromResume: res.fromResume,
+    };
   }
   const quote = typeof p['quote'] === 'string' ? p['quote'] : '';
-  const dedicatedWords =
-    typeof p['dedicatedWords'] === 'string' && p['dedicatedWords'].trim() ? p['dedicatedWords'].trim() : null;
-  const sectorWords =
-    typeof p['sectorWords'] === 'string' && p['sectorWords'].trim() ? p['sectorWords'].trim() : null;
+  const dedicatedWords = wordsOrNull(p['dedicatedWords']);
+  const sectorWords = wordsOrNull(p['sectorWords']);
+  const frameworkWords = wordsOrNull(p['frameworkWords']);
+  // Checked against the provisions and the opening together, because a rule may be stated in
+  // either, and at a longer floor than the other quotes. Widening a haystack widens what a weak
+  // quote can match: the eight-character floor let a quote of "No findings." verify once the
+  // provisions were in the prompt. A governing rule is a clause, not a fragment.
+  //
+  // And it must name the subject, for the reason dedicatedWords must. Obliged to quote a rule
+  // rather than a title, the reader went looking for words of immunity and found some: Australia's
+  // 8.2 came back with the Competition and Consumer Act's "The regulated entity is not liable in a
+  // civil action or civil proceeding for taking action to disrupt the activity", which is a real
+  // immunity, really in the Act, and about a data provider under the Consumer Data Right rather
+  // than an intermediary carrying somebody else's content. Quoting proves the rule exists; only
+  // the subject's own words show it is this rule.
+  const frameworkWordsVerified =
+    frameworkWords !== null &&
+    quoteIsInSection(frameworkWords, [input.provisionsText, input.openingText].join('\n\n'), MIN_RULE_CHARS) &&
+    namesSubject(frameworkWords, subject);
 
   return {
     instrumentId: input.instrumentId,
     subject,
     establishesFramework: p['establishesFramework'] === true,
+    frameworkWords,
+    frameworkWordsVerified,
     horizontal: p['horizontal'] === true,
     sector: typeof p['sector'] === 'string' && p['sector'].trim() ? p['sector'].trim() : null,
     dedicated: p['dedicated'] === true,
@@ -1246,6 +1412,7 @@ export function openingOf(db: Db, instrumentId: number, sections = 6): string {
 
 /** Exported so a prompt can be measured and inspected without a model call. */
 export const __prompt = prompt;
+export const __frameworkPrompt = frameworkBody;
 export const __system = SYSTEM;
 export const __schema = schemaFor;
 export const __coerce = coerce;

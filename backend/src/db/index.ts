@@ -67,6 +67,8 @@ const ADDED_COLUMNS: readonly { table: string; column: string; type: string }[] 
   { table: 'cell_answer', column: 'rationale', type: 'TEXT' },
   { table: 'export_row', column: 'quote_char_start', type: 'INTEGER' },
   { table: 'export_row', column: 'quote_char_end', type: 'INTEGER' },
+  { table: 'framework_reading', column: 'framework_words', type: 'TEXT' },
+  { table: 'framework_reading', column: 'framework_shown', type: 'INTEGER' },
   { table: 'framework_reading', column: 'dedicated_words', type: 'TEXT' },
   { table: 'framework_reading', column: 'dedicated_shown', type: 'INTEGER' },
   { table: 'framework_reading', column: 'sector_words', type: 'TEXT' },

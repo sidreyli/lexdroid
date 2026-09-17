@@ -448,6 +448,8 @@ CREATE TABLE IF NOT EXISTS framework_reading (
   engine          TEXT NOT NULL,
   model           TEXT NOT NULL,
   establishes_framework INTEGER NOT NULL CHECK (establishes_framework IN (0, 1)),
+  framework_words TEXT,                       -- the rule said to establish the framework
+  framework_shown INTEGER,                    -- and whether that rule is really in the instrument
   horizontal      INTEGER,
   dedicated       INTEGER,
   dedicated_words TEXT,                       -- what the instrument says it is for, in its own words
