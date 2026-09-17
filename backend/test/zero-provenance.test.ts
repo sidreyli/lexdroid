@@ -45,6 +45,7 @@ const examined: FrameworkEvidence[] = [1, 2].map((id) => ({
   instrumentTitle: id === 1 ? 'Copyright Act 2021' : 'Electronic Transactions Act 2010',
   citation: `https://sso.agc.gov.sg/Act/${id}`,
   establishesFramework: false,
+  frameworkShown: false,
   horizontal: false,
   dedicated: false,
   dedicatedShown: false,

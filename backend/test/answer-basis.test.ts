@@ -103,6 +103,7 @@ describe('a framework indicator', () => {
     const framework: FrameworkEvidence = {
       instrumentId: 1, instrumentTitle: 'Personal Data Protection Act 2012',
       citation: 'https://sso.agc.gov.sg/Act/PDPA2012', establishesFramework: true,
+      frameworkShown: true,
       horizontal: true, dedicated: true, dedicatedShown: true, sectoralShown: false,
       sector: null, quote: 'An Act to govern the collection, use and disclosure of personal data',
     };

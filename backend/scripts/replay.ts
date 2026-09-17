@@ -136,8 +136,8 @@ const readingsFor = db.prepare(
 );
 
 const frameworkFor = db.prepare(
-  `SELECT f.instrument_id, i.title, i.source_url, f.establishes_framework, f.horizontal,
-          f.dedicated, f.dedicated_shown, f.sectoral_shown, f.sector, f.quote
+  `SELECT f.instrument_id, i.title, i.source_url, f.establishes_framework, f.framework_shown,
+          f.horizontal, f.dedicated, f.dedicated_shown, f.sectoral_shown, f.sector, f.quote
    FROM framework_reading f JOIN instrument i ON i.id = f.instrument_id WHERE f.cell_id = ?`,
 );
 
@@ -248,6 +248,7 @@ for (const cell of cells) {
     instrumentTitle: f['title'],
     citation: f['source_url'],
     establishesFramework: f['establishes_framework'] === 1,
+    frameworkShown: f['framework_shown'] == null ? null : f['framework_shown'] === 1,
     horizontal: f['horizontal'] === 1,
     dedicated: f['dedicated'] === 1,
     dedicatedShown: f['dedicated_shown'] === 1,

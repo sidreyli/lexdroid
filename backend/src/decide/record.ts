@@ -104,7 +104,7 @@ export function recordedDecider(
   const pillarCache = new Map<string, Evidence[]>();
 
   const frameworkFor = db.prepare(
-    `SELECT f.instrument_id, f.establishes_framework, f.horizontal, f.dedicated,
+    `SELECT f.instrument_id, f.establishes_framework, f.framework_shown, f.horizontal, f.dedicated,
             f.dedicated_shown, f.sectoral_shown, f.sector, f.quote, i.title, i.source_url
        FROM framework_reading f JOIN instrument i ON i.id = f.instrument_id
       WHERE f.cell_id = ? ORDER BY f.id`,
@@ -197,7 +197,8 @@ export function recordedDecider(
     }
 
     const frameworkEvidence: FrameworkEvidence[] = (frameworkFor.all(cell.id) as {
-      instrument_id: number; establishes_framework: number; horizontal: number | null;
+      instrument_id: number; establishes_framework: number; framework_shown: number | null;
+      horizontal: number | null;
       dedicated: number | null; dedicated_shown: number | null; sectoral_shown: number | null;
       sector: string | null; quote: string | null; title: string; source_url: string;
     }[]).map((f) => ({
@@ -205,6 +206,7 @@ export function recordedDecider(
       instrumentTitle: f.title,
       citation: f.source_url,
       establishesFramework: f.establishes_framework === 1,
+      frameworkShown: f.framework_shown === null ? null : f.framework_shown === 1,
       horizontal: f.horizontal === 1,
       dedicated: f.dedicated === 1,
       dedicatedShown: f.dedicated_shown === 1,

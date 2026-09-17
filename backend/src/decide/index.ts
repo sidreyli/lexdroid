@@ -66,6 +66,15 @@ export interface FrameworkEvidence {
   instrumentTitle: string;
   citation: string;
   establishesFramework: boolean;
+  /**
+   * Whether the instrument's own text carries the rule said to establish the framework.
+   *
+   * Null where the reading predates the question being asked. A reading taken before the reader
+   * was obliged to quote the rule did not fail to quote it, and treating those as refusals would
+   * turn every framework cell of every run banked before 17 September into "no framework" the
+   * next time it was re-scored -- silently, offline, with no engine involved.
+   */
+  frameworkShown: boolean | null;
   horizontal: boolean;
   dedicated: boolean;
   /** Whether the instrument's own opening carries the words said to show it is dedicated. */
@@ -2030,7 +2039,16 @@ function decideOn(input: DecideInput): Decision {
  */
 function decideFramework(input: DecideInput): Decision {
   const { indicator, economy, coverage } = input;
-  const candidates = (input.frameworkEvidence ?? []).filter((f) => f.establishesFramework);
+  // A framework is claimed and shown, not claimed. `establishesFramework` is the only thing this
+  // function filters on, which made it the one reading in the set that decided a score on the
+  // model's say-so: of 49 framework readings taken on 16 September, 39 said yes and 7 of those
+  // gave a reason denying it in the same breath. It now arrives with the governing rule quoted out
+  // of the instrument, and a claim whose rule is not in the instrument is not a framework.
+  // Explicitly false, not merely unshown -- see FrameworkEvidence.frameworkShown for why a run
+  // banked before the rule was asked for is left alone.
+  const candidates = (input.frameworkEvidence ?? []).filter(
+    (f) => f.establishesFramework && f.frameworkShown !== false,
+  );
 
   if (coverage.instrumentsConsidered === 0) {
     return {

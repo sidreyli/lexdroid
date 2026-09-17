@@ -1198,6 +1198,7 @@ describe('a framework indicator, which asks about instruments rather than provis
     instrumentTitle: 'Personal Data Protection Act 2010',
     citation: 'https://example.gov/act',
     establishesFramework: true,
+    frameworkShown: true,
     horizontal: true,
     dedicated: true,
     dedicatedShown: true,
