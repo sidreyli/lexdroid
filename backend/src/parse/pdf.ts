@@ -215,9 +215,20 @@ export function sectionise(pages: PageText[]): SectionBuilder {
   // as a heading with nothing under it, and once as the provision itself. The arrangement always
   // comes first, so the real one is the last copy: length is a worse test, because the front
   // matter that follows the arrangement glues itself onto whichever entry was open.
+  //
+  // The Part belongs in the key. An Act numbers its sections once through the whole statute, so
+  // dropping every earlier copy of "12." is right there; a code of practice restarts at 1 in each
+  // Part, so the same key names a different provision six times over and only the last survived.
+  // The Malaysian Communications and Multimedia Content Code 2022 came out of this as 103 sections
+  // of a 74-page code, its Part 5 reduced to a single stub and its Part 7 gone -- and Part 5
+  // clause 2.1 is the innocent carrier rule, which is the provision ESCAP cites for Malaysia's
+  // 8.2. An arrangement of sections repeats its Part headings along with its entries, so keying on
+  // both still collapses the arrangement against the body.
   const lastAt = new Map<string, number>();
+  const key = (it: { language?: string | null; part?: string; label: string | null }): string =>
+    `${it.language ?? ''}:${it.part ?? ''}:${it.label}`;
   items.forEach((it, n) => {
-    if ('lines' in it && it.label) lastAt.set(`${it.language ?? ''}:${it.label}`, n);
+    if ('lines' in it && it.label) lastAt.set(key(it), n);
   });
 
   const builder = new SectionBuilder();
@@ -226,7 +237,7 @@ export function sectionise(pages: PageText[]): SectionBuilder {
       builder.addProse(it.prose);
       continue;
     }
-    if (it.label && lastAt.get(`${it.language ?? ''}:${it.label}`) !== n) continue;
+    if (it.label && lastAt.get(key(it)) !== n) continue;
     const text = it.lines.join('\n').trim();
     if (!text) continue;
     builder.add({
