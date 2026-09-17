@@ -14,6 +14,7 @@
  * no longer produces is not restored and not guessed at: it goes to the discard ledger, named.
  */
 import type { Db } from '../db/index.js';
+import { locateQuote } from '../util/locate.js';
 
 const TABLES = ['answer_basis', 'export_row'] as const;
 type CitingTable = (typeof TABLES)[number];
@@ -45,15 +46,52 @@ export interface AttachResult {
   held: number;
 }
 
+/**
+ * Where an exported quote sits in the re-parsed document text.
+ *
+ * Not `indexOf`. The snippet was written with its whitespace normalised and the document keeps the
+ * line breaks the page was set with, so an exact search misses a quote that is plainly there --
+ * 317 of Malaysia's 393 export rows, none of them for the reason the search was looking for.
+ * `locateQuote` folds both sides the same way and hands back a span in the original text.
+ *
+ * The provision the row cites is searched first, because a form of words repeats across an Act and
+ * the citation should land where the reader following it would land.
+ */
+function snippetSpan(
+  text: string,
+  snippet: string,
+  at: { char_start: number; char_end: number },
+): { start: number; end: number } | null {
+  if (!snippet) return null;
+  const inside = locateQuote(text.slice(at.char_start, at.char_end), snippet);
+  if (inside) return { start: at.char_start + inside.start, end: at.char_start + inside.end };
+  return locateQuote(text, snippet);
+}
+
 const heldCount = (db: Db): number =>
   (db.prepare('SELECT COUNT(*) c FROM detached_citation').get() as { c: number }).c;
 
-export function detachCitations(db: Db, economy: string, at: string = new Date().toISOString()): DetachResult {
+export interface DetachOptions {
+  /**
+   * Only instruments whose title matches, so the parking matches the re-parse.
+   *
+   * Detaching wider than the re-parse is not free. `--title` re-parses one document, and an
+   * economy-wide detach released every export row in that economy from the reading behind it --
+   * 593 of Australia's, to re-parse one APRA paper. Those readings were never going to be deleted.
+   */
+  titleLike?: string;
+  at?: string;
+}
+
+export function detachCitations(db: Db, economy: string, opts: DetachOptions = {}): DetachResult {
+  const at = opts.at ?? new Date().toISOString();
+  const like = opts.titleLike ? ` AND i.title LIKE '%' || ? || '%'` : '';
+  const scope: unknown[] = opts.titleLike ? [economy, opts.titleLike] : [economy];
   const sectionsOf = `
     SELECT s.id FROM section s
       JOIN document d ON d.id = s.document_id
       JOIN instrument i ON i.id = d.instrument_id
-     WHERE i.economy_code = ?`;
+     WHERE i.economy_code = ?${like}`;
   const park = db.prepare(
     `INSERT OR REPLACE INTO detached_citation
        (table_name, row_id, document_id, ordinal, heading_path, label, detached_at)
@@ -70,7 +108,7 @@ export function detachCitations(db: Db, economy: string, at: string = new Date()
              FROM ${table} t JOIN section s ON s.id = t.section_id
             WHERE t.section_id IN (${sectionsOf})`,
         )
-        .all(economy) as {
+        .all(...scope) as {
         id: number; document_id: number; ordinal: number; heading_path: string; label: string | null;
       }[];
       const clear = db.prepare(`UPDATE ${table} SET section_id = NULL WHERE id = ?`);
@@ -92,9 +130,9 @@ export function detachCitations(db: Db, economy: string, at: string = new Date()
               JOIN section s ON s.id = r.section_id
               JOIN document d ON d.id = s.document_id
               JOIN instrument i ON i.id = d.instrument_id
-             WHERE i.economy_code = ?)`,
+             WHERE i.economy_code = ?${like})`,
       )
-      .all(economy) as { id: number; reading_id: number; indicator_id: string; law_name: string }[];
+      .all(...scope) as { id: number; reading_id: number; indicator_id: string; law_name: string }[];
     const discard = db.prepare(
       'INSERT INTO discard (stage, subject, reason, detail, recorded_at) VALUES (?, ?, ?, ?, ?)',
     );
@@ -188,11 +226,9 @@ export function attachCitations(db: Db, at: string = new Date().toISOString()): 
         const snippet = (snippetOf.get(h.row_id) as { verbatim_snippet: string | null } | undefined)
           ?.verbatim_snippet ?? '';
         const text = (docText.get(h.document_id) as { text: string } | undefined)?.text ?? '';
-        // Prefer the occurrence inside the provision the row cites; a form of words can repeat.
-        const within = snippet ? text.indexOf(snippet, found.char_start) : -1;
-        const where = within >= 0 && within < found.char_end ? within : snippet ? text.indexOf(snippet) : -1;
-        if (where >= 0) {
-          setOffsets.run(where, where + snippet.length, h.row_id);
+        const span = snippetSpan(text, snippet, found);
+        if (span) {
+          setOffsets.run(span.start, span.end, h.row_id);
           out.reoffset += 1;
         } else {
           // Said out loud rather than left pointing at the wrong characters. This is the case where
@@ -212,5 +248,66 @@ export function attachCitations(db: Db, at: string = new Date().toISOString()): 
   }).immediate();
 
   out.held = heldCount(db);
+  return out;
+}
+
+export interface OffsetResult {
+  /** Export rows whose quote was located in the document as it now parses. */
+  fixed: number;
+  /** Export rows whose quote is genuinely not there; their offsets stay null. */
+  unresolved: number;
+}
+
+/**
+ * Re-anchor one economy's export rows on the words they exported.
+ *
+ * `attachCitations` does this as it puts each citation back, and this is the same work on demand --
+ * for rows anchored by an earlier, stricter search, or after any other change to the stored text.
+ * It never invents an offset: a quote that is not in the document leaves the row's offsets null,
+ * which reads downstream as "the quotation cannot be located mechanically" and fails that gate.
+ */
+export function reanchorOffsets(db: Db, economy: string, at: string = new Date().toISOString()): OffsetResult {
+  const rows = db
+    .prepare(
+      `SELECT e.id, e.verbatim_snippet, e.indicator_id, s.document_id, s.char_start, s.char_end,
+              s.heading_path
+         FROM export_row e
+         JOIN section s ON s.id = e.section_id
+         JOIN document d ON d.id = s.document_id
+         JOIN instrument i ON i.id = d.instrument_id
+        WHERE i.economy_code = ?`,
+    )
+    .all(economy) as {
+    id: number; verbatim_snippet: string | null; indicator_id: string;
+    document_id: number; char_start: number; char_end: number; heading_path: string;
+  }[];
+
+  const docText = db.prepare('SELECT text FROM document_text WHERE document_id = ?');
+  const setOffsets = db.prepare('UPDATE export_row SET quote_char_start = ?, quote_char_end = ? WHERE id = ?');
+  const discard = db.prepare(
+    'INSERT INTO discard (stage, subject, reason, detail, recorded_at) VALUES (?, ?, ?, ?, ?)',
+  );
+  const out: OffsetResult = { fixed: 0, unresolved: 0 };
+
+  db.transaction(() => {
+    for (const r of rows) {
+      const text = (docText.get(r.document_id) as { text: string } | undefined)?.text ?? '';
+      const span = snippetSpan(text, r.verbatim_snippet ?? '', r);
+      if (span) {
+        setOffsets.run(span.start, span.end, r.id);
+        out.fixed += 1;
+      } else {
+        setOffsets.run(null, null, r.id);
+        discard.run(
+          're-parse',
+          `export_row ${r.id} :: ${r.indicator_id} :: ${r.heading_path}`,
+          'the quote this row exported is not in the document as it now parses',
+          (r.verbatim_snippet ?? '').slice(0, 120), at,
+        );
+        out.unresolved += 1;
+      }
+    }
+  }).immediate();
+
   return out;
 }

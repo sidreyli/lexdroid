@@ -144,6 +144,36 @@ describe('a citation held across a re-parse', () => {
     expect(text.slice(row.quote_char_start, row.quote_char_end)).toBe(row.verbatim_snippet);
   });
 
+  it('finds a quote the export wrote with its whitespace normalised', () => {
+    // An exact search is the wrong search. The snippet is stored as one line and the document keeps
+    // the line breaks the page was set with, so `indexOf` misses a quote that is plainly there --
+    // it reported 317 of Malaysia's 393 export rows missing, and only one of them really was.
+    const { db, instrumentId, cellId } = corpus([['264', POLLUTED]]);
+    const sectionId = sectionIdOf(db, '264');
+    db.prepare(
+      `INSERT INTO answer_basis (cell_id, ordinal, instrument_id, section_id, measure)
+       VALUES (?, 0, ?, ?, 'liability of an intermediary')`,
+    ).run(cellId, instrumentId, sectionId);
+    db.prepare(
+      `INSERT INTO export_row (cell_id, economy, law_name, indicator_id, verbatim_snippet, section_id, created_at)
+       VALUES (?, 'Malaysia', 'Communications and Multimedia Act 1998', '8.2',
+               'Any content applications service provider shall not be liable', ?, '2026-09-17')`,
+    ).run(cellId, sectionId);
+
+    detachCitations(db, 'MYS');
+    storeDocument(db, {
+      instrumentId, fetched: fetched('bytes'),
+      parsed: parsed([['264', ['264. Any content applications service', 'provider shall not be liable.'].join('\n')]]),
+    });
+    expect(attachCitations(db)).toMatchObject({ reoffset: 1, offsetLost: 0 });
+
+    const row = db.prepare('SELECT quote_char_start, quote_char_end FROM export_row').get() as
+      { quote_char_start: number; quote_char_end: number };
+    const text = (db.prepare('SELECT text FROM document_text').get() as { text: string }).text;
+    expect(text.slice(row.quote_char_start, row.quote_char_end).replace(/\s+/g, ' '))
+      .toBe('Any content applications service provider shall not be liable');
+  });
+
   it('says so when the quote it exported was the page header', () => {
     // A row that quoted across the splice cannot be re-anchored, because those words are no longer
     // in the document. Nulling the offsets and naming it in the discard ledger is the honest end.

@@ -396,7 +396,7 @@ comparison pass will be filled in once the engine has been run. It is not estima
 npm test
 ```
 
-838 backend and 36 frontend tests. Runs from the repository root or from either workspace.
+839 backend and 36 frontend tests. Runs from the repository root or from either workspace.
 
 | Test file | What it tests |
 | :---- | :---- |
