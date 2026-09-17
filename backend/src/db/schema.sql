@@ -235,6 +235,7 @@ CREATE TABLE IF NOT EXISTS section (
 CREATE INDEX IF NOT EXISTS idx_section_document ON section(document_id);
 CREATE INDEX IF NOT EXISTS idx_instrument_economy ON instrument(economy_code);
 
+
 -- Corpus-wide lexical index. One index over every section of every document in the economy --
 -- not one index per document, which is what forced v1 to visit all 536 Singapore documents to
 -- answer any corpus-level question.
@@ -511,6 +512,29 @@ CREATE TABLE IF NOT EXISTS answer_basis (
 );
 CREATE INDEX IF NOT EXISTS idx_answer_basis_cell ON answer_basis(cell_id);
 
+-- A citation parked for the length of a re-parse.
+--
+-- `answer_basis` and `export_row` point at the provision an answer stood on, and neither of those
+-- references cascades, on purpose: a past run's record of what it cited is not something a parser
+-- change may quietly delete. But a re-parse does delete and rebuild the sections of every document
+-- it touches, and SQLite refuses that while the pointers are live -- which is how re-parsing
+-- Malaysia stopped at the sixth Act with "FOREIGN KEY constraint failed".
+--
+-- So the pointer is written down here, nulled for the duration, and then put back against the
+-- provision that now carries the same Part, heading and label. A citation whose provision the new
+-- parse no longer produces is not restored; it goes to the discard ledger, named.
+CREATE TABLE IF NOT EXISTS detached_citation (
+  id              INTEGER PRIMARY KEY,
+  table_name      TEXT NOT NULL CHECK (table_name IN ('answer_basis', 'export_row')),
+  row_id          INTEGER NOT NULL,
+  document_id     INTEGER NOT NULL,
+  ordinal         INTEGER NOT NULL,
+  heading_path    TEXT NOT NULL,
+  label           TEXT,
+  detached_at     TEXT NOT NULL,
+  UNIQUE (table_name, row_id)
+);
+
 -- ---------------------------------------------------------------------------------------------
 -- The export row. ESCAP's fourteen columns, plus what we need to defend each one.
 -- A provision reaches this table only as evidence cited by a cell answer.
@@ -608,3 +632,23 @@ CREATE TABLE IF NOT EXISTS measure_confirmation (
   UNIQUE (section_id, indicator_id, measure)
 );
 CREATE INDEX IF NOT EXISTS idx_confirmation_measure ON measure_confirmation(indicator_id, measure);
+
+-- ---------------------------------------------------------------------------------------------
+-- Every table that points at a provision, indexed on the pointer.
+--
+-- Not for reading speed: SQLite enforces ON DELETE CASCADE by looking for the children, and with
+-- no index on the child's key that is a full scan of the child table for each parent row deleted.
+-- A re-parse deletes a document's sections one at a time, so re-parsing Malaysia scanned a
+-- 336,000-row `reading` table about thirty-five times per document -- fourteen seconds each, six
+-- hours for the corpus, and the corpus is re-parsed whenever the parser learns something.
+--
+-- Declared at the end because an index cannot be created before its table exists, and these point
+-- back at `section` from all over Zones 2 and 3.
+-- ---------------------------------------------------------------------------------------------
+
+CREATE INDEX IF NOT EXISTS idx_reading_section ON reading(section_id);
+CREATE INDEX IF NOT EXISTS idx_shortlist_entry_section ON shortlist_entry(section_id);
+CREATE INDEX IF NOT EXISTS idx_answer_basis_section ON answer_basis(section_id);
+CREATE INDEX IF NOT EXISTS idx_export_row_section ON export_row(section_id);
+CREATE INDEX IF NOT EXISTS idx_measure_confirmation_section ON measure_confirmation(section_id);
+CREATE INDEX IF NOT EXISTS idx_export_row_reading ON export_row(reading_id);

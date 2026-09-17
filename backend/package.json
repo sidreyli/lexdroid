@@ -34,6 +34,7 @@
     "basis": "tsx scripts/basis.ts",
     "shortlist-recall": "tsx scripts/shortlist-recall.ts",
     "replay": "tsx scripts/replay.ts",
+    "reanchor": "tsx scripts/reanchor.ts",
     "repair-economy": "tsx scripts/repair-economy.ts",
     "confirm": "tsx scripts/confirm.ts",
     "reach": "tsx scripts/reach.ts",
