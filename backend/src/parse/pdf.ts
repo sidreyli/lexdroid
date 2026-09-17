@@ -133,6 +133,89 @@ export function runningHeader(pages: PageText[]): string | null {
   return [grow(-1), best.text, grow(1)].filter(Boolean).join(' ');
 }
 
+/** A page number on a line of its own, however the printer chose to write it. */
+const PAGE_NUMBER = /^(?:page\s+)?[ivxlcdm\d]+(?:\s*(?:of|\/)\s*[ivxlcdm\d]+)?$/i;
+/** How far in from the top and the bottom of a page furniture is allowed to sit. */
+const EDGE = 2;
+
+/**
+ * A repeated line reduced to the part of it that does not change from page to page.
+ *
+ * The page number is the part that changes, and in these PDFs it is not on a line of its own:
+ * the Communications and Multimedia Act's text layer emits "137Communications and Multimedia"
+ * as one line. Keying on the whole line makes every page's header unique and the repetition
+ * invisible -- which is why `runningHeader` above finds nothing in that Act.
+ */
+function furnitureKey(line: string): string {
+  return line.replace(/[^A-Za-z ]+/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+/**
+ * The pages without the header, footer and page number printed around their text.
+ *
+ * A PDF has no idea that a page break falls mid-sentence, so the furniture is emitted in the
+ * middle of the provision it interrupts. Section 264 of the Communications and Multimedia Act
+ * is stored as "...applications service provider or content applications service /
+ * 137Communications and Multimedia / provider or any of his employees, shall not be liable...",
+ * and it is the correct rule for Malaysia's 8.2 -- refused, because the quote the engine reads
+ * off the page is not the text we hold. Corpus-wide this is on 7,746 of 55,232 Malaysian
+ * sections, and 26% of the quotes refused as not-in-the-provision are on such a section against
+ * a 14% base rate.
+ *
+ * Only the first and last couple of lines of a page are eligible, because that is where
+ * furniture is printed and a wrongly dropped line is a lost provision. A line that opens a
+ * provision or names a Part is never dropped however often it repeats.
+ */
+export function stripPageFurniture(pages: PageText[]): PageText[] {
+  if (pages.length < 4) return pages;
+  const edges = (p: PageText): number[] => {
+    if (p.lines.length < 6) return [];
+    const last = p.lines.length - 1;
+    return [0, 1, last - 1, last];
+  };
+  const structural = (line: string): boolean =>
+    provisionAt(line) !== null ||
+    PART_LINE.test(line) ||
+    (line.length < 40 && PART_SPLIT.test(line.replace(/\s+/g, '')));
+
+  const at = new Map<string, Set<number>>();
+  for (const p of pages) {
+    for (const i of edges(p)) {
+      const line = p.lines[i]!;
+      if (line.length > 120 || structural(line)) continue;
+      const key = furnitureKey(line);
+      if (key.length < 4 && !PAGE_NUMBER.test(line.trim())) continue;
+      const seen = at.get(key) ?? new Set<number>();
+      seen.add(p.page);
+      at.set(key, seen);
+    }
+  }
+  // The same bar `runningHeader` sets: repeated on at least three pages, and on a real share of
+  // them, so that a body line landing at a page edge twice is not mistaken for a header. A header
+  // alternates recto and verso and so reaches only half the pages; a bare number carries no words
+  // to be recognised by, so it has to be printed like a page number on nearly every page before
+  // it is read as one -- otherwise the last figure in a schedule of fees is furniture.
+  const furniture = new Set(
+    [...at.entries()]
+      .filter(([key, seen]) => seen.size >= 3 && seen.size >= pages.length * (key ? 0.15 : 0.6))
+      .map(([key]) => key),
+  );
+  if (furniture.size === 0) return pages;
+
+  return pages.map((p) => {
+    const drop = new Set(
+      edges(p).filter((i) => {
+        const line = p.lines[i]!;
+        if (line.length > 120 || structural(line)) return false;
+        const key = furnitureKey(line);
+        return furniture.has(key) && (key.length >= 4 || PAGE_NUMBER.test(line.trim()));
+      }),
+    );
+    if (drop.size === 0) return p;
+    return { ...p, lines: p.lines.filter((_, i) => !drop.has(i)) };
+  });
+}
+
 /** A heading set in capitals, allowing for the punctuation and numerals a title carries. */
 function isCapitalised(line: string): boolean {
   const letters = line.replace(/[^A-Za-z]/g, '');
@@ -341,12 +424,14 @@ export async function parsePdf(bytes: Buffer, url: string, opts: ParsePdfOptions
     };
   }
 
-  const builder = sectionise(pages);
+  // `runningHeader` below still reads the pages as printed: the header is what it is looking for.
+  const clean = stripPageFurniture(pages);
+  const builder = sectionise(clean);
 
   if (builder.sections.length === 0) {
     // Text came out but no provision structure did. Keep it as one section rather than discard it:
     // a guideline or a policy document is often genuinely unnumbered, and it is still evidence.
-    const whole = pages.map((p) => p.lines.join('\n')).join('\n').trim();
+    const whole = clean.map((p) => p.lines.join('\n')).join('\n').trim();
     builder.add({
       headingPath: url, label: null, text: whole, page: 1,
       language: languageOf(whole), repealed: false, anchor: null,
