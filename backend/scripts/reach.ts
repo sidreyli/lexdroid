@@ -25,8 +25,9 @@ import { readFileSync } from 'node:fs';
 import { openDb } from '../src/db/index.js';
 import { citedInstruments, openBaseline, sameInstrument } from '../src/baseline/index.js';
 import { scorecard, type CellResult } from '../src/eval/scorecard.js';
+import { economyNames } from '../src/profile/index.js';
 
-const ESCAP_NAME: Record<string, string> = { AUS: 'Australia', MYS: 'Malaysia', SGP: 'Singapore' };
+const ESCAP_NAME = economyNames();
 
 type Reach = 'unregistered' | 'unfetched' | 'unparsed' | 'unread' | 'read' | 'uncited';
 
@@ -133,7 +134,7 @@ let readButNotShortlisted = 0;
 let readAndTicked = 0;
 
 for (const c of cells) {
-  const escapEconomy = ESCAP_NAME[c.economy] ?? c.economy;
+  const escapEconomy = ESCAP_NAME.get(c.economy) ?? c.economy;
   const cited = (citedFor.all(escapEconomy, c.indicator) as { act_or_practice: string }[])
     .flatMap((r) => citedInstruments(r.act_or_practice));
 

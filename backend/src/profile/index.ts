@@ -47,6 +47,26 @@ export function availableProfiles(): string[] {
 }
 
 /**
+ * Every profiled economy's code against its name.
+ *
+ * ESCAP's sheets are keyed by name and ours by code, so something has to translate. Listing the
+ * pairs by hand is how an economy goes quietly ungraded: it falls through to its own code, matches
+ * no baseline row, and the result reads as "nothing to compare" rather than "never compared". The
+ * profile already states the name, so adding a profile is all adding an economy takes.
+ */
+export function economyNames(): Map<string, string> {
+  const names = new Map<string, string>();
+  for (const code of availableProfiles()) {
+    try {
+      names.set(code.toUpperCase(), loadProfile(code).name);
+    } catch {
+      // A profile that does not parse is Zone 0's problem to report, not a caller's.
+    }
+  }
+  return names;
+}
+
+/**
  * Write the profile into the store, replacing what was there.
  *
  * Portals keep any robots.txt result already recorded against them: that is a fact about the

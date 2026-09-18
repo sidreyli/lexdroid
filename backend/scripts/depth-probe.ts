@@ -12,10 +12,11 @@ import { readFileSync } from 'node:fs';
 import { loadRubric } from '../src/rubric/index.js';
 import { queriesFor } from '../src/retrieve/index.js';
 import { ftsQuery } from '../src/index/index.js';
+import { economyNames } from '../src/profile/index.js';
 
 const RUN = 'b78c76f0-cf8b-4fab-a569-c7b11ca6800a';
 const CSV = process.argv[2]!;
-const NAME: Record<string, string> = { AUS: 'Australia', MYS: 'Malaysia', SGP: 'Singapore' };
+const NAME = economyNames();
 
 const db = new Database('backend/data/lexdroid.db', { readonly: true });
 db.exec(`ATTACH DATABASE 'backend/data/baseline.db' AS b`);
@@ -65,7 +66,7 @@ for (const { economy, indicator } of verdicts) {
       `SELECT act_or_practice, coverage, impact, note, references_raw FROM b.baseline_row
         WHERE source = 'round-1' AND economy = ? AND indicator_id = ?`,
     )
-    .all(NAME[economy] ?? economy, indicator) as Record<string, string | null>[];
+    .all(NAME.get(economy) ?? economy, indicator) as Record<string, string | null>[];
   const labels = new Set<string>();
   const want = new Set<string>();
   for (const r of rows) {
@@ -102,7 +103,7 @@ for (const { economy, indicator } of verdicts) {
 
     const ind = indicators.get(indicator);
     if (!ind) continue;
-    const order = rankWithin(inst.id, queriesFor(ind, NAME[economy]));
+    const order = rankWithin(inst.id, queriesFor(ind, NAME.get(economy)));
     const best = order.findIndex((id) => targets.has(id));
     counted += 1;
     if (best >= 0 && best < 40) reachable += 1;

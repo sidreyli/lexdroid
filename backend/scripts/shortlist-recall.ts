@@ -15,6 +15,7 @@ import { openBaseline, sameInstrument } from '../src/baseline/index.js';
 import { shortlistInstruments } from '../src/shortlist/index.js';
 import { loadRubric } from '../src/rubric/index.js';
 import { queriesFor } from '../src/retrieve/index.js';
+import { availableProfiles } from '../src/profile/index.js';
 
 function arg(name: string): string | null {
   const i = process.argv.indexOf(`--${name}`);
@@ -27,7 +28,8 @@ const ECONOMY_NAME: Record<string, string> = {
   AUS: 'Australia',
 };
 
-const economies = (arg('economy') ?? 'SGP,MYS,AUS').toUpperCase().split(',');
+// Default to every economy that has a profile, so a new one is measured without editing this.
+const economies = (arg('economy') ?? availableProfiles().join(',')).toUpperCase().split(',');
 const depth = Number(arg('depth') ?? 40);
 const contents = arg('contents') !== 'off';
 const only = arg('indicators')?.split(',') ?? null;
