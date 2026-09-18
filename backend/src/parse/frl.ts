@@ -91,6 +91,11 @@ const ENDNOTES = /^ENotes?Heading/;
  * ordinary section heading -- ActHead5 around the word "Endnotes" -- so the pass walked straight in
  * and filed the amendment history as provisions. Every template titles the part the same way, and a
  * provision whose entire text is that one word does not exist, so the word is the reliable mark.
+ *
+ * The word alone is not enough, because a compilation lists its own parts before it prints any of
+ * them and the last line of that list is this one. Endnotes come after the operative text, so the
+ * boundary only counts once there is operative text to end: before the first provision the word is
+ * a contents entry, and a compiled Act that opens with one lost all 1,257 of its sections to it.
  */
 const ENDNOTES_TITLE = /^Endnotes?$/i;
 
@@ -192,7 +197,14 @@ export function parseFrl(html: string, url: string): ParsedDocument {
     open = null;
   };
 
-  outer: for (const volume of parts) {
+  // Endnotes close the volume they sit in, not the compilation: a long Act is compiled in several
+  // volumes and each one repeats them, so stopping the whole pass at the first set throws away every
+  // volume after it -- two thirds of a seven volume Act.
+  for (const volume of parts) {
+    // And each volume reprints the contents, so "have we reached operative text yet" has to be asked
+    // of this volume, not of the compilation. Asked of the compilation, volume one answers for all of
+    // them and volumes two onward end at their own contents page.
+    const volumeStart = builder.sections.length;
     volumeUrl = volume.url;
     const $ = cheerio.load(volume.html);
     if (title === null) title = ($('title').first().text() || '').trim() || null;
@@ -202,15 +214,15 @@ export function parseFrl(html: string, url: string): ParsedDocument {
       const cls = firstClass(el);
       if (ENDNOTES.test(cls)) {
         flush();
-        break outer;
+        break;
       }
       if (NAVIGATION.test(cls) || DROP.has(cls)) continue;
 
       const text = nodeText([el]).replace(/\s+/g, ' ').trim();
       if (!text) continue;
-      if (ENDNOTES_TITLE.test(text)) {
+      if (ENDNOTES_TITLE.test(text) && (open || builder.sections.length > volumeStart)) {
         flush();
-        break outer;
+        break;
       }
 
       const $el = $(el);
@@ -246,8 +258,12 @@ export function parseFrl(html: string, url: string): ParsedDocument {
       if (open) open.body.push(text);
       else if (front.length < 4000) front += `${text}\n`;
     }
+
+    // A provision does not run across a volume boundary. Left open, volume one's last section
+    // swallowed volume two's front matter, and the contents entry for the endnotes then closed that
+    // volume before it had printed a word: four of a five volume Act read as two.
+    flush();
   }
-  flush();
 
   const meta = readFrontMatter(front);
   if (builder.sections.length === 0) {
