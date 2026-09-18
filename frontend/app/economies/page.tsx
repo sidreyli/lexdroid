@@ -8,6 +8,17 @@ import { clip } from "@/lib/format";
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Economies" };
 
+/**
+ * How many cards to put across, so the last row is not one lonely card.
+ *
+ * The widest layout that divides the set evenly, up to four -- four economies read better as one
+ * row of four or two rows of two than as three and a straggler.
+ */
+function evenColumns(n: number): number {
+  for (let c = 4; c > 1; c -= 1) if (n % c === 0) return c;
+  return Math.min(n, 3) || 1;
+}
+
 export default function EconomiesPage() {
   const economies = [...getEconomies()].sort((a, b) => a.name.localeCompare(b.name));
   const corpus = corpusOverview();
@@ -34,16 +45,23 @@ export default function EconomiesPage() {
 
       <section className="bg-card lift mb-5 rounded-3xl p-6 sm:p-8">
         <h2 className="text-[18px] leading-tight font-semibold tracking-tight text-navy-deep">
-          Where the three differ
+          Where they differ
         </h2>
         <p className="mt-2 mb-6 max-w-[72ch] text-[13.5px] leading-relaxed text-muted-foreground">
-          The three profiles agree on most of their shape. These are the lines where they do not,
-          and each one changes how a run has to behave.
+          The profiles agree on most of their shape. These are the lines where they do not, and
+          each one changes how a run has to behave.
         </p>
         <Comparison columns={columns} />
       </section>
 
-      <div className="grid gap-4 lg:grid-cols-3">
+      {/*
+        As many columns as divide the set evenly, up to four. A fixed three left the fourth
+        economy alone on a row of its own; the count is not a constant, so neither is the grid.
+      */}
+      <div
+        className="grid gap-4 sm:grid-cols-2"
+        style={{ gridTemplateColumns: `repeat(${evenColumns(columns.length)}, minmax(0, 1fr))` }}
+      >
         {columns.map(({ economy, corpus: c }) => (
           <Link
             key={economy.code}

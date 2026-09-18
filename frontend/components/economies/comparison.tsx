@@ -4,7 +4,7 @@ import type { CorpusEconomy } from "@/lib/data/corpus";
 import type { Economy } from "@/lib/data/types";
 
 /**
- * What actually differs between the three jurisdictions. The profiles are long and mostly
+ * What actually differs between the jurisdictions. The profiles are long and mostly
  * agree; this is the short column where they do not.
  */
 export interface Column {

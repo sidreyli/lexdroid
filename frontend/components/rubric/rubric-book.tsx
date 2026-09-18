@@ -5,15 +5,9 @@ import { Search, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { matches, type Book, type BookIndicator } from "@/lib/rubric/book";
-import { BandLadder } from "./band-ladder";
+import { BandLadder, type EconomyNames } from "./band-ladder";
 
-const economyName: Record<string, string> = {
-  AUS: "Australia",
-  MYS: "Malaysia",
-  SGP: "Singapore",
-};
-
-function Indicator({ indicator }: { indicator: BookIndicator }) {
+function Indicator({ indicator, names }: { indicator: BookIndicator; names: EconomyNames }) {
   return (
     <article
       id={`i-${indicator.id}`}
@@ -43,7 +37,7 @@ function Indicator({ indicator }: { indicator: BookIndicator }) {
       </div>
 
       <div className="col-span-2">
-        <BandLadder bands={indicator.bands} indicatorId={indicator.id} />
+        <BandLadder bands={indicator.bands} indicatorId={indicator.id} names={names} />
       </div>
 
       {indicator.unsettled.map((u) => (
@@ -51,7 +45,7 @@ function Indicator({ indicator }: { indicator: BookIndicator }) {
           key={u.economy}
           className="col-start-2 mt-2.5 max-w-[72ch] text-[12.5px] leading-snug text-ochre"
         >
-          {economyName[u.economy] ?? u.economy} reached no band here
+          {names[u.economy] ?? u.economy} reached no band here
           {u.reason ? `. ${u.reason}` : "."}
         </p>
       ))}
@@ -61,7 +55,7 @@ function Indicator({ indicator }: { indicator: BookIndicator }) {
   );
 }
 
-export function RubricBook({ book }: { book: Book }) {
+export function RubricBook({ book, names }: { book: Book; names: EconomyNames }) {
   const [term, setTerm] = useState("");
 
   const found = useMemo(
@@ -172,7 +166,7 @@ export function RubricBook({ book }: { book: Book }) {
 
               <div className="mt-5 flex flex-col gap-5">
                 {p.indicators.map((i) => (
-                  <Indicator key={i.id} indicator={i} />
+                  <Indicator key={i.id} indicator={i} names={names} />
                 ))}
               </div>
             </section>

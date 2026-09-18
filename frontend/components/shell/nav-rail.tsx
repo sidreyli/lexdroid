@@ -37,7 +37,13 @@ const reference = [
   { href: "/rubric", label: "Rubric", icon: BookMarked },
 ];
 
-export function NavRail({ reviewCount = 0 }: { reviewCount?: number }) {
+export function NavRail({
+  reviewCount = 0,
+  economies = "",
+}: {
+  reviewCount?: number;
+  economies?: string;
+}) {
   const pathname = usePathname();
   const { decisions } = useReview();
   const waiting = Math.max(0, reviewCount - Object.keys(decisions).length);
@@ -121,7 +127,7 @@ export function NavRail({ reviewCount = 0 }: { reviewCount?: number }) {
 
       <SidebarFooter className="px-4 pb-4 group-data-[collapsible=icon]:hidden">
         <p className="text-[11.5px] leading-relaxed text-muted-foreground">
-          Singapore, Malaysia and Australia
+          {economies}
           <br />
           against 61 regulatory indicators
         </p>
