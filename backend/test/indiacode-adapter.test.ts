@@ -244,6 +244,30 @@ describe('the status India Code can actually support', () => {
     expect(found?.statusBasis).toContain('The Example Act, 2023');
   });
 
+  it('keeps the commencement date it read, not only the sentence about it', async () => {
+    // The date is what the export's timeframe column is built from. Reading it to decide standing
+    // and then discarding it left every Indian row with a blank timeframe while the register had
+    // been stating the day all along.
+    const found = await statusOfAct({ 'dc.date.enforcement_date': '06-05-2016' });
+    expect(found?.commencedOn).toBe('2016-05-06');
+  });
+
+  it('keeps the earliest stage as the day a staged commencement began', async () => {
+    const found = await statusOfAct({
+      'dc.date.enforcement_date':
+        '22nd June, 2017 for sections 1, 2 and 3 and 1st July, 2017 for sections 6 to 9',
+    });
+    expect(found?.commencedOn).toBe('2017-06-22');
+  });
+
+  it('states no date where the register stated none', async () => {
+    // Standing rests on the listing there, and inventing a date to fill the column would put a
+    // claim in the export that nothing in the register supports.
+    const found = await statusOfAct({});
+    expect(found?.status).toBe('in-force');
+    expect(found?.commencedOn ?? null).toBeNull();
+  });
+
   it('follows a repealed enabling act down to what was made under it', async () => {
     // Nothing in the register answers act_repealed=true today. It is read anyway, so that a
     // register which starts recording repeals is believed the moment it does.

@@ -196,7 +196,10 @@ function commencementDates(raw: string): string[] {
  * `enforcement_date` is present on 782 of 847 acts and absent from the schema of every subordinate
  * collection. Either way the basis names what the claim rests on, so a reviewer can weigh it.
  */
-function statusOf(item: IndiaCodeItem, readOn: string): Pick<DiscoveredInstrument, 'status' | 'statusBasis'> {
+function statusOf(
+  item: IndiaCodeItem,
+  readOn: string,
+): Pick<DiscoveredInstrument, 'status' | 'statusBasis' | 'commencedOn'> {
   const collection = value(item, 'dc.identifier.collection')?.toUpperCase() ?? 'CENTRAL';
   const parent = value(item, 'dc.identifier.act_name');
 
@@ -224,6 +227,7 @@ function statusOf(item: IndiaCodeItem, readOn: string): Pick<DiscoveredInstrumen
         : '';
       return {
         status: 'in-force',
+        commencedOn: begun[0]!,
         statusBasis:
           `India Code records commencement on ${begun[0]}${staged} and records no repeal ` +
           `(API read on ${readOn})`,
@@ -231,6 +235,7 @@ function statusOf(item: IndiaCodeItem, readOn: string): Pick<DiscoveredInstrumen
     }
     if (dates.length > 0) {
       return {
+        commencedOn: dates[0]!,
         statusBasis:
           `India Code records commencement on ${dates[0]}, a day that has not yet arrived, ` +
           `so the instrument is not yet in force (API read on ${readOn})`,

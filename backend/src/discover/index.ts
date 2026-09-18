@@ -76,12 +76,13 @@ export async function register(
 
   const insert = db.prepare(
     `INSERT INTO instrument (economy_code, title, official_number, kind, status, status_basis,
-                             last_amended_on, timeframe_basis, source_url, discovered_via, discovered_at,
-                             title_provisional, also_at)
-     VALUES (?, ?, ?, ?, COALESCE(?, 'unknown'), ?, ?, ?, ?, ?, ?, ?, ?)
+                             commenced_on, last_amended_on, timeframe_basis, source_url,
+                             discovered_via, discovered_at, title_provisional, also_at)
+     VALUES (?, ?, ?, ?, COALESCE(?, 'unknown'), ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(economy_code, source_url) DO UPDATE SET
        status = CASE WHEN excluded.status_basis IS NOT NULL THEN excluded.status ELSE instrument.status END,
        status_basis = COALESCE(excluded.status_basis, instrument.status_basis),
+       commenced_on = COALESCE(excluded.commenced_on, instrument.commenced_on),
        last_amended_on = COALESCE(excluded.last_amended_on, instrument.last_amended_on),
        timeframe_basis = COALESCE(excluded.timeframe_basis, instrument.timeframe_basis),
        also_at = COALESCE(excluded.also_at, instrument.also_at)
@@ -138,8 +139,8 @@ export async function register(
           .get(profile.code, item.url);
         insert.run(
           profile.code, item.title, item.officialNumber ?? null, item.kind,
-          item.status ?? null, item.statusBasis ?? null, item.currentTo ?? null,
-          item.currentToBasis ?? null, item.url, `portal:${id}`, now,
+          item.status ?? null, item.statusBasis ?? null, item.commencedOn ?? null,
+          item.currentTo ?? null, item.currentToBasis ?? null, item.url, `portal:${id}`, now,
           item.titleProvisional ? 1 : 0,
           item.alsoAt?.length ? JSON.stringify(item.alsoAt) : null,
         );

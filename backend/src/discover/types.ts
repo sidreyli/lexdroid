@@ -21,6 +21,12 @@ export interface DiscoveredInstrument {
    * serves the Personal Data Protection Act as at 2023 while the duty ESCAP scores arrived in a
    * 2024 amendment. Recording what the portal actually publishes is what makes that visible.
    */
+  /**
+   * The day the instrument began, where the register states it rather than leaving it to the
+   * document. It is what the export's timeframe column is built from, and a register that
+   * publishes the date is a better source for it than a parse of the document's front matter.
+   */
+  commencedOn?: string | null;
   currentTo?: string | null;
   currentToBasis?: string;
   /**
