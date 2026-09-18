@@ -1426,6 +1426,28 @@ const ONLINE_SERVICE = /\b(internet|online|on-line|web\w*|cyber\w*|e-?commerce|d
 const MOBILE_SUBSCRIPTION =
   /\b(SIM\b|SIM cards?|pre-?paid|cellular|mobile\w*|carriage service\w*|telephon\w*|subscriber\w*|number portab\w*|porting)\b/i;
 
+/**
+ * What a licence has to be a licence *for*, where the indicator asks about licensing one trade.
+ *
+ * "Online" alone cannot carry a licensing question, because everything a modern economy regulates
+ * now happens online: a licence to run a network, to provide a digital token service, to publish
+ * content. Each is held by a business that trades online, and none of them is a licence to trade.
+ * The indicator's own exception says as much -- licences for other aspects of the business "are not
+ * captured" -- and its measure asks for the licence held "in order to sell goods or services
+ * online".
+ *
+ * So the subject has to name the commerce as well as the channel. One economy's cell was decided by
+ * "network facilities or network service or applications service" and another's by "providing any
+ * type of digital token service"; both name a regulated activity, neither names a sale. What
+ * survives is what the words describe: an online marketplace, a supply of goods through a website,
+ * an e-commerce service.
+ */
+const TRADE =
+  /\b(sell\w*|sale|sales|sold|buy\w*|purchas\w*|retail\w*|wholesal\w*|trad(e|er|ers|ing)|commerc\w*|market(place|ing)?|merchant\w*|vendor\w*|supply|supplying|suppliers?|goods|distributive)\b/i;
+
+/** Both halves, in either order: it has to be trade, and it has to be trade done online. */
+const ONLINE_TRADE = new RegExp(`(?=.*${TRADE.source})(?=.*${ONLINE.source})`, 'i');
+
 export const MEASURE_DOMAIN: Readonly<Record<string, RegExp>> = {
   // 8.3's two bands are two subjects: identity to reach a service online, and identity for the
   // mobile subscription the service runs over. Only the top band gets a domain. The band below it
@@ -1434,6 +1456,9 @@ export const MEASURE_DOMAIN: Readonly<Record<string, RegExp>> = {
   // findings ESCAP scores. A topic is carried by the document; only the narrower band has to say
   // it in the sentence.
   'user-identity': ONLINE_SERVICE,
+  // A licence to sell online is narrower than its indicator's "online", for the reason
+  // ONLINE_TRADE gives: online is where the business operates, not what it is licensed to do.
+  'ecommerce-licence': ONLINE_TRADE,
 };
 
 export const SUBJECT_DOMAIN: Readonly<Record<string, RegExp>> = {
