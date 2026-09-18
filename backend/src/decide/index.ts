@@ -58,6 +58,14 @@ export interface Evidence {
    * it is a fact about the document, so it is read off the document once and carried.
    */
   definesATerm?: boolean;
+  /**
+   * Whether the quoted words are a list item whose stem only confers a power.
+   *
+   * Same footing as definesATerm: a fact about the drafting, read off the whole section once. The
+   * reader is given the paragraph and cannot see the stem above it, so a menu of what some other
+   * instrument may one day prohibit comes back reading as a prohibition.
+   */
+  inheritsAPower?: boolean;
 }
 
 /** What a framework-shaped indicator is decided from. One per candidate instrument. */
@@ -1363,6 +1371,20 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
       ruledOut.push({
         evidence: e,
         reason: `the words said to state the condition only name where the data goes, which is no condition`,
+      });
+      continue;
+    }
+    // The same, where the power is in the stem the quote hangs from rather than in the quote. A
+    // lettered paragraph borrows its verb from the words before the colon, and the reader is shown
+    // the paragraph. Australia's 6.1 and 6.2 were decided by "prohibit the entity from storing ...
+    // outside Australia" under the stem "Examples of conditions that may be prescribed", and by
+    // "prohibit ... the holding, storing, handling or transferring of such information outside
+    // Australia" under "the Digital ID Rules may:". Both came back with the verb "prohibit" and
+    // mandatory true, which is a fair reading of the words shown.
+    if (e.inheritsAPower && !permits(indicatorId, e.finding.measure)) {
+      ruledOut.push({
+        evidence: e,
+        reason: `the words are a list item under a stem that only empowers another instrument to impose this`,
       });
       continue;
     }

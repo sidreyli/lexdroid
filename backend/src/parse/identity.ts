@@ -164,3 +164,54 @@ export function citesADefinition(text: string, words: string | null): boolean {
   if (brk) stop = Math.min(stop, opener.index + opener[0].length + brk.index);
   return at < stop;
 }
+
+/**
+ * Does the quoted paragraph take its force from a stem that only confers a power?
+ *
+ * A lettered paragraph is not a sentence. It borrows its verb from the words before the colon, and
+ * quoted on its own it reads as though it had one of its own. Australia's 6.1 was decided by
+ * "prohibit the entity from storing or accessing, or providing access to, scheme data outside
+ * Australia" -- paragraph (e) of a list whose stem reads "Examples of conditions that **may** be
+ * prescribed or imposed are conditions to do any of the following:". Nothing is prohibited. The
+ * Digital ID Act answered the same cell with "prohibit ... the holding, storing, handling or
+ * transferring of such information outside Australia", under the stem "the Digital ID Rules may:".
+ *
+ * The reader cannot see this, because the reader is given the paragraph. Both came back with the
+ * verb "prohibit", force "forbids" and mandatory true, which is a fair reading of the words it was
+ * shown. So the question is asked here, where the whole section is in hand, and it is asked of
+ * drafting form rather than of meaning: walk back from the quote to the colon that opens the list,
+ * take the stem, and read its last modal. "must" and "shall" impose, and their lists are the
+ * conditions of an obligation -- "the provider must not activate the service unless the provider
+ * has: (a) obtained information; and (b) verified the identity" is a duty in both its limbs. "may"
+ * confers, and its list is a menu of what some other instrument might one day say.
+ *
+ * A power to prohibit is a real and reportable fact about an economy. It is not a prohibition, and
+ * the bands of pillar 6 count measures in force.
+ */
+const LIST_MODAL = /\b(must not|shall not|may not|must|shall|may)\b/gi;
+/** Where the stem begins: the end of whatever sentence came before it. */
+const SENTENCE_END = /[.;]\s+(?=[A-Z(])|\n\s*\n/g;
+
+export function inheritsAPower(text: string, quote: string | null): boolean {
+  const words = quote?.trim();
+  if (!words || words.length < 3) return false;
+  const at = text.indexOf(words);
+  if (at < 0) return false;
+
+  // The colon that opens the list this paragraph sits in. Only the text before the quote counts,
+  // and only the nearest one: a section may open several lists.
+  const before = text.slice(0, at);
+  const colon = before.lastIndexOf(':');
+  if (colon < 0) return false;
+
+  // A stem governs the paragraphs under it, not the rest of the instrument. If a sentence has ended
+  // between the colon and the quote, the quote is not in that list.
+  if (/[.]\s+[A-Z]/.test(text.slice(colon + 1, at))) return false;
+
+  const starts = [...before.slice(0, colon).matchAll(SENTENCE_END)];
+  const stem = before.slice(starts.length ? (starts.at(-1)!.index ?? 0) + starts.at(-1)![0].length : 0, colon);
+
+  const modals = [...stem.matchAll(LIST_MODAL)].map((m) => m[1]!.toLowerCase());
+  const last = modals.at(-1);
+  return last === 'may';
+}
