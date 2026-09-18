@@ -92,7 +92,7 @@ export function recordedDecider(
   const evidenceForPillar = db.prepare(
     `SELECT r.attributes, r.section_id, s.heading_path, s.text, s.anchor, s.page,
             d.url AS doc_url, d.media_type,
-            i.id AS instrument_id, i.title, i.kind AS instrument_kind
+            i.id AS instrument_id, i.title, i.kind AS instrument_kind, i.status AS instrument_status
        FROM reading r
        JOIN cell c ON c.id = r.cell_id
        JOIN section s ON s.id = r.section_id
@@ -153,6 +153,7 @@ export function recordedDecider(
         attributes: string; section_id: number; heading_path: string; text: string;
         anchor: string | null; page: number | null; doc_url: string; media_type: string | null;
         instrument_id: number; title: string; instrument_kind: InstrumentType['kind'];
+        instrument_status: Evidence['instrumentStatus'];
       }[]) {
         let findings: unknown = [];
         try {
@@ -187,6 +188,7 @@ export function recordedDecider(
             // What this economy says an instrument of that kind can do. The live run reads it from
             // the profile and this rebuild did not, so a guideline that binds nobody was counted
             // here and discounted there -- one cell, and the only one the two paths disagreed on.
+            ...(r.instrument_status ? { instrumentStatus: r.instrument_status } : {}),
             ...bindingnessFor(cell.economy_code, r.instrument_kind),
             // The second reading's verdict, from the same set the live run scored against. Without
             // it this rebuild answers a different question from the one it is checking.

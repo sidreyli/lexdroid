@@ -28,6 +28,8 @@ export interface Evidence {
   sectionId: number;
   instrumentId: number;
   instrumentTitle: string;
+  /** What the register says of the instrument. Absent where the corpus predates the field. */
+  instrumentStatus?: 'in-force' | 'repealed' | 'draft' | 'amending' | 'unknown';
   headingPath: string;
   /** The deep link a reviewer follows: the instrument's own URL and the provision's anchor. */
   citation: string;
@@ -1112,6 +1114,49 @@ export const UNREACHABLE_BANDS: Readonly<Record<string, Readonly<Record<number, 
 };
 
 /**
+ * Evidence from something other than law in force.
+ *
+ * The store has said this from the beginning -- "'in-force' is the only status a row may cite. A
+ * draft, a repealed provision, or an amending act cited in place of its principal act each score
+ * zero in ESCAP's marking" -- and nothing enforced it, because `Evidence` carried the instrument's
+ * title and id but never its status. Across the store 78 applying readings were reached through a
+ * status the schema names as worth zero: 57 from amending acts, 21 from repealed ones.
+ *
+ * An amending act is not a lesser source, it is a spent one: its words are instructions to change
+ * another act, and once they have taken effect the law they made lives in the principal act.
+ * `amendsAnotherAct` already says this about a provision; this says it about the instrument.
+ *
+ * Unknown is not on the list. It means the register did not tell us, not that it told us no, and a
+ * further 704 applying readings sit under it. Dropping those would discard evidence rather than
+ * discount it, and the way to shrink that number is to register a status -- which is what reading
+ * a register's own currency signals is for -- not to refuse the reading.
+ *
+ * Excluded rather than held, for the same reason the exception's findings are: this is a fact we
+ * established about the provision, not one we failed to establish.
+ */
+function currentLaw(evidence: Evidence[]): {
+  kept: Evidence[];
+  excluded: { evidence: Evidence; reason: string }[];
+} {
+  const kept: Evidence[] = [];
+  const excluded: { evidence: Evidence; reason: string }[] = [];
+  for (const e of evidence) {
+    const status = e.instrumentStatus;
+    if (status === 'repealed' || status === 'draft') {
+      excluded.push({
+        evidence: e,
+        reason:
+          `the register records this instrument as ${status}, and only an instrument in force ` +
+          `states the law the economy applies today`,
+      });
+    } else {
+      kept.push(e);
+    }
+  }
+  return { kept, excluded };
+}
+
+/**
  * Which findings the indicator's exception removes.
  *
  * Four of these nine carry "Not score data localization measure applied to government data", and
@@ -1980,12 +2025,13 @@ function decideOn(input: DecideInput): Decision {
     }),
     input.governing ?? [],
   );
-  const { kept: afterException, excluded } = applyException(indicator, mine);
+  const { kept: inForce, excluded: notCurrent } = currentLaw(mine);
+  const { kept: afterException, excluded } = applyException(indicator, inForce);
   const ctx: RuleContext = { economy, rates: input.rates ?? null };
   const { kept: qualifying, held, ruledOut } = hold(indicator.id, afterException, ctx);
   // Read and shown not to be the measure, which is a reason and belongs on the record beside the
   // exception's. It never joins `held`: that would turn a finding of absence into a bar to one.
-  excluded.push(...ruledOut);
+  excluded.push(...notCurrent, ...ruledOut);
 
   // Nothing was read, so nothing can be concluded. This is the difference between a finding of
   // absence and a failure to look, and ESCAP's reviewers can tell them apart.
