@@ -100,16 +100,22 @@ describe('the India Code register', () => {
         officialNumber: 'Act No. 22 of 2023',
       }),
     ]);
-    expect(found[0]?.status).toBeUndefined();
-    expect(found[0]?.statusBasis).toContain('repealed=false');
+    expect(found[0]?.status).toBe('in-force');
+    expect(found[0]?.statusBasis).toContain('ACT');
   });
 });
 
 /*
-  India Code answers repealed=false on 845 of the 847 Central acts and on every rule, regulation,
-  notification and order sampled, and true on none of them. Trusting that flag alone registered all
-  12,900 India instruments as status-unknown, so nothing downstream could tell live law from dead.
-  The commencement date is the signal the register does carry, and these fix how it is read.
+  Asked of the whole Central register rather than a sample, `repealed:true` matches 0 of India
+  Code's 12,900 rows and `act_repealed:true` matches 0 of the 12,053 subordinate ones, while
+  `repealed:false` matches 845 of 847 acts and every rule, regulation, notification and order. A
+  flag that never says true separates nothing, and resting on it left every India instrument
+  status-unknown -- which mattered, because 'in-force' is the only status a row may cite as a
+  governing framework.
+
+  Two signals replace it. Commencement, which only acts carry, and being listed at all: the register
+  keeps itself current by dropping repealed law rather than marking it, measured by the absence of
+  all seven known-repealed Central acts checked and the presence of all five successors.
 */
 describe('the status India Code can actually support', () => {
   async function statusOfAct(extra: Record<string, string>) {
@@ -127,6 +133,27 @@ describe('the status India Code can actually support', () => {
         jurisdiction: 'CENTRAL',
         pageSize: 100,
         collections: [{ collection: 'ACT', kind: 'act' }],
+      },
+    } as unknown as Portal;
+    const found = await indiaCodeAdapter.discover({ portal, fetcher, log: () => {} });
+    return found[0];
+  }
+
+  async function statusOfRule(extra: Record<string, string>) {
+    const row = item({ uuid: 'act-1', title: 'The Example Act, 2023.', collection: 'RULE', extra });
+    const fetcher = {
+      async fetch(url: string) {
+        return response(url, search([row]));
+      },
+    } as unknown as Fetcher;
+    const portal = {
+      name: 'India Code',
+      url: ORIGIN,
+      adapterConfig: {
+        apiBase: API,
+        jurisdiction: 'CENTRAL',
+        pageSize: 100,
+        collections: [{ collection: 'RULE', kind: 'rule' }],
       },
     } as unknown as Portal;
     const found = await indiaCodeAdapter.discover({ portal, fetcher, log: () => {} });
@@ -157,26 +184,47 @@ describe('the status India Code can actually support', () => {
     expect(found?.statusBasis).toContain('2020-01-31');
   });
 
-  it('leaves status unknown where commencement is recorded section by section', async () => {
-    // The instrument commenced in parts on different days, so it has no one date to record.
+  it('takes the earliest stage where commencement is recorded section by section', async () => {
+    // An act whose sections began on different days is not an act of unknown standing. Refusing
+    // these lost all 42 acts whose field is prose rather than a date.
     const found = await statusOfAct({
       'dc.identifier.repealed': 'false',
       'dc.date.enforcement_date':
-        '19th April, 2021- Sections 2, sub-sections (1), (2) and (4) of section 3, 4 to 14',
+        '22nd June, 2017 for sections 1, 2, 3 1st July, 2017 for sections 6 to 9',
     });
-    expect(found?.status).toBeUndefined();
-    expect(found?.statusBasis).toContain('repealed=false');
+    expect(found?.status).toBe('in-force');
+    expect(found?.statusBasis).toContain('2017-06-22');
+    expect(found?.statusBasis).toContain('2 stated stages');
   });
 
-  it('leaves status unknown for a date the calendar does not have, or one not yet reached', async () => {
+  it('does not mistake the commencing notification for the commencement', async () => {
+    // The notification is signed before it takes effect, so the earliest date in the field is the
+    // wrong one. Everything after 'vide' describes the paperwork, not the law.
+    const found = await statusOfAct({
+      'dc.date.enforcement_date':
+        '22nd January, 2018, vide notification No. S.O. 272(E), dated 17th January, 2018, ' +
+        'see Gazette of India, Extraordinary, Part II, sec. 3(ii)',
+    });
+    expect(found?.statusBasis).toContain('2018-01-22');
+    expect(found?.statusBasis).not.toContain('2018-01-17');
+  });
+
+  it('counts neither a day the calendar lacks nor a section number as a date', async () => {
     const impossible = await statusOfAct({ 'dc.date.enforcement_date': '31-02-2020' });
-    expect(impossible?.status).toBeUndefined();
+    expect(impossible?.statusBasis).not.toContain('2020');
 
-    const future = await statusOfAct({ 'dc.date.enforcement_date': '01-01-2099' });
-    expect(future?.status).toBeUndefined();
+    const sections = await statusOfAct({
+      'dc.date.enforcement_date':
+        'Ss. 4(1), 5(1) (2), 12, 13 (15-06-2005) and rest provisions on 120th day of its enactment.',
+    });
+    expect(sections?.status).toBe('in-force');
+    expect(sections?.statusBasis).toContain('2005-06-15');
+  });
 
-    const twoDates = await statusOfAct({ 'dc.date.enforcement_date': '08-05-1952, 15-02-1962' });
-    expect(twoDates?.status).toBeUndefined();
+  it('holds back an instrument whose stated commencement has not arrived', async () => {
+    const found = await statusOfAct({ 'dc.date.enforcement_date': '01-01-2099' });
+    expect(found?.status).toBeUndefined();
+    expect(found?.statusBasis).toContain('has not yet arrived');
   });
 
   it('still lets a recorded repeal outrank a commencement date', async () => {
@@ -187,11 +235,20 @@ describe('the status India Code can actually support', () => {
     expect(found?.status).toBe('repealed');
   });
 
-  it('leaves the subordinate instruments unknown, because they carry no commencement at all', async () => {
-    // Measured: dc.date.enforcement_date is absent from the schema of every RULE, REGULATION,
-    // NOTIFICATION and ORDER sampled. 12,053 of India's 12,900 instruments have no signal here.
-    const found = await statusOfAct({ 'dc.identifier.repealed': 'false' });
-    expect(found?.status).toBeUndefined();
+  it('rests a subordinate instrument on the register listing it, and says so', async () => {
+    // dc.date.enforcement_date is absent from the schema of every RULE, REGULATION, NOTIFICATION
+    // and ORDER: 0 of 3,104 rules carry it against 782 of 847 acts. Listing is all there is.
+    const found = await statusOfRule({ 'dc.identifier.act_name': 'The Example Act, 2023' });
+    expect(found?.status).toBe('in-force');
+    expect(found?.statusBasis).toContain('RULE');
+    expect(found?.statusBasis).toContain('The Example Act, 2023');
+  });
+
+  it('follows a repealed enabling act down to what was made under it', async () => {
+    // Nothing in the register answers act_repealed=true today. It is read anyway, so that a
+    // register which starts recording repeals is believed the moment it does.
+    const found = await statusOfRule({ 'dc.identifier.act_repealed': 'true' });
+    expect(found?.status).toBe('repealed');
   });
 });
 

@@ -127,73 +127,125 @@ function officialNumber(item: IndiaCodeItem, collection: string): string | null 
   return direct ?? null;
 }
 
-/**
- * The day India Code says the instrument came into force, or null where it does not say plainly.
- *
- * The field carries two formats in the one collection -- 105 Central acts write 1885-10-01 and 635
- * write 06-05-2016 -- so a single parse would silently misread one of them. Day-first is measured,
- * not assumed: across those 847 acts the first component reaches 31 and passes 12 on 330 of them,
- * while the second never passes 12.
- *
- * The 42 it refuses are refused on purpose. A few are merely sloppy (1-06-1872, 4-8-2022), but most
- * are prose recording commencement section by section -- "19th April, 2021- Sections 2 ... 4 to 14"
- * -- or two dates at once. An instrument whose parts commenced on different days has no one date to
- * record, and picking one would assert as fact the thing the field is admitting it cannot say.
- */
-function commencedOn(item: IndiaCodeItem): string | null {
-  const raw = value(item, 'dc.date.enforcement_date')?.trim();
-  if (!raw) return null;
-  const iso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw);
-  const dmy = /^(\d{2})-(\d{2})-(\d{4})$/.exec(raw);
-  const parts = iso ? [iso[1]!, iso[2]!, iso[3]!] : dmy ? [dmy[3]!, dmy[2]!, dmy[1]!] : null;
-  if (!parts) return null;
-  const [y, m, d] = parts;
-  const day = `${y}-${m}-${d}`;
+const MONTHS: Record<string, string> = {
+  january: '01', february: '02', march: '03', april: '04', may: '05', june: '06',
+  july: '07', august: '08', september: '09', october: '10', november: '11', december: '12',
+};
+
+/** A day the calendar actually has. Date would roll 31-02 forward to 3 March rather than refuse it. */
+function calendarDay(y: string, m: string, d: string): string | null {
+  const day = `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
   const when = new Date(`${day}T00:00:00Z`);
-  // A date the calendar does not have rolls forward, so 31-02 would otherwise pass as 3 March.
   if (Number.isNaN(when.getTime()) || when.toISOString().slice(0, 10) !== day) return null;
-  // A commencement still in the future is a date the instrument has not reached yet.
-  return when.getTime() <= Date.now() ? day : null;
+  return day;
 }
 
+/**
+ * Every commencement date the field states, earliest first.
+ *
+ * The field is free text and holds three shapes at once: 105 Central acts write 1885-10-01, 635
+ * write 06-05-2016, and the rest write prose. Day-first is measured, not assumed -- across those
+ * acts the first component reaches 31 and passes 12 on 330 of them, while the second never passes
+ * 12 -- so the two numeric shapes are told apart by which component is the four-digit year.
+ *
+ * Reading every date rather than one is what lets the prose be read at all. An act commenced in
+ * stages states each stage: "22nd June, 2017 for sections 1, 2 ... 1st July, 2017 for sections 6 to
+ * 9". Demanding a single date refused all 42 such acts, which reversed the question -- an act whose
+ * sections commenced on different days is not an act of unknown standing, it is an act that plainly
+ * began, and the earliest stage is the day it began.
+ */
+export function commencementDates(raw: string): string[] {
+  // 'vide' introduces the notification that effected commencement, and that notification carries
+  // its own, earlier date: "22nd January, 2018, vide notification ... dated 17th January, 2018".
+  // Reading past it would record the day the paperwork was signed as the day the law began.
+  const text = raw.split(/\bvide\b/i)[0]!;
+  const days = new Set<string>();
+  for (const m of text.matchAll(/(?<!\d)(\d{4})-(\d{1,2})-(\d{1,2})(?!\d)/g)) {
+    const day = calendarDay(m[1]!, m[2]!, m[3]!);
+    if (day) days.add(day);
+  }
+  for (const m of text.matchAll(/(?<![\d-])(\d{1,2})[-/](\d{1,2})[-/](\d{4})(?!\d)/g)) {
+    const day = calendarDay(m[3]!, m[2]!, m[1]!);
+    if (day) days.add(day);
+  }
+  for (const m of text.matchAll(/(?<!\d)(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]+),?\s+(\d{4})(?!\d)/g)) {
+    const month = MONTHS[m[2]!.toLowerCase()];
+    const day = month ? calendarDay(m[3]!, month, m[1]!) : null;
+    if (day) days.add(day);
+  }
+  return [...days].sort();
+}
+
+/**
+ * What India Code can support about an instrument's standing, and on what evidence.
+ *
+ * Neither repeal flag is usable. Asked of the whole Central register rather than a sample,
+ * `repealed:true` and `act_repealed:true` each match 0 of 12,900 rows, while `repealed:false`
+ * matches 845 of 847 acts and every rule, regulation, notification and order. A flag that never
+ * says true separates nothing, and resting on it left all 12,900 instruments status-unknown.
+ *
+ * The register keeps itself current by removing repealed law, not by marking it. That is measured:
+ * of seven Central acts known to be repealed -- the Indian Penal Code, the Code of Criminal
+ * Procedure, the Indian Evidence Act, Companies 1956, MRTP, Sick Industrial Companies and Urban
+ * Land Ceiling -- none is in the collection, while all five successors checked are. The two
+ * apparent hits are the Repeal Acts themselves, which remain in force. So being listed is the
+ * signal, and it is the same reading already made of Malaysia's Laws of Malaysia catalogue.
+ *
+ * Commencement, where the register states it, is the stronger evidence and is preferred, because it
+ * is a fact about the instrument rather than about the collection holding it. Only acts carry it:
+ * `enforcement_date` is present on 782 of 847 acts and absent from the schema of every subordinate
+ * collection. Either way the basis names what the claim rests on, so a reviewer can weigh it.
+ */
 function statusOf(item: IndiaCodeItem, readOn: string): Pick<DiscoveredInstrument, 'status' | 'statusBasis'> {
-  const raw = value(item, 'dc.identifier.repealed');
-  if (raw?.toLowerCase() === 'true') {
+  const collection = value(item, 'dc.identifier.collection')?.toUpperCase() ?? 'CENTRAL';
+  const parent = value(item, 'dc.identifier.act_name');
+
+  // Kept although nothing matches it today: the flags are the register's own, and a register that
+  // starts recording repeals should be believed the moment it does.
+  const repealed = value(item, 'dc.identifier.repealed')?.toLowerCase() === 'true';
+  const parentRepealed = value(item, 'dc.identifier.act_repealed')?.toLowerCase() === 'true';
+  if (repealed || parentRepealed) {
     return {
       status: 'repealed',
-      statusBasis: `India Code records repealed=true for this archived item (API read on ${readOn})`,
+      statusBasis: repealed
+        ? `India Code records repealed=true for this item (API read on ${readOn})`
+        : `India Code records the enabling act${parent ? `, ${parent},` : ''} as repealed, ` +
+          `and subordinate legislation falls with it (API read on ${readOn})`,
     };
   }
 
-  /*
-    The repeal flag alone cannot decide this. Measured over the whole Central register it is false
-    on 845 of 847 acts and absent on the other two, and false on every rule, regulation,
-    notification and order sampled -- a flag that never says true separates nothing. Left there,
-    every one of the 12,900 instruments India registers is status-unknown, which is not caution but
-    an absence of any filter at all.
-
-    The commencement date is the signal the register actually carries, and only for acts. Read with
-    a stated commencement and no recorded repeal, an instrument is in force; the basis says exactly
-    that, so a reviewer can see what the claim rests on rather than taking the word.
-  */
-  const commenced = commencedOn(item);
-  if (commenced) {
-    return {
-      status: 'in-force',
-      statusBasis:
-        `India Code records commencement on ${commenced} and records no repeal ` +
-        `(API read on ${readOn})`,
-    };
+  const stated = value(item, 'dc.date.enforcement_date')?.trim();
+  if (stated) {
+    const dates = commencementDates(stated);
+    const begun = dates.filter((d) => d <= readOn);
+    if (begun.length > 0) {
+      const staged = dates.length > 1
+        ? `, the earliest of ${dates.length} stated stages of commencement,`
+        : '';
+      return {
+        status: 'in-force',
+        statusBasis:
+          `India Code records commencement on ${begun[0]}${staged} and records no repeal ` +
+          `(API read on ${readOn})`,
+      };
+    }
+    if (dates.length > 0) {
+      return {
+        statusBasis:
+          `India Code records commencement on ${dates[0]}, a day that has not yet arrived, ` +
+          `so the instrument is not yet in force (API read on ${readOn})`,
+      };
+    }
+    // Text stating no date at all still describes an instrument the register lists, so fall through.
   }
 
-  if (raw?.toLowerCase() === 'false') {
-    return {
-      statusBasis:
-        `India Code records repealed=false for this archived item (API read on ${readOn}); ` +
-        'that is not evidence of commencement, so status remains unknown until the instrument text is read',
-    };
-  }
-  return {};
+  return {
+    status: 'in-force',
+    statusBasis:
+      `India Code lists this among the ${collection} it holds as current law` +
+      `${parent ? `, made under ${parent}, which it records as unrepealed` : ''}; ` +
+      `the register drops repealed instruments rather than flagging them (API read on ${readOn})`,
+  };
 }
 
 const DEFAULT_COLLECTIONS: CollectionConfig[] = [
