@@ -26,11 +26,73 @@ import { PART_MARKER } from '../discover/frl.js';
 /** ActHeadN opens a structural container; level 5 is the section itself. */
 const CONTAINER: Record<string, number> = { ActHead1: 1, ActHead2: 2, ActHead3: 3, ActHead4: 4 };
 const SECTION_CLASS = 'ActHead5';
+
+/**
+ * The same structure, marked the other way.
+ *
+ * ActHeadN belongs to the template Acts are drafted from. Determinations, Instruments, Orders and
+ * Standards come from a second template whose paragraphs are styled HP for a Part and HR for a
+ * section, and a page exported as EPUB carries those rather than the ActHead classes. Keyed on
+ * ActHead alone the pass found nothing, fell through to the generic parser, which found no headings
+ * either, and emitted the instrument as one section -- the whole Determination in a single blob.
+ *
+ * What both templates share is the numbering span: CharChapNo, CharPartNo, CharDivNo, CharSubdivNo
+ * and CharSectno mark the number in a heading under either one. So the span is the thing to key on,
+ * and it also recovers the headings that carry no heading class at all -- real ones, styled R1 or
+ * ListParagraph by whoever drafted the page, which no class-based rule can see.
+ *
+ * Only a leading span counts. These are character styles, and the register uses them mid-sentence
+ * too; a cross-reference to section 4.5 inside a paragraph is not the opening of section 4.5.
+ */
+const SPAN_CONTAINER: Record<string, number> = {
+  CharChapNo: 1,
+  CharPartNo: 2,
+  CharDivNo: 3,
+  CharSubdivNo: 4,
+};
+const SPAN_SECTION = 'CharSectno';
+const STRUCTURAL_SPAN = `span.${[...Object.keys(SPAN_CONTAINER), SPAN_SECTION].join(', span.')}`;
+
+/**
+ * And a third template, which names its own heading styles.
+ *
+ * Short instruments -- exemptions, directions, the ones an authority signs rather than drafts from
+ * the full template -- come out styled LDClauseHeading, LDPartHeading and so on, with no numbering
+ * span at all: the clause number is a bare span before the heading text. The class name says what
+ * the paragraph is, so the pattern reads it rather than listing the styles one by one, and the
+ * number is taken only when it is a number, since an unnumbered heading would otherwise be labelled
+ * with its own title.
+ */
+const LD_HEADING = /^LD(Chapter|Part|Division|Subdivision|Clause)Heading$/;
+const LD_LEVEL: Record<string, number> = { Chapter: 1, Part: 2, Division: 3, Subdivision: 4 };
+
+/**
+ * The blocks a provision is built from.
+ *
+ * This pass read <p> only, which is every block in the authored pages and most of one exported to
+ * EPUB -- but not all of it. There the lettered paragraphs of a section are <li>, and a heading is
+ * sometimes <h2>: Part 6 of the Identity Checks Determination is one, so its four sections were
+ * filed under Part 5. Reading <p> alone dropped more than half the text of that instrument, and
+ * what it dropped was the paragraphs where the obligations are.
+ *
+ * Nesting is only ever a list inside a list. The outer block's text already contains the inner
+ * one's, so taking the outermost and skipping what sits under it keeps every word exactly once.
+ */
+const BLOCKS = 'p, li, h1, h2, h3, h4, h5, h6';
 /** Editorial matter carrying no obligation, and the running header of the compilation. */
 const DROP = new Set(['notetext', 'Note', 'Header']);
 const NAVIGATION = /^TOC\d?$/;
 /** The endnotes begin here, and nothing after them is operative text. */
 const ENDNOTES = /^ENotes?Heading/;
+/**
+ * The same boundary, where the class does not mark it.
+ *
+ * ENotesHeading belongs to the authored pages. A page exported to EPUB opens its endnotes with an
+ * ordinary section heading -- ActHead5 around the word "Endnotes" -- so the pass walked straight in
+ * and filed the amendment history as provisions. Every template titles the part the same way, and a
+ * provision whose entire text is that one word does not exist, so the word is the reliable mark.
+ */
+const ENDNOTES_TITLE = /^Endnotes?$/i;
 
 const REPEALED = /\((?:Repealed|Ceased)\)\s*$/i;
 const MONTHS = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
@@ -135,7 +197,8 @@ export function parseFrl(html: string, url: string): ParsedDocument {
     const $ = cheerio.load(volume.html);
     if (title === null) title = ($('title').first().text() || '').trim() || null;
 
-    for (const el of $('p').toArray()) {
+    for (const el of $(BLOCKS).toArray()) {
+      if ($(el).parents(BLOCKS).length > 0) continue;
       const cls = firstClass(el);
       if (ENDNOTES.test(cls)) {
         flush();
@@ -145,8 +208,24 @@ export function parseFrl(html: string, url: string): ParsedDocument {
 
       const text = nodeText([el]).replace(/\s+/g, ' ').trim();
       if (!text) continue;
+      if (ENDNOTES_TITLE.test(text)) {
+        flush();
+        break outer;
+      }
 
-      const level = CONTAINER[cls];
+      const $el = $(el);
+      const span = (sel: string): string => {
+        const node = $el.find(sel).first().get(0);
+        return node ? nodeText([node]).replace(/\s+/g, ' ').trim() : '';
+      };
+
+      // The numbering span only says what this paragraph is when the paragraph opens with it: these
+      // are character styles, and the register uses them mid-sentence too.
+      const marker = span(STRUCTURAL_SPAN);
+      const markerClass = marker && text.startsWith(marker) ? firstClass($el.find(STRUCTURAL_SPAN).first().get(0)!) : '';
+      const ld = LD_HEADING.exec(cls)?.[1] ?? '';
+
+      const level = CONTAINER[cls] ?? SPAN_CONTAINER[markerClass] ?? LD_LEVEL[ld];
       if (level !== undefined) {
         flush();
         containers.length = Math.min(containers.length, level - 1);
@@ -154,10 +233,10 @@ export function parseFrl(html: string, url: string): ParsedDocument {
         continue;
       }
 
-      if (cls === SECTION_CLASS) {
+      if (cls === SECTION_CLASS || markerClass === SPAN_SECTION || ld === 'Clause') {
         flush();
-        const $el = $(el);
-        const label = $el.find('span.CharSectno').first().text().replace(/\s+/g, ' ').trim() || null;
+        const numbered = ld ? span('span') : span(`span.${SPAN_SECTION}`);
+        const label = /^\d/.test(numbered) ? numbered : null;
         const heading = label && text.startsWith(label) ? text.slice(label.length).trim() : text;
         const anchor = $el.find('a[id]').first().attr('id') ?? el.attribs['id'] ?? null;
         open = { label, heading, anchor, body: [text] };
