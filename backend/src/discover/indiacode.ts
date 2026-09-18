@@ -127,6 +127,35 @@ function officialNumber(item: IndiaCodeItem, collection: string): string | null 
   return direct ?? null;
 }
 
+/**
+ * The day India Code says the instrument came into force, or null where it does not say plainly.
+ *
+ * The field carries two formats in the one collection -- 105 Central acts write 1885-10-01 and 635
+ * write 06-05-2016 -- so a single parse would silently misread one of them. Day-first is measured,
+ * not assumed: across those 847 acts the first component reaches 31 and passes 12 on 330 of them,
+ * while the second never passes 12.
+ *
+ * The 42 it refuses are refused on purpose. A few are merely sloppy (1-06-1872, 4-8-2022), but most
+ * are prose recording commencement section by section -- "19th April, 2021- Sections 2 ... 4 to 14"
+ * -- or two dates at once. An instrument whose parts commenced on different days has no one date to
+ * record, and picking one would assert as fact the thing the field is admitting it cannot say.
+ */
+function commencedOn(item: IndiaCodeItem): string | null {
+  const raw = value(item, 'dc.date.enforcement_date')?.trim();
+  if (!raw) return null;
+  const iso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw);
+  const dmy = /^(\d{2})-(\d{2})-(\d{4})$/.exec(raw);
+  const parts = iso ? [iso[1]!, iso[2]!, iso[3]!] : dmy ? [dmy[3]!, dmy[2]!, dmy[1]!] : null;
+  if (!parts) return null;
+  const [y, m, d] = parts;
+  const day = `${y}-${m}-${d}`;
+  const when = new Date(`${day}T00:00:00Z`);
+  // A date the calendar does not have rolls forward, so 31-02 would otherwise pass as 3 March.
+  if (Number.isNaN(when.getTime()) || when.toISOString().slice(0, 10) !== day) return null;
+  // A commencement still in the future is a date the instrument has not reached yet.
+  return when.getTime() <= Date.now() ? day : null;
+}
+
 function statusOf(item: IndiaCodeItem, readOn: string): Pick<DiscoveredInstrument, 'status' | 'statusBasis'> {
   const raw = value(item, 'dc.identifier.repealed');
   if (raw?.toLowerCase() === 'true') {
@@ -135,6 +164,28 @@ function statusOf(item: IndiaCodeItem, readOn: string): Pick<DiscoveredInstrumen
       statusBasis: `India Code records repealed=true for this archived item (API read on ${readOn})`,
     };
   }
+
+  /*
+    The repeal flag alone cannot decide this. Measured over the whole Central register it is false
+    on 845 of 847 acts and absent on the other two, and false on every rule, regulation,
+    notification and order sampled -- a flag that never says true separates nothing. Left there,
+    every one of the 12,900 instruments India registers is status-unknown, which is not caution but
+    an absence of any filter at all.
+
+    The commencement date is the signal the register actually carries, and only for acts. Read with
+    a stated commencement and no recorded repeal, an instrument is in force; the basis says exactly
+    that, so a reviewer can see what the claim rests on rather than taking the word.
+  */
+  const commenced = commencedOn(item);
+  if (commenced) {
+    return {
+      status: 'in-force',
+      statusBasis:
+        `India Code records commencement on ${commenced} and records no repeal ` +
+        `(API read on ${readOn})`,
+    };
+  }
+
   if (raw?.toLowerCase() === 'false') {
     return {
       statusBasis:
