@@ -7,6 +7,9 @@ dist/
 backend/data/lexdroid.db
 backend/data/lexdroid.db-*
 backend/data/lexdroid.db.*
+# Snapshots taken with VACUUM INTO so rules can be graded while a run holds the write lock.
+backend/data/lexdroid.snapshot.db
+backend/data/lexdroid.snapshot.db-*
 # ESCAP's completed answers for ten economies. Rebuilt by scripts/import-baseline
 # from their sample kit; never redistributed with the public repository.
 backend/data/baseline.db

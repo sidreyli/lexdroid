@@ -13,7 +13,20 @@ import { fileURLToPath } from 'node:url';
 const here = dirname(fileURLToPath(import.meta.url));
 const backendRoot = join(here, '..', '..');
 
-export const WORKING_DB_PATH = join(backendRoot, 'data', 'lexdroid.db');
+/**
+ * The store every command opens, and the one place it can be pointed elsewhere.
+ *
+ * Scoring is a pure function of stored readings, so `grade` and `rescore` want to run against a
+ * finished corpus at the very moment a run is busy writing to it -- and a run holds the write
+ * lock for hours, which is long enough that "wait for it" means "do not do it". Pointing this at
+ * a snapshot taken with `VACUUM INTO` (a read lock only, so the run is undisturbed) makes the
+ * edit-grade-keep-or-revert loop available during a run instead of only between runs.
+ *
+ * Unset in normal use. A run writing somewhere unexpected would be worse than not running, so
+ * this is opt-in, names the store in the variable, and is never defaulted to a copy.
+ */
+export const WORKING_DB_PATH =
+  process.env['LEXDROID_DB'] ?? join(backendRoot, 'data', 'lexdroid.db');
 const SCHEMA_PATH = join(here, 'schema.sql');
 
 export type Db = Database.Database;
