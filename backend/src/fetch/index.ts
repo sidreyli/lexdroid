@@ -126,6 +126,17 @@ const SLOWDOWN_MS = 6000;
 const UNKNOWN_ROBOTS_DELAY_MS = 10_000;
 
 /**
+ * How long to wait before asking again after the connection dropped with no answer at all.
+ *
+ * Short, and short on purpose. A reset is not a host saying no -- it said nothing, and the
+ * request before it and the request after it were both served. The long BACKOFF_MS ladder is for
+ * a host that answered and told us to slow down; applying it here would price a stray packet at
+ * four minutes. A host that is genuinely gone still stops the crawl, because the retries run out
+ * and the refusal count that trips GIVE_UP_AFTER is unchanged.
+ */
+const TRANSPORT_RETRY_MS = [2000, 8000];
+
+/**
  * How many consecutive clean responses buy back one step of the slowdown above.
  *
  * A penalty that only ever grows turns one bad minute into a slow rest-of-run: an early throttle
@@ -193,6 +204,14 @@ function decompress(body: Buffer, encoding: string | string[] | undefined): Buff
  * Any of these cached and parsed becomes a law that says nothing, and then a cell reports no
  * restriction on the strength of a page it never received.
  */
+/** What one request came back with, before the cache and the log get hold of it. */
+interface SendResult {
+  status: number;
+  mediaType: string;
+  body: Buffer;
+  finalUrl: string;
+}
+
 function isSoftBlock(res: { status: number; body: Buffer }): boolean {
   if (res.status === 429 || res.status === 503) return true;
   if (res.status >= 200 && res.status < 300 && res.status !== 200) return true;
@@ -406,6 +425,12 @@ export interface FetcherOptions {
   runId?: string | null;
   /** Floor on the gap between requests to one host. A site asking for more gets more. */
   minDelayMs?: number;
+  /**
+   * How long to wait before asking again when the connection dropped with no answer, one entry
+   * per retry. Defaults to TRANSPORT_RETRY_MS; a test standing in for an unreachable host sets it
+   * short so the breaker can be watched tripping without waiting out the real pauses.
+   */
+  transportRetryMs?: number[];
   onLog?: (line: string) => void;
 }
 
@@ -415,6 +440,7 @@ export class Fetcher {
   private readonly sourceMode: SourceMode;
   private readonly runId: string | null;
   private readonly minDelayMs: number;
+  private readonly transportRetryMs: number[];
   private readonly onLog: (line: string) => void;
 
   /** Counters the run report quotes, so "documents fetched = 0" comes from a measurement. */
@@ -431,6 +457,7 @@ export class Fetcher {
     this.sourceMode = opts.sourceMode;
     this.runId = opts.runId ?? null;
     this.minDelayMs = opts.minDelayMs ?? DEFAULT_DELAY_MS;
+    this.transportRetryMs = opts.transportRetryMs ?? TRANSPORT_RETRY_MS;
     this.onLog = opts.onLog ?? (() => {});
   }
 
@@ -526,7 +553,7 @@ export class Fetcher {
   }
 
   /** Raw request. Callers go through fetch(), which adds the cache, robots and the log. */
-  private async send(url: string): Promise<{ status: number; mediaType: string; body: Buffer; finalUrl: string }> {
+  private async send(url: string): Promise<SendResult> {
     const res = await request(url, {
       method: 'GET',
       dispatcher,
@@ -693,7 +720,11 @@ export class Fetcher {
       const state = this.state(host);
       let waitMs = await this.wait(host);
       try {
-        let res = await this.send(url);
+        // A connection that drops before the host answers is retried here, close in, before any
+        // of the logic below treats it as a refusal. The walk that prompted this lost a register
+        // of 847 Acts to one reset on the fourth page: the three pages already gathered were
+        // discarded, and the same page served 1.3MB on the next attempt.
+        let res = await this.sendThroughDrops(url, host);
         // Every attempt is logged, retries included. fetch_log is the run record that makes
         // "we crawled politely" checkable rather than claimed, and a record that counts three
         // requests as one understates what actually left this machine.
@@ -712,7 +743,7 @@ export class Fetcher {
           );
           await new Promise((r) => setTimeout(r, pause));
           waitMs += pause;
-          res = await this.send(url);
+          res = await this.sendThroughDrops(url, host);
           this.log(url, isSoftBlock(res) ? 'soft-blocked' : 'ok', res.status, res.body.length, pause);
         }
         if (isSoftBlock(res)) {
@@ -769,6 +800,32 @@ export class Fetcher {
         throw new TransportFault(url, err);
       }
     });
+  }
+
+  /**
+   * Send, and ask again if the connection dropped without an answer.
+   *
+   * A reset, a hang-up or a DNS blip is not a decision the host made about us, and the caller
+   * cannot tell the difference from an outright refusal once the exception is thrown. Retrying
+   * here keeps that distinction where the evidence for it is. A refusal the host actually stated
+   * -- robots, a cooldown, a suspension -- is never retried, and every attempt is logged, so a
+   * quiet host still shows up in fetch_log as the several requests it really cost.
+   */
+  private async sendThroughDrops(url: string, host: string): Promise<SendResult> {
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        return await this.send(url);
+      } catch (err) {
+        if (isNamedRefusal(err) || attempt >= this.transportRetryMs.length) throw err;
+        const pause = this.transportRetryMs[attempt]!;
+        this.log(url, 'error', null, 0, 0);
+        this.onLog(
+          `  ${host}: ${err instanceof Error ? err.message : String(err)} -- no answer. ` +
+            `Asking again in ${pause / 1000}s.`,
+        );
+        await new Promise((r) => setTimeout(r, pause));
+      }
+    }
   }
 
   /** True when the URL is already on disk, so a caller can plan without triggering a fetch. */
