@@ -154,7 +154,7 @@ function calendarDay(y: string, m: string, d: string): string | null {
  * sections commenced on different days is not an act of unknown standing, it is an act that plainly
  * began, and the earliest stage is the day it began.
  */
-export function commencementDates(raw: string): string[] {
+function commencementDates(raw: string): string[] {
   // 'vide' introduces the notification that effected commencement, and that notification carries
   // its own, earlier date: "22nd January, 2018, vide notification ... dated 17th January, 2018".
   // Reading past it would record the day the paperwork was signed as the day the law began.
