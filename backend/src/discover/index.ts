@@ -252,6 +252,20 @@ export interface MaterialiseOptions {
   log?: (line: string) => void;
 }
 
+/**
+ * The adapter that stands behind an instrument's portal, if the portal declares one.
+ *
+ * Exported because reading a document is not the only thing that needs it: anything re-parsing the
+ * corpus has to resolve a document the way the read path resolves it, and for a long Act that means
+ * the adapter joining the EPUB volumes rather than the title page sitting at the document's URL.
+ */
+export function adapterFor(db: Db, profile: EconomyProfile, via: string): Adapter | null {
+  const id = Number(via.replace('portal:', ''));
+  const row = db.prepare('SELECT url FROM portal WHERE id = ?').get(id) as { url: string } | undefined;
+  const portal = row ? profile.portals.find((p) => p.url === row.url) : undefined;
+  return portal?.adapter ? ADAPTERS[portal.adapter] ?? null : null;
+}
+
 export async function materialise(
   db: Db,
   profile: EconomyProfile,
@@ -259,12 +273,6 @@ export async function materialise(
   opts: MaterialiseOptions = {},
 ): Promise<MaterialiseResult[]> {
   const log = opts.log ?? (() => {});
-  const adapterFor = (via: string): Adapter | null => {
-    const id = Number(via.replace('portal:', ''));
-    const row = db.prepare('SELECT url FROM portal WHERE id = ?').get(id) as { url: string } | undefined;
-    const portal = row ? profile.portals.find((p) => p.url === row.url) : undefined;
-    return portal?.adapter ? ADAPTERS[portal.adapter] ?? null : null;
-  };
 
   const where = opts.unreadOnly
     ? `i.economy_code = ? AND EXISTS (
@@ -306,7 +314,7 @@ export async function materialise(
 
   const results: MaterialiseResult[] = [];
   for (const [n, row] of rows.entries()) {
-    const adapter = adapterFor(row.discovered_via);
+    const adapter = adapterFor(db, profile, row.discovered_via);
     const base = { instrumentId: row.id, title: row.title, url: row.source_url };
     try {
       let fetched = adapter?.resolveDocument
