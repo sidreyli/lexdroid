@@ -18,7 +18,7 @@
  */
 import type { Indicator, ScoreBand } from '../rubric/types.js';
 import type { Finding } from '../read/index.js';
-import { MEASURES, MEASURE_NAMES, SUBJECTS, SUBJECT_DOMAIN } from '../rubric/measures.js';
+import { MEASURES, MEASURE_DOMAIN, MEASURE_NAMES, SUBJECTS, SUBJECT_DOMAIN } from '../rubric/measures.js';
 import { tallyConfirmations, type ConfirmationTally } from '../read/confirmations.js';
 import { inUsd, moneyIn, type FxRates } from './currency.js';
 
@@ -914,11 +914,24 @@ const RULES: Record<string, Rule> = {
   ),
 
   /** 4.5 "Lack of framework OR of exceptions" / "unclear exceptions" / "clear exceptions
-   *  following fair use or fair dealing". The band names the open model by name, so a closed list
-   *  of permitted purposes is the middle band however clearly it is drafted. */
+   *  following fair use or fair dealing".
+   *
+   *  The band names the open model by name, and that is the test -- not whether the exception is a
+   *  closed list, which was the reading here before and is wrong. Australian fair dealing IS a
+   *  closed list of purposes: research and study, criticism and review, parody and satire, news.
+   *  So is Singapore's, before the general fair use section. A rule that puts a closed list in the
+   *  middle band "however clearly it is drafted" therefore puts the fair dealing model there, which
+   *  is the one thing the top band says out loud.
+   *
+   *  So the statutory term decides it, whichever measure the reader filed the provision under.
+   *  Australia's s.113E -- "A fair dealing with copyright material does not infringe copyright in
+   *  the material" -- came back tagged as the closed-list measure with its defining words reading,
+   *  in full, "fair dealing". The two measures are not cleanly separable by description, because
+   *  every fair dealing provision answers both; the words the legislature used are separable, and
+   *  they are the words the band criterion quotes. */
   '4.5': (indicator, qualifying) => {
-    const open = qualifying.filter((e) => e.finding.measure === 'fair-use-exception');
-    const closed = qualifying.filter((e) => e.finding.measure === 'qualified-exception');
+    const open = qualifying.filter((e) => e.finding.measure === 'fair-use-exception' || namesTheModel(e));
+    const closed = qualifying.filter((e) => e.finding.measure === 'qualified-exception' && !namesTheModel(e));
     if (open.length > 0) return { ordinal: 3, reason: 'a fair use or fair dealing exception', counted: [...open, ...closed] };
     if (closed.length > 0) return { ordinal: 2, reason: 'copyright exceptions confined to listed purposes', counted: closed };
     return { ordinal: 1, reason: 'nothing read establishes a copyright exception' };
@@ -1190,9 +1203,17 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
       });
       continue;
     }
-    // Every measure in the rubric is borne by somebody, so a provision the reader could find no
-    // party in is evidence of none of them. Held, because the party may be there and unread.
-    if (!e.finding.dutyBearer) {
+    // Most measures are borne by somebody, so a provision the reader could find no party in is
+    // evidence of none of them. Held, because the party may be there and unread.
+    //
+    // Not the ones the rubric marks as permissions. A permission binds nobody -- that is what makes
+    // it one. "A fair dealing with copyright material does not infringe copyright in the material"
+    // names no party because there is none to name, and asking it for one refused Australia's
+    // fair dealing section, Singapore's fair use section and their permitted-use provisions, in a
+    // cell whose top band is "clear copyright exceptions following fair use or fair dealing".
+    // Seventeen indicators declare a measure this way and the gate was asking all of them for a
+    // party bound. The same exemption is already made two tests up, for 'declares'.
+    if (!e.finding.dutyBearer && !permits(indicatorId, e.finding.measure)) {
       held.push({
         evidence: e,
         reason: 'the provision names no party it binds, and every measure in the rubric is a duty on someone',
@@ -1324,6 +1345,14 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
       });
       continue;
     }
+    // And the direction of it: the foreign party has to be the one holding, not the one held.
+    if (proportional(indicatorId, e.finding.measure) && foreignIsTheHeld(e.finding)) {
+      ruledOut.push({
+        evidence: e,
+        reason: `"${e.finding.subjectWords}" is what is held, so the proportion limits holding in a foreign company rather than foreign holding here`,
+      });
+      continue;
+    }
     // Where the measure is a condition, the place the data goes is not one. The condition may be
     // stated outright or carved out as an exception, so either will do; naming neither will not.
     if (
@@ -1415,6 +1444,22 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
       ruledOut.push({
         evidence: e,
         reason: 'the party said to be bound and the data said to be located are the same words, so the provision binds no one',
+      });
+      continue;
+    }
+    // And a thing that is not information. The check above is on the field being filled, and a
+    // filled field is not the same claim. Malaysia's data localisation cell was decided by an
+    // Exchange Control order -- "shall not make any payment to any person outside Malaysia" -- which
+    // came back with "any payment" as the located data and "any payment" as the words calling it
+    // information. A payment is not information in any of these systems, and the words are the ones
+    // the reader copied out of the provision, so they can be read. Information is a term of art
+    // here in the way a patent is: a legal system may call it data, a record, a document or
+    // particulars, but none of them calls it a payment. Placed after the structural tests, which
+    // need no view about what the words mean and so should have their say first.
+    if (locational(indicatorId, e.finding.measure) && !INFORMATION.test(e.finding.informationWords ?? '')) {
+      ruledOut.push({
+        evidence: e,
+        reason: `the provision calls the thing "${e.finding.informationWords}", which is not information`,
       });
       continue;
     }
@@ -1623,7 +1668,9 @@ function aboutness(indicatorId: string, measure: string | null): string | null {
  * they exist to record a ban on something this indicator does not score.
  */
 function inDomain(indicatorId: string, measure: string | null): RegExp | null {
-  const declared = SUBJECT_DOMAIN[indicatorId];
+  // A measure whose subject is narrower than its indicator's answers for itself: 8.3 asks about
+  // the internet in one band and about a SIM in the next, and one domain cannot hold both.
+  const declared = (measure !== null ? MEASURE_DOMAIN[measure] : undefined) ?? SUBJECT_DOMAIN[indicatorId];
   if (!declared) return null;
   const off = (MEASURES[indicatorId] ?? []).some((m) => m.token === measure && m.offSubject === true);
   return off ? null : declared;
@@ -1642,6 +1689,41 @@ const NATIONALITY =
 function namesNationality(f: Finding): boolean {
   return [f.dutyBearer, f.definingWords, f.subjectWords, f.quote].some((w) => w && NATIONALITY.test(w));
 }
+
+/** Words that make a party foreign to the economy, as opposed to merely naming a nationality. */
+const FOREIGN_PARTY = /\b(foreign(er|ers|ly|-owned|-ownership)?|non-?residents?|non-?citizens?|non-?nationals?|overseas|aliens?)\b/i;
+
+/**
+ * Is the foreign party the one being held, rather than the one holding?
+ *
+ * Every band of 3.1, 5.2 and 12.01 is a ceiling on what a foreign person may hold in a company
+ * here. A ceiling on what a company here may hold in a foreign company is the same sentence read
+ * backwards, and it decided two of the three economies. Australia scored 0.8 on section 84C of the
+ * Future Fund Act -- "The Board must take all reasonable steps to ensure that it does not hold a
+ * stake in a foreign listed company of more than 20%" -- which is Australia's own sovereign fund
+ * limiting its own outbound holdings. Malaysia scored 0.5 on an income tax deduction for "a locally
+ * owned company" that "acquires at least fifty one percent of paid-up capital ... of a foreign
+ * owned company", which is not a restriction at all but an incentive to buy one.
+ *
+ * Both have the same shape and it is visible in the fields the reader already fills: the foreign
+ * word sits in subjectWords, naming the thing held, and not in dutyBearer, naming the holder. The
+ * genuine limits are the other way round -- "a group of foreign persons" may not hold "more than
+ * 49%" of an airport operator, "any foreign lawyer" not "more than one-third" of a Singapore law
+ * practice -- so requiring the holder to be the foreign one keeps those and drops these.
+ */
+function foreignIsTheHeld(f: Finding): boolean {
+  return FOREIGN_PARTY.test(f.subjectWords ?? '') && !FOREIGN_PARTY.test(f.dutyBearer ?? '');
+}
+
+/**
+ * The words by which a legal system calls something information.
+ *
+ * Kept for the reason the subject domains that survived are kept: a system may say data, a record,
+ * a document or particulars, and it words each of those its own way, but the category itself is
+ * one every one of them has. It is not a list of the data we want to find.
+ */
+const INFORMATION =
+  /\b(information|data|dataset\w*|records?|recorded|documents?|particulars?|details?|registers?|books?|accounts?|files?|communications?|messages?|contents?|statements?|reports?|copies|copy|logs?|databases?|credentials?|personal\w*)\b/i;
 
 /** Is every band of this indicator a proportion, so a provision stating none cannot be placed? */
 function proportional(indicatorId: string, measure: string | null): boolean {
@@ -1699,6 +1781,20 @@ function beyondPlace(words: string | null, placeWords: string | null): boolean {
 function mustSayMoreThanPlace(indicatorId: string, measure: string | null): boolean {
   if (!measure) return false;
   return (MEASURES[indicatorId] ?? []).some((m) => m.token === measure && m.distinctFromPlace === true);
+}
+
+/**
+ * Whether a copyright exception is the one the top band of 4.5 names: the fair use or fair dealing
+ * model, in the legislature's own word for it.
+ *
+ * Asked of definingWords rather than of the whole quote, because definingWords is the field that
+ * holds "the one thing a provision has to say to be this measure" -- the reader has already copied
+ * it out, and a statute that says "fair dealing" there is stating the model, not mentioning it. The
+ * whole quote would also catch a duty of "fair dealing with customers" in a financial services act.
+ */
+const FAIR_USE_MODEL = /\bfair(?:ly)?[ -](?:us(?:e|ed|ing)|deal(?:ing|t|s)?)\b/i;
+function namesTheModel(e: Evidence): boolean {
+  return FAIR_USE_MODEL.test(e.finding.definingWords ?? '');
 }
 
 /** Is this measure one the rubric describes as a permission or a limit rather than a command? */

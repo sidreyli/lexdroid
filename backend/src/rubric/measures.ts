@@ -1,3 +1,5 @@
+import { availableProfiles, loadProfile } from '../profile/index.js';
+
 /**
  * The measures each indicator recognises, and the words that describe them.
  *
@@ -406,7 +408,15 @@ export const MEASURES: Record<string, Measure[]> = {
   '11.4': [
     {
       token: 'deviating-encryption-standard',
-      defines: 'the words naming the algorithm, key length or cryptographic standard required',
+      // Reader-side, so it takes effect at the next run: batch it. The question used to ask which
+      // algorithm was required, and the deciding word in this measure is not "algorithm" but
+      // "deviating". Asked the old way Malaysia answered with a code-of-practice checklist row
+      // reading "Encryption (if required)" -- a topic, not a standard -- and Australia with
+      // "approved by the Australian Signals Directorate", which names a real national authority
+      // whose approved list is the international algorithms. Neither departs from anything. A gate
+      // that asked for an algorithm name refused both, and refused the second wrongly: it does name
+      // a standard. Departure is the thing to ask for, and only the reader can see it.
+      defines: 'the words showing the required encryption departs from the internationally agreed standard',
       gloss:
         'a required encryption algorithm, key length or cryptographic standard set by this economy in place of an internationally agreed one',
       actor: 'the supplier or operator of the system that must use it',
@@ -582,6 +592,12 @@ export const MEASURES: Record<string, Measure[]> = {
       gloss:
         'an anti-dumping duty, countervailing duty or safeguard measure imposed on imported ICT or electronic goods',
       actor: 'the importer of the goods',
+      // A duty is charged on whoever brings the goods in. Every finding this indicator collected in
+      // all three economies binds the Minister, the Government or the court instead -- the sections
+      // of the enabling Act that say when and how a duty may be imposed, which are the procedure
+      // and not the measure. ESCAP answers this one from a register of measures actually in force,
+      // so an Act read as four of them is the reading to stop, not the register to reproduce.
+      actorKind: 'private',
     },
   ],
   // 4.2 and 4.6 ask for the same two remedies over different rights, so the right being sued on is
@@ -958,6 +974,11 @@ export const MEASURES: Record<string, Measure[]> = {
       token: 'de-minimis-threshold',
       defines: 'the words stating the value below which the duty or tax is not charged',
       permits: true,
+      // A de minimis is a threshold on goods arriving, and the gloss below has said so all along
+      // without anything enforcing it. Every tax act states thresholds, and a threshold read off
+      // one of them decided this cell on a wine tax credit the Commissioner "is not required to
+      // consider" -- a real figure, in a real revenue statute, with nothing crossing a border.
+      crossesBorder: true,
       gloss:
         'a value of imported goods below which no customs duty, import duty or import tax is charged, however the provision names it -- a de minimis, a relief, an exemption by value, a threshold for informal clearance',
       alsoAsked: ['goods of a value not exceeding a stated amount are exempt from import duty or sales tax'],
@@ -1176,6 +1197,36 @@ const NATIONALITY = /\b(citizen\w*|national(ity|s)?\b|resident\w*|domicil\w*|per
 const TRADE_DEFENCE = /\b(dump\w*|countervail\w*|safeguard\w*|subsid\w*|injur\w*)\b/i;
 const SEPARATION = /\b(separat\w*|divest\w*|structural\w*|unbundl\w*|account\w*|divid\w*)\b/i;
 const JOINT_VENTURE = /\b(joint venture\w*|partner\w*|local equity|incorporat\w*|jointly)\b/i;
+/**
+ * Where a thing has to be, in the words a system uses for its own territory.
+ *
+ * Half of it is the relation -- local, domestic, onshore, established or incorporated here -- which
+ * no legal system can word its own way. The other half is that a statute usually just says the
+ * place: "such bank or banks in Malaysia". Both halves are needed, and the second was typed in as
+ * Malaysia, Singapore and Australia, which is a fact about the corpus rather than about the
+ * indicator and works on no fourth economy.
+ *
+ * So the names come from the profiles instead. `data/profiles/*.json` is where an economy is
+ * declared, and adding one there now extends this by construction. Failing to read a profile costs
+ * that economy's name and nothing else, so a half-written profile does not take the rubric down.
+ */
+const ECONOMY_NAMES = availableProfiles()
+  .map((code) => {
+    try {
+      return loadProfile(code).name;
+    } catch {
+      return null;
+    }
+  })
+  .filter((n): n is string => !!n && /^[A-Za-z ]+$/.test(n));
+
+const LOCALITY = new RegExp(
+  `\\b(local\\w*|domestic\\w*|onshore|in the (?:economy|country|State)|established in|incorporated in|resident\\w*` +
+    (ECONOMY_NAMES.length ? `|${ECONOMY_NAMES.map((n) => `${n}n?`).join('|')}` : '') +
+    `)\\b`,
+  'i',
+);
+
 const IDENTITY = /\b(identit\w*|identif\w*|authenticat\w*|verif\w*|know your customer|kyc|proof of (?:name|age|address))\b/i;
 
 /**
@@ -1230,6 +1281,21 @@ const RESTRICTION = new RegExp(
   'i',
 );
 
+/**
+ * A list of algorithm names was tried here for 'deviating-encryption-standard' and removed.
+ *
+ * It was worth a cell and it was wrong. Auditing every gate by what it threw out across the three
+ * economies, that one fired four times in two cells, and one of the four was Australia's "approved
+ * by the Australian Signals Directorate" -- refused for naming no cryptographic standard, when the
+ * ASD list is exactly that. The cell still scored what ESCAP scores, by the wrong route.
+ *
+ * The general shape: a closed list of the specific things that exist rejects the real provision
+ * that names a thing not on it, and there is no list of every cryptographic authority on earth. A
+ * category any legal system would have words for is safe; an enumeration of the ones in our corpus
+ * is a fact about the corpus. What the measure actually turns on is departure from the
+ * international standard, which is a question about meaning, so it is asked of the reader in
+ * `defines` instead. See the note on LOCALITY, which lost the economy names for the same reason.
+ */
 export const MEASURE_NAMES: Readonly<Record<string, RegExp>> = {
   // A licence measure needs a word meaning licence. Five indicators turn on one.
   'content-licence': LICENCE,
@@ -1268,7 +1334,13 @@ export const MEASURE_NAMES: Readonly<Record<string, RegExp>> = {
   'joint-venture': JOINT_VENTURE,
   'accounting-separation': SEPARATION,
   'functional-separation': SEPARATION,
-  'local-bank-account': /\b(bank\w*|account\w*|financial institution\w*)\b/i,
+  // Named by the half of it that is a term of art, which is the local half and not the bank. Its
+  // own `defines` asks for "an account with a bank established in the economy", and asking only
+  // for a word meaning bank let section 137 of Malaysia's Islamic Financial Services Act decide
+  // the cell: a takaful broker must hold client money "in a licensed Islamic bank separate from
+  // its own account". That is client-money segregation, which every one of these systems requires
+  // and none of them counts as a localisation rule, and the words never say where the bank is.
+  'local-bank-account': LOCALITY,
   'local-representative': /\b(represent\w*|agent\w*|office\w*|establish\w*|resident\w*)\b/i,
   'local-presence': /\b(present\w*|establish\w*|office\w*|branch\w*|subsidiar\w*|incorporat\w*|resident\w*)\b/i,
   'local-domain-or-presence': /\b(domain\w*|present\w*|establish\w*|office\w*|branch\w*|subsidiar\w*|incorporat\w*)\b/i,
@@ -1333,6 +1405,37 @@ const PRODUCT_CERT = /\b(product\w*|goods|equipment|device\w*|apparatus|applianc
 const TECHNICAL_STANDARD = /\b(standard\w*|specification\w*|technical regulation\w*|code of practice|conformity)\b/i;
 const CUSTOMS = /\b(import\w*|consign\w*|customs|duty|duties|goods|parcel\w*|shipment\w*|value of the goods|declaration\w*)\b/i;
 
+/**
+ * What a provision has to be *about* to be a given measure, where the indicator's own subject is
+ * wider than the measure's.
+ *
+ * SUBJECT_DOMAIN asks this of the indicator, which is the right question wherever an indicator's
+ * bands are rungs of one ladder. 8.3's are not: its top band is identity to reach the internet and
+ * the band below it identity for a SIM, and those are two subjects, not two heights of one. Given
+ * a single domain the two measures are made out by the same words, so a mobile number-porting
+ * check answered the internet question and every economy scored the top band where ESCAP scores
+ * the one beneath -- Australia on its pre-porting determination, Singapore on an end-user notice,
+ * Malaysia on a shelter's duty to "record the attendance of each inmate".
+ *
+ * So where a measure's subject is narrower than its indicator's, it says so here, and this is
+ * asked instead of the indicator's. Everything SUBJECT_DOMAIN's own note says still holds: these
+ * are the subjects a legal system cannot word its own way, and a measure whose subject is a sector
+ * gets none.
+ */
+const ONLINE_SERVICE = /\b(internet|online|on-line|web\w*|cyber\w*|e-?commerce|digital (?:service|platform|identity)\w*|platform\w*|social media|search engine\w*|end-?users?)\b/i;
+const MOBILE_SUBSCRIPTION =
+  /\b(SIM\b|SIM cards?|pre-?paid|cellular|mobile\w*|carriage service\w*|telephon\w*|subscriber\w*|number portab\w*|porting)\b/i;
+
+export const MEASURE_DOMAIN: Readonly<Record<string, RegExp>> = {
+  // 8.3's two bands are two subjects: identity to reach a service online, and identity for the
+  // mobile subscription the service runs over. Only the top band gets a domain. The band below it
+  // is carried by its instrument -- Australia's pre-porting determination says "mobile" in its
+  // title and then never again -- and a domain asked of the words would turn away the very
+  // findings ESCAP scores. A topic is carried by the document; only the narrower band has to say
+  // it in the sentence.
+  'user-identity': ONLINE_SERVICE,
+};
+
 export const SUBJECT_DOMAIN: Readonly<Record<string, RegExp>> = {
   ...PILLAR_12_DOMAINS,
   // Terms of art: a patent is a patent, a copyright a copyright, a trade secret a trade secret and
@@ -1348,5 +1451,12 @@ export const SUBJECT_DOMAIN: Readonly<Record<string, RegExp>> = {
   '4.6': COPYRIGHT,
   '4.9': SECRETS,
   '4.1': SECRETS,
-  '11.4': /(encrypt\w*|cryptograph\w*|cipher\w*|key length|algorithm\w*|AES|DES|RSA|ECC|FIPS|ISO|IEC|ITU)/i,
+  // A standard names itself for the same reason an encryption standard does: every one of these
+  // systems calls it a standard, a specification, a technical regulation or a code of practice,
+  // and none of them has a way of setting one without using one of those words. Without it, 11.1
+  // was decided in Malaysia by section 115 of the Trademarks Act -- "Any person who discloses or
+  // makes use of any confidential information or document" -- a secrecy duty on investigators,
+  // read as standards being set behind closed doors.
+  '11.1': TECHNICAL_STANDARD,
+  '11.4': /\b(encrypt\w*|cryptograph\w*|cipher\w*|key length|algorithm\w*|AES|DES|RSA|ECC|FIPS|ISO|IEC|ITU)\b/i,
 };
