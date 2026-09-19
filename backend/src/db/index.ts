@@ -9,6 +9,7 @@ import Database from 'better-sqlite3';
 import { readFileSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { canonicalizeThai } from '../util/thai.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const backendRoot = join(here, '..', '..');
@@ -177,10 +178,21 @@ export function indexSections(db: Db, documentId: number): number {
   const del = db.prepare('DELETE FROM section_fts WHERE rowid = ?');
   const ins = db.prepare('INSERT INTO section_fts(rowid, text, heading_path) VALUES (?, ?, ?)');
 
+  // Normalised only in this copy, not in `section` itself: section.text is the citation's ground
+  // truth and verifyOffsets (parse/index.ts) depends on it staying byte-identical to the slice
+  // char_start/char_end point at in document_text. section_fts has no such offset to preserve, and
+  // is exactly where normalization belongs -- a script with combining marks (Thai's SARA AM
+  // ambiguity included, see util/thai.ts) can represent the same visible text as different byte
+  // sequences depending on the source CMS, PDF extractor or OCR engine, and a trigram index built
+  // from one form silently fails to match a query typed in the other unless both sides are
+  // canonicalised the same way. The query side is normalised in index/index.ts's
+  // ftsQuery/ftsPhrase.
+  const normalize = (s: string): string => canonicalizeThai(s.normalize('NFC'));
+
   db.transaction(() => {
     for (const r of rows) {
       del.run(r.id);
-      ins.run(r.id, r.text, r.heading_path);
+      ins.run(r.id, normalize(r.text), normalize(r.heading_path));
     }
   })();
   return rows.length;
