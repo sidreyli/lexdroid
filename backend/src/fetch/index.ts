@@ -625,9 +625,12 @@ export class Fetcher {
     const noRules = (): Robots => ({ disallow: [], allow: [], crawlDelayMs: null, fetched: true });
     let absent = false;
 
+    let robotsBody: string | null = null;
+
     const cached = this.readCache(`${origin}/robots.txt`);
     if (cached) {
-      s.robots = parseRobots(cached.body.toString('utf8'));
+      robotsBody = cached.body.toString('utf8');
+      s.robots = parseRobots(robotsBody);
     } else if (this.sourceMode === 'cache-only') {
       s.robots = unknown();
     } else {
@@ -639,7 +642,8 @@ export class Fetcher {
           absent = true;
           s.robots = noRules();
         } else if (res.status === 200 && res.body.length > 0 && !isSoftBlock(res)) {
-          s.robots = parseRobots(res.body.toString('utf8'));
+          robotsBody = res.body.toString('utf8');
+          s.robots = parseRobots(robotsBody);
           const hash = sha256(res.body);
           writeFileMkdir(blobPath(hash), res.body);
           writeFileMkdir(
@@ -675,6 +679,24 @@ export class Fetcher {
     this.db
       .prepare(`UPDATE portal SET robots_allows = ?, crawl_delay_ms = ? WHERE url LIKE ?`)
       .run(s.robots.disallow.length ? 0 : 1, s.robots.crawlDelayMs, `%${host}%`);
+
+    // And record the rules themselves, which is what makes the claim checkable later. The two
+    // columns above say a host had rules; they cannot say which paths those rules covered, so
+    // they cannot answer whether anything we fetched was disallowed.
+    this.db
+      .prepare(
+        `INSERT INTO robots_snapshot (host, fetched, absent, disallow, allow, crawl_delay_ms, body, recorded_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(host) DO UPDATE SET
+           fetched = excluded.fetched, absent = excluded.absent, disallow = excluded.disallow,
+           allow = excluded.allow, crawl_delay_ms = excluded.crawl_delay_ms,
+           body = COALESCE(excluded.body, robots_snapshot.body), recorded_at = excluded.recorded_at`,
+      )
+      .run(
+        host, s.robots.fetched ? 1 : 0, absent ? 1 : 0,
+        JSON.stringify(s.robots.disallow), JSON.stringify(s.robots.allow),
+        s.robots.crawlDelayMs, robotsBody, new Date().toISOString(),
+      );
 
     return s.robots;
   }

@@ -362,6 +362,26 @@ CREATE TABLE IF NOT EXISTS fetch_log (
 
 CREATE INDEX IF NOT EXISTS idx_fetch_log_run ON fetch_log(run_id);
 
+-- What each host's robots.txt said, kept so the claim can be replayed rather than repeated.
+--
+-- "We honour robots.txt" is the loudest claim this tool makes, and until now the store held two
+-- booleans about it: whether a host had any disallow rule, and its crawl delay. The rules
+-- themselves survived only in the content-addressed blob cache, reachable by recomputing the hash
+-- of the robots URL -- so checking after the fact that no fetched path was disallowed meant
+-- reconstructing 41 hosts' rules off disk, and for the largest Malaysian portal, 10,643 requests
+-- against a crawl delay that proves a real file was read, the blob was simply gone. Compliance
+-- that cannot be replayed is a claim and not a fact, so the rules we acted on are written here.
+CREATE TABLE IF NOT EXISTS robots_snapshot (
+  host            TEXT PRIMARY KEY,
+  fetched         INTEGER NOT NULL,           -- the host served rules and we parsed them
+  absent          INTEGER NOT NULL,           -- 404 or 410: the host says it has no rules
+  disallow        TEXT NOT NULL,              -- JSON array, exactly what the crawl obeyed
+  allow           TEXT NOT NULL,              -- JSON array
+  crawl_delay_ms  INTEGER,
+  body            TEXT,                       -- the file as served, where the host served one
+  recorded_at     TEXT NOT NULL
+);
+
 -- ---------------------------------------------------------------------------------------------
 -- The cell -- the unit of work
 -- ---------------------------------------------------------------------------------------------
