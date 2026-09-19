@@ -68,6 +68,8 @@ export interface Evidence {
    * instrument may one day prohibit comes back reading as a prohibition.
    */
   inheritsAPower?: boolean;
+  /** The language the provision is written in. Absent where the corpus predates the field. */
+  sectionLanguage?: string | null;
 }
 
 /** What a framework-shaped indicator is decided from. One per candidate instrument. */
@@ -1177,15 +1179,17 @@ function applyException(indicator: Indicator, evidence: Evidence[]): {
   const governmentData = /government data/i.test(indicator.exception ?? '');
   // 3.1 carves out the two sectors 5.2 and 12.01 ask about, so a cap on either is not its cap.
   const sectorsAskedElsewhere = indicator.id === '3.1';
-  if (!indicator.exception || (!governmentData && !sectorsAskedElsewhere)) {
-    return { kept: evidence, excluded: [] };
-  }
+  if (!indicator.exception) return { kept: evidence, excluded: [] };
   const kept: Evidence[] = [];
   const excluded: { evidence: Evidence; reason: string }[] = [];
   for (const e of evidence) {
+    // Every other stated exception is about what the measure is aimed at, and the reader says
+    // whether it falls within one only beside the words from the provision that show what that is.
+    // Those words are verified in Zone 2, so a claim with nothing to check is not applied.
     const out =
       (governmentData && e.finding.appliesOnlyToGovernmentData) ||
-      (sectorsAskedElsewhere && /telecom|e-?commerce|online market/i.test(e.finding.sector ?? ''));
+      (sectorsAskedElsewhere && /telecom|e-?commerce|online market/i.test(e.finding.sector ?? '')) ||
+      (e.finding.withinException === true && !!e.finding.targetWords);
     if (out) excluded.push({ evidence: e, reason: indicator.exception });
     else kept.push(e);
   }
@@ -1323,6 +1327,13 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     // opposite -- we read the provision and it does not impose this measure -- which is a finding
     // of absence in that provision and evidence for the zero rather than a bar to it.
     const name = e.finding.measure ? MEASURE_NAMES[e.finding.measure] : undefined;
+    if (name && e.finding.definingWords && !name.test(e.finding.definingWords) && otherLanguage(e)) {
+      held.push({
+        evidence: e,
+        reason: `the words "${e.finding.definingWords}" are in ${otherLanguage(e)}, and what makes a provision ${e.finding.measure} is stated only in English`,
+      });
+      continue;
+    }
     if (name && e.finding.definingWords && !name.test(e.finding.definingWords)) {
       ruledOut.push({
         evidence: e,
@@ -1372,6 +1383,13 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     // tried and is wrong: "licence to sell online" carries the domain into every subject beside it,
     // so a licence whose subject is a bank passed the test the words "sell online" had answered.
     const domain = inDomain(indicatorId, e.finding.measure);
+    if (domain && e.finding.subjectWords && !domain.test(e.finding.subjectWords) && otherLanguage(e)) {
+      held.push({
+        evidence: e,
+        reason: `the subject "${e.finding.subjectWords}" is in ${otherLanguage(e)}, and this indicator's subject is stated only in English`,
+      });
+      continue;
+    }
     if (domain && e.finding.subjectWords && !domain.test(e.finding.subjectWords)) {
       ruledOut.push({
         evidence: e,
@@ -1733,6 +1751,18 @@ function aboutness(indicatorId: string, measure: string | null): string | null {
   if (!declared) return null;
   const off = (MEASURES[indicatorId] ?? []).some((m) => m.token === measure && m.offSubject === true);
   return off ? null : declared;
+}
+
+/**
+ * The provision's language, where it is not the one the rubric's word lists are written in.
+ *
+ * The measures' names and the indicators' domains are English words, and the words they are tested
+ * against are copied from the provision. A Malay provision cannot use them whatever it says, so a
+ * failed test there shows nothing about the provision: the finding is held, not ruled out, and a
+ * zero is never built on it. Null for an English provision, and for a reading older than the field.
+ */
+function otherLanguage(e: Evidence): string | null {
+  return e.sectionLanguage && e.sectionLanguage !== 'en' ? e.sectionLanguage : null;
 }
 
 /**

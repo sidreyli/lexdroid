@@ -153,6 +153,7 @@ interface SectionRow {
   instrument_title: string;
   instrument_kind: InstrumentType['kind'];
   instrument_status: Evidence['instrumentStatus'];
+  language: string | null;
   source_url: string;
   media_type: string | null;
   heading_path: string;
@@ -346,6 +347,7 @@ export async function answerPillar(
         amendsAnotherAct: amendsAnotherAct(row.text),
         definesATerm: citesADefinition(row.text, finding.definingWords ?? finding.quote),
         inheritsAPower: inheritsAPower(row.text, finding.quote),
+        sectionLanguage: row.language,
         ...(row.instrument_status ? { instrumentStatus: row.instrument_status } : {}),
         ...(bindingness.get(row.instrument_kind) ? { bindingness: bindingness.get(row.instrument_kind)! } : {}),
         ...confirmedFlag(confirmations.verdict(row.id, finding.indicatorId, finding.measure)),
@@ -755,7 +757,7 @@ function sectionRows(db: Db, ids: number[]): SectionRow[] {
   const placeholders = ids.map(() => '?').join(',');
   return db
     .prepare(
-      `SELECT s.id, s.heading_path, s.text, s.anchor, s.page,
+      `SELECT s.id, s.heading_path, s.text, s.anchor, s.page, s.language,
               d.instrument_id, i.title AS instrument_title, i.kind AS instrument_kind, i.status AS instrument_status,
               d.url AS source_url,
               d.media_type

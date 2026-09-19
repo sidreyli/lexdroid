@@ -360,6 +360,26 @@ export function noteWith(because: string, existing: string | null): string {
   return existing ? `${because} ${existing}` : because;
 }
 
+const authoritative = new Map<string, string | null>();
+/**
+ * Said on the row whenever it quotes a language the economy does not hold authoritative: the
+ * English text of a Malaysian Act is a translation, and where the two differ the Malay governs.
+ */
+export function translationNote(economy: string, language: string | null): string | null {
+  if (!authoritative.has(economy)) {
+    let lang: string | null = null;
+    try {
+      lang = loadProfile(economy).authoritativeLanguage;
+    } catch {
+      lang = null;
+    }
+    authoritative.set(economy, lang);
+  }
+  const governs = authoritative.get(economy) ?? null;
+  if (!governs || !language || language === governs) return null;
+  return `The quotation is from the ${language} text, a translation; the ${governs} text is authoritative.`;
+}
+
 /**
  * The sentence a reviewer reads first.
  *
@@ -548,7 +568,10 @@ export function buildExportRows(db: Db, runId: string): BuildResult {
             confidenceValue(confidence),
             noteWith(
               confidence.because,
-              noteFor(f ?? (b.measure ? { measure: b.measure } : {}), b.extraction),
+              [
+                noteFor(f ?? (b.measure ? { measure: b.measure } : {}), b.extraction),
+                translationNote(cell.economy_code, languageOf(b.language, b.instrument_language, b.section_text, cell.economy_code)),
+              ].filter(Boolean).join(' ') || null,
             ),
             languageOf(b.language, b.instrument_language, b.section_text, cell.economy_code),
             b.section_id,
@@ -585,7 +608,10 @@ export function buildExportRows(db: Db, runId: string): BuildResult {
             confidenceValue(confidence),
             noteWith(
               confidence.because,
-              frameworkNote(b, (alsoCarrying.all(cell.id, cell.id) as { title: string }[]).map((x) => x.title)),
+              [
+                frameworkNote(b, (alsoCarrying.all(cell.id, cell.id) as { title: string }[]).map((x) => x.title)),
+                translationNote(cell.economy_code, languageOf(null, b.instrument_language, b.quote ?? '', cell.economy_code)),
+              ].filter(Boolean).join(' '),
             ),
             // Through the same ladder as every other row. This path used to pass the portal's
             // answer straight out, so a framework row whose instrument carried no declared

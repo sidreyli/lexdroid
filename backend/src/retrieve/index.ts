@@ -267,15 +267,16 @@ export async function retrieveForIndicator(
   const queries = queriesFor(indicator, economyRow?.name);
   const vectors = opts.vectors ?? loadVectors(db, { economy: opts.economy, ...(opts.model ? { model: opts.model } : {}) });
 
+  const second = otherLanguageCopies(db, opts.economy);
   const runs: SearchHit[][] = [];
   for (const query of queries) {
-    const lex = searchLexical(db, query, { limit: perQueryDepth, economy: opts.economy });
+    const lex = searchLexical(db, query, { limit: perQueryDepth, economy: opts.economy }).filter((h) => !second.has(h.sectionId));
     if (lex.length) runs.push(lex);
     if (vectors.ids.length) {
-      const dense = await searchDense(query, vectors, {
+      const dense = (await searchDense(query, vectors, {
         limit: perQueryDepth,
         ...(opts.model ? { model: opts.model } : {}),
-      });
+      })).filter((h) => !second.has(h.sectionId));
       if (dense.length) runs.push(dense);
     }
   }
@@ -401,6 +402,33 @@ export async function retrieveForIndicator(
     governing,
     sections,
   };
+}
+
+/** The language the rubric is written in, and so the one a provision is read in where there is a choice. */
+export const RUBRIC_LANGUAGE = 'en';
+
+/**
+ * The sections that are a second copy of a provision the corpus already holds in the rubric's
+ * language.
+ *
+ * A bilingual instrument states every provision twice, once per official language, and since its
+ * Malay half stopped being thrown away the corpus holds both. Nothing downstream knew: one
+ * provision could be retrieved twice, read twice and counted twice. Where an instrument holds the
+ * rubric's language, its other-language sections are that second copy. Where it holds only
+ * another language, they are the only copy and stay.
+ */
+export function otherLanguageCopies(db: Db, economy: string): Set<number> {
+  const rows = db
+    .prepare(
+      `SELECT s.id FROM section s
+         JOIN document d ON d.id = s.document_id
+         JOIN instrument i ON i.id = d.instrument_id
+        WHERE i.economy_code = ? AND s.language IS NOT NULL AND s.language <> ?
+          AND EXISTS (SELECT 1 FROM section s2 JOIN document d2 ON d2.id = s2.document_id
+                       WHERE d2.instrument_id = d.instrument_id AND s2.language = ?)`,
+    )
+    .all(economy, RUBRIC_LANGUAGE, RUBRIC_LANGUAGE) as { id: number }[];
+  return new Set(rows.map((r) => r.id));
 }
 
 /**

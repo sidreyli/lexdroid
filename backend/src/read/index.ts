@@ -241,6 +241,21 @@ export interface Finding {
    * finding did not score is visible rather than absent.
    */
   appliesOnlyToGovernmentData: boolean;
+  /**
+   * What the measure is aimed at -- the content, product or conduct -- copied from the provision.
+   *
+   * The exceptions the rubric states turn on this and nothing recorded it: 9.1 does not score
+   * political or criminal content, 9.3 does not score a rule that advertising must not mislead,
+   * 12.2 does not score limits on selling alcohol, tobacco or medicines online. A reading that says
+   * only "prohibits publication" cannot be told apart from one that prohibits publishing prices.
+   * Optional because readings banked before it was asked do not carry it.
+   */
+  targetWords?: string | null;
+  /**
+   * The reader's answer to whether the indicator's own stated exception covers what targetWords
+   * names. Applied in Zone 3 only with the words beside it, so it can be checked, not just trusted.
+   */
+  withinException?: boolean;
   /** A power that may be exercised is not a requirement that must be met. */
   mandatory: boolean;
   /** 6.1's lowest band includes "transfer is prohibited to one country". */
@@ -502,6 +517,8 @@ function prompt(section: SectionInput, pillarName: string, indicators: readonly 
     'everyone who joins a scheme is owed by the scheme’s members and by nobody else, so it is',
     '"specific" however evenly it falls within the scheme.',
     'sector: when the scope is specific, name that industry or scheme in the instrument’s own words.',
+    'It is required then: a duty that falls on a defined group names that group somewhere in the',
+    'instrument, and a specific scope with no sector named cannot be scored.',
     'dataScope: what kinds of data the duty covers. "personal" only where the provision’s own words',
     'say the data is about people -- "personal data", "personal information", "information about an',
     'individual". Data held by a business is not personal data because a business holds it.',
@@ -510,6 +527,14 @@ function prompt(section: SectionInput, pillarName: string, indicators: readonly 
     'service and repair information. "non-personal" if the data is plainly not about people and the',
     'provision names no kind. "all" only where the provision puts no limit whatever on what data is',
     'covered -- which is rare, and is not the same as a duty that binds every sector.',
+    '',
+    'targetWords: what the measure is aimed at -- the content, the product or the conduct it',
+    'restricts, requires or permits -- copied from the provision: "election advertising", "any',
+    'advertisement that is false or misleading", "intoxicating liquor", "prices". Null if the',
+    'provision names nothing it is aimed at beyond the data or the activity already copied.',
+    'withinException: true only if the indicator you filed this under states an exception above,',
+    'and what targetWords names falls within it. False if the indicator states none, or if it does',
+    'not cover what the provision is aimed at.',
     '',
     'Two further facts are easy to answer carelessly.',
     'statedPeriod: the length of time the provision itself names, such as "5 years". Null if it',
@@ -575,6 +600,8 @@ const schemaFor = (indicators: readonly Indicator[]) => ({
           sector: { type: ['string', 'null'] },
           dataScope: { type: 'string', enum: ['personal', 'non-personal', 'specific-category', 'all'] },
           dataDescription: { type: ['string', 'null'] },
+          targetWords: { type: ['string', 'null'] },
+          withinException: { type: 'boolean' },
           appliesOnlyToGovernmentData: { type: 'boolean' },
           mandatory: { type: 'boolean' },
           countriesNamed: { type: 'array', maxItems: 24, items: { type: 'string' } },
@@ -606,7 +633,10 @@ const schemaFor = (indicators: readonly Indicator[]) => ({
           'prescribingWords',
           'requirement',
           'sectorScope',
+          'sector',
           'dataScope',
+          'targetWords',
+          'withinException',
           'appliesOnlyToGovernmentData',
           'mandatory',
         ],
@@ -799,6 +829,14 @@ export function rejectionFor(f: Finding, sectionText: string, allowed: Set<strin
     return `the words said to empower another instrument, "${f.prescribingWords}", are not in the provision`;
   }
   if (f.scopeUnstated) return 'the reach of the duty was not answered in the terms offered';
+  // A specific scope is only as good as the sector it names. Both exceptions that remove a finding
+  // by its sector silently failed to apply to one that named none, and it was scored instead.
+  if (f.sectorScope === 'specific' && !f.sector) {
+    return 'the duty is said to bind one sector, and no sector is named';
+  }
+  if (f.targetWords && !inProvision(f.targetWords)) {
+    return `the words said to name what the measure is aimed at, "${f.targetWords}", are not in the provision`;
+  }
   return null;
 }
 
@@ -944,6 +982,8 @@ function coerce(raw: unknown): Finding | null {
     dataDescription: str(r['dataDescription']),
     scopeUnstated: sectorScope === null || dataScope === null,
     appliesOnlyToGovernmentData: r['appliesOnlyToGovernmentData'] === true,
+    targetWords: str(r['targetWords']),
+    withinException: r['withinException'] === true,
     mandatory: r['mandatory'] !== false,
     countriesNamed: Array.isArray(r['countriesNamed'])
       ? r['countriesNamed'].filter((c): c is string => typeof c === 'string' && c.trim().length > 0)

@@ -234,9 +234,12 @@ export const MEASURES: Record<string, Measure[]> = {
     },
     {
       token: 'sim-registration',
-      defines: 'the words requiring the subscriber identity to be recorded',
+      // Any act that establishes who the subscriber is before service, not only recording it: the
+      // instruments that impose this say "verify" or "confirm", and a confirmation pass reading
+      // "recorded" literally refused every one of them.
+      defines: 'the words requiring the subscriber identity to be established -- recorded, verified or confirmed -- before service',
       gloss:
-        'a requirement to record the identity of the person a SIM card or mobile subscription is issued to',
+        'a requirement to record, verify or confirm the identity of the person a SIM card or mobile subscription is issued to, before the service is provided',
       actor: 'the telecommunications operator or its dealer',
     },
   ],
@@ -649,18 +652,20 @@ export const MEASURES: Record<string, Measure[]> = {
   '4.5': [
     {
       token: 'fair-use-exception',
-      defines: 'the words permitting fair use or fair dealing as an open category',
+      // Open or confined is a question of drafting, not of name: "fair dealing" is usually a closed
+      // list of purposes, and reading the name split one provision between the two measures.
+      defines: 'the words letting any use be weighed against stated factors, whatever the statute calls the exception',
       permits: true,
       gloss:
-        'a general exception to copyright for fair use or fair dealing, stated as an open category of permitted uses rather than a closed list',
+        'a general exception to copyright under which any use may qualify when weighed against stated factors -- the purpose and character of the use, the nature of the work, the amount used, the effect on the market -- rather than only uses for listed purposes',
       actor: 'the person using the copyright work',
     },
     {
       token: 'qualified-exception',
-      defines: 'the words listing the purposes the exception is confined to',
+      defines: 'the words listing the purposes the exception is confined to, whatever the statute calls the exception',
       permits: true,
       gloss:
-        'a narrow exception to copyright confined to listed purposes, or one conditioned on not conflicting with normal exploitation and not unreasonably prejudicing the rights holder',
+        'an exception to copyright confined to named purposes -- research, criticism, review, news reporting -- including fair dealing for those purposes, or one conditioned on not conflicting with normal exploitation and not unreasonably prejudicing the rights holder',
       actor: 'the person using the copyright work',
     },
   ],

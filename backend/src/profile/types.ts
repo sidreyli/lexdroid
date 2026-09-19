@@ -117,6 +117,11 @@ export const EconomyProfile = z.object({
    * an English translation of varying authority; that distinction belongs here, in the note.
    */
   officialLanguages: z.array(LanguageTag).min(1),
+  /**
+   * The language whose text governs where the editions differ. A row quoting any other official
+   * language is quoting a translation, and says so. Null where nobody has declared it.
+   */
+  authoritativeLanguage: LanguageTag.nullable().default(null),
   languageNote: z.string().nullable().default(null),
   /** Null where nobody has declared it, which the audit reports rather than assumes. */
   jurisdictionScope: JurisdictionScope.nullable().default(null),
