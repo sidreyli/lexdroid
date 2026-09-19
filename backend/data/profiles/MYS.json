@@ -155,7 +155,7 @@
       "pillars": [
         7
       ],
-      "adapter": "sitemap",
+      "adapter": "crawl",
       "adapterConfig": {},
       "notes": "The Cyber Security Act 2024 and the codes of practice for national critical information infrastructure entities made under it."
     },

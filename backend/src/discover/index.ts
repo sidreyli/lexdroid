@@ -150,6 +150,24 @@ export async function register(
       }
     })();
     log(`  ${found.length} instrument(s) listed, ${added} new to the register`);
+    // A portal that was walked and yielded nothing is the same hole as a portal nothing can walk,
+    // and until now only the second was recorded. Seven of the thirty declared Australian,
+    // Malaysian and Singaporean sources are in this state -- the e-Gazette and MyIPO answer 403,
+    // the ACCC serves an API the adapter reads as empty, the Border Force publishes no index at
+    // all -- and every one of them looked, in the run's own output, exactly like a regulator that
+    // happens to publish no instruments. A cell reads that as "no requirement".
+    if (found.length === 0) {
+      db.prepare('INSERT INTO discard (stage, subject, reason, detail, recorded_at) VALUES (?, ?, ?, ?, ?)')
+        .run('discover', portal.url, 'portal-yielded-nothing',
+          `${portal.name} (${portal.kind}) was walked by the ${portal.adapter} adapter and listed no instruments`, now);
+      results.push({
+        portal: portal.name,
+        found: 0,
+        added: 0,
+        error: `walked by the ${portal.adapter} adapter and listed no instruments`,
+      });
+      continue;
+    }
     results.push({ portal: portal.name, found: found.length, added });
   }
 

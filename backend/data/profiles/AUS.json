@@ -91,7 +91,7 @@
         6,
         7
       ],
-      "adapter": "sitemap",
+      "adapter": "crawl",
       "adapterConfig": {},
       "notes": "Registered privacy codes, and the Australian Privacy Principles guidelines that state how the Privacy Act's principles are read. The codes register is the part that carries binding instruments."
     },
@@ -132,7 +132,7 @@
         9,
         11
       ],
-      "adapter": "drupal",
+      "adapter": "crawl",
       "adapterConfig": {},
       "notes": "Competition and consumer enforcement, and the Consumer Data Right rules made under the Competition and Consumer Act."
     },
