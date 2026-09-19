@@ -299,11 +299,13 @@ export function recordPillarAnswer(run: RunContext, answer: PillarAnswer): void 
   const cellIdentity = db.prepare('SELECT run_id, economy_code, indicator_id FROM cell WHERE id = ?');
   const currentTo = new Map(
     (
-      db.prepare('SELECT id, last_amended_on FROM instrument WHERE economy_code = ?').all(answer.economy) as {
-        id: number;
-        last_amended_on: string | null;
-      }[]
-    ).map((r) => [r.id, r.last_amended_on]),
+      db
+        .prepare(
+          `SELECT id, COALESCE(current_to, last_amended_on) AS current_to FROM instrument
+            WHERE economy_code = ?`,
+        )
+        .all(answer.economy) as { id: number; current_to: string | null }[]
+    ).map((r) => [r.id, r.current_to]),
   );
 
   /** One entry per instrument the cell's search returned, best rank first, as the decision saw it. */

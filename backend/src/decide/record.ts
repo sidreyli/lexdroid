@@ -123,8 +123,8 @@ export function recordedDecider(
   );
 
   const currentTo = new Map<number, string | null>(
-    (db.prepare('SELECT id, last_amended_on FROM instrument').all() as
-      { id: number; last_amended_on: string | null }[]).map((r) => [r.id, r.last_amended_on]),
+    (db.prepare('SELECT id, COALESCE(current_to, last_amended_on) AS current_to FROM instrument').all() as
+      { id: number; current_to: string | null }[]).map((r) => [r.id, r.current_to]),
   );
 
   const byId = new Map(loadRubric().indicators.map((i) => [i.id, i]));

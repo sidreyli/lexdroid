@@ -432,9 +432,14 @@ export async function answerPillar(
   // 5. Decide. No model, no network, no ESCAP answers.
   const indexedSections = retrieval[0]?.indexedSections ?? 0;
   // A zero read out of a stale consolidation is a weaker claim than one read out of current law.
+  // The consolidation's own currency date answers this; the last amendment is the fallback for a
+  // register that publishes one and not the other. Reading the amendment date alone said a
+  // Malaysian Act was current to its last amendment, which is a different and stronger claim.
   const currentTo = new Map<number, string | null>(
-    (db.prepare(`SELECT id, last_amended_on FROM instrument WHERE economy_code = ?`).all(economy) as
-      { id: number; last_amended_on: string | null }[]).map((r) => [r.id, r.last_amended_on]),
+    (db.prepare(
+      `SELECT id, COALESCE(current_to, last_amended_on) AS current_to FROM instrument
+        WHERE economy_code = ?`,
+    ).all(economy) as { id: number; current_to: string | null }[]).map((r) => [r.id, r.current_to]),
   );
   const decisions = indicators.map((indicator) => {
     const isFramework = indicator.shape === 'framework';
