@@ -411,24 +411,41 @@ export const RUBRIC_LANGUAGE = 'en';
  * The sections that are a second copy of a provision the corpus already holds in the rubric's
  * language.
  *
- * A bilingual instrument states every provision twice, once per official language, and since its
- * Malay half stopped being thrown away the corpus holds both. Nothing downstream knew: one
- * provision could be retrieved twice, read twice and counted twice. Where an instrument holds the
- * rubric's language, its other-language sections are that second copy. Where it holds only
- * another language, they are the only copy and stay.
+ * A bilingual instrument states every provision twice, once per official language, and reading
+ * both retrieves, reads and counts one provision twice. But "the instrument holds some English" is
+ * not "this provision is held in English": Malaysia's banking code of practice has one English
+ * section beside 128 Malay ones, and dropping every Malay section of an instrument with any English
+ * in it lost the other 127. So a provision is a second copy only where its own counterpart is
+ * there -- a section of the same instrument, in the rubric's language, under the same label --
+ * paired one to one, so that a label the Malay text uses three times is excused by three English
+ * sections and not by one. An unlabelled section cannot be paired and is kept.
  */
 export function otherLanguageCopies(db: Db, economy: string): Set<number> {
   const rows = db
     .prepare(
-      `SELECT s.id FROM section s
+      `SELECT s.id, d.instrument_id AS instrument, s.label, s.language
+         FROM section s
          JOIN document d ON d.id = s.document_id
          JOIN instrument i ON i.id = d.instrument_id
-        WHERE i.economy_code = ? AND s.language IS NOT NULL AND s.language <> ?
-          AND EXISTS (SELECT 1 FROM section s2 JOIN document d2 ON d2.id = s2.document_id
-                       WHERE d2.instrument_id = d.instrument_id AND s2.language = ?)`,
+        WHERE i.economy_code = ? AND s.label IS NOT NULL AND s.language IS NOT NULL
+        ORDER BY d.id, s.ordinal`,
     )
-    .all(economy, RUBRIC_LANGUAGE, RUBRIC_LANGUAGE) as { id: number }[];
-  return new Set(rows.map((r) => r.id));
+    .all(economy) as { id: number; instrument: number; label: string; language: string }[];
+
+  const counterparts = new Map<string, number>();
+  const keyOf = (r: { instrument: number; label: string }): string => `${r.instrument}|${r.label}`;
+  for (const r of rows) {
+    if (r.language === RUBRIC_LANGUAGE) counterparts.set(keyOf(r), (counterparts.get(keyOf(r)) ?? 0) + 1);
+  }
+  const second = new Set<number>();
+  for (const r of rows) {
+    if (r.language === RUBRIC_LANGUAGE) continue;
+    const left = counterparts.get(keyOf(r)) ?? 0;
+    if (left === 0) continue;
+    counterparts.set(keyOf(r), left - 1);
+    second.add(r.id);
+  }
+  return second;
 }
 
 /**

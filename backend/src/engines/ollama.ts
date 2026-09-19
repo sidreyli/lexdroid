@@ -256,7 +256,18 @@ export async function embed(texts: string[], model: string = EMBEDDING_MODEL): P
   if (!res.embeddings || res.embeddings.length !== texts.length) {
     throw new Error(`${model} returned ${res.embeddings?.length ?? 0} vectors for ${texts.length} inputs`);
   }
-  return res.embeddings.map((v) => Float32Array.from(v));
+  // A vector of the wrong width, or one holding a NaN, is stored without complaint and poisons
+  // every similarity it is later compared against. The count was checked; the contents were not.
+  const dims = res.embeddings[0]?.length ?? 0;
+  return res.embeddings.map((v, i) => {
+    if (v.length !== dims || dims === 0) {
+      throw new Error(`${model} returned a ${v.length}-dim vector where the batch is ${dims}-dim (input ${i})`);
+    }
+    if (!v.every((x) => Number.isFinite(x))) {
+      throw new Error(`${model} returned a vector holding a non-finite value (input ${i})`);
+    }
+    return Float32Array.from(v);
+  });
 }
 
 export interface GenerateOptions {
