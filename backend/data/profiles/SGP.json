@@ -11,7 +11,13 @@
     "zh",
     "ta"
   ],
+  "authoritativeLanguage": "en",
   "languageNote": "Malay is the national language, but legislation is enacted and published in English, and the English text is authoritative. A Singapore run therefore exercises no non-English source path; Malaysia is where that is tested.",
+  "jurisdictionScope": {
+    "held": "national",
+    "note": "Singapore is a unitary state, so all of its law is made at the one tier Singapore Statutes Online publishes.",
+    "notHeld": []
+  },
   "instrumentTypes": [
     {
       "rank": 1,
@@ -22,10 +28,24 @@
     },
     {
       "rank": 2,
+      "kind": "order",
+      "localName": "Subsidiary legislation -- Orders",
+      "bindingness": "binding",
+      "note": "Orders made under an Act, including commencement and exemption Orders."
+    },
+    {
+      "rank": 2,
       "kind": "regulation",
       "localName": "Subsidiary legislation (Regulations, Rules, Orders)",
       "bindingness": "binding",
       "note": "Made under an Act and published under it on SSO. Where the Act prescribes 'requirements prescribed under this Act', the operative rule usually lives here rather than in the Act."
+    },
+    {
+      "rank": 2,
+      "kind": "rule",
+      "localName": "Subsidiary legislation -- Rules",
+      "bindingness": "binding",
+      "note": "Rules made under an Act. The rank 2 tier already names Rules and Orders; only the kind codes were absent."
     },
     {
       "rank": 3,

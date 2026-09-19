@@ -11,9 +11,7 @@ import type { Database } from 'better-sqlite3';
 import { openBaseline, escapScore } from '../baseline/index.js';
 import { loadRubric } from '../rubric/index.js';
 import { topBandScoresAbsence } from '../decide/index.js';
-
-/** ESCAP name each economy code. Their sheets are keyed by name, ours by code. */
-const ESCAP_NAME: Record<string, string> = { AUS: 'Australia', MYS: 'Malaysia', SGP: 'Singapore' };
+import { economyNames } from '../profile/index.js';
 
 export type Verdict = 'agree' | 'over-claim' | 'under-claim' | 'recall-miss' | 'abstained' | 'ungraded';
 
@@ -100,8 +98,11 @@ export function scorecard(db: Database, runId: string, baselinePath?: string): C
                ORDER BY c.economy_code, c.indicator_id`)
     .all(runId) as { economy: string; indicator: string; ours: number | null; findings: number; instruments: number }[];
 
+  // Their sheets are keyed by name, ours by code.
+  const names = economyNames();
+
   return rows.map((r) => {
-    const their = theirs.get(`${ESCAP_NAME[r.economy] ?? r.economy}/${r.indicator}`) ?? null;
+    const their = theirs.get(`${names.get(r.economy) ?? r.economy}/${r.indicator}`) ?? null;
     return {
       economy: r.economy,
       indicator: r.indicator,

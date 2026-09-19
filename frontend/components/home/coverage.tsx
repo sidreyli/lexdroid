@@ -129,9 +129,17 @@ export function Coverage({
                 {p.name}
               </span>
             </div>
+            {/*
+              One row per economy, which is what the legend beside the heading promises. This was
+              fixed at three rows, so a fourth economy wrapped into the next column and every
+              indicator after the first read as the wrong economy.
+            */}
             <div
               className="grid w-fit gap-[3px]"
-              style={{ gridTemplateRows: "repeat(3, 1fr)", gridAutoFlow: "column" }}
+              style={{
+                gridTemplateRows: `repeat(${economies.length}, 1fr)`,
+                gridAutoFlow: "column",
+              }}
             >
               {p.indicatorIds.map((id) =>
                 economies.map((e) => {

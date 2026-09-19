@@ -8,8 +8,10 @@
  * ESCAP marks this directly: "a tool that flags text it could not read is better built than one
  * that presents everything with equal confidence."
  */
+import { detectLanguage } from './language.js';
 import { SectionBuilder, type ParsedDocument } from './types.js';
 import { ocrPdfPages, type OcrEngine } from './ocr.js';
+import { amendmentHistory } from './lom.js';
 
 /** Below this many characters per page, the page is an image of text rather than text. */
 const MIN_CHARS_PER_PAGE = 80;
@@ -17,12 +19,50 @@ const MIN_CHARS_PER_PAGE = 80;
 const PROVISION_LINE = /^\s*(\d+[A-Z]{0,2})\.\s*(?:—|-|–)?\s*(?:\(1\))?\s*(?=\S)/;
 /** India notifications sometimes number a paragraph "12.5 Definitions" without a second dot. */
 const DECIMAL_PROVISION_LINE = /^\s*[‘'"]?(\d+\.\d+[A-Z]{0,2})(?:\s+(?=\S)|\s*$)/;
-const provisionAt = (line: string): RegExpExecArray | null =>
+/**
+ * A tariff code is not a provision.
+ *
+ * A customs or sales tax order is a table of Harmonised System codes, and an HS code is written
+ * exactly like a numbered clause: "0705.29.00 00 - - Other". `DECIMAL_PROVISION_LINE` was added for
+ * Indian notifications that number a paragraph "12.5 Definitions", and it matches every line of
+ * every tariff schedule. Malaysia's corpus carried 31,812 of these -- 36% of the economy, spread
+ * over nine orders, one of which alone minted 5,224 "provisions" of which 92% were under 200
+ * characters. They are real text and they stay in the document; what they are not is a rule that
+ * can be retrieved, cited and read on its own.
+ *
+ * Two shapes say so from the label alone, and neither costs Australia or Singapore a single
+ * section: an integer part that starts with a zero ("0705.29", "05", the bare "0.41" of a price
+ * schedule), and four digits before the dot ("6811.82"), which is an HS heading and subheading.
+ * A bare four-digit label cannot be separated this way -- Australia's Corporations Act has a
+ * section 1274 and its Social Security Act a section 1190 -- so that one is left to `tableHeadings`
+ * below, which reads the document rather than the label.
+ */
+const TARIFF_LABEL = /^(?:0|\d{4}\.\d)/;
+const numberedAt = (line: string): RegExpExecArray | null =>
   DECIMAL_PROVISION_LINE.exec(line) ?? PROVISION_LINE.exec(line);
+const provisionAt = (line: string): RegExpExecArray | null => {
+  const found = numberedAt(line);
+  return found && TARIFF_LABEL.test(found[1]!) ? null : found;
+};
+/** The label a numbered line carries when that label is a tariff code and not a provision. */
+const tariffLabelAt = (line: string): string | null => {
+  const found = numberedAt(line);
+  return found && TARIFF_LABEL.test(found[1]!) ? found[1]! : null;
+};
 const PART_LINE = /^\s*(PART\s+[IVXLC0-9]+[A-Z]?\b.*|Part\s+\d+[A-Z]?\b.*)$/;
 /** A PDF's text layer can split a heading's letters -- Malaysia's Acts render "Part II" as
  *  "P art II" -- so the test is on the letters, not on how the page happened to space them. */
 const PART_SPLIT = /^PART([IVXLC]+|\d+)([A-Z]?)$/i;
+/**
+ * A Schedule is a container as a Part is, and it restarts the numbering. Keyed without it, the
+ * Schedule's "1." and the Act's section 1 are the same (Part, label), the last copy wins, and the
+ * Medicines (Advertisement and Sale) Act 1956 lost sections 1 to 6 -- the offences -- to a list of
+ * diseases. Tested on the letters for the same reason as a Part.
+ */
+// English puts the ordinal before the noun and Malay after it ("JADUAL KEDUA"); either may letter
+// its Schedules instead ("JADUAL A").
+const SCHEDULE_LINE =
+  /^(?:FIRST|SECOND|THIRD|FOURTH|FIFTH|SIXTH|SEVENTH|EIGHTH|NINTH|TENTH|ELEVENTH|TWELFTH)?(SCHEDULE|JADUAL)(PERTAMA|KEDUA|KETIGA|KEEMPAT|KELIMA|KEENAM|KETUJUH|KELAPAN|KESEMBILAN|KESEPULUH|[IVXLC]+|\d+[A-Z]?|[A-Z])?$/i;
 /** An Act states its purpose in its long title, which is the best evidence of what it is for. */
 const LONG_TITLE = /^An Act to\b/i;
 const ENACTING = /^ENACTED by\b/i;
@@ -34,12 +74,28 @@ export interface PageText {
   ocrConfidence?: number;
 }
 
-function languageOf(text: string): string | null {
-  const devanagari = (text.match(/[\u0900-\u097f]/g) ?? []).length;
-  const latin = (text.match(/[A-Za-z]/g) ?? []).length;
-  if (devanagari > latin && devanagari > 3) return 'hi';
-  if (latin > 3) return 'en';
-  return null;
+/**
+ * The language of a page or a provision, asked of the shared detector and among the languages the
+ * economy publishes law in. The copy that used to live here called any Latin script English, so a
+ * Malay page was recorded as English: the export's Language of Source column said so, and the two
+ * halves of a bilingual gazette carried the same key and overwrote each other.
+ */
+function languageOf(text: string, candidates?: readonly string[]): string | null {
+  return detectLanguage(text, candidates?.length ? { candidates } : {});
+}
+
+/**
+ * A page too short to tell is in the language of the page before it: a page holding a Schedule's
+ * heading or a signature block is not a change of language, and reading it as one would split a
+ * document's numbering in two.
+ */
+function languageOfPages(pages: PageText[], candidates?: readonly string[]): PageText[] {
+  let last: string | null = null;
+  return pages.map((page) => {
+    const language = languageOf(page.lines.join(' '), candidates) ?? last;
+    last = language;
+    return { ...page, language };
+  });
 }
 
 export async function extractPages(bytes: Buffer): Promise<PageText[]> {
@@ -76,7 +132,7 @@ export async function extractPages(bytes: Buffer): Promise<PageText[]> {
       lastY = y;
     }
     if (current.trim()) lines.push(current.replace(/\s+/g, ' ').trim());
-    pages.push({ page: p, lines, language: languageOf(lines.join(' ')) });
+    pages.push({ page: p, lines, language: null });
     page.cleanup();
   }
   await doc.destroy();
@@ -133,6 +189,89 @@ export function runningHeader(pages: PageText[]): string | null {
   return [grow(-1), best.text, grow(1)].filter(Boolean).join(' ');
 }
 
+/** A page number on a line of its own, however the printer chose to write it. */
+const PAGE_NUMBER = /^(?:page\s+)?[ivxlcdm\d]+(?:\s*(?:of|\/)\s*[ivxlcdm\d]+)?$/i;
+/** How far in from the top and the bottom of a page furniture is allowed to sit. */
+const EDGE = 2;
+
+/**
+ * A repeated line reduced to the part of it that does not change from page to page.
+ *
+ * The page number is the part that changes, and in these PDFs it is not on a line of its own:
+ * the Communications and Multimedia Act's text layer emits "137Communications and Multimedia"
+ * as one line. Keying on the whole line makes every page's header unique and the repetition
+ * invisible -- which is why `runningHeader` above finds nothing in that Act.
+ */
+function furnitureKey(line: string): string {
+  return line.replace(/[^A-Za-z ]+/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+/**
+ * The pages without the header, footer and page number printed around their text.
+ *
+ * A PDF has no idea that a page break falls mid-sentence, so the furniture is emitted in the
+ * middle of the provision it interrupts. Section 264 of the Communications and Multimedia Act
+ * is stored as "...applications service provider or content applications service /
+ * 137Communications and Multimedia / provider or any of his employees, shall not be liable...",
+ * and it is the correct rule for Malaysia's 8.2 -- refused, because the quote the engine reads
+ * off the page is not the text we hold. Corpus-wide this is on 7,746 of 55,232 Malaysian
+ * sections, and 26% of the quotes refused as not-in-the-provision are on such a section against
+ * a 14% base rate.
+ *
+ * Only the first and last couple of lines of a page are eligible, because that is where
+ * furniture is printed and a wrongly dropped line is a lost provision. A line that opens a
+ * provision or names a Part is never dropped however often it repeats.
+ */
+export function stripPageFurniture(pages: PageText[]): PageText[] {
+  if (pages.length < 4) return pages;
+  const edges = (p: PageText): number[] => {
+    if (p.lines.length < 6) return [];
+    const last = p.lines.length - 1;
+    return [0, 1, last - 1, last];
+  };
+  const structural = (line: string): boolean =>
+    provisionAt(line) !== null ||
+    PART_LINE.test(line) ||
+    (line.length < 40 && PART_SPLIT.test(line.replace(/\s+/g, '')));
+
+  const at = new Map<string, Set<number>>();
+  for (const p of pages) {
+    for (const i of edges(p)) {
+      const line = p.lines[i]!;
+      if (line.length > 120 || structural(line)) continue;
+      const key = furnitureKey(line);
+      if (key.length < 4 && !PAGE_NUMBER.test(line.trim())) continue;
+      const seen = at.get(key) ?? new Set<number>();
+      seen.add(p.page);
+      at.set(key, seen);
+    }
+  }
+  // The same bar `runningHeader` sets: repeated on at least three pages, and on a real share of
+  // them, so that a body line landing at a page edge twice is not mistaken for a header. A header
+  // alternates recto and verso and so reaches only half the pages; a bare number carries no words
+  // to be recognised by, so it has to be printed like a page number on nearly every page before
+  // it is read as one -- otherwise the last figure in a schedule of fees is furniture.
+  const furniture = new Set(
+    [...at.entries()]
+      .filter(([key, seen]) => seen.size >= 3 && seen.size >= pages.length * (key ? 0.15 : 0.6))
+      .map(([key]) => key),
+  );
+  if (furniture.size === 0) return pages;
+
+  return pages.map((p) => {
+    const drop = new Set(
+      edges(p).filter((i) => {
+        const line = p.lines[i]!;
+        if (line.length > 120 || structural(line)) return false;
+        const key = furnitureKey(line);
+        return furniture.has(key) && (key.length >= 4 || PAGE_NUMBER.test(line.trim()));
+      }),
+    );
+    if (drop.size === 0) return p;
+    return { ...p, lines: p.lines.filter((_, i) => !drop.has(i)) };
+  });
+}
+
 /** A heading set in capitals, allowing for the punctuation and numerals a title carries. */
 function isCapitalised(line: string): boolean {
   const letters = line.replace(/[^A-Za-z]/g, '');
@@ -152,19 +291,55 @@ export function sectionise(pages: PageText[]): SectionBuilder {
     page: number;
     lines: string[];
     language: string | null;
+    schedule?: boolean;
   }
   const items: ({ prose: string } | Candidate)[] = [];
+  // Every dotted number the document carries, provision or tariff code, kept by its integer part.
+  // This is what tells an HS heading from a section numbered in the thousands, further down.
+  const dotted = new Set<string>();
   let part = '';
   let titlePending = false;
   let open: Candidate | null = null;
 
+  let pageLanguage: string | null = null;
+  const partIn = new Map<string, string>();
+
   for (const p of pages) {
-    for (const line of p.lines) {
+    // Each language's text keeps its own container. A bilingual instrument prints its Malay text
+    // and then its English one, and the Malay text's closing JADUAL, left open, filed the English
+    // section 1 inside it -- where it took the Schedule's own item 1's place. And a Schedule's forms
+    // are printed in alternating languages, so the English Schedule is picked up again, not closed,
+    // when the English pages resume: closed, its form's item 1 took the English section 1's place.
+    if (p.language && pageLanguage && p.language !== pageLanguage) {
+      partIn.set(pageLanguage, part);
+      part = partIn.get(p.language) ?? '';
+      titlePending = false;
+    }
+    pageLanguage = p.language ?? pageLanguage;
+    for (const [at, line] of p.lines.entries()) {
       const split = line.length < 40 ? PART_SPLIT.exec(line.replace(/\s+/g, '')) : null;
       if (split) {
         open = null;
         part = `Part ${split[1]!.toUpperCase()}${split[2] ?? ''}`;
         titlePending = true;
+        continue;
+      }
+      // "Schedule" is also the marginal note of the section that brings the Schedule in, and that
+      // note sits directly above its section's number; a Schedule's own heading never does.
+      const next = p.lines[at + 1];
+      const schedule =
+        line.length < 40 && !(next && provisionAt(next)) ? SCHEDULE_LINE.exec(line.replace(/\s+/g, '')) : null;
+      if (schedule) {
+        const name = line.replace(/\s+/g, ' ').trim().toUpperCase();
+        // The same name again at the head of the Schedule's next page is its running header.
+        if (name === part) continue;
+        part = name;
+        titlePending = false;
+        // The Schedule is text in its own right -- a list of offences, of diseases, of forms -- so
+        // it opens a section of its own. Left as loose prose it reached no search at all, and the
+        // Criminal Procedure Code lost a quarter of its text that way.
+        open = { label: null, heading: name, part: '', page: p.page, lines: [line], language: p.language ?? null, schedule: true };
+        items.push(open);
         continue;
       }
       const partMatch = PART_LINE.exec(line);
@@ -186,6 +361,10 @@ export function sectionise(pages: PageText[]): SectionBuilder {
       // The long title arrives in the front matter, which in these PDFs follows the arrangement of
       // sections, so it has to break out of whatever entry happened to be open.
       if (LONG_TITLE.test(line)) {
+        // The long title opens the operative text, so whatever container the arrangement named
+        // last -- its closing "SCHEDULE", most often -- does not carry over onto section 1.
+        part = '';
+        titlePending = false;
         open = {
           label: null, heading: 'Long title', part: '', page: p.page,
           lines: [line], language: p.language ?? null,
@@ -197,6 +376,10 @@ export function sectionise(pages: PageText[]): SectionBuilder {
         open = null;
         continue;
       }
+      // A tariff row is not opened as a provision, but its number is still evidence about what the
+      // numbers around it are: "2208.20" is why the bare "2208" above it is a heading.
+      const tariff = tariffLabelAt(line);
+      if (tariff !== null && tariff.includes('.')) dotted.add(tariff.slice(0, tariff.indexOf('.')));
       const provMatch = provisionAt(line);
       if (provMatch) {
         open = {
@@ -211,22 +394,98 @@ export function sectionise(pages: PageText[]): SectionBuilder {
     }
   }
 
+  // The heading of a tariff table, folded back into the text it heads.
+  //
+  // "2208" opens a run of "2208.20", "2208.30", "2208.40" -- it is the HS heading those subheadings
+  // hang under, and on its own it says nothing a search could use. No label shape separates it from
+  // a real provision numbered in the thousands: the Corporations Act has a section 1274 and the
+  // Social Security Act a section 1190, both of them substantial. The document does separate them.
+  // A statute that has a section 1190 does not also have a section 1190.2, and a tariff schedule
+  // always does. Measured across all three economies, this drops 4,310 Malaysian table headings and
+  // leaves every one of Australia's 638 four-digit sections standing.
+  for (const it of items) {
+    if (!('lines' in it) || !it.label) continue;
+    const dot = it.label.indexOf('.');
+    if (dot > 0) dotted.add(it.label.slice(0, dot));
+  }
+  const heads = (label: string | null): boolean =>
+    label !== null && /^\d{4}$/.test(label) && dotted.has(label);
+  if (items.some((it) => 'lines' in it && heads(it.label))) {
+    const folded: typeof items = [];
+    for (const it of items) {
+      if ('lines' in it && heads(it.label)) {
+        // The words stay in the document: they are the table's own heading, and the rows beneath
+        // them are read with them. What they stop being is a provision of their own.
+        const prev = folded[folded.length - 1];
+        if (prev && 'lines' in prev) prev.lines.push(...it.lines);
+        else for (const line of it.lines) folded.push({ prose: line });
+        continue;
+      }
+      folded.push(it);
+    }
+    items.length = 0;
+    items.push(...folded);
+  }
+
   // A document that opens with its own arrangement of sections lists every provision twice: once
   // as a heading with nothing under it, and once as the provision itself. The arrangement always
   // comes first, so the real one is the last copy: length is a worse test, because the front
   // matter that follows the arrangement glues itself onto whichever entry was open.
+  //
+  // The Part belongs in the key. An Act numbers its sections once through the whole statute, so
+  // dropping every earlier copy of "12." is right there; a code of practice restarts at 1 in each
+  // Part, so the same key names a different provision six times over and only the last survived.
+  // The Malaysian Communications and Multimedia Content Code 2022 came out of this as 103 sections
+  // of a 74-page code, its Part 5 reduced to a single stub and its Part 7 gone -- and Part 5
+  // clause 2.1 is the innocent carrier rule, which is the provision ESCAP cites for Malaysia's
+  // 8.2. An arrangement of sections repeats its Part headings along with its entries, so keying on
+  // both still collapses the arrangement against the body.
   const lastAt = new Map<string, number>();
+  const key = (it: { language?: string | null; part?: string; label: string | null }): string =>
+    `${it.language ?? ''}:${it.part ?? ''}:${it.label}`;
   items.forEach((it, n) => {
-    if ('lines' in it && it.label) lastAt.set(`${it.language ?? ''}:${it.label}`, n);
+    if ('lines' in it && it.label) lastAt.set(key(it), n);
   });
+  // The Part only collapses the two copies when both were filed under the same one, and the
+  // arrangement's own Part headings are the lines a scan most often mangles: "C hapter I" is not a
+  // Chapter, so the Finance (No. 2) Act 2023 listed 96 of its sections as empty headings ahead of
+  // the real ones. So a contents entry is also recognised by what it is, whatever Part or language
+  // it landed in: a line with nothing under it, whose number turns up again later with a body, and
+  // whose words turn up again later too -- as the marginal note set beside the real provision.
+  //
+  // The words are what keep a one-line provision. A code that restarts its numbering in each Part
+  // can hold "2.1 A broadcaster shall schedule content..." on a single line with a longer 2.1 after
+  // it, and that sentence is the provision, not an entry pointing at one: it is not repeated.
+  const words = (s: string): string => s.toLowerCase().replace(/[^a-z]/g, '');
+  const bodiedAt = new Map<string, number>();
+  const startsAt: number[] = [];
+  let later = '';
+  items.forEach((it, n) => {
+    startsAt[n] = later.length;
+    later += words('lines' in it ? it.lines.join(' ') : it.prose);
+    if ('lines' in it && it.label && it.lines.length > 1) bodiedAt.set(it.label, n);
+  });
+  const listed = (it: Candidate, n: number): boolean => {
+    if (it.lines.length !== 1 || (bodiedAt.get(it.label ?? '') ?? -1) <= n) return false;
+    const entry = words(it.lines[0]!.replace(/^\s*[\d.]+[A-Z]{0,2}\.?/, ''));
+    return entry.length >= 6 && later.indexOf(entry, startsAt[n + 1] ?? later.length) >= 0;
+  };
 
+  // The first provision that survives with a body: an arrangement entry never does, since its copy
+  // under the real provision comes later.
+  const firstBodied = items.findIndex(
+    (it, n) => 'lines' in it && it.label !== null && it.lines.length > 1 && lastAt.get(key(it)) === n && !listed(it, n),
+  );
   const builder = new SectionBuilder();
   for (const [n, it] of items.entries()) {
     if (!('lines' in it)) {
       builder.addProse(it.prose);
       continue;
     }
-    if (it.label && lastAt.get(`${it.language ?? ''}:${it.label}`) !== n) continue;
+    if (it.label && (lastAt.get(key(it)) !== n || listed(it, n))) continue;
+    // The arrangement closes by listing the Schedules, before any provision has a body. That copy
+    // collects the cover pages that follow it, and it is not the Schedule.
+    if (it.schedule && !(firstBodied < n)) continue;
     const text = it.lines.join('\n').trim();
     if (!text) continue;
     builder.add({
@@ -234,7 +493,7 @@ export function sectionise(pages: PageText[]): SectionBuilder {
       label: it.label,
       text,
       page: it.page,
-      language: it.language ?? languageOf(text),
+      language: it.language ?? null,
       repealed: /\[?\bRepealed\b/i.test(text.slice(0, 120)),
       anchor: null,
     });
@@ -246,6 +505,8 @@ export function sectionise(pages: PageText[]): SectionBuilder {
 export interface ParsePdfOptions {
   /** Supplied by tests or specialist deployments; the default is local English + Hindi Tesseract. */
   ocrEngine?: OcrEngine;
+  /** The languages the economy publishes law in, from its profile. Language is guessed among these. */
+  languages?: readonly string[];
 }
 
 function titleFromSections(builder: SectionBuilder): string | null {
@@ -301,7 +562,7 @@ export async function parsePdf(bytes: Buffer, url: string, opts: ParsePdfOptions
         return {
           page: page.page,
           lines: ocr.lines,
-          language: languageOf(text),
+          language: null,
           ocrConfidence: ocr.confidence,
         };
       });
@@ -330,17 +591,24 @@ export async function parsePdf(bytes: Buffer, url: string, opts: ParsePdfOptions
     };
   }
 
-  const builder = sectionise(pages);
+  // `runningHeader` below still reads the pages as printed: the header is what it is looking for.
+  const clean = stripPageFurniture(languageOfPages(pages, opts.languages));
+  const builder = sectionise(clean);
 
   if (builder.sections.length === 0) {
     // Text came out but no provision structure did. Keep it as one section rather than discard it:
     // a guideline or a policy document is often genuinely unnumbered, and it is still evidence.
-    const whole = pages.map((p) => p.lines.join('\n')).join('\n').trim();
+    const whole = clean.map((p) => p.lines.join('\n')).join('\n').trim();
     builder.add({
       headingPath: url, label: null, text: whole, page: 1,
-      language: languageOf(whole), repealed: false, anchor: null,
+      language: languageOf(whole, opts.languages), repealed: false, anchor: null,
     });
   }
+
+  // A revised Malaysian Act closes with the law revision commissioner's own table of amendments.
+  // The register could only say which reprint it serves, so without this the store had no date
+  // for when a Malaysian Act was actually last changed.
+  const amended = amendmentHistory(builder.text);
 
   return {
     extraction: ocrUsed.length > 0 ? 'ocr' : 'pdf-text',
@@ -350,6 +618,7 @@ export async function parsePdf(bytes: Buffer, url: string, opts: ParsePdfOptions
     title: runningHeader(pages) ?? titleFromSections(builder) ?? subjectTitle(pages),
     meta: {
       pages: String(pages.length),
+      ...(amended ? { lastAmendedOn: amended.on, lastAmendedBasis: amended.basis } : {}),
       ...(ocrUsed.length ? { ocrPages: ocrUsed.join(',') } : {}),
       ...(confidences.length
         ? { ocrConfidence: String(Math.round(confidences.reduce((sum, n) => sum + n, 0) / confidences.length)) }

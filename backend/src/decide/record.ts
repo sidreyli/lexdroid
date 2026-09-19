@@ -13,7 +13,10 @@ import { citationUrl } from '../export/index.js';
 import { loadRubric } from '../rubric/index.js';
 import { decide, type Decision, type Evidence, type FrameworkEvidence, type SurfacedInstrument } from './index.js';
 import type { FxRates } from './currency.js';
-import { amendsAnotherAct, citesADefinition } from '../parse/identity.js';
+import { amendsAnotherAct, citesADefinition, inheritsAPower } from '../parse/identity.js';
+import { loadProfile } from '../profile/index.js';
+import type { InstrumentType } from '../profile/types.js';
+import { loadConfirmations, noConfirmations, confirmedFlag, type ConfirmationSet } from '../read/confirmations.js';
 
 export interface RecordedCell {
   id: number;
@@ -38,11 +41,41 @@ export function parseGoverning(raw: string | null): number[] {
   }
 }
 
+/**
+ * Whether this run's stored scores were computed against the second reading's verdicts.
+ *
+ * Asked of the run rather than assumed, because the answer differs by run and getting it wrong
+ * makes every score look wrong. A run recorded before the pass was consulted wrote no confirmation
+ * state at all, and must be re-derived the way it was decided or the check is of the wrong thing.
+ */
+export function scoredWithConfirmations(db: Db, runId: string): boolean {
+  const row = db
+    .prepare(
+      `SELECT COUNT(a.confirmations_asked) AS recorded
+         FROM cell c JOIN cell_answer a ON a.cell_id = c.id WHERE c.run_id = ?`,
+    )
+    .get(runId) as { recorded: number } | undefined;
+  return (row?.recorded ?? 0) > 0;
+}
+
+export interface RebuildOptions {
+  /**
+   * The verdicts to rebuild against, where the caller knows better than the stored state does.
+   *
+   * The re-score that follows a confirmation pass is the case: it is about to write the state this
+   * would otherwise be read from, so it must say what it is writing rather than ask.
+   */
+  confirmations?: ConfirmationSet;
+}
+
 export function recordedDecider(
   db: Db,
   runId: string,
   rates: FxRates | null,
+  opts: RebuildOptions = {},
 ): { cells: RecordedCell[]; rebuild: (cell: RecordedCell) => Decision | null } {
+  const confirmations =
+    opts.confirmations ?? (scoredWithConfirmations(db, runId) ? loadConfirmations(db) : noConfirmations());
   const cells = db
     .prepare(
       `SELECT c.id, c.economy_code, c.indicator_id, c.sections_read, c.sections_indexed, c.surfaced,
@@ -57,8 +90,9 @@ export function recordedDecider(
   // per-cell rebuild produces a smaller input and can land on a different answer. Australia's
   // de minimis cell is where that showed: recorded as answered, re-derived as unanswerable.
   const evidenceForPillar = db.prepare(
-    `SELECT r.attributes, r.section_id, s.heading_path, s.text, s.anchor, d.url AS doc_url,
-            i.id AS instrument_id, i.title
+    `SELECT r.attributes, r.section_id, s.heading_path, s.text, s.anchor, s.page, s.language, s.repealed,
+            d.url AS doc_url, d.media_type,
+            i.id AS instrument_id, i.title, i.kind AS instrument_kind, i.status AS instrument_status
        FROM reading r
        JOIN cell c ON c.id = r.cell_id
        JOIN section s ON s.id = r.section_id
@@ -70,8 +104,8 @@ export function recordedDecider(
   const pillarCache = new Map<string, Evidence[]>();
 
   const frameworkFor = db.prepare(
-    `SELECT f.instrument_id, f.establishes_framework, f.horizontal, f.dedicated,
-            f.dedicated_shown, f.sectoral_shown, f.sector, f.quote, i.title, i.source_url
+    `SELECT f.instrument_id, f.establishes_framework, f.framework_shown, f.horizontal, f.dedicated,
+            f.dedicated_shown, f.sectoral_shown, f.sector, f.quote, i.title, i.source_url, i.kind
        FROM framework_reading f JOIN instrument i ON i.id = f.instrument_id
       WHERE f.cell_id = ? ORDER BY f.id`,
   );
@@ -89,11 +123,22 @@ export function recordedDecider(
   );
 
   const currentTo = new Map<number, string | null>(
-    (db.prepare('SELECT id, last_amended_on FROM instrument').all() as
-      { id: number; last_amended_on: string | null }[]).map((r) => [r.id, r.last_amended_on]),
+    (db.prepare('SELECT id, COALESCE(current_to, last_amended_on) AS current_to FROM instrument').all() as
+      { id: number; current_to: string | null }[]).map((r) => [r.id, r.current_to]),
   );
 
   const byId = new Map(loadRubric().indicators.map((i) => [i.id, i]));
+
+  const profiles = new Map<string, Map<string, InstrumentType['bindingness']>>();
+  const bindingnessFor = (economy: string, kind: InstrumentType['kind']) => {
+    let m = profiles.get(economy);
+    if (!m) {
+      m = new Map(loadProfile(economy).instrumentTypes.map((t) => [t.kind, t.bindingness]));
+      profiles.set(economy, m);
+    }
+    const bindingness = m.get(kind);
+    return bindingness ? { bindingness } : {};
+  };
 
   const rebuild = (cell: RecordedCell): Decision | null => {
     const indicator = byId.get(cell.indicator_id);
@@ -106,7 +151,9 @@ export function recordedDecider(
       evidence = [];
       for (const r of evidenceForPillar.all(runId, cell.economy_code, `${pillar}.%`) as {
         attributes: string; section_id: number; heading_path: string; text: string;
-        anchor: string | null; doc_url: string; instrument_id: number; title: string;
+        anchor: string | null; page: number | null; doc_url: string; media_type: string | null;
+        instrument_id: number; title: string; instrument_kind: InstrumentType['kind'];
+        instrument_status: Evidence['instrumentStatus']; language: string | null; repealed: number;
       }[]) {
         let findings: unknown = [];
         try {
@@ -136,7 +183,18 @@ export function recordedDecider(
             headingPath: r.heading_path,
             amendsAnotherAct: amendsAnotherAct(r.text),
             definesATerm: citesADefinition(r.text, finding.definingWords ?? finding.quote),
-            citation: citationUrl(r.doc_url, r.anchor),
+            inheritsAPower: inheritsAPower(r.text, finding.quote),
+            sectionLanguage: r.language,
+            ...(r.repealed ? { sectionRepealed: true } : {}),
+            citation: citationUrl(r.doc_url, r.anchor, { page: r.page, mediaType: r.media_type }),
+            // What this economy says an instrument of that kind can do. The live run reads it from
+            // the profile and this rebuild did not, so a guideline that binds nobody was counted
+            // here and discounted there -- one cell, and the only one the two paths disagreed on.
+            ...(r.instrument_status ? { instrumentStatus: r.instrument_status } : {}),
+            ...bindingnessFor(cell.economy_code, r.instrument_kind),
+            // The second reading's verdict, from the same set the live run scored against. Without
+            // it this rebuild answers a different question from the one it is checking.
+            ...confirmedFlag(confirmations.verdict(r.section_id, finding.indicatorId, finding.measure)),
           });
         }
       }
@@ -144,19 +202,23 @@ export function recordedDecider(
     }
 
     const frameworkEvidence: FrameworkEvidence[] = (frameworkFor.all(cell.id) as {
-      instrument_id: number; establishes_framework: number; horizontal: number | null;
+      instrument_id: number; establishes_framework: number; framework_shown: number | null;
+      horizontal: number | null;
       dedicated: number | null; dedicated_shown: number | null; sectoral_shown: number | null;
       sector: string | null; quote: string | null; title: string; source_url: string;
+      kind: InstrumentType['kind'] | null;
     }[]).map((f) => ({
       instrumentId: f.instrument_id,
       instrumentTitle: f.title,
       citation: f.source_url,
       establishesFramework: f.establishes_framework === 1,
+      frameworkShown: f.framework_shown === null ? null : f.framework_shown === 1,
       horizontal: f.horizontal === 1,
       dedicated: f.dedicated === 1,
       dedicatedShown: f.dedicated_shown === 1,
       sectoralShown: f.sectoral_shown === 1,
       sector: f.sector,
+      bindingness: f.kind ? bindingnessFor(cell.economy_code, f.kind).bindingness ?? null : null,
       quote: f.quote ?? '',
     }));
 

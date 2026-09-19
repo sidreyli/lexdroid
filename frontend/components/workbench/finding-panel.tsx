@@ -372,7 +372,9 @@ function Citation({
       ) : (
         <dl className="mt-3 grid gap-x-6 gap-y-1.5 text-[12.5px] @xl:grid-cols-2">
           <Fact label="Provision" value={draft.article ? `Section ${draft.article}` : "None"} />
-          <Fact label="Confidence" value={row.confidence ? row.confidence.split("--")[0].trim() : "not stated"} />
+          {/* A number now, as the template validates it. What earned it is the first sentence of
+              Notes, which is where a reviewer reads it. */}
+          <Fact label="Confidence" value={row.confidence?.trim() || "not stated"} />
         </dl>
       )}
     </Section>

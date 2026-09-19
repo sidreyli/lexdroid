@@ -15,6 +15,7 @@ import { parseIndiaCode } from './indiacode.js';
 import { parsePdf } from './pdf.js';
 import { parseSso } from './sso.js';
 import { identityMismatch } from './identity.js';
+import { opensAsPublishedAbout, publishedAbout } from '../discover/titles.js';
 import type { ParsedDocument, UnreadReason } from './types.js';
 
 export * from './types.js';
@@ -26,14 +27,15 @@ const BY_HOST: Record<string, (html: string, url: string) => ParsedDocument> = {
   'www.legislation.gov.au': parseFrl,
 };
 
-export async function parseDocument(res: FetchResult): Promise<ParsedDocument> {
+/** `languages`: the economy's official languages, among which a PDF's language is guessed. */
+export async function parseDocument(res: FetchResult, opts: { languages?: readonly string[] } = {}): Promise<ParsedDocument> {
   const host = new URL(res.finalUrl || res.url).host;
 
   if (res.mediaType.includes('vnd.lexdroid.indiacode+json')) {
     return parseIndiaCode(res.body.toString('utf8'), res.url);
   }
 
-  if (res.mediaType.includes('pdf')) return parsePdf(res.body, res.url);
+  if (res.mediaType.includes('pdf')) return parsePdf(res.body, res.url, opts.languages ? { languages: opts.languages } : {});
 
   if (res.mediaType.includes('html') || res.mediaType.includes('xml')) {
     const html = res.body.toString('utf8');
@@ -89,6 +91,28 @@ export function storeDocument(
         ? identityMismatch(parsed.sections, filed.title, { titleProvisional: filed.title_provisional === 1 })
         : null;
     if (wrong) parsed = { ...parsed, unread: { reason: 'another-instrument', detail: wrong.detail } };
+
+    // A regulator's site publishes consultations, releases and news beside its instruments, and
+    // a page that files one under a neutral name still says what it is in its opening words.
+    // Answers cited a consultation paper as Malaysia's data protection guidance, and a news item
+    // about a review of an Act as the Act. A legislation database is not asked: it publishes
+    // nothing else, and its titles use these words as the names of laws.
+    if (filed && !parsed.unread) {
+      const portal = db
+        .prepare(`SELECT p.kind FROM instrument i JOIN portal p ON 'portal:' || p.id = i.discovered_via WHERE i.id = ?`)
+        .get(instrumentId) as { kind: string } | undefined;
+      const opening = parsed.text.replace(/\s+/g, ' ').trim().slice(0, 90);
+      const about = publishedAbout(filed.title) ? filed.title : opensAsPublishedAbout(opening) ? opening : undefined;
+      if (portal && portal.kind !== 'legislation-database' && portal.kind !== 'gazette' && about !== undefined) {
+        parsed = {
+          ...parsed,
+          unread: {
+            reason: 'not-an-instrument',
+            detail: `"${about.slice(0, 90)}" is published about an instrument, not an instrument, so nothing in it may be cited as law.`,
+          },
+        };
+      }
+    }
     db.prepare(
       `INSERT INTO document (instrument_id, url, content_hash, media_type, bytes, http_status,
                              fetched_at, from_cache, extraction, section_count)
@@ -108,6 +132,18 @@ export function storeDocument(
     const { id: documentId } = db
       .prepare('SELECT id FROM document WHERE url = ? AND content_hash = ?')
       .get(fetched.url, fetched.contentHash) as { id: number };
+
+    // The lexical index is contentless, so nothing cascades into it. A section deleted below
+    // leaves its index row behind, and the replacement the re-parse writes gets a new id, so the
+    // old row is never reached again. Six hundred thousand had built up that way -- four index
+    // rows for every section the corpus actually holds -- and bm25 weighs each term against the
+    // whole table, which means every lexical rank was being computed against mostly deleted text.
+    // Forgetting them belongs here, before the rows they point at are gone and their ids with them.
+    db.prepare(
+      `DELETE FROM section_fts WHERE rowid IN (
+         SELECT s.id FROM section s JOIN document d ON d.id = s.document_id
+          WHERE d.instrument_id = ? AND d.url = ?)`,
+    ).run(instrumentId, fetched.url);
 
     // The same address read again is the same document, not a second one. Keying only on the bytes
     // let a re-read leave the stale reading in place beside the fresh one, so every provision the
@@ -129,11 +165,12 @@ export function storeDocument(
       .run(documentId, parsed.text, parsed.parser, new Date().toISOString());
 
     const insert = db.prepare(
-      `INSERT INTO section (document_id, ordinal, heading_path, label, text, char_start, char_end, page, language, anchor)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO section (document_id, ordinal, heading_path, label, text, char_start, char_end, page, language, anchor, repealed)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
+    // Every parser works out whether a provision is repealed, and this is where it used to be lost.
     for (const s of parsed.sections) {
-      insert.run(documentId, s.ordinal, s.headingPath, s.label, s.text, s.charStart, s.charEnd, s.page, s.language, s.anchor);
+      insert.run(documentId, s.ordinal, s.headingPath, s.label, s.text, s.charStart, s.charEnd, s.page, s.language, s.anchor, s.repealed ? 1 : 0);
     }
 
     indexSections(db, documentId);

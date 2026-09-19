@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { createWriteStream, existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { NextResponse } from "next/server";
-import { BACKEND, ENGINES_PATH } from "@/lib/data/paths";
+import { BACKEND, ENGINES_PATH, TSX_CLI } from "@/lib/data/paths";
 import { readFileSync } from "node:fs";
 
 export const dynamic = "force-dynamic";
@@ -53,13 +53,27 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Send a JSON body describing the run" }, { status: 400 });
   }
 
-  const economies = (body.economies ?? []).map((e) => e.trim().toUpperCase()).filter(Boolean);
+  // These two go into a command line that is run through a shell, so what they may contain is
+  // stated rather than assumed: three letters, and a pillar the rubric has. Anything else is
+  // refused here instead of being quoted somewhere further down.
+  const economies = (body.economies ?? []).map((e) => String(e).trim().toUpperCase()).filter(Boolean);
   if (economies.length === 0) {
     return NextResponse.json({ error: "Pick at least one economy" }, { status: 400 });
   }
-  const pillars = (body.pillars ?? ALL_PILLARS).filter((p) => Number.isInteger(p) && p > 0);
+  const badEconomy = economies.find((e) => !/^[A-Z]{3}$/.test(e));
+  if (badEconomy) {
+    return NextResponse.json(
+      { error: `${badEconomy} is not an economy code; use three letters, as in MYS` },
+      { status: 400 },
+    );
+  }
+  const pillars = (body.pillars ?? ALL_PILLARS).filter((p) => Number.isInteger(p));
   if (pillars.length === 0) {
     return NextResponse.json({ error: "Pick at least one pillar" }, { status: 400 });
+  }
+  const badPillar = pillars.find((p) => !ALL_PILLARS.includes(p));
+  if (badPillar !== undefined) {
+    return NextResponse.json({ error: `There is no pillar ${badPillar}` }, { status: 400 });
   }
 
   const engine = declaredEngine(body.engine);
@@ -72,7 +86,7 @@ export async function POST(request: Request) {
   }
 
   const args = [
-    "tsx",
+    TSX_CLI,
     "scripts/fleet.ts",
     "--economies",
     economies.join(","),
@@ -89,9 +103,14 @@ export async function POST(request: Request) {
   const logPath = join(logDir, `${startedAt}.log`);
   const log = createWriteStream(logPath);
 
-  const child = spawn("npx", args, {
+  // No shell. The arguments are an array the operating system hands to the program as they are,
+  // so nothing in them can be read as a command however it is spelled -- the validation above and
+  // this are two answers to the same question, and only this one holds if the validation is ever
+  // widened. Node runs the runner itself, because Windows will not start npx's .cmd without a
+  // shell and putting the shell back is the thing being removed.
+  const child = spawn(process.execPath, args, {
     cwd: BACKEND,
-    shell: true,
+    shell: false,
     detached: false,
     env: { ...process.env, LLM_PROVIDER: "ollama" },
   });

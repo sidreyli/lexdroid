@@ -8,7 +8,21 @@
   "officialLanguages": [
     "en"
   ],
+  "authoritativeLanguage": "en",
   "languageNote": "Commonwealth law is enacted and published in English only.",
+  "jurisdictionScope": {
+    "held": "Commonwealth",
+    "note": "The Federal Register of Legislation publishes Commonwealth law only, and every portal this profile names is a Commonwealth body.",
+    "notHeld": [
+      {
+        "tier": "State and Territory law",
+        "note": "Each State and Territory legislates on the matters the Constitution leaves to it and publishes its own register. A Commonwealth instrument often borrows a term or a regime from a State Act, which is how one is cited here without being held.",
+        "citedAs": [
+          "\\b[A-Z][\\w'(),. -]{2,120}? (?:Act|Regulations?|Rules?) \\d{4} \\((?:NSW|Vic|Qld|WA|SA|Tas|ACT|NT)\\)"
+        ]
+      }
+    ]
+  },
   "instrumentTypes": [
     {
       "rank": 1,
@@ -19,10 +33,24 @@
     },
     {
       "rank": 2,
+      "kind": "order",
+      "localName": "Legislative instrument -- Orders",
+      "bindingness": "binding",
+      "note": "Orders made under an Act and registered on the Federal Register of Legislation. Same tier and same force as a Regulation."
+    },
+    {
+      "rank": 2,
       "kind": "regulation",
       "localName": "Legislative instrument (Regulations, Rules, Determinations, Declarations)",
       "bindingness": "binding",
       "note": "Made under an Act, registered on the Federal Register, and disallowable by Parliament. Where an Act says the regulations may prescribe something, the operative rule is here."
+    },
+    {
+      "rank": 2,
+      "kind": "rule",
+      "localName": "Legislative instrument -- Rules",
+      "bindingness": "binding",
+      "note": "Rules made under an Act and registered on the Federal Register of Legislation. The rank 2 tier already names them; only the kind code was absent."
     },
     {
       "rank": 3,
@@ -91,7 +119,7 @@
         6,
         7
       ],
-      "adapter": "sitemap",
+      "adapter": "crawl",
       "adapterConfig": {},
       "notes": "Registered privacy codes, and the Australian Privacy Principles guidelines that state how the Privacy Act's principles are read. The codes register is the part that carries binding instruments."
     },
@@ -132,7 +160,7 @@
         9,
         11
       ],
-      "adapter": "drupal",
+      "adapter": "crawl",
       "adapterConfig": {},
       "notes": "Competition and consumer enforcement, and the Consumer Data Right rules made under the Competition and Consumer Act."
     },

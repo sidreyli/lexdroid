@@ -15,6 +15,7 @@ import { request } from 'undici';
 import { cacheEnabled, cacheGet, cacheKey, cachePut, resumePath } from './cache.js';
 import { enginePool, engineHosts } from './pool.js';
 import { OllamaUnavailable } from './errors.js';
+import { hostedConfig, hostedGenerate } from './hosted.js';
 export { OllamaUnavailable, NoEnginesLeft } from './errors.js';
 
 /** The first engine named. Reads go to whichever engine the pool frees; this is for one-offs. */
@@ -255,7 +256,18 @@ export async function embed(texts: string[], model: string = EMBEDDING_MODEL): P
   if (!res.embeddings || res.embeddings.length !== texts.length) {
     throw new Error(`${model} returned ${res.embeddings?.length ?? 0} vectors for ${texts.length} inputs`);
   }
-  return res.embeddings.map((v) => Float32Array.from(v));
+  // A vector of the wrong width, or one holding a NaN, is stored without complaint and poisons
+  // every similarity it is later compared against. The count was checked; the contents were not.
+  const dims = res.embeddings[0]?.length ?? 0;
+  return res.embeddings.map((v, i) => {
+    if (v.length !== dims || dims === 0) {
+      throw new Error(`${model} returned a ${v.length}-dim vector where the batch is ${dims}-dim (input ${i})`);
+    }
+    if (!v.every((x) => Number.isFinite(x))) {
+      throw new Error(`${model} returned a vector holding a non-finite value (input ${i})`);
+    }
+    return Float32Array.from(v);
+  });
 }
 
 export interface GenerateOptions {
@@ -342,28 +354,52 @@ export async function generate(
     if (hit) return { ...hit, fromCache: false, fromResume: true };
   }
 
-  const res = await onAnyEngine<{
-    response?: string;
-    message?: { content?: string };
-    prompt_eval_count?: number;
-    eval_count?: number;
-    done_reason?: string;
-  }>('/api/chat', body, 600_000, model);
+  // Where the run is pointed at a hosted engine, the request goes out in the chat-completions
+  // shape instead. Everything on either side of this -- the cache above, the runaway and silence
+  // checks below -- is the same, because a second engine that took a second code path would be a
+  // second set of failures rather than a comparison.
+  const hosted = hostedConfig();
+  let text: string;
+  let promptTokens: number;
+  let completionTokens: number;
+  let overran: boolean;
 
-  const text = res.message?.content ?? res.response ?? '';
-  const promptTokens = res.prompt_eval_count ?? 0;
-  const completionTokens = res.eval_count ?? 0;
+  if (hosted) {
+    const answer = await hostedGenerate(prompt, system, {
+      model: hosted.model,
+      ...(opts.schema ? { schema: opts.schema } : {}),
+      temperature: opts.temperature ?? 0,
+      maxOutputTokens: limit,
+    });
+    text = answer.text;
+    promptTokens = answer.promptTokens;
+    completionTokens = answer.completionTokens;
+    overran = answer.finishReason === 'length';
+  } else {
+    const res = await onAnyEngine<{
+      response?: string;
+      message?: { content?: string };
+      prompt_eval_count?: number;
+      eval_count?: number;
+      done_reason?: string;
+    }>('/api/chat', body, 600_000, model);
+
+    text = res.message?.content ?? res.response ?? '';
+    promptTokens = res.prompt_eval_count ?? 0;
+    completionTokens = res.eval_count ?? 0;
+    overran = res.done_reason === 'length';
+  }
   const durationMs = Date.now() - started;
 
   // An answer that ran to the limit is the tail of a repetition loop, and reporting it as a
   // reading would present the loop's leftovers as what the provision says. Thrown before the
   // cache is written, so a runaway is never replayed as if it were a reading.
-  if (res.done_reason === 'length' || completionTokens >= limit) {
+  if (overran || completionTokens >= limit) {
     throw new EngineOverran(model, limit, promptTokens, completionTokens, durationMs);
   }
   if (!text.trim()) throw new EngineSilent(model, promptTokens, durationMs);
 
-  const answer = { text, promptTokens, completionTokens, durationMs, model };
+  const answer = { text, promptTokens, completionTokens, durationMs, model: hosted?.model ?? model };
   if (key) cachePut(key, answer);
   if (resume && resumeKey) cachePut(resumeKey, answer, resume);
   return { ...answer, fromCache: false, fromResume: false };

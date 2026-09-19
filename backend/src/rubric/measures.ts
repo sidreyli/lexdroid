@@ -1,3 +1,5 @@
+import { availableProfiles, loadProfile } from '../profile/index.js';
+
 /**
  * The measures each indicator recognises, and the words that describe them.
  *
@@ -232,9 +234,12 @@ export const MEASURES: Record<string, Measure[]> = {
     },
     {
       token: 'sim-registration',
-      defines: 'the words requiring the subscriber identity to be recorded',
+      // Any act that establishes who the subscriber is before service, not only recording it: the
+      // instruments that impose this say "verify" or "confirm", and a confirmation pass reading
+      // "recorded" literally refused every one of them.
+      defines: 'the words requiring the subscriber identity to be established -- recorded, verified or confirmed -- before service',
       gloss:
-        'a requirement to record the identity of the person a SIM card or mobile subscription is issued to',
+        'a requirement to record, verify or confirm the identity of the person a SIM card or mobile subscription is issued to, before the service is provided',
       actor: 'the telecommunications operator or its dealer',
     },
   ],
@@ -406,7 +411,15 @@ export const MEASURES: Record<string, Measure[]> = {
   '11.4': [
     {
       token: 'deviating-encryption-standard',
-      defines: 'the words naming the algorithm, key length or cryptographic standard required',
+      // Reader-side, so it takes effect at the next run: batch it. The question used to ask which
+      // algorithm was required, and the deciding word in this measure is not "algorithm" but
+      // "deviating". Asked the old way Malaysia answered with a code-of-practice checklist row
+      // reading "Encryption (if required)" -- a topic, not a standard -- and Australia with
+      // "approved by the Australian Signals Directorate", which names a real national authority
+      // whose approved list is the international algorithms. Neither departs from anything. A gate
+      // that asked for an algorithm name refused both, and refused the second wrongly: it does name
+      // a standard. Departure is the thing to ask for, and only the reader can see it.
+      defines: 'the words showing the required encryption departs from the internationally agreed standard',
       gloss:
         'a required encryption algorithm, key length or cryptographic standard set by this economy in place of an internationally agreed one',
       actor: 'the supplier or operator of the system that must use it',
@@ -582,6 +595,12 @@ export const MEASURES: Record<string, Measure[]> = {
       gloss:
         'an anti-dumping duty, countervailing duty or safeguard measure imposed on imported ICT or electronic goods',
       actor: 'the importer of the goods',
+      // A duty is charged on whoever brings the goods in. Every finding this indicator collected in
+      // all three economies binds the Minister, the Government or the court instead -- the sections
+      // of the enabling Act that say when and how a duty may be imposed, which are the procedure
+      // and not the measure. ESCAP answers this one from a register of measures actually in force,
+      // so an Act read as four of them is the reading to stop, not the register to reproduce.
+      actorKind: 'private',
     },
   ],
   // 4.2 and 4.6 ask for the same two remedies over different rights, so the right being sued on is
@@ -633,18 +652,20 @@ export const MEASURES: Record<string, Measure[]> = {
   '4.5': [
     {
       token: 'fair-use-exception',
-      defines: 'the words permitting fair use or fair dealing as an open category',
+      // Open or confined is a question of drafting, not of name: "fair dealing" is usually a closed
+      // list of purposes, and reading the name split one provision between the two measures.
+      defines: 'the words letting any use be weighed against stated factors, whatever the statute calls the exception',
       permits: true,
       gloss:
-        'a general exception to copyright for fair use or fair dealing, stated as an open category of permitted uses rather than a closed list',
+        'a general exception to copyright under which any use may qualify when weighed against stated factors -- the purpose and character of the use, the nature of the work, the amount used, the effect on the market -- rather than only uses for listed purposes',
       actor: 'the person using the copyright work',
     },
     {
       token: 'qualified-exception',
-      defines: 'the words listing the purposes the exception is confined to',
+      defines: 'the words listing the purposes the exception is confined to, whatever the statute calls the exception',
       permits: true,
       gloss:
-        'a narrow exception to copyright confined to listed purposes, or one conditioned on not conflicting with normal exploitation and not unreasonably prejudicing the rights holder',
+        'an exception to copyright confined to named purposes -- research, criticism, review, news reporting -- including fair dealing for those purposes, or one conditioned on not conflicting with normal exploitation and not unreasonably prejudicing the rights holder',
       actor: 'the person using the copyright work',
     },
   ],
@@ -958,6 +979,11 @@ export const MEASURES: Record<string, Measure[]> = {
       token: 'de-minimis-threshold',
       defines: 'the words stating the value below which the duty or tax is not charged',
       permits: true,
+      // A de minimis is a threshold on goods arriving, and the gloss below has said so all along
+      // without anything enforcing it. Every tax act states thresholds, and a threshold read off
+      // one of them decided this cell on a wine tax credit the Commissioner "is not required to
+      // consider" -- a real figure, in a real revenue statute, with nothing crossing a border.
+      crossesBorder: true,
       gloss:
         'a value of imported goods below which no customs duty, import duty or import tax is charged, however the provision names it -- a de minimis, a relief, an exemption by value, a threshold for informal clearance',
       alsoAsked: ['goods of a value not exceeding a stated amount are exempt from import duty or sales tax'],
@@ -1176,7 +1202,105 @@ const NATIONALITY = /\b(citizen\w*|national(ity|s)?\b|resident\w*|domicil\w*|per
 const TRADE_DEFENCE = /\b(dump\w*|countervail\w*|safeguard\w*|subsid\w*|injur\w*)\b/i;
 const SEPARATION = /\b(separat\w*|divest\w*|structural\w*|unbundl\w*|account\w*|divid\w*)\b/i;
 const JOINT_VENTURE = /\b(joint venture\w*|partner\w*|local equity|incorporat\w*|jointly)\b/i;
+/**
+ * Where a thing has to be, in the words a system uses for its own territory.
+ *
+ * Half of it is the relation -- local, domestic, onshore, established or incorporated here -- which
+ * no legal system can word its own way. The other half is that a statute usually just says the
+ * place: "such bank or banks in Malaysia". Both halves are needed, and the second was typed in as
+ * Malaysia, Singapore and Australia, which is a fact about the corpus rather than about the
+ * indicator and works on no fourth economy.
+ *
+ * So the names come from the profiles instead. `data/profiles/*.json` is where an economy is
+ * declared, and adding one there now extends this by construction. Failing to read a profile costs
+ * that economy's name and nothing else, so a half-written profile does not take the rubric down.
+ */
+const ECONOMY_NAMES = availableProfiles()
+  .map((code) => {
+    try {
+      return loadProfile(code).name;
+    } catch {
+      return null;
+    }
+  })
+  .filter((n): n is string => !!n && /^[A-Za-z ]+$/.test(n));
 
+const LOCALITY = new RegExp(
+  `\\b(local\\w*|domestic\\w*|onshore|in the (?:economy|country|State)|established in|incorporated in|resident\\w*` +
+    (ECONOMY_NAMES.length ? `|${ECONOMY_NAMES.map((n) => `${n}n?`).join('|')}` : '') +
+    `)\\b`,
+  'i',
+);
+
+const IDENTITY = /\b(identit\w*|identif\w*|authenticat\w*|verif\w*|know your customer|kyc|proof of (?:name|age|address))\b/i;
+
+/**
+ * A measure defined by what a rule lets happen *without* is named by the absence, not by the topic.
+ *
+ * 11.1's top band is "standards set, adopted or changed without publication, notice or an
+ * opportunity to comment". Every word naming the topic also appears in a rule mandating the
+ * opposite, so topic is no test at all: section 132 of Australia's Telecommunications Act, headed
+ * "Public consultation on industry standards", was filed as opaque standard-setting on the words
+ * "free copies of the draft will be made available to members of the public" -- a transparency
+ * duty read as its own negation. Singapore's accounting-standards objects clause went the same way
+ * on "must have the following objects". ESCAP scores both economies 0.
+ *
+ * So what a provision must say to be this measure is that the publicity need not happen. That is
+ * the measure's own definition and not a list of instruments to exclude, and a provision that
+ * publishes, consults or invites comment fails it on the very words it was cited for.
+ */
+const WITHOUT_PUBLICITY = new RegExp(
+  [
+    /\b(without|absent|other than|need not|not (?:be )?(?:required|obliged|necessary)|no (?:requirement|obligation|need|notice)|exempt\w*|dispens\w*|waiv\w*)\b/.source,
+    /\b(confidential\w*|secret\w*|closed|in camera|unpublished)\b/.source,
+  ].join('|'),
+  'i',
+);
+
+/**
+ * A measure defined as a restriction has to be made out by words that restrict something.
+ *
+ * 12.4.7 is the residual band of pillar 12's payment group -- "any other restriction on making or
+ * receiving payment online" -- and it was answered 1 in all three economies where ESCAP answers 0.
+ * Every one of the six provisions it rested on was made out on a noun phrase. Malaysia's Online
+ * Safety Act was read on a seizure power's list of seizable things, "Any book, account, document,
+ * computerized data, signboard, card, letter, pamphlet, leaflet, notice, facility, apparatus,
+ * equipment, device, thing or matter"; its Price Control Act on a production power's "any
+ * information (including, but not limited to, records, accounts and computerized data)"; Singapore
+ * on "electronic transaction system" and on "information or material"; Australia on the single
+ * adjective "excessive". A catch-all with no term of art to ask for will take anything, and what it
+ * took was the enforcement machinery of acts that mention accounts and cards in passing.
+ *
+ * So ask for the only thing every restriction has in common: a word that does the restricting. The
+ * lookbehind is not decoration -- "including, but not limited to" is drafting boilerplate that
+ * appears in exactly the production powers this is meant to exclude, and matching "limited" there
+ * would readmit them.
+ */
+const RESTRICTION = new RegExp(
+  [
+    /\b(prohibit\w*|forbid\w*|ban(?:s|ned|ning)?|restrict\w*|(?<!not\s)limit\w*|cap(?:s|ped|ping)?)\b/.source,
+    /\b(?:shall|must|may|can)\s+not\b|\bnot\s+(?:be\s+)?(?:permit\w*|allow\w*|entitled)\b/.source,
+    /\b(no person|nobody|only|unless|except (?:with|where|if)|subject to)\b/.source,
+    /\b(requir\w*|oblig\w*|mandat\w*|condition(?:al|ed)? (?:on|upon))\b/.source,
+  ].join('|'),
+  'i',
+);
+
+/**
+ * A list of algorithm names was tried here for 'deviating-encryption-standard' and removed.
+ *
+ * It was worth a cell and it was wrong. Auditing every gate by what it threw out across the three
+ * economies, that one fired four times in two cells, and one of the four was Australia's "approved
+ * by the Australian Signals Directorate" -- refused for naming no cryptographic standard, when the
+ * ASD list is exactly that. The cell still scored what ESCAP scores, by the wrong route.
+ *
+ * The general shape: a closed list of the specific things that exist rejects the real provision
+ * that names a thing not on it, and there is no list of every cryptographic authority on earth. A
+ * category any legal system would have words for is safe; an enumeration of the ones in our corpus
+ * is a fact about the corpus. What the measure actually turns on is departure from the
+ * international standard, which is a question about meaning, so it is asked of the reader in
+ * `defines` instead. See the note on LOCALITY, which lost the economy names for the same reason.
+ */
 export const MEASURE_NAMES: Readonly<Record<string, RegExp>> = {
   // A licence measure needs a word meaning licence. Five indicators turn on one.
   'content-licence': LICENCE,
@@ -1199,6 +1323,13 @@ export const MEASURE_NAMES: Readonly<Record<string, RegExp>> = {
   'mra-certification-accepted': /\b(mutual recognition|foreign\w*|overseas|another (country|economy|jurisdiction)|recognis\w*|recogniz\w*)\b/i,
   'foreign-exclusion-from-standards': /\b(foreign\w*|non-?resident\w*|overseas|nationa\w*)\b/i,
   'national-payment-standard': STANDARD,
+  // Named by its negation rather than by a term of art: see WITHOUT_PUBLICITY above.
+  'opaque-standard-setting': WITHOUT_PUBLICITY,
+  // A residual band with no term of art to ask for: see RESTRICTION above.
+  'other-payment-restriction': RESTRICTION,
+  // 12.2's two measures say "restricting" in their own `defines` as well.
+  'online-purchase-limit': RESTRICTION,
+  'online-delivery-limit': RESTRICTION,
   // Duties on transmission are duties; a trade defence measure names its own instrument.
   'transmission-duty': DUTY_OR_TAX,
   'transmission-duty-power': DUTY_OR_TAX,
@@ -1208,12 +1339,26 @@ export const MEASURE_NAMES: Readonly<Record<string, RegExp>> = {
   'joint-venture': JOINT_VENTURE,
   'accounting-separation': SEPARATION,
   'functional-separation': SEPARATION,
-  'local-bank-account': /\b(bank\w*|account\w*|financial institution\w*)\b/i,
+  // Named by the half of it that is a term of art, which is the local half and not the bank. Its
+  // own `defines` asks for "an account with a bank established in the economy", and asking only
+  // for a word meaning bank let section 137 of Malaysia's Islamic Financial Services Act decide
+  // the cell: a takaful broker must hold client money "in a licensed Islamic bank separate from
+  // its own account". That is client-money segregation, which every one of these systems requires
+  // and none of them counts as a localisation rule, and the words never say where the bank is.
+  'local-bank-account': LOCALITY,
   'local-representative': /\b(represent\w*|agent\w*|office\w*|establish\w*|resident\w*)\b/i,
   'local-presence': /\b(present\w*|establish\w*|office\w*|branch\w*|subsidiar\w*|incorporat\w*|resident\w*)\b/i,
   'local-domain-or-presence': /\b(domain\w*|present\w*|establish\w*|office\w*|branch\w*|subsidiar\w*|incorporat\w*)\b/i,
   // The officer measure is a person put in a position, and the role words already carry that.
-  'sim-registration': LICENCE,
+  // Pillar 8's two identity measures are named by identity, and were not asked for it. The top
+  // band took a customs declaration for imported timber, a duty to keep a record of "personal
+  // data", and a university rule about staff asking for proof of ID; the 0.5 band was asked for a
+  // word meaning licence, which is what a SIM rule is least likely to say -- it says the
+  // subscriber's identity must be recorded. So the top band admitted provisions that identify
+  // nobody while the band below it turned away the ones that do, and all three economies scored
+  // the top band where ESCAP scores the one under it.
+  'user-identity': IDENTITY,
+  'sim-registration': IDENTITY,
   'patent-local-representative': /\b(represent\w*|agent\w*|attorney\w*|address for service)\b/i,
 };
 
@@ -1265,6 +1410,62 @@ const PRODUCT_CERT = /\b(product\w*|goods|equipment|device\w*|apparatus|applianc
 const TECHNICAL_STANDARD = /\b(standard\w*|specification\w*|technical regulation\w*|code of practice|conformity)\b/i;
 const CUSTOMS = /\b(import\w*|consign\w*|customs|duty|duties|goods|parcel\w*|shipment\w*|value of the goods|declaration\w*)\b/i;
 
+/**
+ * What a provision has to be *about* to be a given measure, where the indicator's own subject is
+ * wider than the measure's.
+ *
+ * SUBJECT_DOMAIN asks this of the indicator, which is the right question wherever an indicator's
+ * bands are rungs of one ladder. 8.3's are not: its top band is identity to reach the internet and
+ * the band below it identity for a SIM, and those are two subjects, not two heights of one. Given
+ * a single domain the two measures are made out by the same words, so a mobile number-porting
+ * check answered the internet question and every economy scored the top band where ESCAP scores
+ * the one beneath -- Australia on its pre-porting determination, Singapore on an end-user notice,
+ * Malaysia on a shelter's duty to "record the attendance of each inmate".
+ *
+ * So where a measure's subject is narrower than its indicator's, it says so here, and this is
+ * asked instead of the indicator's. Everything SUBJECT_DOMAIN's own note says still holds: these
+ * are the subjects a legal system cannot word its own way, and a measure whose subject is a sector
+ * gets none.
+ */
+const ONLINE_SERVICE = /\b(internet|online|on-line|web\w*|cyber\w*|e-?commerce|digital (?:service|platform|identity)\w*|platform\w*|social media|search engine\w*|end-?users?)\b/i;
+const MOBILE_SUBSCRIPTION =
+  /\b(SIM\b|SIM cards?|pre-?paid|cellular|mobile\w*|carriage service\w*|telephon\w*|subscriber\w*|number portab\w*|porting)\b/i;
+
+/**
+ * What a licence has to be a licence *for*, where the indicator asks about licensing one trade.
+ *
+ * "Online" alone cannot carry a licensing question, because everything a modern economy regulates
+ * now happens online: a licence to run a network, to provide a digital token service, to publish
+ * content. Each is held by a business that trades online, and none of them is a licence to trade.
+ * The indicator's own exception says as much -- licences for other aspects of the business "are not
+ * captured" -- and its measure asks for the licence held "in order to sell goods or services
+ * online".
+ *
+ * So the subject has to name the commerce as well as the channel. One economy's cell was decided by
+ * "network facilities or network service or applications service" and another's by "providing any
+ * type of digital token service"; both name a regulated activity, neither names a sale. What
+ * survives is what the words describe: an online marketplace, a supply of goods through a website,
+ * an e-commerce service.
+ */
+const TRADE =
+  /\b(sell\w*|sale|sales|sold|buy\w*|purchas\w*|retail\w*|wholesal\w*|trad(e|er|ers|ing)|commerc\w*|market(place|ing)?|merchant\w*|vendor\w*|supply|supplying|suppliers?|goods|distributive)\b/i;
+
+/** Both halves, in either order: it has to be trade, and it has to be trade done online. */
+const ONLINE_TRADE = new RegExp(`(?=.*${TRADE.source})(?=.*${ONLINE.source})`, 'i');
+
+export const MEASURE_DOMAIN: Readonly<Record<string, RegExp>> = {
+  // 8.3's two bands are two subjects: identity to reach a service online, and identity for the
+  // mobile subscription the service runs over. Only the top band gets a domain. The band below it
+  // is carried by its instrument -- Australia's pre-porting determination says "mobile" in its
+  // title and then never again -- and a domain asked of the words would turn away the very
+  // findings ESCAP scores. A topic is carried by the document; only the narrower band has to say
+  // it in the sentence.
+  'user-identity': ONLINE_SERVICE,
+  // A licence to sell online is narrower than its indicator's "online", for the reason
+  // ONLINE_TRADE gives: online is where the business operates, not what it is licensed to do.
+  'ecommerce-licence': ONLINE_TRADE,
+};
+
 export const SUBJECT_DOMAIN: Readonly<Record<string, RegExp>> = {
   ...PILLAR_12_DOMAINS,
   // Terms of art: a patent is a patent, a copyright a copyright, a trade secret a trade secret and
@@ -1280,5 +1481,12 @@ export const SUBJECT_DOMAIN: Readonly<Record<string, RegExp>> = {
   '4.6': COPYRIGHT,
   '4.9': SECRETS,
   '4.1': SECRETS,
-  '11.4': /(encrypt\w*|cryptograph\w*|cipher\w*|key length|algorithm\w*|AES|DES|RSA|ECC|FIPS|ISO|IEC|ITU)/i,
+  // A standard names itself for the same reason an encryption standard does: every one of these
+  // systems calls it a standard, a specification, a technical regulation or a code of practice,
+  // and none of them has a way of setting one without using one of those words. Without it, 11.1
+  // was decided in Malaysia by section 115 of the Trademarks Act -- "Any person who discloses or
+  // makes use of any confidential information or document" -- a secrecy duty on investigators,
+  // read as standards being set behind closed doors.
+  '11.1': TECHNICAL_STANDARD,
+  '11.4': /\b(encrypt\w*|cryptograph\w*|cipher\w*|key length|algorithm\w*|AES|DES|RSA|ECC|FIPS|ISO|IEC|ITU)\b/i,
 };

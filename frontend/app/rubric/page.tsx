@@ -1,6 +1,6 @@
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { RubricBook } from "@/components/rubric/rubric-book";
-import { getCurrentCells, getRubric } from "@/lib/data";
+import { getCurrentCells, getEconomies, getRubric } from "@/lib/data";
 import { readBook } from "@/lib/rubric/book";
 
 export const metadata = { title: "Rubric" };
@@ -10,6 +10,7 @@ const day = (iso: string) =>
 
 export default function RubricPage() {
   const book = readBook(getRubric(), getCurrentCells());
+  const names = Object.fromEntries(getEconomies().map((e) => [e.code, e.name]));
 
   return (
     <div className="mx-auto w-full max-w-[1400px] px-5 pb-16 sm:px-8">
@@ -43,7 +44,7 @@ export default function RubricPage() {
         </p>
       </section>
 
-      <RubricBook book={book} />
+      <RubricBook book={book} names={names} />
 
       <footer className="mt-8 max-w-[72ch] text-[11.5px] leading-relaxed text-muted-foreground">
         Derived, not transcribed. Every criterion on this page is read from{" "}

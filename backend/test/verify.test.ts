@@ -8,7 +8,8 @@
 import { describe, expect, it } from 'vitest';
 import { openDb, type Db } from '../src/db/index.js';
 import {
-  buildExportRows, citationUrl, confidenceOf, mappingRationale, timeframe,
+  buildExportRows, cappedRationale, citationUrl, CONFIDENCE, confidenceOf, confidenceValue,
+  mappingRationale, noteWith, timeframe,
 } from '../src/export/index.js';
 import { isOfficialHost, quoteLeads, recomputeScores, verifyRun } from '../src/verify/index.js';
 
@@ -207,10 +208,50 @@ describe('the export row', () => {
   });
 
   it('states confidence from the evidence, not from a feeling', () => {
-    expect(confidenceOf({ quote: QUOTE, offsetsResolved: true, extraction: 'html' })).toContain('high');
-    expect(confidenceOf({ quote: QUOTE, offsetsResolved: false, extraction: 'html' })).toContain('medium');
-    expect(confidenceOf({ quote: QUOTE, offsetsResolved: true, extraction: 'ocr' })).toContain('OCR');
-    expect(confidenceOf({ quote: null, offsetsResolved: false, extraction: null })).toBe('no quotation');
+    const located = confidenceOf({ quote: QUOTE, offsetsResolved: true, extraction: 'html' });
+    const unlocated = confidenceOf({ quote: QUOTE, offsetsResolved: false, extraction: 'html' });
+    const ocr = confidenceOf({ quote: QUOTE, offsetsResolved: true, extraction: 'ocr' });
+    const confirmed = confidenceOf({
+      quote: QUOTE, offsetsResolved: true, extraction: 'html', confirmed: true,
+    });
+
+    // The ordering is the claim: a second reading beats none, clean text beats OCR, and words the
+    // source does not contain rank below words it does.
+    expect(confirmed.value).toBeGreaterThan(located.value);
+    expect(located.value).toBeGreaterThan(ocr.value);
+    expect(ocr.value).toBeGreaterThan(unlocated.value);
+
+    expect(located.because).toContain('located');
+    expect(ocr.because).toContain('OCR');
+    expect(confirmed.because).toContain('second reading');
+    expect(confidenceOf({ quote: null, offsetsResolved: false, extraction: null }).because)
+      .toBe('No quotation.');
+  });
+
+  it('writes confidence as a number between 0.00 and 1.00, as the template validates it', () => {
+    // Column L used to carry a sentence. The secretariat validates the column programmatically, so
+    // the number goes here and the sentence that earned it goes in Notes.
+    for (const value of Object.values(CONFIDENCE)) {
+      const written = confidenceValue({ value, because: '' });
+      expect(written).toMatch(/^[01]\.\d{2}$/);
+      expect(Number(written)).toBeGreaterThan(0);
+      expect(Number(written)).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it('puts the evidentiary sentence in front of whatever else the row had to say', () => {
+    expect(noteWith('Located.', 'Measure: LICENCE.')).toBe('Located. Measure: LICENCE.');
+    expect(noteWith('Located.', null)).toBe('Located.');
+  });
+
+  it('caps a rationale that never passed through the quotation path', () => {
+    // 78 of run 82673dbf's rows were over the template's 300 characters because a zero row states
+    // its reasoning in prose and so skipped the capping that mappingRationale does.
+    const long = `${'word '.repeat(100)}end`;
+    const capped = cappedRationale(long);
+    expect(capped.length).toBeLessThanOrEqual(300);
+    expect(capped.endsWith('...')).toBe(true);
+    expect(cappedRationale('short')).toBe('short');
   });
 });
 
@@ -368,5 +409,48 @@ describe('deriving the score again from the record', () => {
     expect(result.byGate['score-recomputes']!.failed).toBe(1);
     expect(result.held).toBe(1);
     db.close();
+  });
+});
+
+/**
+ * A PDF has no anchors, and 183 of Malaysia's 225 rows cited the top of an Act because of it --
+ * every one held by the pinpoint gate, which exists for the reviewer comment "none of the reference
+ * links lead to the right document".
+ *
+ * `#page=` is the PDF viewer's own convention and every browser that renders a PDF honours it. The
+ * page was already recorded for 36,272 of 36,273 Malaysian sections and never used.
+ */
+describe('citing a provision inside a PDF', () => {
+  const PDF = 'https://lom.agc.gov.my/ilims/upload/portal/akta/LOM/EN/Act%20504.pdf';
+
+  it('cites the page when the PDF offers no anchor', () => {
+    expect(citationUrl(PDF, null, { page: 12, mediaType: 'application/pdf' })).toBe(`${PDF}#page=12`);
+  });
+
+  it('recognises a PDF by its extension when the server said nothing', () => {
+    expect(citationUrl(PDF, null, { page: 3 })).toBe(`${PDF}#page=3`);
+  });
+
+  it('prefers a real anchor to a page number', () => {
+    // An anchor names the provision; a page only narrows it to one page of several provisions.
+    expect(citationUrl(PDF, 'pr26-', { page: 12, mediaType: 'application/pdf' })).toBe(`${PDF}#pr26-`);
+  });
+
+  it('never puts a page fragment on an HTML page', () => {
+    // "#page=12" on HTML matches nothing: the reviewer lands where they started, and the gate is
+    // told the citation was pinpoint when it was not.
+    const html = 'https://sso.agc.gov.sg/Act/CoA1967';
+    expect(citationUrl(html, null, { page: 12, mediaType: 'text/html' })).toBe(html);
+    expect(citationUrl(html, null, { page: 12 })).toBe(html);
+  });
+
+  it('leaves a document that already carries a fragment alone', () => {
+    expect(citationUrl(`${PDF}#page=4`, null, { page: 12, mediaType: 'application/pdf' })).toBe(`${PDF}#page=4`);
+  });
+
+  it('says nothing where there is no page to say', () => {
+    expect(citationUrl(PDF, null, { page: null, mediaType: 'application/pdf' })).toBe(PDF);
+    expect(citationUrl(PDF, null, { page: 0, mediaType: 'application/pdf' })).toBe(PDF);
+    expect(citationUrl(PDF, null)).toBe(PDF);
   });
 });

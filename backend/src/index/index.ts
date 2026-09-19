@@ -221,9 +221,22 @@ export function loadVectors(db: Db, opts: { model?: string; economy?: string } =
   const dims = rows[0]!.dims;
   const matrix = new Float32Array(rows.length * dims);
   const ids = new Int32Array(rows.length);
+  // Every vector is checked, not only the first. The matrix is sized from the first row, so a
+  // shorter blob used to leave zeros that score as a match to nothing, a longer one to spill into
+  // its neighbour's row, and a NaN to poison every similarity it touched -- silently, in the
+  // ranking a zero is later reported against. A corrupt index is a failure to say out loud.
   rows.forEach((r, i) => {
+    if (r.dims !== dims || r.vector.length !== dims * 4) {
+      throw new Error(
+        `section ${r.section_id}'s ${model} vector is ${r.dims} dims in ${r.vector.length} bytes, where the index is ${dims} dims; re-embed before searching`,
+      );
+    }
+    const v = fromBlob(r.vector);
+    for (let k = 0; k < v.length; k++) {
+      if (!Number.isFinite(v[k]!)) throw new Error(`section ${r.section_id}'s ${model} vector holds a non-finite value; re-embed before searching`);
+    }
     ids[i] = r.section_id;
-    matrix.set(fromBlob(r.vector), i * dims);
+    matrix.set(v, i * dims);
   });
   return { ids, matrix, dims };
 }

@@ -27,6 +27,33 @@ describe('what a child gate is told about engines', () => {
   it('refuses to describe a run with no engine at all', () => {
     expect(() => childEngineEnv([])).toThrow(/at least one engine/);
   });
+
+  it('unsets the hosted engine the parent may have inherited', () => {
+    // The child is spawned with the parent's whole environment plus this. A shell that ran a
+    // hosted fleet earlier still holds LEXDROID_HOSTED_BASE_URL and _MODEL, and the child reads
+    // those before it reads OLLAMA_HOST: every provision went to the hosted engine while the
+    // laptop's GPU sat idle, and the run recorded the wrong engine against every answer.
+    const env = childEngineEnv([A]);
+    expect(env['LEXDROID_HOSTED_BASE_URL']).toBe('');
+    expect(env['LEXDROID_HOSTED_MODEL']).toBe('');
+    expect(env['LEXDROID_HOSTED_API_KEY']).toBe('');
+  });
+
+  it('still points a hosted child at its hosted engine', () => {
+    const env = childEngineEnv([A], { hosted: true, baseUrl: 'https://api.example/v1', model: 'm', provider: 'p' });
+    expect(env['LEXDROID_HOSTED_BASE_URL']).toBe('https://api.example/v1');
+    expect(env['LEXDROID_HOSTED_MODEL']).toBe('m');
+  });
+
+  it('never carries a key it was handed rather than one the environment holds', () => {
+    // The registry file records which engines exist; it never records a key, and a key must not
+    // reach a child through an argument either.
+    const before = process.env['LEXDROID_HOSTED_API_KEY'];
+    delete process.env['LEXDROID_HOSTED_API_KEY'];
+    const env = childEngineEnv([A], { hosted: true, baseUrl: 'https://api.example/v1', model: 'm', provider: 'p' });
+    expect('LEXDROID_HOSTED_API_KEY' in env).toBe(false);
+    if (before !== undefined) process.env['LEXDROID_HOSTED_API_KEY'] = before;
+  });
 });
 
 describe('how long a run takes', () => {

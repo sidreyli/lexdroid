@@ -61,6 +61,53 @@ describe('a portal nothing can read', () => {
   });
 });
 
+describe('a portal that was read and published nothing', () => {
+  /**
+   * The same hole, and for a long time only the first kind was recorded. Singapore's e-Gazette
+   * and Malaysia's MyIPO answer 403, the Border Force publishes no index at all, and each of
+   * them reported the same "0 instrument(s) listed" that a genuinely empty regulator would.
+   */
+  async function walk(found: unknown[]) {
+    const { register } = await import('../src/discover/index.js');
+    const db = store();
+    db.prepare("INSERT INTO portal (economy_code, name, url, kind) VALUES ('AUS','e-Gazette','https://www.egazette.gov.sg','gazette')").run();
+    const results = await register(
+      db,
+      {
+        code: 'AUS',
+        name: 'Australia',
+        officialLanguages: ['en'],
+        portals: [{
+          name: 'e-Gazette', url: 'https://www.egazette.gov.sg', kind: 'gazette',
+          adapter: 'sitemap', adapterConfig: {},
+        }],
+      } as never,
+      { fetch: async () => ({
+        url: 'https://www.egazette.gov.sg/sitemap.xml',
+        finalUrl: 'https://www.egazette.gov.sg/sitemap.xml',
+        status: 200, mediaType: 'application/xml',
+        body: Buffer.from(found.length ? '<urlset><url><loc>https://www.egazette.gov.sg/cybersecurity-act-2018</loc></url></urlset>' : '<urlset></urlset>'),
+        contentHash: 'fixture', fromCache: true, fetchedAt: '2026-09-19T00:00:00.000Z',
+      }) } as never,
+    );
+    return { db, results };
+  }
+
+  it('is recorded as a hole, naming the adapter that found nothing there', async () => {
+    const { db, results } = await walk([]);
+    expect(results[0]?.error).toContain('sitemap');
+    const held = db.prepare("SELECT detail FROM discard WHERE reason = 'portal-yielded-nothing'").all() as { detail: string }[];
+    expect(held).toHaveLength(1);
+    expect(held[0]?.detail).toContain('e-Gazette');
+  });
+
+  it('is not recorded against a portal that did publish something', async () => {
+    const { db } = await walk([1]);
+    const held = db.prepare("SELECT COUNT(*) c FROM discard WHERE reason = 'portal-yielded-nothing'").get() as { c: number };
+    expect(held.c).toBe(0);
+  });
+});
+
 describe('the order a budgeted crawl works in', () => {
   it('reaches subsidiary legislation, which used to be excluded by kind', async () => {
     const asked: string[] = [];

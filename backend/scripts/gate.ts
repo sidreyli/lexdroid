@@ -179,6 +179,24 @@ async function main(): Promise<void> {
   }
 
   const db = openDb();
+
+  // --carry takes a run id and carriedReadings matches it exactly, so a prefix -- which is what
+  // every other script here accepts, and what a person reads off a log line -- silently carried
+  // nothing, printed "0 carried", and re-read the whole pillar at full engine cost. Resolved the
+  // way grade, misses, rescore and benchmark resolve one, and refused outright when it names no
+  // run: carrying nothing is never what was asked for, and it costs hours to discover.
+  const carryFrom = args.carryFrom
+    ? (
+        db.prepare('SELECT id FROM run WHERE id LIKE ?').get(`${args.carryFrom}%`) as
+          | { id: string }
+          | undefined
+      )?.id
+    : undefined;
+  if (args.carryFrom && !carryFrom) {
+    console.error(`\nNo run ${args.carryFrom} to carry readings from.`);
+    process.exit(1);
+  }
+
   const rubric = loadRubric();
   const all: Decision[] = [];
   let engineMs = 0;
@@ -225,7 +243,7 @@ async function main(): Promise<void> {
 
     const answer = await answerPillar(db, pillarId, args.economy, {
       ...(args.depth ? { depth: args.depth } : {}),
-      ...(args.carryFrom ? { carryFrom: args.carryFrom } : {}),
+      ...(carryFrom ? { carryFrom } : {}),
       model,
       log: (l) => console.log(l),
       emit,

@@ -1,0 +1,156 @@
+/**
+ * The second engine: open weights, somebody else's hardware.
+ *
+ * Everything the pipeline asks a model for went to Ollama's own `/api/chat`, which no hosted
+ * provider serves. So Engine B could be declared in a file and chosen in the interface and then
+ * had nowhere to send a request, which is why every run in the store was answered by Engine A and
+ * no engine comparison had ever been produced.
+ *
+ * This speaks the OpenAI chat-completions shape instead, because that is what the open-weights
+ * hosts converged on -- Groq, Together, Fireworks, DeepInfra and Ollama's own `/v1` all accept it.
+ * The engine stays open weights: what is hosted is the hardware, not the model, and Section 3's
+ * claim is about the weights. The pipeline is told nothing about any of this. It asks `generate`
+ * for a schema-constrained answer at temperature zero and gets the same `Generated` back, so the
+ * switch between engines really is a switch and not a second code path with its own bugs.
+ *
+ * Configured from the environment, set by the run from the engine registry, never from a file
+ * committed to the repository: an API key written to disk is a key in a backup.
+ */
+import { request } from 'undici';
+import { OllamaUnavailable } from './errors.js';
+
+export interface HostedConfig {
+  /** The API root, without a trailing slash. `/chat/completions` is appended. */
+  baseUrl: string;
+  model: string;
+  apiKey: string | null;
+  provider: string;
+}
+
+/** Whether this process is pointed at a hosted engine rather than a local one. */
+export function hostedConfig(): HostedConfig | null {
+  const baseUrl = process.env['LEXDROID_HOSTED_BASE_URL']?.trim().replace(/\/+$/, '');
+  const model = process.env['LEXDROID_HOSTED_MODEL']?.trim();
+  if (!baseUrl || !model) return null;
+  return {
+    baseUrl,
+    model,
+    apiKey: process.env['LEXDROID_HOSTED_API_KEY']?.trim() || null,
+    provider: process.env['LEXDROID_HOSTED_PROVIDER']?.trim() || new URL(baseUrl).host,
+  };
+}
+
+export interface HostedAnswer {
+  text: string;
+  promptTokens: number;
+  completionTokens: number;
+  durationMs: number;
+  model: string;
+  /** Why the model stopped. 'length' is a runaway and the caller throws on it, as it does locally. */
+  finishReason: string | null;
+}
+
+/**
+ * A JSON Schema, as the chat-completions API wants it.
+ *
+ * Ollama takes a bare schema in `format`; this API wants it wrapped and named, and wants
+ * `additionalProperties: false` before it will enforce the shape at all. The wrapping is done here
+ * so that every caller keeps writing the one schema it already writes.
+ */
+function responseFormat(schema: unknown): Record<string, unknown> | undefined {
+  if (!schema || typeof schema !== 'object') return undefined;
+  const strict = { ...(schema as Record<string, unknown>), additionalProperties: false };
+  return {
+    type: 'json_schema',
+    json_schema: { name: 'reading', schema: strict, strict: true },
+  };
+}
+
+export async function hostedGenerate(
+  prompt: string,
+  system: string,
+  opts: { model?: string; schema?: unknown; temperature?: number; maxOutputTokens?: number } = {},
+): Promise<HostedAnswer> {
+  const config = hostedConfig();
+  if (!config) throw new Error('no hosted engine is configured');
+
+  const model = opts.model ?? config.model;
+  const started = Date.now();
+  const format = responseFormat(opts.schema);
+
+  const body = {
+    model,
+    messages: [
+      { role: 'system', content: system },
+      { role: 'user', content: prompt },
+    ],
+    temperature: opts.temperature ?? 0,
+    ...(opts.maxOutputTokens ? { max_tokens: opts.maxOutputTokens } : {}),
+    ...(format ? { response_format: format } : {}),
+    stream: false,
+  };
+
+  let res;
+  try {
+    res = await request(`${config.baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        ...(config.apiKey ? { authorization: `Bearer ${config.apiKey}` } : {}),
+      },
+      body: JSON.stringify(body),
+      headersTimeout: 600_000,
+      bodyTimeout: 600_000,
+    });
+  } catch (err) {
+    // The same class the local client throws, so the pool retires a dead host the same way and
+    // the run does not need to know which kind of engine went away.
+    throw new OllamaUnavailable(err instanceof Error ? err.message : String(err), config.baseUrl);
+  }
+
+  const text = await res.body.text();
+  if (res.statusCode >= 500 || res.statusCode === 429) {
+    throw new OllamaUnavailable(`${config.provider} answered ${res.statusCode}`, config.baseUrl);
+  }
+  if (res.statusCode >= 400) {
+    // A 4xx is our request, not their availability, and retrying it on another host would just
+    // ask the same bad question again. Surfaced with the body, which is where the reason is.
+    throw new Error(`${config.provider} rejected the request (${res.statusCode}): ${text.slice(0, 400)}`);
+  }
+
+  let parsed: {
+    choices?: { message?: { content?: string }; finish_reason?: string }[];
+    usage?: { prompt_tokens?: number; completion_tokens?: number };
+  };
+  try {
+    parsed = JSON.parse(text) as typeof parsed;
+  } catch {
+    throw new Error(`${config.provider} returned something that is not JSON: ${text.slice(0, 200)}`);
+  }
+
+  const choice = parsed.choices?.[0];
+  return {
+    text: choice?.message?.content ?? '',
+    promptTokens: parsed.usage?.prompt_tokens ?? 0,
+    completionTokens: parsed.usage?.completion_tokens ?? 0,
+    durationMs: Date.now() - started,
+    model,
+    finishReason: choice?.finish_reason ?? null,
+  };
+}
+
+/** Whether the host answers at all, and with the model it was asked for. */
+export async function probeHosted(): Promise<{ ok: boolean; detail: string }> {
+  const config = hostedConfig();
+  if (!config) return { ok: false, detail: 'no hosted engine configured' };
+  try {
+    const answer = await hostedGenerate('Reply with the word ready.', 'You answer in one word.', {
+      maxOutputTokens: 16,
+    });
+    return answer.text.trim()
+      ? { ok: true, detail: `${config.provider} / ${config.model} answered` }
+      : { ok: false, detail: `${config.provider} answered with nothing` };
+  } catch (err) {
+    return { ok: false, detail: err instanceof Error ? err.message : String(err) };
+  }
+}

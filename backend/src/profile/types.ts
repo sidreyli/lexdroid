@@ -66,6 +66,44 @@ export const Commitment = z.object({
 });
 export type Commitment = z.infer<typeof Commitment>;
 
+/** A pattern a profile supplies as text, refused at load if it does not compile. */
+const Pattern = z.string().min(1).refine((p) => {
+  try {
+    new RegExp(p);
+    return true;
+  } catch {
+    return false;
+  }
+}, 'not a valid regular expression');
+
+/**
+ * Which tier of the economy's law the corpus holds, and which it does not.
+ *
+ * A federation legislates at more than one level, and the portals a profile names publish one of
+ * them. That used to be known only to whoever wrote the profile: Australia's register carries
+ * Commonwealth law and none of the States', Malaysia's portals are all federal, and nothing in the
+ * store said so -- so a zero standing on a labour indicator read the same whether the economy had
+ * no such law or kept it at a tier we never read. Declared here, the audit can count how often
+ * the corpus itself cites the tier it does not hold, and a reviewer can see the limit is a choice.
+ */
+export const JurisdictionScope = z.object({
+  /** The tier held, in the economy's own terms: "Commonwealth", "federal", "national". */
+  held: z.string().min(1),
+  note: z.string(),
+  notHeld: z
+    .array(
+      z.object({
+        tier: z.string().min(1),
+        /** Who publishes it, and what it governs that the held tier does not. */
+        note: z.string(),
+        /** How a provision of the held tier cites an instrument of this one. */
+        citedAs: z.array(Pattern).min(1),
+      }),
+    )
+    .default([]),
+});
+export type JurisdictionScope = z.infer<typeof JurisdictionScope>;
+
 export const EconomyProfile = z.object({
   /** ISO 3166-1 alpha-3, matching the store's primary key. */
   code: z.string().regex(/^[A-Z]{3}$/),
@@ -79,7 +117,14 @@ export const EconomyProfile = z.object({
    * an English translation of varying authority; that distinction belongs here, in the note.
    */
   officialLanguages: z.array(LanguageTag).min(1),
+  /**
+   * The language whose text governs where the editions differ. A row quoting any other official
+   * language is quoting a translation, and says so. Null where nobody has declared it.
+   */
+  authoritativeLanguage: LanguageTag.nullable().default(null),
   languageNote: z.string().nullable().default(null),
+  /** Null where nobody has declared it, which the audit reports rather than assumes. */
+  jurisdictionScope: JurisdictionScope.nullable().default(null),
   instrumentTypes: z.array(InstrumentType).min(1),
   portals: z.array(Portal).min(1),
   commitments: z.array(Commitment).default([]),

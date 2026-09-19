@@ -15,12 +15,12 @@ import type { Db } from '../db/index.js';
 import type { Emit } from '../run/events.js';
 import { citationUrl } from '../export/index.js';
 import { enginePool } from '../engines/pool.js';
-import { amendsAnotherAct, citesADefinition } from '../parse/identity.js';
+import { amendsAnotherAct, citesADefinition, inheritsAPower } from '../parse/identity.js';
 import { loadProfile } from '../profile/index.js';
 import type { InstrumentType } from '../profile/types.js';
 import type { Indicator } from '../rubric/types.js';
 import { indicatorsOfPillar, loadRubric } from '../rubric/index.js';
-import { loadVectors, type LoadedVectors } from '../index/index.js';
+import { fuse, loadVectors, searchLexical, type LoadedVectors } from '../index/index.js';
 import { retrieveForIndicator, type RetrievalRecord } from '../retrieve/index.js';
 import { shortlistInstruments } from '../shortlist/index.js';
 import {
@@ -35,6 +35,7 @@ import {
   type SectionReading,
 } from '../read/index.js';
 import { carriedReadings } from '../read/carry.js';
+import { loadConfirmations, confirmedFlag, tallyConfirmations, type ConfirmationSet } from '../read/confirmations.js';
 import type { FxRates } from '../decide/currency.js';
 import {
   decide,
@@ -61,6 +62,20 @@ function readWidth(): number {
 
 /** How many instruments a framework indicator examines. */
 const FRAMEWORK_CANDIDATES = 5;
+
+/**
+ * An instrument a framework indicator will look at, and the sections that put it on the list.
+ *
+ * `sectionIds` is empty for the two channels that rank instruments rather than provisions; it
+ * carries the hits for the one that searches sections, so the reader is shown the provision that
+ * made the instrument a candidate in the first place.
+ */
+interface FrameworkCandidate {
+  instrumentId: number;
+  title: string;
+  url: string;
+  sectionIds: number[];
+}
 
 /**
  * How long one stage took, and what it bought.
@@ -125,6 +140,11 @@ export interface AnswerOptions {
    * carriedReadings for why that is the same call and not a replay of a different question.
    */
   carryFrom?: string;
+  /**
+   * The banked second-reading verdicts to score against. Loaded from the store when not given;
+   * a caller passes one to hold the set steady across a pillar, or an empty one to score without.
+   */
+  confirmations?: ConfirmationSet;
 }
 
 interface SectionRow {
@@ -132,15 +152,28 @@ interface SectionRow {
   instrument_id: number;
   instrument_title: string;
   instrument_kind: InstrumentType['kind'];
+  instrument_status: Evidence['instrumentStatus'];
+  language: string | null;
+  repealed: number;
   source_url: string;
+  media_type: string | null;
   heading_path: string;
   text: string;
   anchor: string | null;
+  page: number | null;
 }
 
-/** The link a reviewer follows. One official URL, and the provision's own anchor on it. */
-function citationFor(row: { source_url: string; anchor: string | null }): string {
-  return citationUrl(row.source_url, row.anchor);
+/**
+ * The link a reviewer follows. One official URL, and the provision's own anchor on it -- or, in a
+ * PDF, the page it is on, so the workbench and the workbook send a reviewer to the same place.
+ */
+function citationFor(row: {
+  source_url: string;
+  anchor: string | null;
+  page?: number | null;
+  media_type?: string | null;
+}): string {
+  return citationUrl(row.source_url, row.anchor, { page: row.page, mediaType: row.media_type });
 }
 
 async function inPool<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
@@ -170,6 +203,26 @@ export async function answerPillar(
   // What this economy says each kind of instrument can do. Declared per economy because the answer
   // differs: a Malaysian Order is subsidiary legislation, and an ACMA guide binds nobody.
   const bindingness = new Map(loadProfile(economy).instrumentTypes.map((t) => [t.kind, t.bindingness]));
+  // The same question asked of a whole instrument rather than a retrieved row. A framework
+  // candidate arrives from three channels and only one of them carries the register's columns, so
+  // the kind is read here once for the economy rather than threaded through all three.
+  const frameworkKind = new Map(
+    (
+      db.prepare('SELECT id, kind FROM instrument WHERE economy_code = ?').all(economy) as {
+        id: number;
+        kind: InstrumentType['kind'] | null;
+      }[]
+    ).map((r) => [r.id, r.kind]),
+  );
+  /** Null for an instrument whose kind the profile does not declare, which is not "advisory". */
+  const bindingnessOf = (instrumentId: number) => {
+    const kind = frameworkKind.get(instrumentId);
+    return kind ? bindingness.get(kind) ?? null : null;
+  };
+  // The second question's banked answers, read once for the pillar. A provision the pass read and
+  // found not to carry the measure is evidence for a zero, and the live run has to see that at the
+  // moment it scores -- otherwise the stored score and every later re-derivation of it disagree.
+  const confirmations = opts.confirmations ?? loadConfirmations(db, { model: opts.model ?? READING_MODEL });
   const indicators = indicatorsOfPillar(pillarId, rubric);
   if (indicators.length === 0) throw new Error(`No indicators in pillar ${pillarId}`);
   const pillarName = indicators[0]!.pillarName;
@@ -294,7 +347,12 @@ export async function answerPillar(
         citation: citationFor(row),
         amendsAnotherAct: amendsAnotherAct(row.text),
         definesATerm: citesADefinition(row.text, finding.definingWords ?? finding.quote),
+        inheritsAPower: inheritsAPower(row.text, finding.quote),
+        sectionLanguage: row.language,
+        ...(row.repealed ? { sectionRepealed: true } : {}),
+        ...(row.instrument_status ? { instrumentStatus: row.instrument_status } : {}),
         ...(bindingness.get(row.instrument_kind) ? { bindingness: bindingness.get(row.instrument_kind)! } : {}),
+        ...confirmedFlag(confirmations.verdict(row.id, finding.indicatorId, finding.measure)),
       });
     }
   }
@@ -331,7 +389,12 @@ export async function answerPillar(
 
     const readingsHere = await inPool(candidates, readWidth(), (c) =>
       readFramework(
-        { instrumentId: c.instrumentId, title: c.title, openingText: openingOf(db, c.instrumentId) },
+        {
+          instrumentId: c.instrumentId,
+          title: c.title,
+          openingText: openingOf(db, c.instrumentId),
+          provisionsText: provisionsOf(record, c.instrumentId, sectionsById(db, c.sectionIds)),
+        },
         subject,
         {
           ...(opts.model ? { model: opts.model } : {}),
@@ -373,11 +436,13 @@ export async function answerPillar(
         instrumentTitle: c.title,
         citation: c.url,
         establishesFramework: r.establishesFramework,
+        frameworkShown: r.frameworkWordsVerified,
         horizontal: r.horizontal,
         dedicated: r.dedicated,
         dedicatedShown: r.dedicatedWordsVerified,
         sectoralShown: r.sectorWordsVerified,
         sector: r.sector,
+        bindingness: bindingnessOf(r.instrumentId),
         quote: r.quote,
       })),
     );
@@ -388,9 +453,14 @@ export async function answerPillar(
   // 5. Decide. No model, no network, no ESCAP answers.
   const indexedSections = retrieval[0]?.indexedSections ?? 0;
   // A zero read out of a stale consolidation is a weaker claim than one read out of current law.
+  // The consolidation's own currency date answers this; the last amendment is the fallback for a
+  // register that publishes one and not the other. Reading the amendment date alone said a
+  // Malaysian Act was current to its last amendment, which is a different and stronger claim.
   const currentTo = new Map<number, string | null>(
-    (db.prepare(`SELECT id, last_amended_on FROM instrument WHERE economy_code = ?`).all(economy) as
-      { id: number; last_amended_on: string | null }[]).map((r) => [r.id, r.last_amended_on]),
+    (db.prepare(
+      `SELECT id, COALESCE(current_to, last_amended_on) AS current_to FROM instrument
+        WHERE economy_code = ?`,
+    ).all(economy) as { id: number; current_to: string | null }[]).map((r) => [r.id, r.current_to]),
   );
   const decisions = indicators.map((indicator) => {
     const isFramework = indicator.shape === 'framework';
@@ -412,7 +482,9 @@ export async function answerPillar(
     }
 
     const coverage: Coverage = {
-      sectionsRead: rows.length,
+      // Answered, not sent: a provision the engine failed on was not read, and counting it made a
+      // zero say it rested on more reading than it did.
+      sectionsRead: readings.filter((r) => r.failure === null).length,
       sectionsIndexed: indexedSections,
       instrumentsConsidered: isFramework ? frameworkEvidence.length : new Set(rows.map((r) => r.instrument_id)).size,
     };
@@ -468,10 +540,12 @@ export async function answerPillar(
 }
 
 /** Which subject a framework indicator is about, read off its own category text. */
-const FRAMEWORK_OF: Record<string, FrameworkSubject> = {
+export const FRAMEWORK_OF: Record<string, FrameworkSubject> = {
   '7.1': 'data-protection',
   '7.2': 'cybersecurity',
-  '8.1': 'intermediary-liability',
+  // 8.1 is "Lack of safe harbour for copyright infringements" and 8.2 is "...for other illegal
+  // activities". Asked as one subject they returned one candidate list and one answer per economy.
+  '8.1': 'copyright-safe-harbour',
   '8.2': 'intermediary-liability',
   '12.9': 'consumer-protection',
 };
@@ -501,24 +575,162 @@ async function frameworkCandidates(
   record: RetrievalRecord | undefined,
   rows: Map<number, SectionRow>,
   embeddingModel?: string,
-): Promise<{ instrumentId: number; title: string; url: string }[]> {
-  const out: { instrumentId: number; title: string; url: string }[] = [];
+): Promise<FrameworkCandidate[]> {
+  // A framework can only be established by something the record could cite, and 'in-force' is the
+  // only status a row may cite. Without this the register answers a framework question with the
+  // pages of the site it was harvested from: all five instruments examined for Singapore's 8.1 and
+  // 8.2 were Monetary Authority press releases -- "Person charged for false trading under the
+  // Securities and Futures Act" -- registered as Acts with status unknown, and all five for its 7.1
+  // were PDPC advisory-guideline pages sitting in front of the Personal Data Protection Act itself.
+  // The reader was right about every one of them and the cell was wrong anyway.
+  const inForce = new Set(
+    (
+      db
+        .prepare(`SELECT id FROM instrument WHERE economy_code = ? AND status = 'in-force'`)
+        .all(economy) as { id: number }[]
+    ).map((r) => r.id),
+  );
+
   const ranked = await shortlistInstruments(db, {
     economy,
     queries: subjectQueries(subject),
     limit: FRAMEWORK_CANDIDATES * 4,
     ...(embeddingModel ? { model: embeddingModel } : {}),
   });
-  for (const c of ranked) {
+  const fromRegister = ranked
     // Only what has actually been read. An unread instrument cannot be examined, and naming one
     // here would put a framework on the record that nothing in the corpus supports.
-    if (!c.read) continue;
-    out.push({ instrumentId: c.instrumentId, title: c.title, url: c.sourceUrl });
-  }
-  for (const c of candidateInstruments(record, rows)) {
-    if (!out.some((o) => o.instrumentId === c.instrumentId)) out.push(c);
+    .filter((c) => c.read && inForce.has(c.instrumentId))
+    .map((c) => ({ instrumentId: c.instrumentId, title: c.title, url: c.sourceUrl, sectionIds: [] }));
+  const fromRetrieval = candidateInstruments(record, rows)
+    .filter((c) => inForce.has(c.instrumentId))
+    .map((c) => ({ ...c, sectionIds: [] }));
+
+  // The third channel, and the one that finds the rule: sections asked the subject directly.
+  //
+  // A framework indicator searched instruments by its subject and sections by its band prose, and
+  // never searched sections for its subject. So Singapore's Electronic Transactions Act 2010 --
+  // whose section 26 reads "a network service provider shall not be subject to any civil or
+  // criminal liability", which is the provision ESCAP cites for 8.2 -- was unreachable from both.
+  // Not ranked low: absent, under every wording tried, because its title says "Electronic
+  // Transactions" and 8.2's band prose is about unlawful content. Asked of sections, the subject
+  // puts it fourth. The comment this replaces asserted the band prose found it sixth; that was
+  // true of the pillar before 8.1 and 8.2 were given separate subjects, and is no longer.
+  const fromSections = subjectSections(db, economy, subject, inForce);
+
+  // Taken alternately rather than in series. The three lists know different things and the caller
+  // keeps five: appended, the later channels were never reached at all. A register knows what an
+  // Act is called, a retrieval knows what answered this indicator's question, and a section search
+  // on the subject knows which Act contains the rule.
+  return interleave(fromRegister, fromSections, fromRetrieval);
+}
+
+/**
+ * Two ranked lists taken alternately, each instrument once, the first list leading.
+ *
+ * Exported because the defect it fixes was invisible: appending the second list to the first is
+ * correct in isolation and useless in place, because the caller keeps five and the first list
+ * seldom runs short of five.
+ */
+export function interleave<T extends { instrumentId: number }>(...lists: T[][]): T[] {
+  const out: T[] = [];
+  const seen = new Set<number>();
+  const longest = Math.max(0, ...lists.map((l) => l.length));
+  for (let i = 0; i < longest; i += 1) {
+    for (const list of lists) {
+      const c = list[i];
+      if (!c || seen.has(c.instrumentId)) continue;
+      seen.add(c.instrumentId);
+      out.push(c);
+    }
   }
   return out;
+}
+
+/**
+ * Instruments holding a section that answers the subject itself, best first.
+ *
+ * Lexical only, and deliberately. The subject's own names are terms of art -- "network service
+ * provider", "safe harbour" -- and a provision that grants the immunity uses them; this is the one
+ * place in the pipeline where matching the words is the point rather than a weakness. The dense
+ * channel is what the indicator's own retrieval already contributes through the third list.
+ */
+function subjectSections(
+  db: Db,
+  economy: string,
+  subject: FrameworkSubject,
+  inForce: Set<number>,
+): FrameworkCandidate[] {
+  const out: FrameworkCandidate[] = [];
+  const byInstrument = new Map<number, FrameworkCandidate>();
+  const owner = db.prepare(
+    `SELECT i.id, i.title, i.source_url FROM section s
+       JOIN document d ON d.id = s.document_id
+       JOIN instrument i ON i.id = d.instrument_id
+      WHERE s.id = ?`,
+  );
+  // Fused, not taken in turn. Round-robin across the queries gives a section that matched one
+  // generic name the same standing as one that matched the subject sentence and three of its
+  // terms, and the generic names are generic: "safe harbour" put Malaysia's Safeguards Act 2006
+  // and Finance (No. 2) Act 2023 among the five instruments examined for its copyright safe
+  // harbour, displacing the Communications and Multimedia Act. Fusion is what the rest of Zone 1
+  // uses for the same reason, and it puts that Act first and the Copyright Act 1987 second.
+  const runs = subjectQueries(subject).map((q) => searchLexical(db, q, { economy, limit: SUBJECT_SECTION_DEPTH }));
+  for (const hit of fuse(runs)) {
+    const row = owner.get(hit.sectionId) as { id: number; title: string; source_url: string } | undefined;
+    if (!row || !inForce.has(row.id)) continue;
+    // The sections are kept, not only the instruments they belong to. An instrument reached by
+    // this channel is one the indicator's own retrieval did not return, so provisionsOf has
+    // nothing of it to show and the reader would be handed a long title and asked for a rule.
+    // Singapore's Electronic Transactions Act was examined that way and said, correctly for the
+    // six sections it was given, that it established nothing.
+    const already = byInstrument.get(row.id);
+    if (already) {
+      if (!already.sectionIds.includes(hit.sectionId)) already.sectionIds.push(hit.sectionId);
+      continue;
+    }
+    const candidate = {
+      instrumentId: row.id,
+      title: row.title,
+      url: row.source_url,
+      sectionIds: [hit.sectionId],
+    };
+    byInstrument.set(row.id, candidate);
+    out.push(candidate);
+  }
+  return out;
+}
+
+/** How deep each subject query goes when looking for the instrument that holds the rule. */
+const SUBJECT_SECTION_DEPTH = 12;
+
+/**
+ * What this indicator's own search returned of one instrument, as text for the framework reader.
+ *
+ * The register ranks instruments by what they are called and the opening says what they are for;
+ * neither reaches the provision that does the governing. This is the third thing: the sections a
+ * search for the subject actually returned out of this instrument, which is where the rule is if
+ * the instrument has one.
+ */
+export function provisionsOf(
+  record: RetrievalRecord | undefined,
+  instrumentId: number,
+  extra: { headingPath: string; text: string }[] = [],
+): string {
+  const fromRecord = (record?.sections ?? []).filter((s) => s.instrumentId === instrumentId);
+  const seen = new Set(fromRecord.map((s) => s.headingPath));
+  return [...fromRecord, ...extra.filter((s) => !seen.has(s.headingPath))]
+    .map((s) => `${s.headingPath}\n${s.text}`)
+    .join('\n\n');
+}
+
+/** The text of the sections a subject search found, for an instrument the retrieval did not. */
+function sectionsById(db: Db, ids: number[]): { headingPath: string; text: string }[] {
+  if (ids.length === 0) return [];
+  const rows = db
+    .prepare(`SELECT heading_path, text FROM section WHERE id IN (${ids.map(() => '?').join(',')})`)
+    .all(...ids) as { heading_path: string; text: string }[];
+  return rows.map((r) => ({ headingPath: r.heading_path, text: r.text }));
 }
 
 /**
@@ -549,8 +761,10 @@ function sectionRows(db: Db, ids: number[]): SectionRow[] {
   const placeholders = ids.map(() => '?').join(',');
   return db
     .prepare(
-      `SELECT s.id, s.heading_path, s.text, s.anchor,
-              d.instrument_id, i.title AS instrument_title, i.kind AS instrument_kind, d.url AS source_url
+      `SELECT s.id, s.heading_path, s.text, s.anchor, s.page, s.language, s.repealed,
+              d.instrument_id, i.title AS instrument_title, i.kind AS instrument_kind, i.status AS instrument_status,
+              d.url AS source_url,
+              d.media_type
          FROM section s
          JOIN document d ON d.id = s.document_id
          JOIN instrument i ON i.id = d.instrument_id

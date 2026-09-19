@@ -18,7 +18,7 @@ import type { Fetcher } from '../fetch/index.js';
 import { RobotsDisallowed, CacheMiss, HostSuspended } from '../fetch/index.js';
 import { parseDocument, storeDocument, verifyOffsets } from '../parse/index.js';
 import { soleDocumentLink } from '../parse/html.js';
-import { namesAnInstrument, statedName } from '../parse/identity.js';
+import { namesAnInstrument, ownName } from '../parse/identity.js';
 import type { EconomyProfile } from '../profile/types.js';
 import { portalId } from '../profile/index.js';
 import { crawlAdapter } from './crawl.js';
@@ -53,30 +53,54 @@ export interface RegisterResult {
   error?: string;
 }
 
+export interface RegisterOptions {
+  /**
+   * Walk only the portals whose name or URL contains this, case-insensitively.
+   *
+   * Fixing one portal's adapter and re-walking the whole profile to see whether it worked costs
+   * every other portal a crawl it did not need, and Malaysia's three Laws of Malaysia listings
+   * are sixteen thousand instruments between them. A repair is scoped to the thing repaired.
+   */
+  portalLike?: string;
+}
+
 export async function register(
   db: Db,
   profile: EconomyProfile,
   fetcher: Fetcher,
   log: (line: string) => void = () => {},
+  opts: RegisterOptions = {},
 ): Promise<RegisterResult[]> {
   const results: RegisterResult[] = [];
   const now = new Date().toISOString();
 
   const insert = db.prepare(
     `INSERT INTO instrument (economy_code, title, official_number, kind, status, status_basis,
-                             last_amended_on, timeframe_basis, source_url, discovered_via, discovered_at,
-                             title_provisional, also_at)
-     VALUES (?, ?, ?, ?, COALESCE(?, 'unknown'), ?, ?, ?, ?, ?, ?, ?, ?)
+                             commenced_on, last_amended_on, current_to, timeframe_basis,
+                             made_under_name, source_url,
+                             discovered_via, discovered_at, title_provisional, also_at)
+     VALUES (?, ?, ?, ?, COALESCE(?, 'unknown'), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(economy_code, source_url) DO UPDATE SET
+       made_under_name = COALESCE(excluded.made_under_name, instrument.made_under_name),
        status = CASE WHEN excluded.status_basis IS NOT NULL THEN excluded.status ELSE instrument.status END,
        status_basis = COALESCE(excluded.status_basis, instrument.status_basis),
+       commenced_on = COALESCE(excluded.commenced_on, instrument.commenced_on),
        last_amended_on = COALESCE(excluded.last_amended_on, instrument.last_amended_on),
+       current_to = COALESCE(excluded.current_to, instrument.current_to),
        timeframe_basis = COALESCE(excluded.timeframe_basis, instrument.timeframe_basis),
        also_at = COALESCE(excluded.also_at, instrument.also_at)
      WHERE excluded.status_basis IS NOT NULL OR excluded.also_at IS NOT NULL`,
   );
 
-  for (const portal of profile.portals) {
+  const want = opts.portalLike?.toLowerCase();
+  const portals = want
+    ? profile.portals.filter((p) => `${p.name} ${p.url}`.toLowerCase().includes(want))
+    : profile.portals;
+  if (want && portals.length === 0) {
+    throw new Error(`No portal of ${profile.code} has "${opts.portalLike}" in its name or URL.`);
+  }
+
+  for (const portal of portals) {
     // A declared portal nothing can read is a hole in the corpus, and it was skipped in silence.
     // Malaysia declares its customs department, its communications commission and seven more
     // regulators, and registers not one document from any of them -- so the orders, guidelines and
@@ -97,9 +121,16 @@ export async function register(
     log(`${portal.name} (${portal.url})`);
     const id = portalId(db, profile.code, portal.url);
 
+    // Rewritten per walk, not appended to: the question this answers is what the listing looks
+    // like now, and a ledger that keeps every walk's answer cannot be read against a threshold.
+    const setAsideRows: { subject: string; reason: string; detail: string | null }[] = [];
+    const setAside = (entry: { subject: string; reason: string; detail?: string }) => {
+      setAsideRows.push({ subject: entry.subject, reason: entry.reason, detail: entry.detail ?? null });
+    };
+
     let found: DiscoveredInstrument[] = [];
     try {
-      found = await adapter.discover({ portal, fetcher, log });
+      found = await adapter.discover({ portal, fetcher, log, setAside });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       results.push({ portal: portal.name, found: 0, added: 0, error: message });
@@ -118,19 +149,118 @@ export async function register(
           .get(profile.code, item.url);
         insert.run(
           profile.code, item.title, item.officialNumber ?? null, item.kind,
-          item.status ?? null, item.statusBasis ?? null, item.currentTo ?? null,
-          item.currentToBasis ?? null, item.url, `portal:${id}`, now,
+          item.status ?? null, item.statusBasis ?? null, item.commencedOn ?? null,
+          item.lastAmendedOn ?? null, item.currentTo ?? null, item.currentToBasis ?? null,
+          item.madeUnder ?? null, item.url, `portal:${id}`, now,
           item.titleProvisional ? 1 : 0,
           item.alsoAt?.length ? JSON.stringify(item.alsoAt) : null,
         );
         if (!before) added += 1;
       }
     })();
+    if (setAsideRows.length > 0) {
+      const reasons = [...new Set(setAsideRows.map((r) => r.reason))];
+      db.transaction(() => {
+        const clear = db.prepare(
+          `DELETE FROM discard WHERE stage = 'discover' AND reason = ? AND detail LIKE ?`,
+        );
+        const write = db.prepare(
+          `INSERT INTO discard (stage, subject, reason, detail, recorded_at) VALUES ('discover', ?, ?, ?, ?)`,
+        );
+        for (const reason of reasons) clear.run(reason, `${portal.url}%`);
+        for (const r of setAsideRows) {
+          write.run(r.subject, r.reason, `${portal.url} -- ${r.detail ?? ''}`, now);
+        }
+      })();
+    }
     log(`  ${found.length} instrument(s) listed, ${added} new to the register`);
+    // A portal that was walked and yielded nothing is the same hole as a portal nothing can walk,
+    // and until now only the second was recorded. Seven of the thirty declared Australian,
+    // Malaysian and Singaporean sources are in this state -- the e-Gazette and MyIPO answer 403,
+    // the ACCC serves an API the adapter reads as empty, the Border Force publishes no index at
+    // all -- and every one of them looked, in the run's own output, exactly like a regulator that
+    // happens to publish no instruments. A cell reads that as "no requirement".
+    if (found.length === 0) {
+      db.prepare('INSERT INTO discard (stage, subject, reason, detail, recorded_at) VALUES (?, ?, ?, ?, ?)')
+        .run('discover', portal.url, 'portal-yielded-nothing',
+          `${portal.name} (${portal.kind}) was walked by the ${portal.adapter} adapter and listed no instruments`, now);
+      results.push({
+        portal: portal.name,
+        found: 0,
+        added: 0,
+        error: `walked by the ${portal.adapter} adapter and listed no instruments`,
+      });
+      continue;
+    }
     results.push({ portal: portal.name, found: found.length, added });
   }
 
+  const linked = linkStatedParents(db, profile.code);
+  if (linked.stated > 0) {
+    log(`Parentage -- ${linked.stated} instrument(s) name the Act they are made under, ${linked.linked} of those Acts are in the register`);
+  }
+
   return results;
+}
+
+export interface StatedParentage {
+  /** Instruments whose register names the Act they are made under. */
+  stated: number;
+  /** Of those, the ones whose named Act is an Act we have registered. */
+  linked: number;
+}
+
+/**
+ * Link each instrument to the Act its own register says it was made under.
+ *
+ * Australia's register answers this backwards -- ask an Act what it authorises -- and that is
+ * what `linkParents` walks. India's answers it forwards: every rule, regulation, notification and
+ * order carries the name of its enabling Act, and the adapter was putting that name in a sentence
+ * and throwing it away. Nothing else recovers it; a title is a drafting convention and the
+ * instruments that matter break it.
+ *
+ * Matched on the exact stated name, case-insensitively. A near match is not attempted: linking a
+ * rule to the wrong Act would put the wrong instrument at the head of a cell's evidence, and an
+ * unlinked rule still carries the name a reviewer can read.
+ */
+export function linkStatedParents(db: Db, economy: string): StatedParentage {
+  const stated = (
+    db.prepare(
+      `SELECT COUNT(*) n FROM instrument WHERE economy_code = ? AND made_under_name IS NOT NULL`,
+    ).get(economy) as { n: number }
+  ).n;
+  if (stated === 0) return { stated: 0, linked: 0 };
+
+  const acts = new Map<string, number>();
+  for (const row of db.prepare(
+    `SELECT id, title FROM instrument WHERE economy_code = ? AND kind = 'act'`,
+  ).all(economy) as { id: number; title: string }[]) {
+    acts.set(row.title.trim().toLowerCase(), row.id);
+  }
+
+  const update = db.prepare(
+    `UPDATE instrument SET made_under_instrument_id = ?, made_under_basis = ? WHERE id = ?`,
+  );
+  let linked = 0;
+  db.transaction(() => {
+    for (const row of db.prepare(
+      `SELECT id, made_under_name FROM instrument
+        WHERE economy_code = ? AND made_under_name IS NOT NULL AND made_under_instrument_id IS NULL`,
+    ).all(economy) as { id: number; made_under_name: string }[]) {
+      const parent = acts.get(row.made_under_name.trim().toLowerCase());
+      // An Act that names itself as its own parent is the register repeating the title, not a
+      // relation, and a row pointing at itself would make the contents walk cycle.
+      if (parent === undefined || parent === row.id) continue;
+      update.run(
+        parent,
+        `The register records this instrument as made under "${row.made_under_name}".`,
+        row.id,
+      );
+      linked += 1;
+    }
+  })();
+
+  return { stated, linked };
 }
 
 /** The other files one page publishes, as recorded at registration. */
@@ -148,7 +278,9 @@ function alsoAt(row: { also_at: string | null }): string[] {
  * Read one further edition into an instrument already materialised. Returns its section count, or
  * null when it could not be read -- which is recorded, never a silent absence.
  */
-async function readEdition(db: Db, fetcher: Fetcher, instrumentId: number, url: string): Promise<number | null> {
+async function readEdition(
+  db: Db, fetcher: Fetcher, instrumentId: number, url: string, languages: readonly string[],
+): Promise<number | null> {
   const now = () => new Date().toISOString();
   const discard = (reason: string, detail: string): null => {
     db.prepare('INSERT INTO discard (stage, subject, reason, detail, recorded_at) VALUES (?, ?, ?, ?, ?)')
@@ -159,7 +291,7 @@ async function readEdition(db: Db, fetcher: Fetcher, instrumentId: number, url: 
     const fetched = await fetcher.fetch(url);
     if (fetched.status !== 200) return discard('non-200-response', `HTTP ${fetched.status}`);
 
-    const parsed = await parseDocument(fetched);
+    const parsed = await parseDocument(fetched, { languages });
     const stored = storeDocument(db, { instrumentId, fetched, parsed });
     if (stored.unread) return null;
 
@@ -232,6 +364,20 @@ export interface MaterialiseOptions {
   log?: (line: string) => void;
 }
 
+/**
+ * The adapter that stands behind an instrument's portal, if the portal declares one.
+ *
+ * Exported because reading a document is not the only thing that needs it: anything re-parsing the
+ * corpus has to resolve a document the way the read path resolves it, and for a long Act that means
+ * the adapter joining the EPUB volumes rather than the title page sitting at the document's URL.
+ */
+export function adapterFor(db: Db, profile: EconomyProfile, via: string): Adapter | null {
+  const id = Number(via.replace('portal:', ''));
+  const row = db.prepare('SELECT url FROM portal WHERE id = ?').get(id) as { url: string } | undefined;
+  const portal = row ? profile.portals.find((p) => p.url === row.url) : undefined;
+  return portal?.adapter ? ADAPTERS[portal.adapter] ?? null : null;
+}
+
 export async function materialise(
   db: Db,
   profile: EconomyProfile,
@@ -239,12 +385,6 @@ export async function materialise(
   opts: MaterialiseOptions = {},
 ): Promise<MaterialiseResult[]> {
   const log = opts.log ?? (() => {});
-  const adapterFor = (via: string): Adapter | null => {
-    const id = Number(via.replace('portal:', ''));
-    const row = db.prepare('SELECT url FROM portal WHERE id = ?').get(id) as { url: string } | undefined;
-    const portal = row ? profile.portals.find((p) => p.url === row.url) : undefined;
-    return portal?.adapter ? ADAPTERS[portal.adapter] ?? null : null;
-  };
 
   const where = opts.unreadOnly
     ? `i.economy_code = ? AND EXISTS (
@@ -286,7 +426,7 @@ export async function materialise(
 
   const results: MaterialiseResult[] = [];
   for (const [n, row] of rows.entries()) {
-    const adapter = adapterFor(row.discovered_via);
+    const adapter = adapterFor(db, profile, row.discovered_via);
     const base = { instrumentId: row.id, title: row.title, url: row.source_url };
     try {
       let fetched = adapter?.resolveDocument
@@ -303,7 +443,7 @@ export async function materialise(
         continue;
       }
 
-      let parsed = await parseDocument(fetched);
+      let parsed = await parseDocument(fetched, { languages: profile.officialLanguages });
 
       // A page of menus that publishes exactly one file is not an index of leads; it is the
       // instrument's own wrapper, and the file is the document to cite.
@@ -312,7 +452,7 @@ export async function materialise(
         const only = soleDocumentLink(fetched.body.toString('utf8'), fetched.finalUrl);
         if (only) {
           const inner = await fetcher.fetch(only);
-          const reparsed = inner.status === 200 ? await parseDocument(inner) : null;
+          const reparsed = inner.status === 200 ? await parseDocument(inner, { languages: profile.officialLanguages }) : null;
           if (reparsed && !reparsed.unread) {
             fetched = inner;
             parsed = reparsed;
@@ -330,24 +470,29 @@ export async function materialise(
              official_number = COALESCE(?, official_number),
              commenced_on = COALESCE(?, commenced_on),
              last_amended_on = COALESCE(?, last_amended_on),
-             timeframe_basis = COALESCE(?, timeframe_basis),
-             language = COALESCE(?, language)
+             timeframe_basis = COALESCE(?, timeframe_basis)
            WHERE id = ?`,
         ).run(
           parsed.meta['officialNumber'] ?? null,
           parsed.meta['commencedOn'] ?? null,
           parsed.meta['lastAmendedOn'] ?? null,
           [parsed.meta['commencementBasis'], parsed.meta['lastAmendedBasis']].filter(Boolean).join(' | ') || null,
-          parsed.sections[0]?.language ?? null,
           row.id,
         );
       }
+
+      // The language is what the document is written in, which the parser reads off the text and
+      // not off a date line. It used to be set inside the block above, so an instrument whose page
+      // published no number and no dates -- most of the Malay-language corpus -- stayed recorded as
+      // whatever language the register guessed, and the retrieval side then paired it wrongly.
+      const language = parsed.sections[0]?.language ?? null;
+      if (language) db.prepare('UPDATE instrument SET language = ? WHERE id = ?').run(language, row.id);
 
       // A document registered under an upload slug, or under a title that names no instrument at
       // all, takes the name it calls itself by.
       // Its citation provision where the parser found no title: a portal that filed an Order under
       // its own page theme still served a document whose section 1 says what the Order is.
-      const callsItself = parsed.title ?? statedName(parsed.sections);
+      const callsItself = ownName(parsed.sections, parsed.title);
       if ((row.title_provisional || !namesAnInstrument(row.title)) && callsItself) {
         db.prepare('UPDATE instrument SET title = ?, title_provisional = 0 WHERE id = ?')
           .run(callsItself, row.id);
@@ -375,7 +520,7 @@ export async function materialise(
       // practice in two languages is one instrument citing two documents, not two instruments.
       let extra = 0;
       for (const url of alsoAt(row)) {
-        const more = await readEdition(db, fetcher, row.id, url);
+        const more = await readEdition(db, fetcher, row.id, url, profile.officialLanguages);
         if (more === null) log(`  [${n + 1}/${rows.length}] also at ${url}: not read`);
         else extra += more;
       }

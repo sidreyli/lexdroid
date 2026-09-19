@@ -36,9 +36,21 @@ export function clip(text: string, max: number): string {
   return `${cut.slice(0, space > max * 0.6 ? space : max).trimEnd()}...`;
 }
 
+/**
+ * A prose list: "Singapore", "Singapore and Malaysia", "Singapore, Malaysia and Australia".
+ *
+ * The sidebar named its three economies in a sentence typed by hand, so the fourth was missing
+ * from the one line of the interface that is on every screen.
+ */
+export function listOf(items: string[]): string {
+  if (items.length <= 1) return items[0] ?? "";
+  return `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
+}
+
 /** The store keeps language tags. A reader wants the language. */
 const languages: Record<string, string> = {
   en: "English",
+  hi: "Hindi",
   ms: "Malay",
   zh: "Chinese",
   ta: "Tamil",

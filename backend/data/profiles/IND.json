@@ -82,7 +82,7 @@
       "kind": "gazette",
       "authority": "Department of Publication, Government of India",
       "pillars": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
-      "adapter": null,
+      "adapter": "crawl",
       "adapterConfig": {},
       "notes": "Primary publication point for Acts, commencement notices and subordinate instruments. The current search interface is form-driven and is left visibly unread until a stable, permitted enumeration route is implemented."
     },
@@ -92,7 +92,7 @@
       "kind": "legislation-database",
       "authority": "Ministry of Law and Justice",
       "pillars": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
-      "adapter": null,
+      "adapter": "crawl",
       "adapterConfig": {},
       "notes": "Official year-wise Act lists and legislative references; a fallback and cross-check for India Code, not a second copy silently counted as another measure."
     },
@@ -102,7 +102,7 @@
       "kind": "regulator",
       "authority": "MeitY",
       "pillars": [5, 6, 7, 8, 10, 11],
-      "adapter": null,
+      "adapter": "crawl",
       "adapterConfig": {},
       "notes": "Publishes the information-technology and data-protection Acts, rules, notifications and policy documents, including commencement material that must be read separately from a principal Act."
     },
@@ -112,7 +112,7 @@
       "kind": "regulator",
       "authority": "Reserve Bank of India",
       "pillars": [6, 7, 8, 10, 11],
-      "adapter": null,
+      "adapter": "sitemap",
       "adapterConfig": {},
       "notes": "Directions, master directions and circulars binding regulated financial entities. The archive requires a dedicated adapter and must not be treated as ordinary static HTML."
     },
@@ -122,7 +122,7 @@
       "kind": "regulator",
       "authority": "Department of Telecommunications",
       "pillars": [6, 7, 8, 10, 11],
-      "adapter": null,
+      "adapter": "crawl",
       "adapterConfig": {},
       "notes": "Telecommunications Acts, rules, licence conditions and security directions."
     },
@@ -132,7 +132,7 @@
       "kind": "regulator",
       "authority": "CERT-In",
       "pillars": [7],
-      "adapter": null,
+      "adapter": "crawl",
       "adapterConfig": {},
       "notes": "Directions issued under the Information Technology Act, including incident reporting and log-retention requirements."
     },
@@ -142,7 +142,7 @@
       "kind": "regulator",
       "authority": "DPIIT",
       "pillars": [1, 2, 3, 4, 9, 11],
-      "adapter": null,
+      "adapter": "crawl",
       "adapterConfig": {},
       "notes": "Investment, procurement, intellectual-property and competition-related policy and orders."
     },
@@ -152,7 +152,7 @@
       "kind": "regulator",
       "authority": "DGFT",
       "pillars": [1, 2, 3, 5, 6],
-      "adapter": null,
+      "adapter": "crawl",
       "adapterConfig": {},
       "notes": "Foreign Trade Policy, notifications, public notices and trade-control instruments."
     },
@@ -162,7 +162,7 @@
       "kind": "regulator",
       "authority": "SEBI",
       "pillars": [6, 7, 8, 11],
-      "adapter": null,
+      "adapter": "sitemap",
       "adapterConfig": {},
       "notes": "Regulations and circulars binding securities-market intermediaries, including technology, outsourcing and record-retention duties."
     },
@@ -172,7 +172,7 @@
       "kind": "regulator",
       "authority": "Bureau of Indian Standards",
       "pillars": [2, 4, 5, 10],
-      "adapter": null,
+      "adapter": "wp",
       "adapterConfig": {},
       "notes": "Standards, conformity-assessment requirements and compulsory-registration material relevant to digital goods and equipment."
     }

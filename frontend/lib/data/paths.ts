@@ -10,3 +10,11 @@ export const DB_PATH = process.env.LEXDROID_DB ?? join(BACKEND, "data/lexdroid.d
 export const RUBRIC_PATH = join(BACKEND, "data/rubric.json");
 export const PROFILES_DIR = join(BACKEND, "data/profiles");
 export const ENGINES_PATH = join(BACKEND, "data/engines.json");
+/**
+ * The runner, as a file Node can be pointed at.
+ *
+ * Not "npx": that is a .cmd on Windows, which Node will only start through a shell, and a shell
+ * is a place where an argument can stop being an argument. This is the same program with nothing
+ * in between.
+ */
+export const TSX_CLI = join(CHECKOUT, "node_modules/tsx/dist/cli.mjs");

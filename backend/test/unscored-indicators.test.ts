@@ -129,8 +129,21 @@ describe('the foreign-equity ladder', () => {
 });
 
 describe('the de minimis, compared with 200 US dollars', () => {
+  // Every threshold below is one on goods arriving, which is what a de minimis is, so each carries
+  // the words that say so. The measure is declared `crossesBorder`, and a figure in a revenue
+  // statute with nothing crossing is a threshold but not this one.
   const threshold = (words: string, n = 1): Evidence =>
-    ev('12.5', 'de-minimis-threshold', { definingWords: words, dutyForce: 'permits', imposingWords: null }, n);
+    ev(
+      '12.5',
+      'de-minimis-threshold',
+      {
+        definingWords: words,
+        dutyForce: 'permits',
+        imposingWords: null,
+        borderWords: 'goods imported into the economy',
+      },
+      n,
+    );
 
   it('scores 0.5 for a threshold below the line', () => {
     expect(score('12.5', [threshold('goods not exceeding RM500 in value')], 'MYS')).toBe(0.5);

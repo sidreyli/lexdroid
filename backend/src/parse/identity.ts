@@ -12,14 +12,15 @@ import type { ParsedSection } from './types.js';
 // Parentheses and line breaks belong to the name, not after it: whole families of Malaysian and
 // Singaporean instruments are told apart only by what is inside the brackets, which a PDF wraps.
 const STATES_NAME = [
-  /(?:may be|is)\s+cited\s+as\s+the\s+([A-Z][^.,;]{4,110})/,
-  /This\s+(?:Act|Ordinance|Enactment|Regulations?|Rules|Order)\s+is\s+the\s+([A-Z][^.,;]{4,110})/,
+  /(?:may be|is)\s+cited\s+as\s+the\s+([A-Z][^.,;]{4,160})/,
+  /This\s+(?:Act|Ordinance|Enactment|Regulations?|Rules|Order)\s+is\s+the\s+([A-Z][^.,;]{4,160})/,
 ];
 
 /** Words too common to distinguish one instrument from another. */
 const COMMON = new Set([
   'act', 'the', 'and', 'for', 'of', 'to', 'ordinance', 'enactment', 'regulations', 'regulation',
   'rules', 'order', 'reprint', 'revised', 'repealed', 'malaysia', 'singapore', 'australia',
+  'akta', 'peraturan', 'perintah', 'kaedah', 'enakmen', 'ordinan',
 ]);
 
 /** A plural and its singular are the same word. "Persons" against "Person's" is not two Acts. */
@@ -48,8 +49,11 @@ function keyWords(s: string): string[] {
  * filed one as "Wordpress Revolutionize" -- is not a legal title, so it has nothing to contradict
  * the document with. The document's own words are the better evidence and it takes their name.
  */
+// The kinds of instrument a register files, in both official languages of the economies read.
+// "Notification", "Direction" and "By-laws" were missing, which left 179 real titles -- every
+// Singaporean notification among them -- looking as though they named nothing.
 const NAMES_AN_INSTRUMENT =
-  /\b(act|ordinance|enactment|regulations?|rules?|order|notice|guidelines?|code|bill|constitution|charter|decree|akta|peraturan|perintah|kaedah|undang)\b/i;
+  /\b(acts?|ordinance|enactment|regulations?|rules?|orders?|schemes?|notice|notifications?|directions?|directives?|by-?laws?|guidelines?|guides?|guidance|standards?|circulars?|codes?|bill|constitution|charter|decree|akta|peraturan|perintah|kaedah|undang|garis panduan|pekeliling|pemberitahuan|arahan|notis|piawaian|tata ?amalan|kod)\b/i;
 
 export function namesAnInstrument(title: string): boolean {
   return NAMES_AN_INSTRUMENT.test(title);
@@ -67,6 +71,99 @@ export function statedName(sections: Pick<ParsedSection, 'text'>[], within = 14)
   return null;
 }
 
+/** The Malay drafting formula: "Akta ini bolehlah dinamakan Akta X". */
+const STATES_NAME_MS = /boleh(?:lah)?\s+(?:dinamakan|disebut)\s+(?:sebagai\s+)?([A-Z][^.,;]{4,160})/;
+/** The words a Malay title names its kind of instrument with. */
+const MALAY_KIND = /\b(?:akta|peraturan|perintah|kaedah|enakmen|ordinan)\b/i;
+
+/** A filed title is in Malay if it names its kind of instrument in Malay, and in English otherwise. */
+function titleLanguage(title: string): 'ms' | 'en' {
+  return MALAY_KIND.test(title) ? 'ms' : 'en';
+}
+
+/** Every name a document gives itself in its opening provisions, in each language it gives one. */
+export function statedNames(
+  sections: Pick<ParsedSection, 'text'>[],
+  within = 14,
+): { name: string; language: 'ms' | 'en' }[] {
+  const out: { name: string; language: 'ms' | 'en' }[] = [];
+  const clean = (m: string) =>
+    m.replace(/\s+(?:and|dan)\s+(?:shall|comes?|is deemed|shall be deemed|hendaklah|mula)\b[\s\S]*$/i, '').replace(/\s+/g, ' ').trim();
+  for (const s of sections.slice(0, within)) {
+    for (const re of STATES_NAME) {
+      const m = re.exec(s.text);
+      if (m) out.push({ name: clean(m[1]!), language: 'en' });
+    }
+    const ms = STATES_NAME_MS.exec(s.text);
+    if (ms) out.push({ name: clean(ms[1]!), language: 'ms' });
+  }
+  return out;
+}
+
+/**
+ * The name a document is to be registered under when the register's own title names nothing.
+ *
+ * Its citation clause first, in either language, because that is the instrument naming itself in
+ * law. The parser's guess at a title only after that, and only where the guess names an instrument:
+ * a PDF's guess is its running header, which is how a data protection standard came to be called
+ * "No. Descriptions" -- the header of a table -- and an online safety regulation "provider or
+ * licensed content applications service".
+ */
+export function ownName(sections: Pick<ParsedSection, 'text'>[], parserTitle: string | null): string | null {
+  const names = statedNames(sections);
+  const stated = names.find((n) => n.language === 'en') ?? names[0];
+  if (stated) return stated.name;
+  return parserTitle && namesAnInstrument(parserTitle) ? parserTitle : null;
+}
+
+/**
+ * A word made of the initials of the other name's words stands for those words.
+ *
+ * A catalogue abbreviates: Malaysia's filed the Personal Data Protection (Amendment) Act 2024 as
+ * "Akta Pdppindaan 2024" -- the initials of Perlindungan Data Peribadi run into "pindaan" -- and it
+ * shares no whole word with the name the Act gives itself. Three initials at least, so a word that
+ * merely opens with two letters another name's words begin with is not read as an abbreviation.
+ */
+function spellOut(words: string[], other: string[]): string[] {
+  const out: string[] = [];
+  for (const w of words) {
+    let expanded: string[] | null = null;
+    for (let i = 0; i < other.length && !expanded; i++) {
+      for (let k = other.length - i; k >= 3; k--) {
+        const initials = other.slice(i, i + k).map((x) => x[0]).join('');
+        if (w.startsWith(initials) && !other.includes(w)) {
+          const rest = w.slice(initials.length);
+          expanded = [...other.slice(i, i + k), ...(rest.length > 2 ? [stem(rest)] : [])];
+          break;
+        }
+      }
+    }
+    out.push(...(expanded ?? [w]));
+  }
+  return out;
+}
+
+/**
+ * The year a name cites its instrument by, or null where it gives none.
+ *
+ * English drafting puts the year straight after the kind -- "Copyright Act 1968" -- and Malay puts
+ * it after the subject -- "Akta Hak Cipta 1987" -- so the rule is the first year at or after the
+ * word that names the kind, in either order. That is also what excludes a revised edition's own
+ * date, "Copyright Act 1987 (Revised 2006)", which comes later in the name and is not the year the
+ * Act is cited by.
+ *
+ * A number no statute book could be dated by is not a year. A Malaysian Order whose name the parser
+ * recovered as "... Order/2063" would otherwise have contradicted its own register entry, and the
+ * document it refused is a real instrument -- the defect there is in the parse, not in the filing.
+ */
+function enactmentYear(name: string): string | null {
+  const kind = /\b(?:act|akta|enactment|enakmen|ordinance|ordinan)\b/i.exec(name);
+  if (!kind) return null;
+  const year = /\b(1[6-9]\d{2}|20\d{2})\b/.exec(name.slice(kind.index))?.[1];
+  if (!year) return null;
+  return Number(year) <= new Date().getUTCFullYear() + 1 ? year : null;
+}
+
 /**
  * Whether two names are the same instrument.
  *
@@ -75,8 +172,18 @@ export function statedName(sections: Pick<ParsedSection, 'text'>[], within = 14)
  * opening with the other's first identifying words is the same instrument.
  */
 export function namesMatch(stated: string, title: string): boolean {
-  const a = keyWords(stated);
-  const b = keyWords(title);
+  // The year an instrument is named for is part of its name, and keyWords drops every number, so
+  // the Copyright Act 1968 and a Copyright Act 1998 compared equal. Where both names state the year
+  // after their kind -- "Act 1968", "Akta 1987" -- different years are different instruments. A
+  // name that states no year, or a revised edition's later date elsewhere in the name, is no
+  // contradiction.
+  const ya = enactmentYear(stated);
+  const yb = enactmentYear(title);
+  if (ya && yb && ya !== yb) return false;
+  const a0 = keyWords(stated);
+  const b0 = keyWords(title);
+  const a = spellOut(a0, b0);
+  const b = spellOut(b0, a0);
   if (a.length === 0 || b.length === 0) return true;
   // "Incorporated" and "Incorporation" are one word drafted twice, so a long shared opening is
   // the same word. Eight characters, not six: six joins "arbitration" to "arbitral".
@@ -99,8 +206,13 @@ export function identityMismatch(
   opts: { titleProvisional?: boolean } = {},
 ): { stated: string; detail: string } | null {
   if (opts.titleProvisional || !namesAnInstrument(title)) return null;
-  const stated = statedName(sections);
-  if (stated === null || namesMatch(stated, title)) return null;
+  // A name can only contradict a title in its own language. A bilingual instrument filed under its
+  // Malay title and naming itself only in English shares no word with that title and is still the
+  // same instrument: three data protection instruments were refused as "another instrument" so.
+  const language = titleLanguage(title);
+  const names = statedNames(sections).filter((n) => n.language === language);
+  if (names.length === 0 || names.some((n) => namesMatch(n.name, title))) return null;
+  const stated = names[0]!.name;
   return {
     stated,
     detail: `Filed as "${title}", but the document calls itself "${stated}". It is a different instrument, so nothing in it may be cited under this title.`,
@@ -163,4 +275,55 @@ export function citesADefinition(text: string, words: string | null): boolean {
   const brk = ENTRY_END.exec(text.slice(opener.index + opener[0].length));
   if (brk) stop = Math.min(stop, opener.index + opener[0].length + brk.index);
   return at < stop;
+}
+
+/**
+ * Does the quoted paragraph take its force from a stem that only confers a power?
+ *
+ * A lettered paragraph is not a sentence. It borrows its verb from the words before the colon, and
+ * quoted on its own it reads as though it had one of its own. Australia's 6.1 was decided by
+ * "prohibit the entity from storing or accessing, or providing access to, scheme data outside
+ * Australia" -- paragraph (e) of a list whose stem reads "Examples of conditions that **may** be
+ * prescribed or imposed are conditions to do any of the following:". Nothing is prohibited. The
+ * Digital ID Act answered the same cell with "prohibit ... the holding, storing, handling or
+ * transferring of such information outside Australia", under the stem "the Digital ID Rules may:".
+ *
+ * The reader cannot see this, because the reader is given the paragraph. Both came back with the
+ * verb "prohibit", force "forbids" and mandatory true, which is a fair reading of the words it was
+ * shown. So the question is asked here, where the whole section is in hand, and it is asked of
+ * drafting form rather than of meaning: walk back from the quote to the colon that opens the list,
+ * take the stem, and read its last modal. "must" and "shall" impose, and their lists are the
+ * conditions of an obligation -- "the provider must not activate the service unless the provider
+ * has: (a) obtained information; and (b) verified the identity" is a duty in both its limbs. "may"
+ * confers, and its list is a menu of what some other instrument might one day say.
+ *
+ * A power to prohibit is a real and reportable fact about an economy. It is not a prohibition, and
+ * the bands of pillar 6 count measures in force.
+ */
+const LIST_MODAL = /\b(must not|shall not|may not|must|shall|may)\b/gi;
+/** Where the stem begins: the end of whatever sentence came before it. */
+const SENTENCE_END = /[.;]\s+(?=[A-Z(])|\n\s*\n/g;
+
+export function inheritsAPower(text: string, quote: string | null): boolean {
+  const words = quote?.trim();
+  if (!words || words.length < 3) return false;
+  const at = text.indexOf(words);
+  if (at < 0) return false;
+
+  // The colon that opens the list this paragraph sits in. Only the text before the quote counts,
+  // and only the nearest one: a section may open several lists.
+  const before = text.slice(0, at);
+  const colon = before.lastIndexOf(':');
+  if (colon < 0) return false;
+
+  // A stem governs the paragraphs under it, not the rest of the instrument. If a sentence has ended
+  // between the colon and the quote, the quote is not in that list.
+  if (/[.]\s+[A-Z]/.test(text.slice(colon + 1, at))) return false;
+
+  const starts = [...before.slice(0, colon).matchAll(SENTENCE_END)];
+  const stem = before.slice(starts.length ? (starts.at(-1)!.index ?? 0) + starts.at(-1)![0].length : 0, colon);
+
+  const modals = [...stem.matchAll(LIST_MODAL)].map((m) => m[1]!.toLowerCase());
+  const last = modals.at(-1);
+  return last === 'may';
 }

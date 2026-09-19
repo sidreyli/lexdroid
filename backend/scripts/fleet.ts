@@ -12,9 +12,12 @@
  */
 import { spawn } from 'node:child_process';
 import { createWriteStream, mkdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { loadEnv } from '../src/env.js';
 import { openDb } from '../src/db/index.js';
-import { openRun, joinRun, finishRun, runEvents, recordRent } from '../src/run/index.js';
+import { openRun, joinRun, finishRun, runEvents, recordRent, recordEvent } from '../src/run/index.js';
+import { rescoreRun } from '../src/run/rescore.js';
 import { describe } from '../src/run/events.js';
 import {
   childEngineEnv,
@@ -28,8 +31,18 @@ import {
 import { indicatorsOfPillar, loadRubric } from '../src/rubric/index.js';
 import { READING_MODEL } from '../src/engines/ollama.js';
 import { probeEngine, describeReport, usable, mismatchedEngine, fingerprintOf } from '../src/engines/probe.js';
+import { probeHosted } from '../src/engines/hosted.js';
 import { cacheEnabled } from '../src/engines/cache.js';
+import { prepareCorpus, describePrepare, type PrepareResult } from '../src/run/prepare.js';
+import { confirmPass } from '../src/read/confirm-pass.js';
+import { buildExportRows } from '../src/export/index.js';
+import { verifyRun } from '../src/verify/index.js';
+import { tagRun } from '../src/baseline/tag.js';
 import { defaultEngine, findEngine, type Engine } from '../src/engines/registry.js';
+
+// Before any engine is chosen: a hosted engine needs its key from .env, and the workers this
+// process spawns inherit whatever it loads here.
+loadEnv();
 
 interface Args {
   economies: string[];
@@ -47,6 +60,12 @@ interface Args {
   fanOut: boolean;
   engine: Engine | undefined;
   cacheOnly: boolean;
+  /** Answer out of the corpus as it stands, without discovering or fetching anything first. */
+  skipPrepare: boolean;
+  /** Stop after the cells are answered, without confirming, exporting or verifying them. */
+  skipFinish: boolean;
+  /** How many instruments each of the run's questions may pull into the corpus. */
+  top: number;
 }
 
 function parseArgs(argv: string[]): Args {
@@ -83,8 +102,14 @@ function parseArgs(argv: string[]): Args {
     fanOut: argv.includes('--fan-out'),
     engine,
     cacheOnly: argv.includes('--cache-only'),
+    skipPrepare: argv.includes('--skip-prepare'),
+    skipFinish: argv.includes('--skip-finish'),
+    top: get('top') !== null ? Number(get('top')) : 15,
   };
 }
+
+/** The runner as a file Node can be pointed at, so no shell is needed to find npx's .cmd. */
+const TSX_CLI = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'node_modules', 'tsx', 'dist', 'cli.mjs');
 
 /** One work unit on one engine, as a child gate that joins the run. Output goes to its own log. */
 function runUnit(unit: Unit, hosts: string[], runId: string, logDir: string, args: Args, attempt = 1): Promise<number> {
@@ -92,7 +117,7 @@ function runUnit(unit: Unit, hosts: string[], runId: string, logDir: string, arg
   const logPath = join(logDir, `${unit.economy}-p${unit.pillar}${suffix}.log`);
   const out = createWriteStream(logPath);
   const argv = [
-    'tsx',
+    TSX_CLI,
     'scripts/gate.ts',
     '--economy',
     unit.economy,
@@ -108,9 +133,25 @@ function runUnit(unit: Unit, hosts: string[], runId: string, logDir: string, arg
   if (!args.compare) argv.push('--no-compare');
 
   return new Promise((resolve) => {
-    const child = spawn('npx', argv, {
-      shell: true,
-      env: { ...process.env, ...childEngineEnv(hosts) },
+    // No shell: the arguments go to the program as an array, so an economy code or a run id can
+    // never be read as a command. Node runs the runner itself rather than npx, because Windows
+    // will not start npx's .cmd without a shell and the shell is the thing being removed.
+    const child = spawn(process.execPath, argv, {
+      shell: false,
+      env: {
+        ...process.env,
+        ...childEngineEnv(
+          hosts,
+          args.engine?.hosted
+            ? {
+                hosted: true,
+                baseUrl: args.engine.hosts[0] ?? '',
+                model: args.engine.model,
+                provider: args.engine.provider,
+              }
+            : undefined,
+        ),
+      },
     });
     child.stdout.pipe(out);
     child.stderr.pipe(out);
@@ -175,27 +216,43 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  console.log(`\nChecking ${args.hosts.length} engine(s)...\n`);
-  const reports = await Promise.all(
-    args.hosts.map((h) => probeEngine(h, args.model, { quick: !args.probe })),
-  );
-  for (const r of reports) console.log(`  ${describeReport(r)}`);
-
-  const unusable = reports.filter((r) => !usable(r, args.requireSerial));
-  if (unusable.length > 0) {
-    console.error(
-      `\n${unusable.length} of ${reports.length} engine(s) cannot be used. Fix them, or drop them from --hosts.\n`,
+  // A hosted engine has no Ollama server to probe, so it is asked the only question that matters:
+  // does it answer, with the model it was declared as. The checks below are about a machine we are
+  // renting by the hour, and there is no machine here.
+  if (args.engine?.hosted) {
+    process.env['LEXDROID_HOSTED_BASE_URL'] = args.engine.hosts[0] ?? '';
+    process.env['LEXDROID_HOSTED_MODEL'] = args.engine.model;
+    process.env['LEXDROID_HOSTED_PROVIDER'] = args.engine.provider;
+    console.log(`\nChecking ${args.engine.label}: ${args.engine.provider} / ${args.engine.model}\n`);
+    const probe = await probeHosted();
+    console.log(`  ${probe.detail}`);
+    if (!probe.ok) {
+      console.error(`\n${args.engine.label} cannot be reached. Fix it, or run on the other engine.\n`);
+      process.exit(1);
+    }
+  } else {
+    console.log(`\nChecking ${args.hosts.length} engine(s)...\n`);
+    const reports = await Promise.all(
+      args.hosts.map((h) => probeEngine(h, args.model, { quick: !args.probe })),
     );
-    process.exit(1);
-  }
+    for (const r of reports) console.log(`  ${describeReport(r)}`);
 
-  // The cloud failure a laptop cannot have: the same tag built differently on two machines. Half
-  // the run would be answered by one model and half by the other, and neither half would say so.
-  const odd = mismatchedEngine(reports);
-  if (odd) {
-    console.error(`\n${odd.host} serves ${fingerprintOf(odd)}, but ${reports[0]!.host} serves`);
-    console.error(`${fingerprintOf(reports[0]!)}. One run answered by two models is two runs.\n`);
-    process.exit(1);
+    const unusable = reports.filter((r) => !usable(r, args.requireSerial));
+    if (unusable.length > 0) {
+      console.error(
+        `\n${unusable.length} of ${reports.length} engine(s) cannot be used. Fix them, or drop them from --hosts.\n`,
+      );
+      process.exit(1);
+    }
+
+    // The cloud failure a laptop cannot have: the same tag built differently on two machines. Half
+    // the run would be answered by one model and half by the other, and neither half would say so.
+    const odd = mismatchedEngine(reports);
+    if (odd) {
+      console.error(`\n${odd.host} serves ${fingerprintOf(odd)}, but ${reports[0]!.host} serves`);
+      console.error(`${fingerprintOf(reports[0]!)}. One run answered by two models is two runs.\n`);
+      process.exit(1);
+    }
   }
 
   // How many indicators a pillar asks about is the size signal available before any of it runs.
@@ -259,6 +316,40 @@ async function main(): Promise<void> {
   const following_ = follow();
 
   const started = Date.now();
+
+  // Zone 0 and Zone 1, before anything is asked of the corpus.
+  //
+  // This is what "Fetch new documents" promised and did not do. A fleet that joined a run does not
+  // repeat it -- the fleet that opened the run has already walked the portals -- and a cache-only
+  // pass does not do it at all, which is what makes its document list empty.
+  const prepared: PrepareResult[] = [];
+  if (!args.skipPrepare && !args.joinRunId) {
+    console.log(`preparing the corpus for ${args.economies.join(', ')}`);
+    for (const economy of args.economies) {
+      try {
+        const result = await prepareCorpus(db, {
+          economy,
+          runId: run.id,
+          pillars: args.pillars,
+          sourceMode: args.cacheOnly ? 'cache-only' : 'fetch',
+          top: args.top,
+          emit: (e) => recordEvent(run, e),
+          log: (l) => console.log(`  ${l}`),
+        });
+        prepared.push(result);
+        console.log(describePrepare(result));
+        for (const note of result.notes) console.log(`    ${note}`);
+      } catch (err) {
+        // A portal that will not answer is not a reason to abandon the cells: the corpus already
+        // on disk still answers them, and the run says what it could not reach.
+        const detail = err instanceof Error ? err.message : String(err);
+        console.log(`  ${economy}: could not be prepared -- ${detail}`);
+        recordEvent(run, { stage: 'discover', kind: 'failed', economy, detail });
+      }
+    }
+    console.log('');
+  }
+
   let next = 0;
   const done: { unit: Unit; host: string; code: number }[] = [];
 
@@ -296,6 +387,10 @@ async function main(): Promise<void> {
 
   const seconds = (Date.now() - started) / 1000;
   const failed = done.filter((d) => d.code !== 0);
+  // An export that threw leaves the run with answers and nothing submittable. Recorded as
+  // 'complete' it was indistinguishable from a run that had been exported, tagged and verified,
+  // and the reviewer's first sight of the problem was an empty submission.
+  let exportFailed = false;
   // Rented hardware bills for the hour it is held, not for the seconds it decodes, so the
   // charge is hosts x wall time. Zero for a laptop, which is why the default is zero.
   const rent = args.usdPerHour * args.hosts.length * (seconds / 3600);
@@ -303,7 +398,77 @@ async function main(): Promise<void> {
   // A fleet that joined a run it did not open does not close it. Two fleets sharing a run finish at
   // different times, and the first to finish closing it locked the second out of its own remaining
   // units -- three pillars refused entry to a run that was still being worked on.
-  if (!args.joinRunId) finishRun(run, failed.length > 0 ? 'failed' : 'complete');
+
+  // The three stages that turn answers into something a person can review and submit. They used to
+  // be three commands somebody had to remember, so the runs that produced the submission had none
+  // of them and the latest complete run had zero export rows in it.
+  //
+  // A fleet that joined a run does not do this either: the fleet that opened it closes it, and
+  // confirming half a run's findings while another fleet is still producing them scores a moving
+  // target.
+  if (!args.skipFinish && !args.joinRunId) {
+    try {
+      console.log('confirming what each provision actually states');
+      const pass = await confirmPass(db, {
+        runId: run.id,
+        model: args.model,
+        workers: args.hosts.length,
+        emit: (e) => recordEvent(run, e),
+        log: (l) => console.log(l),
+      });
+      console.log(
+        `  asked ${pass.asked} of ${pass.questions}; ${pass.confirmed} confirmed, ` +
+          `${pass.ruledOut} ruled out, ${pass.failed} failed`,
+      );
+
+      // The findings have moved, so the scores have to be taken again from them. Nothing is
+      // re-read and nothing is re-fetched: this is the same decision over the same record.
+      console.log('re-scoring against what the second reading found');
+      const rescored = rescoreRun(db, run.id);
+      console.log(`  ${rescored.changed} of ${rescored.cells} cell(s) changed`);
+
+      console.log('building the export rows');
+      recordEvent(run, { stage: 'export', kind: 'started' });
+      const built = buildExportRows(db, run.id);
+      console.log(`  ${built.rows} row(s) from ${built.cells} cell(s)`);
+      if (built.cellsWithoutRow > 0) console.log(`  WARNING: ${built.cellsWithoutRow} cell(s) produced no row`);
+      if (built.reviewsCarried > 0) console.log(`  ${built.reviewsCarried} reviewer decision(s) carried`);
+      if (built.reviewsDropped > 0) {
+        console.log(`  WARNING: ${built.reviewsDropped} reviewer decision(s) dropped; those rows changed`);
+      }
+      recordEvent(run, { stage: 'export', kind: 'finished', detail: `${built.rows} row(s)`, total: built.rows });
+
+      // NEW or KNOWN, against ESCAP's sample kit. Last, and from a script rather than from src/,
+      // because nothing in the pipeline may see the kit: if discovery could, every instrument
+      // would be KNOWN by construction and the sealed economy would be the one that collapsed.
+      console.log('tagging each row against the published sample kit');
+      const tagged = tagRun(db, run.id);
+      console.log(`  ${tagged.isNew} NEW, ${tagged.known} KNOWN, ${tagged.newInstruments.length} instrument(s) the kit does not have`);
+
+      console.log('verifying every row against the gates');
+      recordEvent(run, { stage: 'verify', kind: 'started', total: built.rows });
+      const verified = verifyRun(db, run.id);
+      console.log(`  ${verified.held} of ${verified.rows} row(s) held for a reviewer`);
+      recordEvent(run, {
+        stage: 'verify',
+        kind: 'finished',
+        detail: `${verified.held} of ${verified.rows} held for review`,
+        done: verified.rows - verified.held,
+        total: verified.rows,
+      });
+      console.log('');
+    } catch (err) {
+      // The cells are answered and recorded either way. A failure here costs the export, not the
+      // run, and saying which is the difference between a rerun and a six-hour rerun.
+      const detail = err instanceof Error ? err.message : String(err);
+      console.log(`
+  the answers are recorded, but they could not be made submittable: ${detail}`);
+      recordEvent(run, { stage: 'export', kind: 'failed', detail });
+      exportFailed = true;
+    }
+  }
+
+  if (!args.joinRunId) finishRun(run, failed.length > 0 || exportFailed ? 'failed' : 'complete');
 
   console.log('');
   console.log(`=== ${done.length} unit(s) in ${(seconds / 60).toFixed(1)} minutes ===`);

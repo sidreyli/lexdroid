@@ -20,7 +20,7 @@ import { execSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import type { Db } from '../db/index.js';
 import { loadRubric } from '../rubric/index.js';
-import type { PillarAnswer } from '../cell/index.js';
+import { FRAMEWORK_OF, type PillarAnswer } from '../cell/index.js';
 import { refile, type Decision, type Evidence } from '../decide/index.js';
 import type { FxRates } from '../decide/currency.js';
 import { locateQuote } from '../util/locate.js';
@@ -280,10 +280,11 @@ export function recordPillarAnswer(run: RunContext, answer: PillarAnswer): void 
   );
   const insertFrameworkReading = db.prepare(
     `INSERT OR REPLACE INTO framework_reading
-       (cell_id, instrument_id, engine, model, establishes_framework, horizontal, dedicated,
+       (cell_id, instrument_id, engine, model, establishes_framework, framework_words,
+        framework_shown, horizontal, dedicated,
         dedicated_words, dedicated_shown, sector_words, sectoral_shown, sector, quote,
         quote_verified, reasoning, prompt_tokens, output_tokens, latency_ms, read_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   );
   const insertBasis = db.prepare(
     `INSERT OR IGNORE INTO answer_basis (cell_id, ordinal, instrument_id, section_id, measure)
@@ -292,17 +293,19 @@ export function recordPillarAnswer(run: RunContext, answer: PillarAnswer): void 
   const insertAnswer = db.prepare(
     `INSERT OR REPLACE INTO cell_answer
        (cell_id, score, band_ordinal, band_criterion, deciding_fact, controlling_instrument_id,
-        absence_basis, rationale, computed_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        absence_basis, rationale, confirmations_asked, confirmations_applied, computed_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   );
   const cellIdentity = db.prepare('SELECT run_id, economy_code, indicator_id FROM cell WHERE id = ?');
   const currentTo = new Map(
     (
-      db.prepare('SELECT id, last_amended_on FROM instrument WHERE economy_code = ?').all(answer.economy) as {
-        id: number;
-        last_amended_on: string | null;
-      }[]
-    ).map((r) => [r.id, r.last_amended_on]),
+      db
+        .prepare(
+          `SELECT id, COALESCE(current_to, last_amended_on) AS current_to FROM instrument
+            WHERE economy_code = ?`,
+        )
+        .all(answer.economy) as { id: number; current_to: string | null }[]
+    ).map((r) => [r.id, r.current_to]),
   );
 
   /** One entry per instrument the cell's search returned, best rank first, as the decision saw it. */
@@ -341,7 +344,15 @@ export function recordPillarAnswer(run: RunContext, answer: PillarAnswer): void 
     db,
     answer.readings.map((r) => r.sectionId),
   );
-  const frameworkByInstrument = new Map(answer.frameworkReadings.map((r) => [r.instrumentId, r]));
+  // Keyed by subject as well as instrument. 8.1 and 8.2 examine the same instruments -- that is
+  // what interleaving the register and the retrieval gets them -- and ask a different question of
+  // each. Keyed by instrument alone the two readings of Singapore's Online Safety Act collapsed to
+  // whichever was taken last, so a row's words, quote and reasoning could be the other indicator's
+  // answer about the same Act while its booleans were its own. The columns disagreed and neither
+  // was marked wrong.
+  const frameworkByInstrument = new Map(
+    answer.frameworkReadings.map((r) => [`${r.subject}:${r.instrumentId}`, r]),
+  );
 
   db.transaction(() => {
     for (const decision of answer.decisions) {
@@ -414,6 +425,19 @@ export function recordPillarAnswer(run: RunContext, answer: PillarAnswer): void 
           });
           continue;
         }
+        // A provision the engine did not answer on was not read. Written as a reading it became
+        // applies = 0 -- "read, and nothing applies" -- which is the evidence a zero is made of,
+        // made out of an engine failure. It goes on the discard record instead, where it is
+        // countable and says what went wrong.
+        if (reading.failure !== null) {
+          recordDiscard(run, {
+            stage: 'read',
+            subject: `${decision.indicatorId} :: section ${reading.sectionId}`,
+            reason: 'the engine gave no usable answer on this provision',
+            detail: reading.failure,
+          });
+          continue;
+        }
         // Filed the way the decision filed it, not the way the reader did. These rows are what a
         // later verification re-derives the score from, and a finding the rubric moved between two
         // indicators used to be written under the one the reader named -- so the cell that acted
@@ -445,18 +469,26 @@ export function recordPillarAnswer(run: RunContext, answer: PillarAnswer): void 
       // Every instrument examined for a framework, not only the ones that became a basis. A cell
       // saying "none of the 5 instruments examined establishes such a framework" held no rows at
       // all for those five, so the strongest claim in the rubric had no record behind it.
+      //
+      // Which is what this line said and did not do: preferring the basis whenever there was one
+      // kept the negatives only for cells that found nothing, and dropped them exactly where they
+      // are most worth having -- beside a positive, saying what was rejected in its favour.
+      // Singapore's pillar 8 examined ten instruments on 17 September and recorded two. The basis
+      // is the fallback now, for a decision that named instruments the examined list somehow did
+      // not carry; the examined list leads.
       const examined =
-        decision.frameworkBasis.length > 0
-          ? decision.frameworkBasis
-          : (answer.frameworkExamined[decision.indicatorId] ?? []);
+        answer.frameworkExamined[decision.indicatorId] ?? decision.frameworkBasis;
+      const subject = FRAMEWORK_OF[decision.indicatorId];
       for (const f of examined) {
-        const reading = frameworkByInstrument.get(f.instrumentId);
+        const reading = subject ? frameworkByInstrument.get(`${subject}:${f.instrumentId}`) : undefined;
         insertFrameworkReading.run(
           cellId,
           f.instrumentId,
           run.engine,
           reading?.model ?? answer.model,
           f.establishesFramework ? 1 : 0,
+          reading?.frameworkWords ?? null,
+          f.frameworkShown ? 1 : 0,
           f.horizontal ? 1 : 0,
           f.dedicated ? 1 : 0,
           reading?.dedicatedWords ?? null,
@@ -498,6 +530,8 @@ export function recordPillarAnswer(run: RunContext, answer: PillarAnswer): void 
         // merely returned. Only the first sustains a band that scores for an absence.
         decision.absence?.basis ?? null,
         decision.rationale,
+        decision.confirmations?.asked ?? null,
+        decision.confirmations?.applied ?? null,
         now,
       );
 

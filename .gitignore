@@ -7,6 +7,11 @@ dist/
 backend/data/lexdroid.db
 backend/data/lexdroid.db-*
 backend/data/lexdroid.db.*
+# Copies taken before a change that rewrites the store, kept until the change is trusted.
+backend/data/lexdroid.*.db
+# Snapshots taken with VACUUM INTO so rules can be graded while a run holds the write lock.
+backend/data/lexdroid.snapshot.db
+backend/data/lexdroid.snapshot.db-*
 # ESCAP's completed answers for ten economies. Rebuilt by scripts/import-baseline
 # from their sample kit; never redistributed with the public repository.
 backend/data/baseline.db
@@ -34,9 +39,14 @@ docs/_manifest.tsv
 
 .env
 .env.*
+# The template is the one that must be committed: Quick Start says `cp .env.example .env`, and a
+# reviewer who does not get this file has nothing to copy.
+!.env.example
 .DS_Store
 Thumbs.db
 backend/data/*.log
+backend/data/logs/
 
 # The fetched exchange rates. A cache, refreshed daily by any run that can reach the publisher.
 backend/data/fx-rates.json
+.playwright-mcp/

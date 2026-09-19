@@ -195,6 +195,11 @@ export const lomSubsidAdapter: Adapter = {
     for (const row of rows) {
       if (!row.url) {
         noFile += 1;
+        ctx.setAside({
+          subject: row.number,
+          reason: 'listed-no-document-link',
+          detail: `${row.title || row.number} is listed in the ${series} catalogue with no document link`,
+        });
         continue;
       }
       if (!row.title) noTitle += 1;

@@ -267,15 +267,16 @@ export async function retrieveForIndicator(
   const queries = queriesFor(indicator, economyRow?.name);
   const vectors = opts.vectors ?? loadVectors(db, { economy: opts.economy, ...(opts.model ? { model: opts.model } : {}) });
 
+  const second = otherLanguageCopies(db, opts.economy);
   const runs: SearchHit[][] = [];
   for (const query of queries) {
-    const lex = searchLexical(db, query, { limit: perQueryDepth, economy: opts.economy });
+    const lex = searchLexical(db, query, { limit: perQueryDepth, economy: opts.economy }).filter((h) => !second.has(h.sectionId));
     if (lex.length) runs.push(lex);
     if (vectors.ids.length) {
-      const dense = await searchDense(query, vectors, {
+      const dense = (await searchDense(query, vectors, {
         limit: perQueryDepth,
         ...(opts.model ? { model: opts.model } : {}),
-      });
+      })).filter((h) => !second.has(h.sectionId));
       if (dense.length) runs.push(dense);
     }
   }
@@ -401,6 +402,50 @@ export async function retrieveForIndicator(
     governing,
     sections,
   };
+}
+
+/** The language the rubric is written in, and so the one a provision is read in where there is a choice. */
+export const RUBRIC_LANGUAGE = 'en';
+
+/**
+ * The sections that are a second copy of a provision the corpus already holds in the rubric's
+ * language.
+ *
+ * A bilingual instrument states every provision twice, once per official language, and reading
+ * both retrieves, reads and counts one provision twice. But "the instrument holds some English" is
+ * not "this provision is held in English": Malaysia's banking code of practice has one English
+ * section beside 128 Malay ones, and dropping every Malay section of an instrument with any English
+ * in it lost the other 127. So a provision is a second copy only where its own counterpart is
+ * there -- a section of the same instrument, in the rubric's language, under the same label --
+ * paired one to one, so that a label the Malay text uses three times is excused by three English
+ * sections and not by one. An unlabelled section cannot be paired and is kept.
+ */
+export function otherLanguageCopies(db: Db, economy: string): Set<number> {
+  const rows = db
+    .prepare(
+      `SELECT s.id, d.instrument_id AS instrument, s.label, s.language
+         FROM section s
+         JOIN document d ON d.id = s.document_id
+         JOIN instrument i ON i.id = d.instrument_id
+        WHERE i.economy_code = ? AND s.label IS NOT NULL AND s.language IS NOT NULL
+        ORDER BY d.id, s.ordinal`,
+    )
+    .all(economy) as { id: number; instrument: number; label: string; language: string }[];
+
+  const counterparts = new Map<string, number>();
+  const keyOf = (r: { instrument: number; label: string }): string => `${r.instrument}|${r.label}`;
+  for (const r of rows) {
+    if (r.language === RUBRIC_LANGUAGE) counterparts.set(keyOf(r), (counterparts.get(keyOf(r)) ?? 0) + 1);
+  }
+  const second = new Set<number>();
+  for (const r of rows) {
+    if (r.language === RUBRIC_LANGUAGE) continue;
+    const left = counterparts.get(keyOf(r)) ?? 0;
+    if (left === 0) continue;
+    counterparts.set(keyOf(r), left - 1);
+    second.add(r.id);
+  }
+  return second;
 }
 
 /**

@@ -18,7 +18,8 @@
  */
 import type { Indicator, ScoreBand } from '../rubric/types.js';
 import type { Finding } from '../read/index.js';
-import { MEASURES, MEASURE_NAMES, SUBJECTS, SUBJECT_DOMAIN } from '../rubric/measures.js';
+import { MEASURES, MEASURE_DOMAIN, MEASURE_NAMES, SUBJECTS, SUBJECT_DOMAIN } from '../rubric/measures.js';
+import { tallyConfirmations, type ConfirmationTally } from '../read/confirmations.js';
 import { inUsd, moneyIn, type FxRates } from './currency.js';
 
 /** One finding, with enough of its origin to cite it. */
@@ -27,6 +28,8 @@ export interface Evidence {
   sectionId: number;
   instrumentId: number;
   instrumentTitle: string;
+  /** What the register says of the instrument. Absent where the corpus predates the field. */
+  instrumentStatus?: 'in-force' | 'repealed' | 'draft' | 'amending' | 'unknown';
   headingPath: string;
   /** The deep link a reviewer follows: the instrument's own URL and the provision's anchor. */
   citation: string;
@@ -57,6 +60,18 @@ export interface Evidence {
    * it is a fact about the document, so it is read off the document once and carried.
    */
   definesATerm?: boolean;
+  /**
+   * Whether the quoted words are a list item whose stem only confers a power.
+   *
+   * Same footing as definesATerm: a fact about the drafting, read off the whole section once. The
+   * reader is given the paragraph and cannot see the stem above it, so a menu of what some other
+   * instrument may one day prohibit comes back reading as a prohibition.
+   */
+  inheritsAPower?: boolean;
+  /** The language the provision is written in. Absent where the corpus predates the field. */
+  sectionLanguage?: string | null;
+  /** The parser read the provision itself as repealed or deleted, whatever the instrument's status. */
+  sectionRepealed?: boolean;
 }
 
 /** What a framework-shaped indicator is decided from. One per candidate instrument. */
@@ -65,6 +80,15 @@ export interface FrameworkEvidence {
   instrumentTitle: string;
   citation: string;
   establishesFramework: boolean;
+  /**
+   * Whether the instrument's own text carries the rule said to establish the framework.
+   *
+   * Null where the reading predates the question being asked. A reading taken before the reader
+   * was obliged to quote the rule did not fail to quote it, and treating those as refusals would
+   * turn every framework cell of every run banked before 17 September into "no framework" the
+   * next time it was re-scored -- silently, offline, with no engine involved.
+   */
+  frameworkShown: boolean | null;
   horizontal: boolean;
   dedicated: boolean;
   /** Whether the instrument's own opening carries the words said to show it is dedicated. */
@@ -72,6 +96,13 @@ export interface FrameworkEvidence {
   /** And the words said to confine it to one named sector, where it was called sectoral. */
   sectoralShown: boolean;
   sector: string | null;
+  /**
+   * What the economy's own profile says this kind of instrument can bind.
+   *
+   * Null where the kind is not declared, which is not the same as advisory: an undeclared kind is
+   * an unanswered question, and the framework reach test below only acts on a declared answer.
+   */
+  bindingness: 'binding' | 'binding-on-licensees' | 'advisory' | null;
   quote: string;
 }
 
@@ -160,6 +191,11 @@ export interface Decision {
   decidingFact: string;
   /** Assembled from the band's own words and the evidence. Not written by a model. */
   rationale: string;
+  /**
+   * How many of this cell's findings carried a second-reading verdict, and how many that pass
+   * ruled out. Filled by `decide`; the inner decision does not set it.
+   */
+  confirmations?: ConfirmationTally;
 }
 
 /* ---------------------------------------------------------------------------------------------
@@ -899,11 +935,24 @@ const RULES: Record<string, Rule> = {
   ),
 
   /** 4.5 "Lack of framework OR of exceptions" / "unclear exceptions" / "clear exceptions
-   *  following fair use or fair dealing". The band names the open model by name, so a closed list
-   *  of permitted purposes is the middle band however clearly it is drafted. */
+   *  following fair use or fair dealing".
+   *
+   *  The band names the open model by name, and that is the test -- not whether the exception is a
+   *  closed list, which was the reading here before and is wrong. Australian fair dealing IS a
+   *  closed list of purposes: research and study, criticism and review, parody and satire, news.
+   *  So is Singapore's, before the general fair use section. A rule that puts a closed list in the
+   *  middle band "however clearly it is drafted" therefore puts the fair dealing model there, which
+   *  is the one thing the top band says out loud.
+   *
+   *  So the statutory term decides it, whichever measure the reader filed the provision under.
+   *  Australia's s.113E -- "A fair dealing with copyright material does not infringe copyright in
+   *  the material" -- came back tagged as the closed-list measure with its defining words reading,
+   *  in full, "fair dealing". The two measures are not cleanly separable by description, because
+   *  every fair dealing provision answers both; the words the legislature used are separable, and
+   *  they are the words the band criterion quotes. */
   '4.5': (indicator, qualifying) => {
-    const open = qualifying.filter((e) => e.finding.measure === 'fair-use-exception');
-    const closed = qualifying.filter((e) => e.finding.measure === 'qualified-exception');
+    const open = qualifying.filter((e) => e.finding.measure === 'fair-use-exception' || namesTheModel(e));
+    const closed = qualifying.filter((e) => e.finding.measure === 'qualified-exception' && !namesTheModel(e));
     if (open.length > 0) return { ordinal: 3, reason: 'a fair use or fair dealing exception', counted: [...open, ...closed] };
     if (closed.length > 0) return { ordinal: 2, reason: 'copyright exceptions confined to listed purposes', counted: closed };
     return { ordinal: 1, reason: 'nothing read establishes a copyright exception' };
@@ -1076,6 +1125,56 @@ export const UNREACHABLE_BANDS: Readonly<Record<string, Readonly<Record<number, 
 };
 
 /**
+ * Evidence from something other than law in force.
+ *
+ * The store has said this from the beginning -- "'in-force' is the only status a row may cite. A
+ * draft, a repealed provision, or an amending act cited in place of its principal act each score
+ * zero in ESCAP's marking" -- and nothing enforced it, because `Evidence` carried the instrument's
+ * title and id but never its status. Across the store 78 applying readings were reached through a
+ * status the schema names as worth zero: 57 from amending acts, 21 from repealed ones.
+ *
+ * An amending act is not a lesser source, it is a spent one: its words are instructions to change
+ * another act, and once they have taken effect the law they made lives in the principal act.
+ * `amendsAnotherAct` already says this about a provision; this says it about the instrument.
+ *
+ * Unknown is not on the list. It means the register did not tell us, not that it told us no, and a
+ * further 704 applying readings sit under it. Dropping those would discard evidence rather than
+ * discount it, and the way to shrink that number is to register a status -- which is what reading
+ * a register's own currency signals is for -- not to refuse the reading.
+ *
+ * Excluded rather than held, for the same reason the exception's findings are: this is a fact we
+ * established about the provision, not one we failed to establish.
+ */
+function currentLaw(evidence: Evidence[]): {
+  kept: Evidence[];
+  excluded: { evidence: Evidence; reason: string }[];
+} {
+  const kept: Evidence[] = [];
+  const excluded: { evidence: Evidence; reason: string }[] = [];
+  for (const e of evidence) {
+    const status = e.instrumentStatus;
+    if (status === 'repealed' || status === 'draft') {
+      excluded.push({
+        evidence: e,
+        reason:
+          `the register records this instrument as ${status}, and only an instrument in force ` +
+          `states the law the economy applies today`,
+      });
+    } else if (e.sectionRepealed) {
+      // An Act in force still prints the provisions it has repealed, and a repealed provision is
+      // not a measure the economy applies.
+      excluded.push({
+        evidence: e,
+        reason: 'the source marks this provision as repealed or deleted, so it states no current law',
+      });
+    } else {
+      kept.push(e);
+    }
+  }
+  return { kept, excluded };
+}
+
+/**
  * Which findings the indicator's exception removes.
  *
  * Four of these nine carry "Not score data localization measure applied to government data", and
@@ -1089,15 +1188,17 @@ function applyException(indicator: Indicator, evidence: Evidence[]): {
   const governmentData = /government data/i.test(indicator.exception ?? '');
   // 3.1 carves out the two sectors 5.2 and 12.01 ask about, so a cap on either is not its cap.
   const sectorsAskedElsewhere = indicator.id === '3.1';
-  if (!indicator.exception || (!governmentData && !sectorsAskedElsewhere)) {
-    return { kept: evidence, excluded: [] };
-  }
+  if (!indicator.exception) return { kept: evidence, excluded: [] };
   const kept: Evidence[] = [];
   const excluded: { evidence: Evidence; reason: string }[] = [];
   for (const e of evidence) {
+    // Every other stated exception is about what the measure is aimed at, and the reader says
+    // whether it falls within one only beside the words from the provision that show what that is.
+    // Those words are verified in Zone 2, so a claim with nothing to check is not applied.
     const out =
       (governmentData && e.finding.appliesOnlyToGovernmentData) ||
-      (sectorsAskedElsewhere && /telecom|e-?commerce|online market/i.test(e.finding.sector ?? ''));
+      (sectorsAskedElsewhere && /telecom|e-?commerce|online market/i.test(e.finding.sector ?? '')) ||
+      (e.finding.withinException === true && !!e.finding.targetWords);
     if (out) excluded.push({ evidence: e, reason: indicator.exception });
     else kept.push(e);
   }
@@ -1175,9 +1276,17 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
       });
       continue;
     }
-    // Every measure in the rubric is borne by somebody, so a provision the reader could find no
-    // party in is evidence of none of them. Held, because the party may be there and unread.
-    if (!e.finding.dutyBearer) {
+    // Most measures are borne by somebody, so a provision the reader could find no party in is
+    // evidence of none of them. Held, because the party may be there and unread.
+    //
+    // Not the ones the rubric marks as permissions. A permission binds nobody -- that is what makes
+    // it one. "A fair dealing with copyright material does not infringe copyright in the material"
+    // names no party because there is none to name, and asking it for one refused Australia's
+    // fair dealing section, Singapore's fair use section and their permitted-use provisions, in a
+    // cell whose top band is "clear copyright exceptions following fair use or fair dealing".
+    // Seventeen indicators declare a measure this way and the gate was asking all of them for a
+    // party bound. The same exemption is already made two tests up, for 'declares'.
+    if (!e.finding.dutyBearer && !permits(indicatorId, e.finding.measure)) {
       held.push({
         evidence: e,
         reason: 'the provision names no party it binds, and every measure in the rubric is a duty on someone',
@@ -1227,6 +1336,13 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     // opposite -- we read the provision and it does not impose this measure -- which is a finding
     // of absence in that provision and evidence for the zero rather than a bar to it.
     const name = e.finding.measure ? MEASURE_NAMES[e.finding.measure] : undefined;
+    if (name && e.finding.definingWords && !name.test(e.finding.definingWords) && otherLanguage(e)) {
+      held.push({
+        evidence: e,
+        reason: `the words "${e.finding.definingWords}" are in ${otherLanguage(e)}, and what makes a provision ${e.finding.measure} is stated only in English`,
+      });
+      continue;
+    }
     if (name && e.finding.definingWords && !name.test(e.finding.definingWords)) {
       ruledOut.push({
         evidence: e,
@@ -1276,6 +1392,13 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     // tried and is wrong: "licence to sell online" carries the domain into every subject beside it,
     // so a licence whose subject is a bank passed the test the words "sell online" had answered.
     const domain = inDomain(indicatorId, e.finding.measure);
+    if (domain && e.finding.subjectWords && !domain.test(e.finding.subjectWords) && otherLanguage(e)) {
+      held.push({
+        evidence: e,
+        reason: `the subject "${e.finding.subjectWords}" is in ${otherLanguage(e)}, and this indicator's subject is stated only in English`,
+      });
+      continue;
+    }
     if (domain && e.finding.subjectWords && !domain.test(e.finding.subjectWords)) {
       ruledOut.push({
         evidence: e,
@@ -1309,6 +1432,14 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
       });
       continue;
     }
+    // And the direction of it: the foreign party has to be the one holding, not the one held.
+    if (proportional(indicatorId, e.finding.measure) && foreignIsTheHeld(e.finding)) {
+      ruledOut.push({
+        evidence: e,
+        reason: `"${e.finding.subjectWords}" is what is held, so the proportion limits holding in a foreign company rather than foreign holding here`,
+      });
+      continue;
+    }
     // Where the measure is a condition, the place the data goes is not one. The condition may be
     // stated outright or carved out as an exception, so either will do; naming neither will not.
     if (
@@ -1319,6 +1450,20 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
       ruledOut.push({
         evidence: e,
         reason: `the words said to state the condition only name where the data goes, which is no condition`,
+      });
+      continue;
+    }
+    // The same, where the power is in the stem the quote hangs from rather than in the quote. A
+    // lettered paragraph borrows its verb from the words before the colon, and the reader is shown
+    // the paragraph. Australia's 6.1 and 6.2 were decided by "prohibit the entity from storing ...
+    // outside Australia" under the stem "Examples of conditions that may be prescribed", and by
+    // "prohibit ... the holding, storing, handling or transferring of such information outside
+    // Australia" under "the Digital ID Rules may:". Both came back with the verb "prohibit" and
+    // mandatory true, which is a fair reading of the words shown.
+    if (e.inheritsAPower && !permits(indicatorId, e.finding.measure)) {
+      ruledOut.push({
+        evidence: e,
+        reason: `the words are a list item under a stem that only empowers another instrument to impose this`,
       });
       continue;
     }
@@ -1400,6 +1545,22 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
       ruledOut.push({
         evidence: e,
         reason: 'the party said to be bound and the data said to be located are the same words, so the provision binds no one',
+      });
+      continue;
+    }
+    // And a thing that is not information. The check above is on the field being filled, and a
+    // filled field is not the same claim. Malaysia's data localisation cell was decided by an
+    // Exchange Control order -- "shall not make any payment to any person outside Malaysia" -- which
+    // came back with "any payment" as the located data and "any payment" as the words calling it
+    // information. A payment is not information in any of these systems, and the words are the ones
+    // the reader copied out of the provision, so they can be read. Information is a term of art
+    // here in the way a patent is: a legal system may call it data, a record, a document or
+    // particulars, but none of them calls it a payment. Placed after the structural tests, which
+    // need no view about what the words mean and so should have their say first.
+    if (locational(indicatorId, e.finding.measure) && !INFORMATION.test(e.finding.informationWords ?? '')) {
+      ruledOut.push({
+        evidence: e,
+        reason: `the provision calls the thing "${e.finding.informationWords}", which is not information`,
       });
       continue;
     }
@@ -1602,13 +1763,27 @@ function aboutness(indicatorId: string, measure: string | null): string | null {
 }
 
 /**
+ * The provision's language, where it is not the one the rubric's word lists are written in.
+ *
+ * The measures' names and the indicators' domains are English words, and the words they are tested
+ * against are copied from the provision. A Malay provision cannot use them whatever it says, so a
+ * failed test there shows nothing about the provision: the finding is held, not ruled out, and a
+ * zero is never built on it. Null for an English provision, and for a reading older than the field.
+ */
+function otherLanguage(e: Evidence): string | null {
+  return e.sectionLanguage && e.sectionLanguage !== 'en' ? e.sectionLanguage : null;
+}
+
+/**
  * The words a subject must use to be in this indicator's domain, or null where none is declared.
  *
  * Off-subject measures are exempt for the same reason they are exempt from the subject itself:
  * they exist to record a ban on something this indicator does not score.
  */
 function inDomain(indicatorId: string, measure: string | null): RegExp | null {
-  const declared = SUBJECT_DOMAIN[indicatorId];
+  // A measure whose subject is narrower than its indicator's answers for itself: 8.3 asks about
+  // the internet in one band and about a SIM in the next, and one domain cannot hold both.
+  const declared = (measure !== null ? MEASURE_DOMAIN[measure] : undefined) ?? SUBJECT_DOMAIN[indicatorId];
   if (!declared) return null;
   const off = (MEASURES[indicatorId] ?? []).some((m) => m.token === measure && m.offSubject === true);
   return off ? null : declared;
@@ -1627,6 +1802,41 @@ const NATIONALITY =
 function namesNationality(f: Finding): boolean {
   return [f.dutyBearer, f.definingWords, f.subjectWords, f.quote].some((w) => w && NATIONALITY.test(w));
 }
+
+/** Words that make a party foreign to the economy, as opposed to merely naming a nationality. */
+const FOREIGN_PARTY = /\b(foreign(er|ers|ly|-owned|-ownership)?|non-?residents?|non-?citizens?|non-?nationals?|overseas|aliens?)\b/i;
+
+/**
+ * Is the foreign party the one being held, rather than the one holding?
+ *
+ * Every band of 3.1, 5.2 and 12.01 is a ceiling on what a foreign person may hold in a company
+ * here. A ceiling on what a company here may hold in a foreign company is the same sentence read
+ * backwards, and it decided two of the three economies. Australia scored 0.8 on section 84C of the
+ * Future Fund Act -- "The Board must take all reasonable steps to ensure that it does not hold a
+ * stake in a foreign listed company of more than 20%" -- which is Australia's own sovereign fund
+ * limiting its own outbound holdings. Malaysia scored 0.5 on an income tax deduction for "a locally
+ * owned company" that "acquires at least fifty one percent of paid-up capital ... of a foreign
+ * owned company", which is not a restriction at all but an incentive to buy one.
+ *
+ * Both have the same shape and it is visible in the fields the reader already fills: the foreign
+ * word sits in subjectWords, naming the thing held, and not in dutyBearer, naming the holder. The
+ * genuine limits are the other way round -- "a group of foreign persons" may not hold "more than
+ * 49%" of an airport operator, "any foreign lawyer" not "more than one-third" of a Singapore law
+ * practice -- so requiring the holder to be the foreign one keeps those and drops these.
+ */
+function foreignIsTheHeld(f: Finding): boolean {
+  return FOREIGN_PARTY.test(f.subjectWords ?? '') && !FOREIGN_PARTY.test(f.dutyBearer ?? '');
+}
+
+/**
+ * The words by which a legal system calls something information.
+ *
+ * Kept for the reason the subject domains that survived are kept: a system may say data, a record,
+ * a document or particulars, and it words each of those its own way, but the category itself is
+ * one every one of them has. It is not a list of the data we want to find.
+ */
+const INFORMATION =
+  /\b(information|data|dataset\w*|records?|recorded|documents?|particulars?|details?|registers?|books?|accounts?|files?|communications?|messages?|contents?|statements?|reports?|copies|copy|logs?|databases?|credentials?|personal\w*)\b/i;
 
 /** Is every band of this indicator a proportion, so a provision stating none cannot be placed? */
 function proportional(indicatorId: string, measure: string | null): boolean {
@@ -1684,6 +1894,20 @@ function beyondPlace(words: string | null, placeWords: string | null): boolean {
 function mustSayMoreThanPlace(indicatorId: string, measure: string | null): boolean {
   if (!measure) return false;
   return (MEASURES[indicatorId] ?? []).some((m) => m.token === measure && m.distinctFromPlace === true);
+}
+
+/**
+ * Whether a copyright exception is the one the top band of 4.5 names: the fair use or fair dealing
+ * model, in the legislature's own word for it.
+ *
+ * Asked of definingWords rather than of the whole quote, because definingWords is the field that
+ * holds "the one thing a provision has to say to be this measure" -- the reader has already copied
+ * it out, and a statute that says "fair dealing" there is stating the model, not mentioning it. The
+ * whole quote would also catch a duty of "fair dealing with customers" in a financial services act.
+ */
+const FAIR_USE_MODEL = /\bfair(?:ly)?[ -](?:us(?:e|ed|ing)|deal(?:ing|t|s)?)\b/i;
+function namesTheModel(e: Evidence): boolean {
+  return FAIR_USE_MODEL.test(e.finding.definingWords ?? '');
 }
 
 /** Is this measure one the rubric describes as a permission or a limit rather than a command? */
@@ -1809,7 +2033,21 @@ function leadWithWhatWasCounted(qualifying: Evidence[], counted?: Evidence[]): E
   return [...counted, ...qualifying.filter((e) => !counted.includes(e))];
 }
 
+/**
+ * The decision, with a note of what the second reading contributed to it.
+ *
+ * The tally is taken here rather than by each caller because here is the only place that knows
+ * which findings this indicator actually saw. A score and the confirmation state it was computed
+ * under travel together from this point on, so a re-derivation that reads a different set reports
+ * a mismatch instead of quietly returning a different number.
+ */
 export function decide(input: DecideInput): Decision {
+  const decision = decideOn(input);
+  const mine = input.evidence.filter((e) => refile(e.finding).indicatorId === input.indicator.id);
+  return { ...decision, confirmations: tallyConfirmations(mine) };
+}
+
+function decideOn(input: DecideInput): Decision {
   const { indicator, economy, coverage } = input;
 
   if (indicator.shape === 'framework') {
@@ -1833,12 +2071,13 @@ export function decide(input: DecideInput): Decision {
     }),
     input.governing ?? [],
   );
-  const { kept: afterException, excluded } = applyException(indicator, mine);
+  const { kept: inForce, excluded: notCurrent } = currentLaw(mine);
+  const { kept: afterException, excluded } = applyException(indicator, inForce);
   const ctx: RuleContext = { economy, rates: input.rates ?? null };
   const { kept: qualifying, held, ruledOut } = hold(indicator.id, afterException, ctx);
   // Read and shown not to be the measure, which is a reason and belongs on the record beside the
   // exception's. It never joins `held`: that would turn a finding of absence into a bar to one.
-  excluded.push(...ruledOut);
+  excluded.push(...notCurrent, ...ruledOut);
 
   // Nothing was read, so nothing can be concluded. This is the difference between a finding of
   // absence and a failure to look, and ESCAP's reviewers can tell them apart.
@@ -2010,7 +2249,24 @@ export function decide(input: DecideInput): Decision {
  */
 function decideFramework(input: DecideInput): Decision {
   const { indicator, economy, coverage } = input;
-  const candidates = (input.frameworkEvidence ?? []).filter((f) => f.establishesFramework);
+  // A framework is claimed and shown, not claimed. `establishesFramework` is the only thing this
+  // function filters on, which made it the one reading in the set that decided a score on the
+  // model's say-so: of 49 framework readings taken on 16 September, 39 said yes and 7 of those
+  // gave a reason denying it in the same breath. It now arrives with the governing rule quoted out
+  // of the instrument, and a claim whose rule is not in the instrument is not a framework.
+  // Explicitly false, not merely unshown -- see FrameworkEvidence.frameworkShown for why a run
+  // banked before the rule was asked for is left alone.
+  //
+  // And it has to be law. The provision path rules an advisory instrument out already -- it states
+  // how a binding instrument is read rather than imposing the duty itself -- but this path never
+  // asked, so a guidance note could be the country's data protection framework. Thirteen advisory
+  // readings currently clear the horizontal band on that route; none is the only one clearing its
+  // cell today, which is luck rather than a rule. Excluded from candidacy altogether rather than
+  // demoted to the sectoral band, because an advisory document is not a narrow framework, it is
+  // not one at all.
+  const candidates = (input.frameworkEvidence ?? []).filter(
+    (f) => f.establishesFramework && f.frameworkShown !== false && f.bindingness !== 'advisory',
+  );
 
   if (coverage.instrumentsConsidered === 0) {
     return {
@@ -2102,9 +2358,17 @@ function decideFramework(input: DecideInput): Decision {
  * Words in the instrument confining it to named sectors settle the question. "Horizontal" is the
  * reader's own assertion and used to override them, so an Act whose opening confined it to listed
  * critical sectors still cleared the top band on the strength of a boolean.
+ *
+ * An instrument that binds only the licensees of a sector is the other way round: it needs no
+ * confining words, because its reach is already the licence. Four of the five framework
+ * indicators carry a middle band written for exactly this -- "framework only to specific sectors
+ * (sectoral law)", "sectoral framework in place" -- against a top band that asks for a
+ * comprehensive or horizontal one. A regulator direction whose text happens never to name the
+ * sector it regulates was clearing that top band, because reach was read off the words alone and
+ * the profile's answer for the kind was never consulted anywhere.
  */
 export function reaches(f: FrameworkEvidence): boolean {
-  return !f.sectoralShown;
+  return !f.sectoralShown && f.bindingness !== 'binding-on-licensees';
 }
 
 function capitalise(s: string): string {

@@ -81,13 +81,23 @@ function partIndex(html: string): Map<string, string> {
   return map;
 }
 
+/** Exposed for the test that holds the register's dates to dates that exist. */
+export const __dateFrom = (s: string): string | null => dateFrom(s);
+
 const dateFrom = (s: string): string | null => {
   const m = /(\d{1,2})\s+([A-Za-z]{3,})\s+(\d{4})/.exec(s);
   if (!m) return null;
   const month = new Date(`${m[2]} 1, 2000`).getMonth();
   if (Number.isNaN(month)) return null;
-  return `${m[3]}-${String(month + 1).padStart(2, '0')}-${String(Number(m[1])).padStart(2, '0')}`;
+  return realDate(Number(m[3]), month + 1, Number(m[1]));
 };
+
+/** An ISO date, or null where the day does not exist in that month -- "31 February" is not a date. */
+function realDate(year: number, month: number, day: number): string | null {
+  const d = new Date(Date.UTC(year, month - 1, day));
+  if (d.getUTCFullYear() !== year || d.getUTCMonth() !== month - 1 || d.getUTCDate() !== day) return null;
+  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
 
 /**
  * What the document says about itself: its official number, when it commenced, when it was last

@@ -31,8 +31,18 @@ async function delayFor(robots: Reply): Promise<number> {
   const fetcher = new Fetcher({ db, sourceMode: 'fetch', onLog: (l) => lines.push(l) });
   await fetcher.fetch(`${await host(robots)}/a-page`);
   db.close();
-  const said = lines.find((l) => l.includes('between requests')) ?? '';
-  return Number(/(\d+)ms between requests/.exec(said)?.[1] ?? -1);
+  const said = lines.find((l) => l.includes('between requests'));
+  const delay = said ? /(\d+)ms between requests/.exec(said)?.[1] : undefined;
+  if (delay === undefined) {
+    // This used to return -1, so a failure read "expected -1 to be 1000" and said nothing about
+    // why -- and under machine load it is the absence of the line, not a wrong delay, that fails.
+    // What the fetcher actually logged is the only thing that tells the two apart.
+    const logged = lines.length > 0 ? lines.map((l) => `  ${l}`).join('\n') : '  (nothing)';
+    throw new Error(
+      `the fetcher never said how fast it would go for a ${robots.status}. It logged:\n${logged}`,
+    );
+  }
+  return Number(delay);
 }
 
 afterAll(() => {

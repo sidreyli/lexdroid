@@ -3,7 +3,8 @@
  * A run records the engine's id, so what answered it stays legible after the file changes.
  */
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 export interface Engine {
   id: string;
@@ -26,7 +27,17 @@ export interface Registry {
 
 const EMPTY: Registry = { default: 'engine-a', engines: [] };
 
-export function registryPath(root = process.cwd()): string {
+/**
+ * The workspace root, found from this module rather than from the working directory.
+ *
+ * It used to be `process.cwd()`, which meant the registry existed only when a command happened to
+ * be run from `backend/`. Run the test suite from the repository root -- which is what a reviewer
+ * following the README does -- and the four engine-declaration tests failed with "expected 0 to be
+ * 2", reading as an undeclared Section 5 rather than as a wrong working directory.
+ */
+const BACKEND_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
+
+export function registryPath(root = BACKEND_ROOT): string {
   return join(root, 'data', 'engines.json');
 }
 

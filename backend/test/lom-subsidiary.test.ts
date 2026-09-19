@@ -104,7 +104,7 @@ const portal = {
 } as unknown as Portal;
 
 async function discover(rows: Row[]) {
-  return lomSubsidAdapter.discover({ portal, fetcher: fetcherFor(catalogue(rows)), log: () => {} });
+  return lomSubsidAdapter.discover({ portal, fetcher: fetcherFor(catalogue(rows)), log: () => {}, setAside: () => {} });
 }
 
 describe('reading the subsidiary-legislation catalogue', () => {
@@ -172,7 +172,7 @@ describe('reading the subsidiary-legislation catalogue', () => {
 
   it('fails loudly when the catalogue does not answer, rather than registering nothing', async () => {
     await expect(
-      lomSubsidAdapter.discover({ portal, fetcher: fetcherFor(Buffer.from(''), 503), log: () => {} }),
+      lomSubsidAdapter.discover({ portal, fetcher: fetcherFor(Buffer.from(''), 503), log: () => {}, setAside: () => {} }),
     ).rejects.toThrow(/503/);
   });
 });
