@@ -80,6 +80,27 @@ describe('a media library walked as a register', () => {
     expect(found[0]?.titleProvisional).toBeFalsy();
   });
 
+  it('keeps an upload no page publishes when its own title names an instrument', async () => {
+    // The Bureau of Indian Standards publishes its Quality Control Orders straight into the
+    // library: 1,844 files, one of them linked from a page. The orphan rule dropped 1,843.
+    const found = await discover([
+      { file: 'Domestic-Pressure-Cooker-QCO-2020-1.pdf', page: null, title: 'Domestic Pressure Cooker (Quality Control) Order, 2020' },
+      { file: 'tender-notice.pdf', page: null, title: 'Tender Notice for housekeeping services' },
+      { file: 'vacancy.pdf', page: null, title: 'Vacancy announcement' },
+    ]);
+
+    expect(found.map((f) => f.title)).toEqual(['Domestic Pressure Cooker (Quality Control) Order, 2020']);
+    expect(found[0]?.kind).toBe('order');
+  });
+
+  it('does not register an upload twice when a page publishes it as well', async () => {
+    const found = await discover([
+      { file: 'regulations-2013.pdf', page: '/akta/personal-data-protection-regulations-2013/', title: 'Personal Data Protection Regulations 2013' },
+    ]);
+
+    expect(found).toHaveLength(1);
+  });
+
   it('keeps pages apart that publish different instruments', async () => {
     const found = await discover([
       { file: 'one.pdf', page: '/akta/standard-perlindungan-data-peribadi-2015/' },
