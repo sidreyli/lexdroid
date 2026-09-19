@@ -6,6 +6,7 @@ LexDroid's implementation notes:
 
 - `india-integration.md` — implemented Central-law foundation, supplied-document acceptance
   evidence, rollout sequence and declared India-specific limits.
+- `reader-batch.md` — the reader-side fixes held for one re-run, each with its rule.
 
 Each document appears twice: the **original** (`.pdf`, `.xlsx`, `.docx`, `.csv`) and a **readable
 text extraction** (`.md`) with the same basename. Read the `.md`; open the original when the layout
