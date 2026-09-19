@@ -237,6 +237,9 @@ CREATE TABLE IF NOT EXISTS section (
   -- computed and then dropped for want of this column, which is exactly the pinpoint-citation
   -- problem v1 spent a week recovering from.
   anchor          TEXT,
+  -- The parser read this provision as repealed or deleted. Kept, because a reader needs to see that
+  -- a section is gone, and never the basis of a current measure.
+  repealed        INTEGER NOT NULL DEFAULT 0,
   UNIQUE (document_id, ordinal)
 );
 
@@ -642,11 +645,18 @@ CREATE TABLE IF NOT EXISTS review_action (
 -- Act state a licence to sell online" has one answer, and a second cell asking it should read the
 -- answer rather than pay for it again. That is also what makes the pass affordable to measure --
 -- it re-asks about provisions already read, with no fetching, parsing, indexing or searching.
+--
+-- The question is the provision and the measure *as the catalogue described it when asked*, and the
+-- answer is one model's. `question` is the hash of everything the reader was shown apart from the
+-- provision (src/read/question.ts); a verdict is consulted only while its question is the one the
+-- catalogue asks today, and only for the model asking. NULL is a verdict banked before questions
+-- were recorded, kept for the record and never consulted.
 CREATE TABLE IF NOT EXISTS measure_confirmation (
   id              INTEGER PRIMARY KEY,
   section_id      INTEGER NOT NULL REFERENCES section(id) ON DELETE CASCADE,
   indicator_id    TEXT NOT NULL,
   measure         TEXT NOT NULL,
+  question        TEXT,
   -- The provision's own words stating the measure, or NULL where it states none. NULL is the
   -- ruling: read, and does not carry the measure.
   words           TEXT,
@@ -657,7 +667,7 @@ CREATE TABLE IF NOT EXISTS measure_confirmation (
   output_tokens   INTEGER,
   latency_ms      INTEGER,
   asked_at        TEXT NOT NULL,
-  UNIQUE (section_id, indicator_id, measure)
+  UNIQUE (section_id, indicator_id, measure, model, question)
 );
 CREATE INDEX IF NOT EXISTS idx_confirmation_measure ON measure_confirmation(indicator_id, measure);
 

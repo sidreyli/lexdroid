@@ -45,6 +45,7 @@ export function openDb(path: string = WORKING_DB_PATH): Db {
   db.pragma('busy_timeout = 30000');
   db.exec(readFileSync(SCHEMA_PATH, 'utf8'));
   addMissingColumns(db);
+  keyConfirmationsByQuestion(db);
 
   if (path === WORKING_DB_PATH) handle = db;
   return db;
@@ -64,6 +65,7 @@ export function openDb(path: string = WORKING_DB_PATH): Db {
  */
 const ADDED_COLUMNS: readonly { table: string; column: string; type: string }[] = [
   { table: 'section', column: 'anchor', type: 'TEXT' },
+  { table: 'section', column: 'repealed', type: 'INTEGER NOT NULL DEFAULT 0' },
   { table: 'instrument', column: 'title_provisional', type: 'INTEGER NOT NULL DEFAULT 0' },
   { table: 'instrument', column: 'also_at', type: 'TEXT' },
   { table: 'instrument', column: 'made_under_instrument_id', type: 'INTEGER' },
@@ -99,6 +101,59 @@ function addMissingColumns(db: Db): void {
       (c) => c.name === column,
     );
     if (!exists) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
+  }
+}
+
+/**
+ * The one change here that is not a new column: measure_confirmation's key.
+ *
+ * It was unique on the provision and the measure's name, so a verdict could only ever be replaced
+ * -- asking again under a changed description overwrote the answer to the old one, and not asking
+ * again served the old answer as the new one's. The key now includes the question and the model.
+ * SQLite cannot change a table's constraints in place, so the table is rebuilt once, inside a
+ * transaction, with every row carried across unchanged and `question` NULL: those verdicts were
+ * banked before anyone recorded what they answered, and are never consulted until something that
+ * knows says which question they were.
+ */
+function keyConfirmationsByQuestion(db: Db): void {
+  const cols = (db.prepare('PRAGMA table_info(measure_confirmation)').all() as { name: string }[]).map((c) => c.name);
+  if (cols.includes('question')) return;
+  db.pragma('foreign_keys = OFF');
+  try {
+    db.transaction(() => {
+      const before = (db.prepare('SELECT COUNT(*) AS n FROM measure_confirmation').get() as { n: number }).n;
+      db.exec(`
+        CREATE TABLE measure_confirmation_keyed (
+          id              INTEGER PRIMARY KEY,
+          section_id      INTEGER NOT NULL REFERENCES section(id) ON DELETE CASCADE,
+          indicator_id    TEXT NOT NULL,
+          measure         TEXT NOT NULL,
+          question        TEXT,
+          words           TEXT,
+          failure         TEXT,
+          model           TEXT NOT NULL,
+          prompt_tokens   INTEGER,
+          output_tokens   INTEGER,
+          latency_ms      INTEGER,
+          asked_at        TEXT NOT NULL,
+          UNIQUE (section_id, indicator_id, measure, model, question)
+        );
+        INSERT INTO measure_confirmation_keyed
+          (id, section_id, indicator_id, measure, question, words, failure, model,
+           prompt_tokens, output_tokens, latency_ms, asked_at)
+        SELECT id, section_id, indicator_id, measure, NULL, words, failure, model,
+               prompt_tokens, output_tokens, latency_ms, asked_at
+          FROM measure_confirmation;
+        DROP TABLE measure_confirmation;
+        ALTER TABLE measure_confirmation_keyed RENAME TO measure_confirmation;
+        CREATE INDEX IF NOT EXISTS idx_confirmation_measure ON measure_confirmation(indicator_id, measure);
+        CREATE INDEX IF NOT EXISTS idx_measure_confirmation_section ON measure_confirmation(section_id);
+      `);
+      const after = (db.prepare('SELECT COUNT(*) AS n FROM measure_confirmation').get() as { n: number }).n;
+      if (after !== before) throw new Error(`measure_confirmation rebuild kept ${after} of ${before} rows`);
+    })();
+  } finally {
+    db.pragma('foreign_keys = ON');
   }
 }
 
