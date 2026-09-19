@@ -20,6 +20,7 @@ const STATES_NAME = [
 const COMMON = new Set([
   'act', 'the', 'and', 'for', 'of', 'to', 'ordinance', 'enactment', 'regulations', 'regulation',
   'rules', 'order', 'reprint', 'revised', 'repealed', 'malaysia', 'singapore', 'australia',
+  'akta', 'peraturan', 'perintah', 'kaedah', 'enakmen', 'ordinan',
 ]);
 
 /** A plural and its singular are the same word. "Persons" against "Person's" is not two Acts. */
@@ -67,6 +68,62 @@ export function statedName(sections: Pick<ParsedSection, 'text'>[], within = 14)
   return null;
 }
 
+/** The Malay drafting formula: "Akta ini bolehlah dinamakan Akta X". */
+const STATES_NAME_MS = /boleh(?:lah)?\s+(?:dinamakan|disebut)\s+(?:sebagai\s+)?([A-Z][^.,;]{4,110})/;
+/** The words a Malay title names its kind of instrument with. */
+const MALAY_KIND = /\b(?:akta|peraturan|perintah|kaedah|enakmen|ordinan)\b/i;
+
+/** A filed title is in Malay if it names its kind of instrument in Malay, and in English otherwise. */
+function titleLanguage(title: string): 'ms' | 'en' {
+  return MALAY_KIND.test(title) ? 'ms' : 'en';
+}
+
+/** Every name a document gives itself in its opening provisions, in each language it gives one. */
+export function statedNames(
+  sections: Pick<ParsedSection, 'text'>[],
+  within = 14,
+): { name: string; language: 'ms' | 'en' }[] {
+  const out: { name: string; language: 'ms' | 'en' }[] = [];
+  const clean = (m: string) =>
+    m.replace(/\s+(?:and|dan)\s+(?:shall|comes?|is deemed|shall be deemed|hendaklah|mula)\b[\s\S]*$/i, '').replace(/\s+/g, ' ').trim();
+  for (const s of sections.slice(0, within)) {
+    for (const re of STATES_NAME) {
+      const m = re.exec(s.text);
+      if (m) out.push({ name: clean(m[1]!), language: 'en' });
+    }
+    const ms = STATES_NAME_MS.exec(s.text);
+    if (ms) out.push({ name: clean(ms[1]!), language: 'ms' });
+  }
+  return out;
+}
+
+/**
+ * A word made of the initials of the other name's words stands for those words.
+ *
+ * A catalogue abbreviates: Malaysia's filed the Personal Data Protection (Amendment) Act 2024 as
+ * "Akta Pdppindaan 2024" -- the initials of Perlindungan Data Peribadi run into "pindaan" -- and it
+ * shares no whole word with the name the Act gives itself. Three initials at least, so a word that
+ * merely opens with two letters another name's words begin with is not read as an abbreviation.
+ */
+function spellOut(words: string[], other: string[]): string[] {
+  const out: string[] = [];
+  for (const w of words) {
+    let expanded: string[] | null = null;
+    for (let i = 0; i < other.length && !expanded; i++) {
+      for (let k = other.length - i; k >= 3; k--) {
+        const initials = other.slice(i, i + k).map((x) => x[0]).join('');
+        if (w.startsWith(initials) && !other.includes(w)) {
+          const rest = w.slice(initials.length);
+          expanded = [...other.slice(i, i + k), ...(rest.length > 2 ? [stem(rest)] : [])];
+          break;
+        }
+      }
+    }
+    out.push(...(expanded ?? [w]));
+  }
+  return out;
+}
+
 /**
  * Whether two names are the same instrument.
  *
@@ -75,8 +132,10 @@ export function statedName(sections: Pick<ParsedSection, 'text'>[], within = 14)
  * opening with the other's first identifying words is the same instrument.
  */
 export function namesMatch(stated: string, title: string): boolean {
-  const a = keyWords(stated);
-  const b = keyWords(title);
+  const a0 = keyWords(stated);
+  const b0 = keyWords(title);
+  const a = spellOut(a0, b0);
+  const b = spellOut(b0, a0);
   if (a.length === 0 || b.length === 0) return true;
   // "Incorporated" and "Incorporation" are one word drafted twice, so a long shared opening is
   // the same word. Eight characters, not six: six joins "arbitration" to "arbitral".
@@ -99,8 +158,13 @@ export function identityMismatch(
   opts: { titleProvisional?: boolean } = {},
 ): { stated: string; detail: string } | null {
   if (opts.titleProvisional || !namesAnInstrument(title)) return null;
-  const stated = statedName(sections);
-  if (stated === null || namesMatch(stated, title)) return null;
+  // A name can only contradict a title in its own language. A bilingual instrument filed under its
+  // Malay title and naming itself only in English shares no word with that title and is still the
+  // same instrument: three data protection instruments were refused as "another instrument" so.
+  const language = titleLanguage(title);
+  const names = statedNames(sections).filter((n) => n.language === language);
+  if (names.length === 0 || names.some((n) => namesMatch(n.name, title))) return null;
+  const stated = names[0]!.name;
   return {
     stated,
     detail: `Filed as "${title}", but the document calls itself "${stated}". It is a different instrument, so nothing in it may be cited under this title.`,

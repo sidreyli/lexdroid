@@ -26,14 +26,15 @@ const BY_HOST: Record<string, (html: string, url: string) => ParsedDocument> = {
   'www.legislation.gov.au': parseFrl,
 };
 
-export async function parseDocument(res: FetchResult): Promise<ParsedDocument> {
+/** `languages`: the economy's official languages, among which a PDF's language is guessed. */
+export async function parseDocument(res: FetchResult, opts: { languages?: readonly string[] } = {}): Promise<ParsedDocument> {
   const host = new URL(res.finalUrl || res.url).host;
 
   if (res.mediaType.includes('vnd.lexdroid.indiacode+json')) {
     return parseIndiaCode(res.body.toString('utf8'), res.url);
   }
 
-  if (res.mediaType.includes('pdf')) return parsePdf(res.body, res.url);
+  if (res.mediaType.includes('pdf')) return parsePdf(res.body, res.url, opts.languages ? { languages: opts.languages } : {});
 
   if (res.mediaType.includes('html') || res.mediaType.includes('xml')) {
     const html = res.body.toString('utf8');

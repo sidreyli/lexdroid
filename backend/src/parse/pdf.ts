@@ -8,6 +8,7 @@
  * ESCAP marks this directly: "a tool that flags text it could not read is better built than one
  * that presents everything with equal confidence."
  */
+import { detectLanguage } from './language.js';
 import { SectionBuilder, type ParsedDocument } from './types.js';
 import { ocrPdfPages, type OcrEngine } from './ocr.js';
 import { amendmentHistory } from './lom.js';
@@ -52,6 +53,16 @@ const PART_LINE = /^\s*(PART\s+[IVXLC0-9]+[A-Z]?\b.*|Part\s+\d+[A-Z]?\b.*)$/;
 /** A PDF's text layer can split a heading's letters -- Malaysia's Acts render "Part II" as
  *  "P art II" -- so the test is on the letters, not on how the page happened to space them. */
 const PART_SPLIT = /^PART([IVXLC]+|\d+)([A-Z]?)$/i;
+/**
+ * A Schedule is a container as a Part is, and it restarts the numbering. Keyed without it, the
+ * Schedule's "1." and the Act's section 1 are the same (Part, label), the last copy wins, and the
+ * Medicines (Advertisement and Sale) Act 1956 lost sections 1 to 6 -- the offences -- to a list of
+ * diseases. Tested on the letters for the same reason as a Part.
+ */
+// English puts the ordinal before the noun and Malay after it ("JADUAL KEDUA"); either may letter
+// its Schedules instead ("JADUAL A").
+const SCHEDULE_LINE =
+  /^(?:FIRST|SECOND|THIRD|FOURTH|FIFTH|SIXTH|SEVENTH|EIGHTH|NINTH|TENTH|ELEVENTH|TWELFTH)?(SCHEDULE|JADUAL)(PERTAMA|KEDUA|KETIGA|KEEMPAT|KELIMA|KEENAM|KETUJUH|KELAPAN|KESEMBILAN|KESEPULUH|[IVXLC]+|\d+[A-Z]?|[A-Z])?$/i;
 /** An Act states its purpose in its long title, which is the best evidence of what it is for. */
 const LONG_TITLE = /^An Act to\b/i;
 const ENACTING = /^ENACTED by\b/i;
@@ -63,12 +74,28 @@ export interface PageText {
   ocrConfidence?: number;
 }
 
-function languageOf(text: string): string | null {
-  const devanagari = (text.match(/[\u0900-\u097f]/g) ?? []).length;
-  const latin = (text.match(/[A-Za-z]/g) ?? []).length;
-  if (devanagari > latin && devanagari > 3) return 'hi';
-  if (latin > 3) return 'en';
-  return null;
+/**
+ * The language of a page or a provision, asked of the shared detector and among the languages the
+ * economy publishes law in. The copy that used to live here called any Latin script English, so a
+ * Malay page was recorded as English: the export's Language of Source column said so, and the two
+ * halves of a bilingual gazette carried the same key and overwrote each other.
+ */
+function languageOf(text: string, candidates?: readonly string[]): string | null {
+  return detectLanguage(text, candidates?.length ? { candidates } : {});
+}
+
+/**
+ * A page too short to tell is in the language of the page before it: a page holding a Schedule's
+ * heading or a signature block is not a change of language, and reading it as one would split a
+ * document's numbering in two.
+ */
+function languageOfPages(pages: PageText[], candidates?: readonly string[]): PageText[] {
+  let last: string | null = null;
+  return pages.map((page) => {
+    const language = languageOf(page.lines.join(' '), candidates) ?? last;
+    last = language;
+    return { ...page, language };
+  });
 }
 
 export async function extractPages(bytes: Buffer): Promise<PageText[]> {
@@ -105,7 +132,7 @@ export async function extractPages(bytes: Buffer): Promise<PageText[]> {
       lastY = y;
     }
     if (current.trim()) lines.push(current.replace(/\s+/g, ' ').trim());
-    pages.push({ page: p, lines, language: languageOf(lines.join(' ')) });
+    pages.push({ page: p, lines, language: null });
     page.cleanup();
   }
   await doc.destroy();
@@ -264,6 +291,7 @@ export function sectionise(pages: PageText[]): SectionBuilder {
     page: number;
     lines: string[];
     language: string | null;
+    schedule?: boolean;
   }
   const items: ({ prose: string } | Candidate)[] = [];
   // Every dotted number the document carries, provision or tariff code, kept by its integer part.
@@ -273,13 +301,45 @@ export function sectionise(pages: PageText[]): SectionBuilder {
   let titlePending = false;
   let open: Candidate | null = null;
 
+  let pageLanguage: string | null = null;
+  const partIn = new Map<string, string>();
+
   for (const p of pages) {
-    for (const line of p.lines) {
+    // Each language's text keeps its own container. A bilingual instrument prints its Malay text
+    // and then its English one, and the Malay text's closing JADUAL, left open, filed the English
+    // section 1 inside it -- where it took the Schedule's own item 1's place. And a Schedule's forms
+    // are printed in alternating languages, so the English Schedule is picked up again, not closed,
+    // when the English pages resume: closed, its form's item 1 took the English section 1's place.
+    if (p.language && pageLanguage && p.language !== pageLanguage) {
+      partIn.set(pageLanguage, part);
+      part = partIn.get(p.language) ?? '';
+      titlePending = false;
+    }
+    pageLanguage = p.language ?? pageLanguage;
+    for (const [at, line] of p.lines.entries()) {
       const split = line.length < 40 ? PART_SPLIT.exec(line.replace(/\s+/g, '')) : null;
       if (split) {
         open = null;
         part = `Part ${split[1]!.toUpperCase()}${split[2] ?? ''}`;
         titlePending = true;
+        continue;
+      }
+      // "Schedule" is also the marginal note of the section that brings the Schedule in, and that
+      // note sits directly above its section's number; a Schedule's own heading never does.
+      const next = p.lines[at + 1];
+      const schedule =
+        line.length < 40 && !(next && provisionAt(next)) ? SCHEDULE_LINE.exec(line.replace(/\s+/g, '')) : null;
+      if (schedule) {
+        const name = line.replace(/\s+/g, ' ').trim().toUpperCase();
+        // The same name again at the head of the Schedule's next page is its running header.
+        if (name === part) continue;
+        part = name;
+        titlePending = false;
+        // The Schedule is text in its own right -- a list of offences, of diseases, of forms -- so
+        // it opens a section of its own. Left as loose prose it reached no search at all, and the
+        // Criminal Procedure Code lost a quarter of its text that way.
+        open = { label: null, heading: name, part: '', page: p.page, lines: [line], language: p.language ?? null, schedule: true };
+        items.push(open);
         continue;
       }
       const partMatch = PART_LINE.exec(line);
@@ -301,6 +361,10 @@ export function sectionise(pages: PageText[]): SectionBuilder {
       // The long title arrives in the front matter, which in these PDFs follows the arrangement of
       // sections, so it has to break out of whatever entry happened to be open.
       if (LONG_TITLE.test(line)) {
+        // The long title opens the operative text, so whatever container the arrangement named
+        // last -- its closing "SCHEDULE", most often -- does not carry over onto section 1.
+        part = '';
+        titlePending = false;
         open = {
           label: null, heading: 'Long title', part: '', page: p.page,
           lines: [line], language: p.language ?? null,
@@ -382,14 +446,46 @@ export function sectionise(pages: PageText[]): SectionBuilder {
   items.forEach((it, n) => {
     if ('lines' in it && it.label) lastAt.set(key(it), n);
   });
+  // The Part only collapses the two copies when both were filed under the same one, and the
+  // arrangement's own Part headings are the lines a scan most often mangles: "C hapter I" is not a
+  // Chapter, so the Finance (No. 2) Act 2023 listed 96 of its sections as empty headings ahead of
+  // the real ones. So a contents entry is also recognised by what it is, whatever Part or language
+  // it landed in: a line with nothing under it, whose number turns up again later with a body, and
+  // whose words turn up again later too -- as the marginal note set beside the real provision.
+  //
+  // The words are what keep a one-line provision. A code that restarts its numbering in each Part
+  // can hold "2.1 A broadcaster shall schedule content..." on a single line with a longer 2.1 after
+  // it, and that sentence is the provision, not an entry pointing at one: it is not repeated.
+  const words = (s: string): string => s.toLowerCase().replace(/[^a-z]/g, '');
+  const bodiedAt = new Map<string, number>();
+  const startsAt: number[] = [];
+  let later = '';
+  items.forEach((it, n) => {
+    startsAt[n] = later.length;
+    later += words('lines' in it ? it.lines.join(' ') : it.prose);
+    if ('lines' in it && it.label && it.lines.length > 1) bodiedAt.set(it.label, n);
+  });
+  const listed = (it: Candidate, n: number): boolean => {
+    if (it.lines.length !== 1 || (bodiedAt.get(it.label ?? '') ?? -1) <= n) return false;
+    const entry = words(it.lines[0]!.replace(/^\s*[\d.]+[A-Z]{0,2}\.?/, ''));
+    return entry.length >= 6 && later.indexOf(entry, startsAt[n + 1] ?? later.length) >= 0;
+  };
 
+  // The first provision that survives with a body: an arrangement entry never does, since its copy
+  // under the real provision comes later.
+  const firstBodied = items.findIndex(
+    (it, n) => 'lines' in it && it.label !== null && it.lines.length > 1 && lastAt.get(key(it)) === n && !listed(it, n),
+  );
   const builder = new SectionBuilder();
   for (const [n, it] of items.entries()) {
     if (!('lines' in it)) {
       builder.addProse(it.prose);
       continue;
     }
-    if (it.label && lastAt.get(key(it)) !== n) continue;
+    if (it.label && (lastAt.get(key(it)) !== n || listed(it, n))) continue;
+    // The arrangement closes by listing the Schedules, before any provision has a body. That copy
+    // collects the cover pages that follow it, and it is not the Schedule.
+    if (it.schedule && !(firstBodied < n)) continue;
     const text = it.lines.join('\n').trim();
     if (!text) continue;
     builder.add({
@@ -397,7 +493,7 @@ export function sectionise(pages: PageText[]): SectionBuilder {
       label: it.label,
       text,
       page: it.page,
-      language: it.language ?? languageOf(text),
+      language: it.language ?? null,
       repealed: /\[?\bRepealed\b/i.test(text.slice(0, 120)),
       anchor: null,
     });
@@ -409,6 +505,8 @@ export function sectionise(pages: PageText[]): SectionBuilder {
 export interface ParsePdfOptions {
   /** Supplied by tests or specialist deployments; the default is local English + Hindi Tesseract. */
   ocrEngine?: OcrEngine;
+  /** The languages the economy publishes law in, from its profile. Language is guessed among these. */
+  languages?: readonly string[];
 }
 
 function titleFromSections(builder: SectionBuilder): string | null {
@@ -464,7 +562,7 @@ export async function parsePdf(bytes: Buffer, url: string, opts: ParsePdfOptions
         return {
           page: page.page,
           lines: ocr.lines,
-          language: languageOf(text),
+          language: null,
           ocrConfidence: ocr.confidence,
         };
       });
@@ -494,7 +592,7 @@ export async function parsePdf(bytes: Buffer, url: string, opts: ParsePdfOptions
   }
 
   // `runningHeader` below still reads the pages as printed: the header is what it is looking for.
-  const clean = stripPageFurniture(pages);
+  const clean = stripPageFurniture(languageOfPages(pages, opts.languages));
   const builder = sectionise(clean);
 
   if (builder.sections.length === 0) {
@@ -503,7 +601,7 @@ export async function parsePdf(bytes: Buffer, url: string, opts: ParsePdfOptions
     const whole = clean.map((p) => p.lines.join('\n')).join('\n').trim();
     builder.add({
       headingPath: url, label: null, text: whole, page: 1,
-      language: languageOf(whole), repealed: false, anchor: null,
+      language: languageOf(whole, opts.languages), repealed: false, anchor: null,
     });
   }
 

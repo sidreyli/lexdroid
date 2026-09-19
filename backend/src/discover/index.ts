@@ -278,7 +278,9 @@ function alsoAt(row: { also_at: string | null }): string[] {
  * Read one further edition into an instrument already materialised. Returns its section count, or
  * null when it could not be read -- which is recorded, never a silent absence.
  */
-async function readEdition(db: Db, fetcher: Fetcher, instrumentId: number, url: string): Promise<number | null> {
+async function readEdition(
+  db: Db, fetcher: Fetcher, instrumentId: number, url: string, languages: readonly string[],
+): Promise<number | null> {
   const now = () => new Date().toISOString();
   const discard = (reason: string, detail: string): null => {
     db.prepare('INSERT INTO discard (stage, subject, reason, detail, recorded_at) VALUES (?, ?, ?, ?, ?)')
@@ -289,7 +291,7 @@ async function readEdition(db: Db, fetcher: Fetcher, instrumentId: number, url: 
     const fetched = await fetcher.fetch(url);
     if (fetched.status !== 200) return discard('non-200-response', `HTTP ${fetched.status}`);
 
-    const parsed = await parseDocument(fetched);
+    const parsed = await parseDocument(fetched, { languages });
     const stored = storeDocument(db, { instrumentId, fetched, parsed });
     if (stored.unread) return null;
 
@@ -441,7 +443,7 @@ export async function materialise(
         continue;
       }
 
-      let parsed = await parseDocument(fetched);
+      let parsed = await parseDocument(fetched, { languages: profile.officialLanguages });
 
       // A page of menus that publishes exactly one file is not an index of leads; it is the
       // instrument's own wrapper, and the file is the document to cite.
@@ -450,7 +452,7 @@ export async function materialise(
         const only = soleDocumentLink(fetched.body.toString('utf8'), fetched.finalUrl);
         if (only) {
           const inner = await fetcher.fetch(only);
-          const reparsed = inner.status === 200 ? await parseDocument(inner) : null;
+          const reparsed = inner.status === 200 ? await parseDocument(inner, { languages: profile.officialLanguages }) : null;
           if (reparsed && !reparsed.unread) {
             fetched = inner;
             parsed = reparsed;
@@ -513,7 +515,7 @@ export async function materialise(
       // practice in two languages is one instrument citing two documents, not two instruments.
       let extra = 0;
       for (const url of alsoAt(row)) {
-        const more = await readEdition(db, fetcher, row.id, url);
+        const more = await readEdition(db, fetcher, row.id, url, profile.officialLanguages);
         if (more === null) log(`  [${n + 1}/${rows.length}] also at ${url}: not read`);
         else extra += more;
       }
