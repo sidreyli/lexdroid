@@ -25,12 +25,18 @@ const PAGE = 100;
 const MAX_PAGES = 1000;
 
 /** The fields a register entry needs. Selecting them keeps a page from carrying every amendment. */
-const SELECT = 'id,name,collection,status,isInForce,isPrincipal,seriesType,year,number';
+const SELECT =
+  'id,name,collection,status,isInForce,isPrincipal,seriesType,year,number,makingDate,statusHistory';
 
 interface CollectionConfig {
   collection: string;
   kind: DiscoveredInstrument['kind'];
   listing?: string;
+}
+
+interface StatusPeriod {
+  status: string | null;
+  start: string | null;
 }
 
 interface TitleRow {
@@ -43,6 +49,10 @@ interface TitleRow {
   seriesType: string | null;
   year: number | null;
   number: number | null;
+  /** The day the title was made. Not the day it commenced, and regularly years apart from it. */
+  makingDate?: string | null;
+  /** Every standing the title has held, with the day each began. */
+  statusHistory?: StatusPeriod[] | null;
 }
 
 const STATUS: Record<string, DiscoveredInstrument['status']> = {
@@ -177,6 +187,30 @@ export async function authorisedTitles(
   return { titles, stated, complete: stated === null ? true : titles.length >= stated };
 }
 
+/**
+ * The day the register says the title came into force, and the sentence that says it.
+ *
+ * Read off `statusHistory` rather than `makingDate`, because the two disagree whenever Parliament
+ * backdates or defers: the Taxation Laws Amendment Act (No. 8) 2000 was made on 21 December 2000
+ * and is in force from 22 December 1999. `makingDate` is the easier field and the wrong one.
+ *
+ * The earliest InForce period is the answer; a title that has been repealed and revived holds
+ * more than one, and the first is when the instrument began.
+ */
+export function commencement(row: TitleRow): { on: string; basis: string } | null {
+  const started = (row.statusHistory ?? [])
+    .filter((p) => (p?.status ?? '').toLowerCase() === 'inforce' && typeof p.start === 'string')
+    .map((p) => p.start!.slice(0, 10))
+    .filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d))
+    .sort();
+  const on = started[0];
+  if (!on) return null;
+  return {
+    on,
+    basis: `The Federal Register of Legislation's status history for this title opens "InForce" on ${on}.`,
+  };
+}
+
 function officialNumber(row: TitleRow): string | null {
   if (row.number === null || row.year === null) return row.id;
   return `${row.seriesType ?? row.collection} No. ${row.number}, ${row.year}`;
@@ -242,6 +276,7 @@ export const frlAdapter: Adapter = {
           const url = titleUrl(row.id);
           if (seen.has(url)) continue;
           seen.add(url);
+          const began = commencement(row);
           found.push({
             title: row.name,
             url,
@@ -251,6 +286,7 @@ export const frlAdapter: Adapter = {
             statusBasis:
               `The Federal Register of Legislation records this title as "${row.status ?? 'InForce'}" ` +
               `(${cfg.listing ?? cfg.collection}, asked on ${askedOn})`,
+            ...(began ? { commencedOn: began.on, currentToBasis: began.basis } : {}),
           });
           added += 1;
         }

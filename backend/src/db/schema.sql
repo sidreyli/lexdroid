@@ -159,9 +159,14 @@ CREATE TABLE IF NOT EXISTS instrument (
   -- from the title misses every instrument its drafters did not name after its parent.
   made_under_instrument_id INTEGER REFERENCES instrument(id),
   made_under_basis TEXT,
-  commenced_on    TEXT,                       -- ISO date, read from the document itself
-  last_amended_on TEXT,
-  timeframe_basis TEXT,                       -- quoted evidence for the two dates above
+  commenced_on    TEXT,                       -- ISO date, read from the document or stated by the register
+  last_amended_on TEXT,                       -- ISO date of an amendment, never of a republication
+  -- The date the published consolidation is current to. A separate column because it is a weaker
+  -- claim than last_amended_on and was being reported as one: Malaysia serves the Personal Data
+  -- Protection Act "as at 2023" while the duty ESCAP scores arrived in a 2024 amendment, so a
+  -- row built from the catalogue's date said the Act was last amended in 2023. It was not.
+  current_to      TEXT,
+  timeframe_basis TEXT,                       -- quoted evidence for the dates above
   language        TEXT,                       -- BCP-47
   source_url      TEXT NOT NULL,
   discovered_via  TEXT NOT NULL,              -- portal id, search, or citation from another instrument

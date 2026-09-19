@@ -15,19 +15,27 @@ export interface DiscoveredInstrument {
   status?: 'in-force' | 'repealed' | 'draft' | 'amending';
   statusBasis?: string;
   /**
-   * The date the published consolidation is current to, and the sentence that says so.
-   *
-   * Not the same as the date of the last amendment, and it must not be reported as one: Malaysia
-   * serves the Personal Data Protection Act as at 2023 while the duty ESCAP scores arrived in a
-   * 2024 amendment. Recording what the portal actually publishes is what makes that visible.
-   */
-  /**
    * The day the instrument began, where the register states it rather than leaving it to the
    * document. It is what the export's timeframe column is built from, and a register that
    * publishes the date is a better source for it than a parse of the document's front matter.
    */
   commencedOn?: string | null;
+  /**
+   * The day an amendment last changed this instrument's text, where the register states which
+   * amendment it was. A register that keeps a version history answers this; one that only
+   * republishes a consolidation does not, and that one sets `currentTo` instead.
+   */
+  lastAmendedOn?: string | null;
+  /**
+   * The date the published consolidation is current to, and the sentence that says so.
+   *
+   * Not the same as the date of the last amendment, and it must not be reported as one: Malaysia
+   * serves the Personal Data Protection Act as at 2023 while the duty ESCAP scores arrived in a
+   * 2024 amendment. Recording what the portal actually publishes is what makes that visible --
+   * which is why this has its own column, and why it stopped being written to `lastAmendedOn`.
+   */
   currentTo?: string | null;
+  /** The sentence behind whichever of the two dates above the register stated. */
   currentToBasis?: string;
   /**
    * True when `title` is only a filename, and the document's own stated title should replace it.
