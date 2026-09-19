@@ -92,6 +92,13 @@ export interface FrameworkEvidence {
   /** And the words said to confine it to one named sector, where it was called sectoral. */
   sectoralShown: boolean;
   sector: string | null;
+  /**
+   * What the economy's own profile says this kind of instrument can bind.
+   *
+   * Null where the kind is not declared, which is not the same as advisory: an undeclared kind is
+   * an unanswered question, and the framework reach test below only acts on a declared answer.
+   */
+  bindingness: 'binding' | 'binding-on-licensees' | 'advisory' | null;
   quote: string;
 }
 
@@ -2210,8 +2217,16 @@ function decideFramework(input: DecideInput): Decision {
   // of the instrument, and a claim whose rule is not in the instrument is not a framework.
   // Explicitly false, not merely unshown -- see FrameworkEvidence.frameworkShown for why a run
   // banked before the rule was asked for is left alone.
+  //
+  // And it has to be law. The provision path rules an advisory instrument out already -- it states
+  // how a binding instrument is read rather than imposing the duty itself -- but this path never
+  // asked, so a guidance note could be the country's data protection framework. Thirteen advisory
+  // readings currently clear the horizontal band on that route; none is the only one clearing its
+  // cell today, which is luck rather than a rule. Excluded from candidacy altogether rather than
+  // demoted to the sectoral band, because an advisory document is not a narrow framework, it is
+  // not one at all.
   const candidates = (input.frameworkEvidence ?? []).filter(
-    (f) => f.establishesFramework && f.frameworkShown !== false,
+    (f) => f.establishesFramework && f.frameworkShown !== false && f.bindingness !== 'advisory',
   );
 
   if (coverage.instrumentsConsidered === 0) {
@@ -2304,9 +2319,17 @@ function decideFramework(input: DecideInput): Decision {
  * Words in the instrument confining it to named sectors settle the question. "Horizontal" is the
  * reader's own assertion and used to override them, so an Act whose opening confined it to listed
  * critical sectors still cleared the top band on the strength of a boolean.
+ *
+ * An instrument that binds only the licensees of a sector is the other way round: it needs no
+ * confining words, because its reach is already the licence. Four of the five framework
+ * indicators carry a middle band written for exactly this -- "framework only to specific sectors
+ * (sectoral law)", "sectoral framework in place" -- against a top band that asks for a
+ * comprehensive or horizontal one. A regulator direction whose text happens never to name the
+ * sector it regulates was clearing that top band, because reach was read off the words alone and
+ * the profile's answer for the kind was never consulted anywhere.
  */
 export function reaches(f: FrameworkEvidence): boolean {
-  return !f.sectoralShown;
+  return !f.sectoralShown && f.bindingness !== 'binding-on-licensees';
 }
 
 function capitalise(s: string): string {

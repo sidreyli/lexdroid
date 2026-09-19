@@ -19,10 +19,24 @@
     },
     {
       "rank": 2,
+      "kind": "order",
+      "localName": "Legislative instrument -- Orders",
+      "bindingness": "binding",
+      "note": "Orders made under an Act and registered on the Federal Register of Legislation. Same tier and same force as a Regulation."
+    },
+    {
+      "rank": 2,
       "kind": "regulation",
       "localName": "Legislative instrument (Regulations, Rules, Determinations, Declarations)",
       "bindingness": "binding",
       "note": "Made under an Act, registered on the Federal Register, and disallowable by Parliament. Where an Act says the regulations may prescribe something, the operative rule is here."
+    },
+    {
+      "rank": 2,
+      "kind": "rule",
+      "localName": "Legislative instrument -- Rules",
+      "bindingness": "binding",
+      "note": "Rules made under an Act and registered on the Federal Register of Legislation. The rank 2 tier already names them; only the kind code was absent."
     },
     {
       "rank": 3,

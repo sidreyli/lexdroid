@@ -20,10 +20,24 @@
     },
     {
       "rank": 2,
+      "kind": "order",
+      "localName": "Subsidiary legislation, P.U. (A) -- Orders",
+      "bindingness": "binding",
+      "note": "Orders made under an Act, gazetted in the P.U. (A) series. The largest of the three by count: an exemption, a commencement or a prescribed rate arrives as an Order."
+    },
+    {
+      "rank": 2,
       "kind": "regulation",
       "localName": "Subsidiary legislation, P.U. (A)",
       "bindingness": "binding",
       "note": "Regulations, rules and orders made under an Act. Where an Act leaves a standard to be prescribed, the standard is here."
+    },
+    {
+      "rank": 2,
+      "kind": "rule",
+      "localName": "Subsidiary legislation, P.U. (A) -- Rules",
+      "bindingness": "binding",
+      "note": "Rules made under an Act, gazetted in the P.U. (A) series alongside Regulations and Orders. Same tier and same force; the series is one, and the register names the three separately."
     },
     {
       "rank": 3,

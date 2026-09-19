@@ -158,6 +158,7 @@ describe('what the decision does with a framework that was only claimed', () => 
     instrumentId: 1,
     instrumentTitle: 'Competition and Consumer Act 2010',
     citation: 'https://example.gov.au/act',
+    bindingness: null,
     establishesFramework: true,
     frameworkShown,
     horizontal: true,

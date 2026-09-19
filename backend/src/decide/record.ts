@@ -105,7 +105,7 @@ export function recordedDecider(
 
   const frameworkFor = db.prepare(
     `SELECT f.instrument_id, f.establishes_framework, f.framework_shown, f.horizontal, f.dedicated,
-            f.dedicated_shown, f.sectoral_shown, f.sector, f.quote, i.title, i.source_url
+            f.dedicated_shown, f.sectoral_shown, f.sector, f.quote, i.title, i.source_url, i.kind
        FROM framework_reading f JOIN instrument i ON i.id = f.instrument_id
       WHERE f.cell_id = ? ORDER BY f.id`,
   );
@@ -204,6 +204,7 @@ export function recordedDecider(
       horizontal: number | null;
       dedicated: number | null; dedicated_shown: number | null; sectoral_shown: number | null;
       sector: string | null; quote: string | null; title: string; source_url: string;
+      kind: InstrumentType['kind'] | null;
     }[]).map((f) => ({
       instrumentId: f.instrument_id,
       instrumentTitle: f.title,
@@ -215,6 +216,7 @@ export function recordedDecider(
       dedicatedShown: f.dedicated_shown === 1,
       sectoralShown: f.sectoral_shown === 1,
       sector: f.sector,
+      bindingness: f.kind ? bindingnessFor(cell.economy_code, f.kind).bindingness ?? null : null,
       quote: f.quote ?? '',
     }));
 

@@ -201,6 +201,22 @@ export async function answerPillar(
   // What this economy says each kind of instrument can do. Declared per economy because the answer
   // differs: a Malaysian Order is subsidiary legislation, and an ACMA guide binds nobody.
   const bindingness = new Map(loadProfile(economy).instrumentTypes.map((t) => [t.kind, t.bindingness]));
+  // The same question asked of a whole instrument rather than a retrieved row. A framework
+  // candidate arrives from three channels and only one of them carries the register's columns, so
+  // the kind is read here once for the economy rather than threaded through all three.
+  const frameworkKind = new Map(
+    (
+      db.prepare('SELECT id, kind FROM instrument WHERE economy_code = ?').all(economy) as {
+        id: number;
+        kind: InstrumentType['kind'] | null;
+      }[]
+    ).map((r) => [r.id, r.kind]),
+  );
+  /** Null for an instrument whose kind the profile does not declare, which is not "advisory". */
+  const bindingnessOf = (instrumentId: number) => {
+    const kind = frameworkKind.get(instrumentId);
+    return kind ? bindingness.get(kind) ?? null : null;
+  };
   // The second question's banked answers, read once for the pillar. A provision the pass read and
   // found not to carry the measure is evidence for a zero, and the live run has to see that at the
   // moment it scores -- otherwise the stored score and every later re-derivation of it disagree.
@@ -422,6 +438,7 @@ export async function answerPillar(
         dedicatedShown: r.dedicatedWordsVerified,
         sectoralShown: r.sectorWordsVerified,
         sector: r.sector,
+        bindingness: bindingnessOf(r.instrumentId),
         quote: r.quote,
       })),
     );
