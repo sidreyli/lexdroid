@@ -143,6 +143,14 @@ export const lomAdapter: Adapter = {
       const url = row.english ?? row.malay;
       if (!url) {
         noFile += 1;
+        // Named, not just counted. The catalogue lists the Act and gives no file for it, which is
+        // a hole in the register that the register itself cannot show: nothing was written, so
+        // nothing is missing from anything.
+        ctx.setAside({
+          subject: `Act ${row.number}`,
+          reason: 'listed-no-document-link',
+          detail: `${row.title || `Act ${row.number}`} is listed by the catalogue with no document link`,
+        });
         continue;
       }
       const asAt = row.asAt ? ` current to ${row.asAt}` : '';

@@ -43,7 +43,7 @@ function fetcherFor(uploads: Upload[]): Fetcher {
 const portal = { name: 'Regulator', url: BASE, adapterConfig: {} } as unknown as Portal;
 
 async function discover(uploads: Upload[]) {
-  return wpAdapter.discover({ portal, fetcher: fetcherFor(uploads), log: () => {} });
+  return wpAdapter.discover({ portal, fetcher: fetcherFor(uploads), log: () => {}, setAside: () => {} });
 }
 
 describe('a media library walked as a register', () => {

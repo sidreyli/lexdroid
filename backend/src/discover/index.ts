@@ -121,9 +121,16 @@ export async function register(
     log(`${portal.name} (${portal.url})`);
     const id = portalId(db, profile.code, portal.url);
 
+    // Rewritten per walk, not appended to: the question this answers is what the listing looks
+    // like now, and a ledger that keeps every walk's answer cannot be read against a threshold.
+    const setAsideRows: { subject: string; reason: string; detail: string | null }[] = [];
+    const setAside = (entry: { subject: string; reason: string; detail?: string }) => {
+      setAsideRows.push({ subject: entry.subject, reason: entry.reason, detail: entry.detail ?? null });
+    };
+
     let found: DiscoveredInstrument[] = [];
     try {
-      found = await adapter.discover({ portal, fetcher, log });
+      found = await adapter.discover({ portal, fetcher, log, setAside });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       results.push({ portal: portal.name, found: 0, added: 0, error: message });
@@ -151,6 +158,21 @@ export async function register(
         if (!before) added += 1;
       }
     })();
+    if (setAsideRows.length > 0) {
+      const reasons = [...new Set(setAsideRows.map((r) => r.reason))];
+      db.transaction(() => {
+        const clear = db.prepare(
+          `DELETE FROM discard WHERE stage = 'discover' AND reason = ? AND detail LIKE ?`,
+        );
+        const write = db.prepare(
+          `INSERT INTO discard (stage, subject, reason, detail, recorded_at) VALUES ('discover', ?, ?, ?, ?)`,
+        );
+        for (const reason of reasons) clear.run(reason, `${portal.url}%`);
+        for (const r of setAsideRows) {
+          write.run(r.subject, r.reason, `${portal.url} -- ${r.detail ?? ''}`, now);
+        }
+      })();
+    }
     log(`  ${found.length} instrument(s) listed, ${added} new to the register`);
     // A portal that was walked and yielded nothing is the same hole as a portal nothing can walk,
     // and until now only the second was recorded. Seven of the thirty declared Australian,

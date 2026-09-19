@@ -61,6 +61,16 @@ export interface DiscoverContext {
   portal: Portal;
   fetcher: Fetcher;
   log: (line: string) => void;
+  /**
+   * An entry the listing published and the adapter could not register, named.
+   *
+   * An adapter is the only thing that knows how many rows a catalogue offered, and it had nowhere
+   * to put that but a log line -- which defaults to discarding it, so the three Laws of Malaysia
+   * listings recomputed "335 listed instruments carry no document link" on every walk and threw
+   * it away every time. A count in a log cannot be compared against the next walk, and a listing
+   * that quietly stops linking its documents looks exactly like a listing that got smaller.
+   */
+  setAside: (entry: { subject: string; reason: string; detail?: string }) => void;
 }
 
 /**

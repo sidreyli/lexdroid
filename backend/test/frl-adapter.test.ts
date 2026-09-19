@@ -68,7 +68,7 @@ function fetcherOf(rows: Record<string, unknown>[]): Fetcher {
 }
 
 async function discovered(rows: Record<string, unknown>[]) {
-  return frlAdapter.discover({ portal: portal(), fetcher: fetcherOf(rows), log: () => {} });
+  return frlAdapter.discover({ portal: portal(), fetcher: fetcherOf(rows), log: () => {}, setAside: () => {} });
 }
 
 describe('the commencement date the register states', () => {

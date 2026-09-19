@@ -91,7 +91,7 @@ describe('the India Code register', () => {
       },
     } as unknown as Portal;
 
-    const found = await indiaCodeAdapter.discover({ portal, fetcher, log: () => {} });
+    const found = await indiaCodeAdapter.discover({ portal, fetcher, log: () => {}, setAside: () => {} });
     expect(found).toEqual([
       expect.objectContaining({
         title: 'The Example Act, 2023.',
@@ -135,7 +135,7 @@ describe('the status India Code can actually support', () => {
         collections: [{ collection: 'ACT', kind: 'act' }],
       },
     } as unknown as Portal;
-    const found = await indiaCodeAdapter.discover({ portal, fetcher, log: () => {} });
+    const found = await indiaCodeAdapter.discover({ portal, fetcher, log: () => {}, setAside: () => {} });
     return found[0];
   }
 
@@ -156,7 +156,7 @@ describe('the status India Code can actually support', () => {
         collections: [{ collection: 'RULE', kind: 'rule' }],
       },
     } as unknown as Portal;
-    const found = await indiaCodeAdapter.discover({ portal, fetcher, log: () => {} });
+    const found = await indiaCodeAdapter.discover({ portal, fetcher, log: () => {}, setAside: () => {} });
     return found[0];
   }
 
