@@ -178,34 +178,50 @@ if (unparsed.length > 0) console.log(`  registered but nothing parsed: ${unparse
 }
 
 {
-  // The gate that needs no threshold. A field the pipeline fills should be filled best on the
-  // instruments the pipeline leaned on hardest. When the opposite is true, something selected
-  // against them: Malaysia's amendment dates ran 23.5% of read instruments and 0.6% of cited ones
-  // after a re-parse whose failures were, precisely, the documents an answer cites.
+  // The gate that needs no threshold. A field the pipeline fills should be filled on the
+  // instruments the pipeline leaned on hardest at least as often as on everything it read. When it
+  // is not, something selected against them: Malaysia's amendment dates ran 23.5% of read
+  // instruments and 0.6% of cited ones after a re-parse whose failures were, precisely, the
+  // documents an answer cites.
+  //
+  // Compared like with like -- each cited instrument against read instruments of its own portal and
+  // kind -- because what a source never publishes for a class is not the pipeline losing it. Taken
+  // whole, the cited set failed on Malaysia's status basis only because the answers lean on the data
+  // protection codes, whose portal says nothing of standing for any of them, and on Singapore's
+  // numbers only because they lean on Acts older than the timeline SSO keeps.
   const fields = ['status_basis', 'commenced_on', 'last_amended_on', 'current_to', 'official_number'];
   const out: string[] = [];
   let bad = false;
   for (const e of withCorpus) {
     for (const f of fields) {
-      const read = one<{ n: number; have: number }>(
-        `SELECT COUNT(*) n, SUM(${f} IS NOT NULL) have FROM instrument
-          WHERE economy_code = ? AND id IN (SELECT instrument_id FROM document)`, e);
-      const cited = one<{ n: number; have: number }>(
-        `SELECT COUNT(*) n, SUM(${f} IS NOT NULL) have FROM instrument
-          WHERE economy_code = ? AND id IN (SELECT instrument_id FROM answer_basis)`, e);
-      if (read.n === 0 || cited.n === 0) continue;
-      const r = pct(read.have ?? 0, read.n);
-      const c = pct(cited.have ?? 0, cited.n);
-      // A field no adapter for this economy ever fills is not evidence of selection against it.
-      if (r === 0) continue;
-      if (c < r) {
-        bad = true;
-        out.push(`${e} ${f.padEnd(17)} read ${String(r).padStart(5)}%   cited ${String(c).padStart(5)}%   <-- worse where it matters most`);
+      const strata = rows<{ n: number; have: number; cn: number; chave: number }>(
+        `SELECT COUNT(*) n, SUM(${f} IS NOT NULL) have,
+                SUM(id IN (SELECT instrument_id FROM answer_basis)) cn,
+                SUM(id IN (SELECT instrument_id FROM answer_basis) AND ${f} IS NOT NULL) chave
+           FROM instrument WHERE economy_code = ? AND id IN (SELECT instrument_id FROM document)
+          GROUP BY discovered_via, kind`, e);
+      let expected = 0, have = 0, cited = 0, read = 0, readHave = 0;
+      for (const s of strata) {
+        expected += s.cn * ((s.have ?? 0) / s.n);
+        have += s.chave ?? 0;
+        cited += s.cn ?? 0;
+        read += s.n;
+        readHave += s.have ?? 0;
       }
+      // A field no adapter for this economy ever fills is not evidence of selection against it.
+      if (cited === 0 || readHave === 0) continue;
+      const short = have < Math.round(expected);
+      if (short) bad = true;
+      out.push(
+        `${e} ${f.padEnd(17)} cited ${String(have).padStart(4)} of ${String(cited).padStart(4)}, ` +
+          `like-for-like ${String(Math.round(expected)).padStart(4)}` +
+          `   (whole corpus ${String(pct(readHave, read)).padStart(5)}%, cited ${String(pct(have, cited)).padStart(5)}%)` +
+          (short ? '   <-- worse where it matters most' : ''),
+      );
     }
   }
-  check('B3', 'a field is no worse covered on cited instruments than on read ones', true, bad ? 'fail' : 'pass',
-    out.length ? out : ['every field is at least as well covered on what the answers actually cite']);
+  check('B3', 'a field is no worse covered on cited instruments than on read ones of their own source and kind', true,
+    bad ? 'fail' : 'pass', out);
 }
 
 /* ------------------------------------------------------------------ C. the fetch */
