@@ -42,7 +42,9 @@
     "benchmark": "tsx scripts/benchmark.ts",
     "rescore": "tsx scripts/rescore.ts",
     "engine-check": "tsx scripts/engine-check.ts",
-    "calibration": "tsx scripts/calibration.ts"
+    "calibration": "tsx scripts/calibration.ts",
+    "zone1-audit": "tsx scripts/zone1-audit.ts",
+    "recache-composed": "tsx scripts/recache-composed.ts"
   },
   "dependencies": {
     "@tesseract.js-data/eng": "^1.0.0",
