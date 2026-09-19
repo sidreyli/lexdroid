@@ -531,6 +531,23 @@ ideally after a few minutes of actual Thai-counsel input on this specific endpoi
 to fold into ordinary development momentum. `THA.json`'s `searchlaw.ocs.go.th` portal entry stays
 `"adapter": null`, now with a pointer to the full spec rather than just the discovery narrative.
 
+## PR-review flag: one commit on this branch is not Thailand-scoped (19 September 2026)
+
+Pushed to `feat/thailand` (not yet in a PR): `3c622cf fix(index): make spaceless-script search work
+without breaking citation offsets`. Unlike every other commit on this branch, it is a cross-economy
+shared-code fix -- `backend/src/index/index.ts`, `backend/src/db/index.ts` and
+`backend/src/parse/index.ts`, none of them Thailand-specific files -- that happened to be discovered
+while building `util/thai.ts`, not a piece of Thailand work itself. It fixes lexical search for any
+spaceless or combining-mark script (the `SPACELESS` set already names Han/Hiragana/Katakana/Thai
+together) and a citation-offset invariant every economy's parsed documents depend on, not just
+Thailand's.
+
+**Whoever reviews the eventual PR for this branch should look at that one commit on its own terms**,
+separately from the Thailand-specific commits either side of it (`feat(thailand)`, `fix(thailand)`)
+-- it may warrant its own review path (e.g. a standalone PR against `master` before this branch's own
+PR, rather than riding in as part of a Thailand-economy review) given its blast radius. Flagged here
+so this doesn't get lost between now and whenever a PR actually opens.
+
 ## Sources
 
 - `docs/architecture.md`, `docs/india-integration.md`, `docs/expansion-plan.md`,
