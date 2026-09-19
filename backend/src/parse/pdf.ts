@@ -10,6 +10,7 @@
  */
 import { SectionBuilder, type ParsedDocument } from './types.js';
 import { ocrPdfPages, type OcrEngine } from './ocr.js';
+import { amendmentHistory } from './lom.js';
 
 /** Below this many characters per page, the page is an image of text rather than text. */
 const MIN_CHARS_PER_PAGE = 80;
@@ -506,6 +507,11 @@ export async function parsePdf(bytes: Buffer, url: string, opts: ParsePdfOptions
     });
   }
 
+  // A revised Malaysian Act closes with the law revision commissioner's own table of amendments.
+  // The register could only say which reprint it serves, so without this the store had no date
+  // for when a Malaysian Act was actually last changed.
+  const amended = amendmentHistory(builder.text);
+
   return {
     extraction: ocrUsed.length > 0 ? 'ocr' : 'pdf-text',
     text: builder.text,
@@ -514,6 +520,7 @@ export async function parsePdf(bytes: Buffer, url: string, opts: ParsePdfOptions
     title: runningHeader(pages) ?? titleFromSections(builder) ?? subjectTitle(pages),
     meta: {
       pages: String(pages.length),
+      ...(amended ? { lastAmendedOn: amended.on, lastAmendedBasis: amended.basis } : {}),
       ...(ocrUsed.length ? { ocrPages: ocrUsed.join(',') } : {}),
       ...(confidences.length
         ? { ocrConfidence: String(Math.round(confidences.reduce((sum, n) => sum + n, 0) / confidences.length)) }
