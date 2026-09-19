@@ -8,11 +8,25 @@
 import { readdirSync, readFileSync, existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { EconomyProfile } from './types.js';
+import { EconomyProfile, type JurisdictionScope } from './types.js';
 import type { Db } from '../db/index.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 export const PROFILE_DIR = join(here, '..', '..', 'data', 'profiles');
+
+/**
+ * The instruments of an unheld tier that a text cites, by tier. Empty where the scope is undeclared
+ * or holds every tier.
+ */
+export function unheldCitations(scope: JurisdictionScope | null, text: string): { tier: string; cited: string }[] {
+  const out: { tier: string; cited: string }[] = [];
+  for (const t of scope?.notHeld ?? []) {
+    for (const p of t.citedAs) {
+      for (const m of text.matchAll(new RegExp(p, 'g'))) out.push({ tier: t.tier, cited: m[0].trim() });
+    }
+  }
+  return out;
+}
 
 export function profilePath(code: string): string {
   return join(PROFILE_DIR, `${code.toUpperCase()}.json`);

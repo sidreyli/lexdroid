@@ -23,7 +23,7 @@ import { existsSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { openDb } from '../src/db/index.js';
 import { CACHE_DIR } from '../src/fetch/index.js';
-import { loadProfile } from '../src/profile/index.js';
+import { loadProfile, unheldCitations } from '../src/profile/index.js';
 import type { InstrumentType } from '../src/profile/types.js';
 
 const only = (() => {
@@ -93,6 +93,55 @@ if (unparsed.length > 0) console.log(`  registered but nothing parsed: ${unparse
     `SELECT detail FROM discard WHERE stage = 'discover' AND reason = 'portal-yielded-nothing'`);
   check('A2', 'a portal walked that published nothing is recorded as a hole', false, 'report',
     holes.length ? holes.map((h) => h.detail) : ['every walked portal listed something']);
+}
+
+{
+  // Not fatal, and not a pass either: holding one tier is a scope, and this measures what that
+  // scope costs -- how often the law we hold points at law we do not, and whether an answer does.
+  const cited = new Set(rows<{ id: number }>(`SELECT DISTINCT section_id AS id FROM answer_basis`).map((r) => r.id));
+  const out: string[] = [];
+  for (const e of withCorpus) {
+    const scope = loadProfile(e).jurisdictionScope;
+    if (!scope) {
+      out.push(`${e}  no jurisdiction scope declared: which tier of law the corpus holds is unstated`);
+      continue;
+    }
+    if (scope.notHeld.length === 0) {
+      out.push(`${e}  holds ${scope.held} law, and declares no other tier`);
+      continue;
+    }
+    const byTier = new Map<string, { sections: number; cited: number; names: Map<string, number> }>();
+    const q = db.prepare(
+      `SELECT s.id, s.text FROM section s JOIN document d ON d.id = s.document_id
+         JOIN instrument i ON i.id = d.instrument_id WHERE i.economy_code = ?`,
+    );
+    for (const r of q.iterate(e) as Iterable<{ id: number; text: string }>) {
+      const hits = unheldCitations(scope, r.text);
+      for (const tier of new Set(hits.map((h) => h.tier))) {
+        const t = byTier.get(tier) ?? { sections: 0, cited: 0, names: new Map() };
+        t.sections += 1;
+        if (cited.has(r.id)) t.cited += 1;
+        byTier.set(tier, t);
+      }
+      for (const h of hits) {
+        const t = byTier.get(h.tier)!;
+        t.names.set(h.cited, (t.names.get(h.cited) ?? 0) + 1);
+      }
+    }
+    out.push(`${e}  holds ${scope.held} law`);
+    for (const nh of scope.notHeld) {
+      const t = byTier.get(nh.tier);
+      if (!t) {
+        out.push(`      ${nh.tier}: cited nowhere in the corpus`);
+        continue;
+      }
+      const top = [...t.names].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([n, k]) => `${n} (${k})`);
+      out.push(`      ${nh.tier}: cited in ${t.sections} section(s), ${t.cited} of them one an answer rests on`);
+      out.push(`        most cited: ${top.join('; ')}`);
+    }
+  }
+  check('A4', 'the tier of law the corpus does not hold is declared, and what cites it is counted', false,
+    'report', out);
 }
 
 /* --------------------------------------------------------------- B. the register */

@@ -10,6 +10,28 @@
     "en"
   ],
   "languageNote": "Bahasa Melayu is the authoritative language of the law. The Laws of Malaysia portal publishes each Act in both a Malay and an English edition, and the English edition is a translation whose authority is subordinate: where the two differ, the Malay text governs. The register records which edition a document came from, so a row that quotes the English text is quoting a translation and says so.",
+  "jurisdictionScope": {
+    "held": "federal",
+    "note": "Every portal this profile names publishes federal law: the Laws of Malaysia, the P.U. gazette series and the federal regulators.",
+    "notHeld": [
+      {
+        "tier": "Sabah and Sarawak Ordinances",
+        "note": "Sabah and Sarawak keep statute law of their own, published by their State Attorney-General's Chambers, and several federal Acts do not reach them: the Employment Act 1955 applies to Peninsular Malaysia, and the two States' labour law is their Labour Ordinances.",
+        "citedAs": [
+          "\\b(?:Sabah|Sarawak)(?: [A-Z][\\w'()-]*){0,8} (?:Ordinance|Ordinan)\\b",
+          "\\b(?:[A-Z][\\w'()-]* ){1,8}(?:Ordinance|Ordinan)(?: \\d{4})? \\((?:Sabah|Sarawak) Cap"
+        ]
+      },
+      {
+        "tier": "State Enactments",
+        "note": "Each State legislates on the matters the Federal Constitution gives the States, land and Islamic law among them, and publishes its Enactments itself.",
+        "citedAs": [
+          "\\b(?:Johore|Johor|Kedah|Kelantan|Malacca|Melaka|Negeri Sembilan|Pahang|Penang|Pulau Pinang|Perak|Perlis|Selangor|Terengganu|Trengganu)(?: [A-Z][\\w'()-]*){0,8} (?:Enactment|Enakmen)\\b",
+          "\\b(?:[A-Z][\\w'()-]* ){1,8}(?:Enactment|Enakmen) \\d{4}\\b"
+        ]
+      }
+    ]
+  },
   "instrumentTypes": [
     {
       "rank": 1,

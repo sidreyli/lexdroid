@@ -9,6 +9,19 @@
     "en"
   ],
   "languageNote": "Commonwealth law is enacted and published in English only.",
+  "jurisdictionScope": {
+    "held": "Commonwealth",
+    "note": "The Federal Register of Legislation publishes Commonwealth law only, and every portal this profile names is a Commonwealth body.",
+    "notHeld": [
+      {
+        "tier": "State and Territory law",
+        "note": "Each State and Territory legislates on the matters the Constitution leaves to it and publishes its own register. A Commonwealth instrument often borrows a term or a regime from a State Act, which is how one is cited here without being held.",
+        "citedAs": [
+          "\\b[A-Z][\\w'(),. -]{2,120}? (?:Act|Regulations?|Rules?) \\d{4} \\((?:NSW|Vic|Qld|WA|SA|Tas|ACT|NT)\\)"
+        ]
+      }
+    ]
+  },
   "instrumentTypes": [
     {
       "rank": 1,
