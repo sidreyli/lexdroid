@@ -101,6 +101,14 @@ export function childEngineEnv(hosts: string[], engine?: HostedEngine): Record<s
     OLLAMA_HOST: hosts[0]!,
     LLM_PROVIDER: 'ollama',
     LEXDROID_READ_CONCURRENCY: '1',
+    // The child inherits the parent's environment, and a parent that ran a hosted fleet earlier in
+    // the same shell still has these set. Left alone, the child read hostedConfig() first and every
+    // provision went to the hosted engine while the host it was assigned sat idle -- a run recorded
+    // against the wrong engine. Empty is unset as far as hostedConfig is concerned.
+    LEXDROID_HOSTED_BASE_URL: '',
+    LEXDROID_HOSTED_MODEL: '',
+    LEXDROID_HOSTED_PROVIDER: '',
+    LEXDROID_HOSTED_API_KEY: '',
   };
 }
 

@@ -12,7 +12,8 @@
  */
 import { spawn } from 'node:child_process';
 import { createWriteStream, mkdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { loadEnv } from '../src/env.js';
 import { openDb } from '../src/db/index.js';
 import { openRun, joinRun, finishRun, runEvents, recordRent, recordEvent } from '../src/run/index.js';
@@ -107,13 +108,16 @@ function parseArgs(argv: string[]): Args {
   };
 }
 
+/** The runner as a file Node can be pointed at, so no shell is needed to find npx's .cmd. */
+const TSX_CLI = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'node_modules', 'tsx', 'dist', 'cli.mjs');
+
 /** One work unit on one engine, as a child gate that joins the run. Output goes to its own log. */
 function runUnit(unit: Unit, hosts: string[], runId: string, logDir: string, args: Args, attempt = 1): Promise<number> {
   const suffix = attempt > 1 ? `-try${attempt}` : '';
   const logPath = join(logDir, `${unit.economy}-p${unit.pillar}${suffix}.log`);
   const out = createWriteStream(logPath);
   const argv = [
-    'tsx',
+    TSX_CLI,
     'scripts/gate.ts',
     '--economy',
     unit.economy,
@@ -129,8 +133,11 @@ function runUnit(unit: Unit, hosts: string[], runId: string, logDir: string, arg
   if (!args.compare) argv.push('--no-compare');
 
   return new Promise((resolve) => {
-    const child = spawn('npx', argv, {
-      shell: true,
+    // No shell: the arguments go to the program as an array, so an economy code or a run id can
+    // never be read as a command. Node runs the runner itself rather than npx, because Windows
+    // will not start npx's .cmd without a shell and the shell is the thing being removed.
+    const child = spawn(process.execPath, argv, {
+      shell: false,
       env: {
         ...process.env,
         ...childEngineEnv(
@@ -380,6 +387,10 @@ async function main(): Promise<void> {
 
   const seconds = (Date.now() - started) / 1000;
   const failed = done.filter((d) => d.code !== 0);
+  // An export that threw leaves the run with answers and nothing submittable. Recorded as
+  // 'complete' it was indistinguishable from a run that had been exported, tagged and verified,
+  // and the reviewer's first sight of the problem was an empty submission.
+  let exportFailed = false;
   // Rented hardware bills for the hour it is held, not for the seconds it decodes, so the
   // charge is hosts x wall time. Zero for a laptop, which is why the default is zero.
   const rent = args.usdPerHour * args.hosts.length * (seconds / 3600);
@@ -453,10 +464,11 @@ async function main(): Promise<void> {
       console.log(`
   the answers are recorded, but they could not be made submittable: ${detail}`);
       recordEvent(run, { stage: 'export', kind: 'failed', detail });
+      exportFailed = true;
     }
   }
 
-  if (!args.joinRunId) finishRun(run, failed.length > 0 ? 'failed' : 'complete');
+  if (!args.joinRunId) finishRun(run, failed.length > 0 || exportFailed ? 'failed' : 'complete');
 
   console.log('');
   console.log(`=== ${done.length} unit(s) in ${(seconds / 60).toFixed(1)} minutes ===`);
