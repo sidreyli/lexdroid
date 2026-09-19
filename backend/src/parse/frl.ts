@@ -67,6 +67,26 @@ const LD_HEADING = /^LD(Chapter|Part|Division|Subdivision|Clause)Heading$/;
 const LD_LEVEL: Record<string, number> = { Chapter: 1, Part: 2, Division: 3, Subdivision: 4 };
 
 /**
+ * The styled-heading pass (see `walk`). A style names itself a heading when it says Head or Heading
+ * -- LI-Heading2, Clauseheadding, LDSecHead -- or carries a heading level the way FSCh5Section does,
+ * and an <hN> is one by definition. Running headers, table and contents headings and the headings of
+ * notes and front matter say Head too, and head nothing operative.
+ */
+const STYLED_HEADING = /[Hh]ead|h[1-6](?=[A-Z]|$)/;
+const NOT_A_PROVISION_HEADING = /Header|TOC|Table|Front|Contents|ENote|Note/i;
+function isStyledHeading(tag: string, cls: string): boolean {
+  return (/^h[1-6]$/.test(tag) || STYLED_HEADING.test(cls)) && !NOT_A_PROVISION_HEADING.test(cls);
+}
+const STYLED_CONTAINER = /^(Chapter|Part|Division|Subdivision|Schedule)\s+[0-9A-Z]/;
+const STYLED_LEVEL: Record<string, number> = { Chapter: 1, Schedule: 1, Part: 2, Division: 3, Subdivision: 4 };
+/** 5, 12A, 1.2.1—3, 44.0.1. -- a number, then the words of the heading. */
+const PROVISION_NUMBER = /^(\d+[A-Z]{0,3}(?:[.\-–—]\d+[A-Z]{0,3})*)\.?\s+(?=\S)/;
+/** Standard 1, Rule 4A -- a provision that names its kind before its number. */
+const PROVISION_NAMED = /^((?:Article|Clause|Item|Paragraph|Regulation|Rule|Section|Standard)\s+\d+[A-Z]{0,3}(?:\.\d+[A-Z]{0,3})*)\b\.?\s*/;
+/** A heading is a caption. A numbered paragraph longer than this is a subclause, not a heading. */
+const HEADING_MAX = 200;
+
+/**
  * The blocks a provision is built from.
  *
  * This pass read <p> only, which is every block in the authored pages and most of one exported to
@@ -165,7 +185,29 @@ interface Open {
   body: string[];
 }
 
-export function parseFrl(html: string, url: string): ParsedDocument {
+interface Walk {
+  builder: SectionBuilder;
+  front: string;
+  title: string | null;
+  volumes: number;
+}
+
+/**
+ * A walk over the paragraphs, reading the headings one of two ways.
+ *
+ * The first way is the templates above, recognised by the classes they use. The second is for
+ * pages drafted outside those templates -- the instruments an agency writes in its own house style,
+ * standards bodies' codes, determinations typed into a blank document -- and it is run only when
+ * the first found nothing, so a page one of the templates can read is never read any differently.
+ *
+ * What that second way asks is the question a reader asks of an unfamiliar page: is this paragraph
+ * styled as a heading, and does its text say what it heads? A heading that names a Chapter, Part,
+ * Division, Subdivision or Schedule opens a container; one that opens with a provision number
+ * opens a provision. The style is needed because numbers open ordinary paragraphs too -- the
+ * subclauses under a clause, the items of a list -- and the number is needed because a heading
+ * without one is a caption inside a provision, not the start of a new one.
+ */
+function walk(html: string, styled: boolean): Walk {
   const builder = new SectionBuilder();
   const parts = volumes(html);
   const multiVolume = parts.length > 1;
@@ -196,6 +238,21 @@ export function parseFrl(html: string, url: string): ParsedDocument {
     });
     open = null;
   };
+  let started = false;
+  const body = (text: string): void => {
+    if (open) open.body.push(text);
+    else if (!started && front.length < 4000) front += `${text}\n`;
+    // The templates put nothing between a Part heading and its first section, so what reaches here
+    // is contents and boilerplate. A page drafted outside them can put a Standard's whole text under
+    // a heading with no number, and dropping it lost four fifths of one code of practice: here the
+    // text opens a provision of its own instead.
+    else if (styled) open = { label: null, heading: '', anchor: null, body: [text] };
+  };
+  const enter = (level: number, text: string): void => {
+    flush();
+    containers.length = Math.min(containers.length, level - 1);
+    containers[level - 1] = text;
+  };
 
   // Endnotes close the volume they sit in, not the compilation: a long Act is compiled in several
   // volumes and each one repeats them, so stopping the whole pass at the first set throws away every
@@ -207,6 +264,11 @@ export function parseFrl(html: string, url: string): ParsedDocument {
     const volumeStart = builder.sections.length;
     volumeUrl = volume.url;
     const $ = cheerio.load(volume.html);
+    // The page's own contents list links to each of its headings, which marks them where the
+    // drafter styled one by hand -- bold, no class -- and no style name can.
+    const listed = styled
+      ? new Set($('p[class^="TOC"] a[href^="#"]').map((_, a) => ($(a).attr('href') ?? '').slice(1)).get())
+      : new Set<string>();
     if (title === null) title = ($('title').first().text() || '').trim() || null;
 
     for (const el of $(BLOCKS).toArray()) {
@@ -230,6 +292,29 @@ export function parseFrl(html: string, url: string): ParsedDocument {
         const node = $el.find(sel).first().get(0);
         return node ? nodeText([node]).replace(/\s+/g, ' ').trim() : '';
       };
+      const anchorOf = (): string | null => $el.find('a[id]').first().attr('id') ?? el.attribs['id'] ?? null;
+
+      if (styled) {
+        const linked = listed.size > 0 && [el.attribs['id'], ...$el.find('a[id]').map((_, a) => $(a).attr('id')).get()].some((id) => id && listed.has(id));
+        if (!linked && !isStyledHeading(el.tagName, cls)) {
+          body(text);
+          continue;
+        }
+        const container = STYLED_CONTAINER.exec(text)?.[1];
+        if (container) {
+          enter(STYLED_LEVEL[container]!, text);
+          continue;
+        }
+        const numbered = text.length <= HEADING_MAX ? PROVISION_NUMBER.exec(text) ?? PROVISION_NAMED.exec(text) : null;
+        if (numbered) {
+          flush();
+          started = true;
+          open = { label: numbered[1]!, heading: text.slice(numbered[0].length).trim(), anchor: anchorOf(), body: [text] };
+          continue;
+        }
+        body(text);
+        continue;
+      }
 
       // The numbering span only says what this paragraph is when the paragraph opens with it: these
       // are character styles, and the register uses them mid-sentence too.
@@ -239,9 +324,7 @@ export function parseFrl(html: string, url: string): ParsedDocument {
 
       const level = CONTAINER[cls] ?? SPAN_CONTAINER[markerClass] ?? LD_LEVEL[ld];
       if (level !== undefined) {
-        flush();
-        containers.length = Math.min(containers.length, level - 1);
-        containers[level - 1] = text;
+        enter(level, text);
         continue;
       }
 
@@ -250,13 +333,11 @@ export function parseFrl(html: string, url: string): ParsedDocument {
         const numbered = ld ? span('span') : span(`span.${SPAN_SECTION}`);
         const label = /^\d/.test(numbered) ? numbered : null;
         const heading = label && text.startsWith(label) ? text.slice(label.length).trim() : text;
-        const anchor = $el.find('a[id]').first().attr('id') ?? el.attribs['id'] ?? null;
-        open = { label, heading, anchor, body: [text] };
+        open = { label, heading, anchor: anchorOf(), body: [text] };
         continue;
       }
 
-      if (open) open.body.push(text);
-      else if (front.length < 4000) front += `${text}\n`;
+      body(text);
     }
 
     // A provision does not run across a volume boundary. Left open, volume one's last section
@@ -264,23 +345,37 @@ export function parseFrl(html: string, url: string): ParsedDocument {
     // volume before it had printed a word: four of a five volume Act read as two.
     flush();
   }
+  return { builder, front, title, volumes: parts.length };
+}
 
-  const meta = readFrontMatter(front);
-  if (builder.sections.length === 0) {
-    // The template covers principal Acts. Rules, Determinations and Industry Standards are drafted
-    // from others whose headings carry none of these classes, so the generic parser takes those.
+export function parseFrl(html: string, url: string): ParsedDocument {
+  let read = walk(html, false);
+  let parser = 'frl';
+  if (read.builder.sections.length === 0) {
+    // None of the templates. Two numbered headings is the least that says the page has provisions
+    // to split into; a single one is as likely a title that happens to open with a number.
+    const styled = walk(html, true);
+    if (styled.builder.sections.length >= 2) {
+      read = styled;
+      parser = 'frl-styled';
+    }
+  }
+
+  const meta = readFrontMatter(read.front);
+  if (read.builder.sections.length === 0) {
+    // Nothing in the page is styled as a numbered heading, so the generic parser takes it.
     const generic = parseHtml(html, url);
-    return { ...generic, title: generic.title ?? title, meta: { ...meta, ...generic.meta }, parser: 'frl-generic' };
+    return { ...generic, title: generic.title ?? read.title, meta: { ...meta, ...generic.meta }, parser: 'frl-generic' };
   }
 
   return {
     extraction: 'html',
-    text: rebuild(builder, front),
-    sections: builder.sections,
+    text: rebuild(read.builder, read.front),
+    sections: read.builder.sections,
     unread: null,
-    title,
-    meta: multiVolume ? { ...meta, volumes: String(parts.length) } : meta,
-    parser: 'frl',
+    title: read.title,
+    meta: read.volumes > 1 ? { ...meta, volumes: String(read.volumes) } : meta,
+    parser,
   };
 }
 
