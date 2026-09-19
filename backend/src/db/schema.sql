@@ -158,6 +158,9 @@ CREATE TABLE IF NOT EXISTS instrument (
   -- The Act this instrument is made under, as the register itself states it. Inferring it
   -- from the title misses every instrument its drafters did not name after its parent.
   made_under_instrument_id INTEGER REFERENCES instrument(id),
+  -- The parent's name as the register writes it, kept whether or not it resolves to a row. A
+  -- register can name an Act it does not itself publish, and the name is evidence either way.
+  made_under_name TEXT,
   made_under_basis TEXT,
   commenced_on    TEXT,                       -- ISO date, read from the document or stated by the register
   last_amended_on TEXT,                       -- ISO date of an amendment, never of a republication

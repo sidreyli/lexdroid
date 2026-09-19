@@ -76,10 +76,12 @@ export async function register(
 
   const insert = db.prepare(
     `INSERT INTO instrument (economy_code, title, official_number, kind, status, status_basis,
-                             commenced_on, last_amended_on, current_to, timeframe_basis, source_url,
+                             commenced_on, last_amended_on, current_to, timeframe_basis,
+                             made_under_name, source_url,
                              discovered_via, discovered_at, title_provisional, also_at)
-     VALUES (?, ?, ?, ?, COALESCE(?, 'unknown'), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     VALUES (?, ?, ?, ?, COALESCE(?, 'unknown'), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(economy_code, source_url) DO UPDATE SET
+       made_under_name = COALESCE(excluded.made_under_name, instrument.made_under_name),
        status = CASE WHEN excluded.status_basis IS NOT NULL THEN excluded.status ELSE instrument.status END,
        status_basis = COALESCE(excluded.status_basis, instrument.status_basis),
        commenced_on = COALESCE(excluded.commenced_on, instrument.commenced_on),
@@ -142,7 +144,7 @@ export async function register(
           profile.code, item.title, item.officialNumber ?? null, item.kind,
           item.status ?? null, item.statusBasis ?? null, item.commencedOn ?? null,
           item.lastAmendedOn ?? null, item.currentTo ?? null, item.currentToBasis ?? null,
-          item.url, `portal:${id}`, now,
+          item.madeUnder ?? null, item.url, `portal:${id}`, now,
           item.titleProvisional ? 1 : 0,
           item.alsoAt?.length ? JSON.stringify(item.alsoAt) : null,
         );
@@ -171,7 +173,72 @@ export async function register(
     results.push({ portal: portal.name, found: found.length, added });
   }
 
+  const linked = linkStatedParents(db, profile.code);
+  if (linked.stated > 0) {
+    log(`Parentage -- ${linked.stated} instrument(s) name the Act they are made under, ${linked.linked} of those Acts are in the register`);
+  }
+
   return results;
+}
+
+export interface StatedParentage {
+  /** Instruments whose register names the Act they are made under. */
+  stated: number;
+  /** Of those, the ones whose named Act is an Act we have registered. */
+  linked: number;
+}
+
+/**
+ * Link each instrument to the Act its own register says it was made under.
+ *
+ * Australia's register answers this backwards -- ask an Act what it authorises -- and that is
+ * what `linkParents` walks. India's answers it forwards: every rule, regulation, notification and
+ * order carries the name of its enabling Act, and the adapter was putting that name in a sentence
+ * and throwing it away. Nothing else recovers it; a title is a drafting convention and the
+ * instruments that matter break it.
+ *
+ * Matched on the exact stated name, case-insensitively. A near match is not attempted: linking a
+ * rule to the wrong Act would put the wrong instrument at the head of a cell's evidence, and an
+ * unlinked rule still carries the name a reviewer can read.
+ */
+export function linkStatedParents(db: Db, economy: string): StatedParentage {
+  const stated = (
+    db.prepare(
+      `SELECT COUNT(*) n FROM instrument WHERE economy_code = ? AND made_under_name IS NOT NULL`,
+    ).get(economy) as { n: number }
+  ).n;
+  if (stated === 0) return { stated: 0, linked: 0 };
+
+  const acts = new Map<string, number>();
+  for (const row of db.prepare(
+    `SELECT id, title FROM instrument WHERE economy_code = ? AND kind = 'act'`,
+  ).all(economy) as { id: number; title: string }[]) {
+    acts.set(row.title.trim().toLowerCase(), row.id);
+  }
+
+  const update = db.prepare(
+    `UPDATE instrument SET made_under_instrument_id = ?, made_under_basis = ? WHERE id = ?`,
+  );
+  let linked = 0;
+  db.transaction(() => {
+    for (const row of db.prepare(
+      `SELECT id, made_under_name FROM instrument
+        WHERE economy_code = ? AND made_under_name IS NOT NULL AND made_under_instrument_id IS NULL`,
+    ).all(economy) as { id: number; made_under_name: string }[]) {
+      const parent = acts.get(row.made_under_name.trim().toLowerCase());
+      // An Act that names itself as its own parent is the register repeating the title, not a
+      // relation, and a row pointing at itself would make the contents walk cycle.
+      if (parent === undefined || parent === row.id) continue;
+      update.run(
+        parent,
+        `The register records this instrument as made under "${row.made_under_name}".`,
+        row.id,
+      );
+      linked += 1;
+    }
+  })();
+
+  return { stated, linked };
 }
 
 /** The other files one page publishes, as recorded at registration. */

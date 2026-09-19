@@ -38,6 +38,14 @@ export interface DiscoveredInstrument {
   /** The sentence behind whichever of the two dates above the register stated. */
   currentToBasis?: string;
   /**
+   * The Act the register says this instrument is made under, named the way the register names it.
+   *
+   * Kept as the stated name rather than resolved here, because an adapter lists one portal and
+   * the Act may not be registered yet when the rule made under it is. Resolving the name to a row
+   * is a pass over the whole economy, run once the walk is done.
+   */
+  madeUnder?: string | null;
+  /**
    * True when `title` is only a filename, and the document's own stated title should replace it.
    * A code filed under its upload slug never matches the name a citation calls it by.
    */

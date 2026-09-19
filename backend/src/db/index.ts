@@ -69,6 +69,7 @@ const ADDED_COLUMNS: readonly { table: string; column: string; type: string }[] 
   { table: 'instrument', column: 'made_under_instrument_id', type: 'INTEGER' },
   { table: 'instrument', column: 'made_under_basis', type: 'TEXT' },
   { table: 'instrument', column: 'current_to', type: 'TEXT' },
+  { table: 'instrument', column: 'made_under_name', type: 'TEXT' },
   { table: 'cell', column: 'queries', type: 'TEXT' },
   { table: 'cell', column: 'depth', type: 'INTEGER' },
   { table: 'cell', column: 'surfaced', type: 'INTEGER' },

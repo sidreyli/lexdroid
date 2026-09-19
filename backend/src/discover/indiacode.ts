@@ -199,7 +199,7 @@ function commencementDates(raw: string): string[] {
 function statusOf(
   item: IndiaCodeItem,
   readOn: string,
-): Pick<DiscoveredInstrument, 'status' | 'statusBasis' | 'commencedOn'> {
+): Pick<DiscoveredInstrument, 'status' | 'statusBasis' | 'commencedOn' | 'madeUnder'> {
   const collection = value(item, 'dc.identifier.collection')?.toUpperCase() ?? 'CENTRAL';
   const parent = value(item, 'dc.identifier.act_name');
 
@@ -209,6 +209,7 @@ function statusOf(
   const parentRepealed = value(item, 'dc.identifier.act_repealed')?.toLowerCase() === 'true';
   if (repealed || parentRepealed) {
     return {
+      ...(parent ? { madeUnder: parent } : {}),
       status: 'repealed',
       statusBasis: repealed
         ? `India Code records repealed=true for this item (API read on ${readOn})`
@@ -226,6 +227,7 @@ function statusOf(
         ? `, the earliest of ${dates.length} stated stages of commencement,`
         : '';
       return {
+        ...(parent ? { madeUnder: parent } : {}),
         status: 'in-force',
         commencedOn: begun[0]!,
         statusBasis:
@@ -235,6 +237,7 @@ function statusOf(
     }
     if (dates.length > 0) {
       return {
+        ...(parent ? { madeUnder: parent } : {}),
         commencedOn: dates[0]!,
         statusBasis:
           `India Code records commencement on ${dates[0]}, a day that has not yet arrived, ` +
@@ -245,6 +248,7 @@ function statusOf(
   }
 
   return {
+    ...(parent ? { madeUnder: parent } : {}),
     status: 'in-force',
     statusBasis:
       `India Code lists this among the ${collection} it holds as current law` +
