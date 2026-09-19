@@ -452,7 +452,11 @@ export async function shortlistInstruments(
 
   const byId = db.prepare(
     `SELECT i.id, i.title, i.kind, i.official_number, i.source_url,
-            EXISTS (SELECT 1 FROM document d WHERE d.instrument_id = i.id) AS read
+            -- Read means there is text to examine. A document stored as unread -- an empty scan, a
+            -- landing page, a consultation -- is a document, and counting it made 142 instruments
+            -- with nothing in them eligible to be examined as a framework.
+            EXISTS (SELECT 1 FROM document d JOIN section s ON s.document_id = d.id
+                     WHERE d.instrument_id = i.id) AS read
        FROM instrument i WHERE i.id = ?`,
   );
 
