@@ -14,7 +14,7 @@ function seed(): Db {
     CREATE TABLE cell (id INTEGER PRIMARY KEY, run_id TEXT, economy_code TEXT, indicator_id TEXT);
     CREATE TABLE reading (
       id INTEGER PRIMARY KEY, cell_id INTEGER, section_id INTEGER, engine TEXT, model TEXT,
-      applies INTEGER, quote TEXT, attributes TEXT
+      applies INTEGER, quote TEXT, attributes TEXT, unreadable INTEGER
     );
   `);
   const cell = db.prepare('INSERT INTO cell (id, run_id, economy_code, indicator_id) VALUES (?, ?, ?, ?)');

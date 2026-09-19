@@ -13,6 +13,7 @@ import {
   compareIndicatorIds,
 } from "@/lib/data";
 import type { ExportRow, Run } from "@/lib/data/types";
+import type { ReviewDecision } from "@/lib/review";
 import {
   addEngineComparison,
   addInstructions,
@@ -61,10 +62,11 @@ const pillarOf = (indicatorId: string): number => Number(indicatorId.split(".")[
 function amendedYear(row: ExportRow): number | null {
   const iso = row.lastAmendedOn?.slice(0, 4);
   if (iso && /^\d{4}$/.test(iso)) return Number(iso);
-  const years = (row.lastAmended?.match(/\d{4}/g) ?? [])
-    .map(Number)
-    .filter((y) => y >= 1800 && y <= 2100);
-  return years.at(-1) ?? null;
+  // Only a year the sentence says is an amendment's. The last four-digit number anywhere in it made
+  // "Since January 2000" an amendment in 2000, and the template says to leave the column blank
+  // where the law was not amended.
+  const said = /last amended in (?:[A-Z][a-z]+ )?(\d{4})\b/i.exec(row.lastAmended ?? "");
+  return said ? Number(said[1]) : null;
 }
 
 function notesOf(row: ExportRow): string | null {
@@ -72,24 +74,81 @@ function notesOf(row: ExportRow): string | null {
   return [row.notes, timeframe].filter(Boolean).join(" -- ") || null;
 }
 
-/** The verdict that stands on each row, which is the last one recorded. */
-function standing(): Map<number, "accept" | "edit" | "reject"> {
-  const at = new Map<number, "accept" | "edit" | "reject">();
-  for (const v of getVerdicts()) at.set(v.rowId, v.action);
-  return at;
+/**
+ * The gates a row cannot be submitted past, each of them a column the finals template requires:
+ * the Verbatim Snippet is "the exact text ... verified against the source", the Source URL is "on
+ * the official government portal", and a repealed provision or a draft "scores zero". The others --
+ * an anchor on the link, the rationale's order, one measure per row, a supported date -- are for
+ * the reviewer, and a row that fails one is still a row.
+ */
+export const BLOCKING_GATES = ["quote-in-source", "offsets-resolve", "in-force", "official-host"] as const;
+
+/** Only words the provision holds clear a quotation, whoever vouches for them. */
+const WORDS_GATES = new Set<string>(["quote-in-source", "offsets-resolve"]);
+
+const words = (s: string | null | undefined): string =>
+  (s ?? "").replace(/[‘’]/g, "'").replace(/[“”]/g, '"').replace(/\s+/g, " ").trim().toLowerCase();
+
+/**
+ * Why a row may not be submitted, or nothing.
+ *
+ * A failed blocking gate holds the row unless a reviewer acted on it after the gate ran. An
+ * acceptance is a reviewer's word, and it answers whether the instrument is in force or the host
+ * official; it cannot answer whether words are in a provision. That takes an edit whose words are
+ * there -- checked here against the provision's own text, not taken on trust.
+ */
+export function heldBecause(row: ExportRow, decisions: ReviewDecision[]): string[] {
+  const mine = decisions.filter((d) => d.rowId === row.id);
+  const reasons: string[] = [];
+  for (const g of row.gates) {
+    if (g.passed || !(BLOCKING_GATES as readonly string[]).includes(g.gate)) continue;
+    const later = mine.filter((d) => d.action !== "reject" && (!g.checkedAt || d.actedAt > g.checkedAt));
+    const cleared = WORDS_GATES.has(g.gate)
+      ? later.some(
+          (d) =>
+            d.action === "edit" &&
+            d.changedFields.verbatimSnippet !== undefined &&
+            !!row.sectionText &&
+            words(row.verbatimSnippet).length > 0 &&
+            words(row.sectionText).includes(words(row.verbatimSnippet)),
+        )
+      : later.length > 0;
+    if (!cleared) reasons.push(`${g.gate}: ${g.detail ?? "failed"}`);
+  }
+  return reasons;
 }
 
-export function rowsFor(selection: Selection): ExportRow[] {
-  const verdicts = standing();
+function selected(selection: Selection): ExportRow[] {
   const wanted = selection.economies?.map((e) => e.toUpperCase());
   return getExportRows()
     .filter((r) => (selection.runId ? r.runId === selection.runId : true))
     .filter((r) => (wanted ? wanted.includes(r.economy) : true))
-    .filter((r) => verdicts.get(r.id) !== "reject")
     .sort(
       (a, b) =>
         a.economy.localeCompare(b.economy) || compareIndicatorIds(a.indicatorId, b.indicatorId),
     );
+}
+
+/** The verdict that stands on a row, which is the last one recorded. */
+function standingOf(decisions: ReviewDecision[], rowId: number): ReviewDecision["action"] | undefined {
+  return decisions.filter((d) => d.rowId === rowId).at(-1)?.action;
+}
+
+/** What goes in the submission: not rejected, and not held by a gate nobody has cleared. */
+export function rowsFor(selection: Selection): ExportRow[] {
+  const decisions = getVerdicts();
+  return selected(selection).filter(
+    (r) => standingOf(decisions, r.id) !== "reject" && heldBecause(r, decisions).length === 0,
+  );
+}
+
+/** What was kept out by a gate, with why -- listed, so a held row is visible rather than missing. */
+export function heldRows(selection: Selection): { row: ExportRow; reasons: string[] }[] {
+  const decisions = getVerdicts();
+  return selected(selection)
+    .filter((r) => standingOf(decisions, r.id) !== "reject")
+    .map((row) => ({ row, reasons: heldBecause(row, decisions) }))
+    .filter((h) => h.reasons.length > 0);
 }
 
 function outputValues(rows: ExportRow[]): (string | number | null)[][] {
@@ -175,6 +234,20 @@ export async function buildWorkbook(selection: Selection): Promise<Buffer> {
   }
   coverage.columns.forEach((c, i) => (c.width = i < 2 ? [14, 8][i]! : 14));
 
+  // Rows a gate kept out of Output Data, with the gate. Not part of the template's four sheets; it
+  // is here so that a row missing from the submission is a row someone can see and act on.
+  const held = heldRows(selection);
+  if (held.length > 0) {
+    const sheet = book.addWorksheet("Held");
+    sheet.addRow(["Economy", "Law Name", "Article / Section", "Indicator ID", "Verbatim Snippet", "Held because"]);
+    sheet.getRow(1).font = { bold: true };
+    for (const { row, reasons } of held) {
+      const added = sheet.addRow([row.economy, row.lawName, row.article, row.indicatorId, row.verbatimSnippet, reasons.join("; ")]);
+      added.getCell(4).numFmt = "@";
+    }
+    sheet.columns.forEach((c, i) => (c.width = [10, 40, 18, 12, 60, 60][i] ?? 16));
+  }
+
   const record = book.addWorksheet("Run Record");
   record.addRow([
     "Run",
@@ -211,7 +284,7 @@ export async function buildWorkbook(selection: Selection): Promise<Buffer> {
       run.calls,
       run.tokens,
       run.wallSeconds,
-      run.usd,
+      run.usd ?? "unknown",
     ]);
   }
   record.columns.forEach((c, i) => (c.width = i === 0 ? 38 : 16));
@@ -252,7 +325,7 @@ export async function buildWorkbook(selection: Selection): Promise<Buffer> {
       taggedRows: rows.filter((r) => r.discoveryTag !== null).length,
       declaredEngines: engines,
       zeroFetchDemonstrated: zeroFetchDemonstrated(),
-      costRecorded: (passA.run?.usd ?? 0) > 0 || (passA.run?.calls ?? 0) > 0,
+      costRecorded: (passA.run?.usd ?? 0) > 0 || (passA.run?.calls ?? 0) > 0 || passA.run?.usd === null,
       rejectionsApplied: getVerdicts().filter((v) => v.action === "reject").length,
     }),
   );

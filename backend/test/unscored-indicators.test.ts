@@ -256,6 +256,24 @@ describe('money read out of a provision', () => {
     expect(moneyIn('not exceeding 5,000', 'IND')).toEqual({ amount: 5000, currency: 'INR', assumedCurrency: true });
   });
 
+  // The first number anywhere, with a currency found anywhere else, read a citation as the sum.
+  it('reads the figure the currency is written against, not a citation', () => {
+    expect(moneyIn('Goods under section 3 with a value not exceeding S$400', 'SGP')).toEqual({
+      amount: 400,
+      currency: 'SGD',
+      assumedCurrency: false,
+    });
+    expect(moneyIn('under section 12(1), not exceeding 1,000 ringgit', 'MYS')).toMatchObject({ amount: 1000, currency: 'MYR' });
+    expect(moneyIn('within 30 days, goods not exceeding $1,000 under regulation 4', 'AUS')).toMatchObject({ amount: 1000 });
+    expect(moneyIn('not exceeding RM 500', 'MYS')).toMatchObject({ amount: 500, currency: 'MYR' });
+    expect(moneyIn('a $400 fine', 'SGP')).toEqual({ amount: 400, currency: 'SGD', assumedCurrency: true });
+  });
+
+  it('answers nothing where the quote states two different sums', () => {
+    expect(moneyIn('S$400, or S$1,000 for alcohol', 'SGP')).toBeNull();
+    expect(moneyIn('under section 3 and regulation 7', 'SGP')).toBeNull();
+  });
+
   it('reads no figure where the provision states none', () => {
     expect(moneyIn('such value as may be prescribed', 'SGP')).toBeNull();
     expect(moneyIn(null, 'SGP')).toBeNull();

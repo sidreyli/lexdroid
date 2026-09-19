@@ -22,7 +22,7 @@
 import { openDb } from '../src/db/index.js';
 import { scorecard, tally, movement, type CellResult } from '../src/eval/scorecard.js';
 import { rescoreRun } from '../src/run/rescore.js';
-import { loadConfirmations, noConfirmations } from '../src/read/confirmations.js';
+import { confirmationsForRun, noConfirmations } from '../src/read/confirmations.js';
 import { loadRubric } from '../src/rubric/index.js';
 import { topBandScoresAbsence } from '../src/decide/index.js';
 
@@ -182,7 +182,7 @@ if (process.argv.includes('--cells')) {
 if (process.argv.includes('--ablate')) {
   console.log('\n  the second reading, ablated');
   for (const [label, set] of [
-    ['every banked verdict', loadConfirmations(db)],
+    ['the verdicts of this run’s engine', confirmationsForRun(db, run.id)],
     ['no confirmations at all', noConfirmations()],
   ] as const) {
     db.exec('BEGIN');

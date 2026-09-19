@@ -50,7 +50,7 @@ describe('the banked second-reading verdicts', () => {
       { section: 1, indicator: '12.3', measure: 'ecommerce-licence', words: 'holds a licence' },
       { section: 2, indicator: '12.3', measure: 'ecommerce-licence', words: null },
     ]);
-    const set = loadConfirmations(db);
+    const set = loadConfirmations(db, { model: null });
     expect(set.verdict(1, '12.3', 'ecommerce-licence')).toBe(true);
     expect(set.verdict(2, '12.3', 'ecommerce-licence')).toBe(false);
     db.close();
@@ -62,7 +62,7 @@ describe('the banked second-reading verdicts', () => {
     const db = storeWith([
       { section: 3, indicator: '6.1', measure: 'transfer-ban', words: null, failure: 'engine timed out' },
     ]);
-    const set = loadConfirmations(db);
+    const set = loadConfirmations(db, { model: null });
     expect(set.verdict(3, '6.1', 'transfer-ban')).toBeUndefined();
     expect(set.size).toBe(0);
     db.close();
@@ -70,7 +70,7 @@ describe('the banked second-reading verdicts', () => {
 
   it('answers nothing for a question it was never asked', () => {
     const db = storeWith([{ section: 1, indicator: '12.3', measure: 'ecommerce-licence', words: null }]);
-    const set = loadConfirmations(db);
+    const set = loadConfirmations(db, { model: null });
     expect(set.verdict(99, '12.3', 'ecommerce-licence')).toBeUndefined();
     expect(set.verdict(1, '12.4', 'ecommerce-licence')).toBeUndefined();
     expect(set.verdict(1, '12.3', 'payment-licence')).toBeUndefined();
@@ -86,7 +86,7 @@ describe('the banked second-reading verdicts', () => {
     const db = storeWith([
       { section: 1, indicator: '12.3', measure: 'ecommerce-licence', words: 'holds a licence', question: 'superseded:107fd58' },
     ]);
-    expect(loadConfirmations(db).verdict(1, '12.3', 'ecommerce-licence')).toBeUndefined();
+    expect(loadConfirmations(db, { model: null }).verdict(1, '12.3', 'ecommerce-licence')).toBeUndefined();
     db.close();
   });
 
@@ -94,7 +94,7 @@ describe('the banked second-reading verdicts', () => {
     const db = storeWith([
       { section: 1, indicator: '12.3', measure: 'ecommerce-licence', words: 'holds a licence', question: null },
     ]);
-    expect(loadConfirmations(db).verdict(1, '12.3', 'ecommerce-licence')).toBeUndefined();
+    expect(loadConfirmations(db, { model: null }).verdict(1, '12.3', 'ecommerce-licence')).toBeUndefined();
     db.close();
   });
 
@@ -114,7 +114,7 @@ describe('the banked second-reading verdicts', () => {
       { section: 1, indicator: '12.3', measure: 'ecommerce-licence', words: 'holds a licence', model: 'engine-a' },
       { section: 1, indicator: '12.3', measure: 'ecommerce-licence', words: null, model: 'engine-b' },
     ]);
-    expect(loadConfirmations(db).verdict(1, '12.3', 'ecommerce-licence')).toBeUndefined();
+    expect(loadConfirmations(db, { model: null }).verdict(1, '12.3', 'ecommerce-licence')).toBeUndefined();
     db.close();
   });
 

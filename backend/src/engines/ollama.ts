@@ -18,8 +18,14 @@ import { OllamaUnavailable } from './errors.js';
 import { hostedConfig, hostedGenerate } from './hosted.js';
 export { OllamaUnavailable, NoEnginesLeft } from './errors.js';
 
-/** The first engine named. Reads go to whichever engine the pool frees; this is for one-offs. */
-const HOST = engineHosts()[0]!;
+/**
+ * The first engine named. Reads go to whichever engine the pool frees; this is for one-offs.
+ * Read when asked, not when this module loads: a script that loads its .env or takes --hosts after
+ * its imports have run would otherwise be pointed at whatever the shell had.
+ */
+function firstHost(): string {
+  return engineHosts()[0]!;
+}
 
 /**
  * A rented engine is reachable by whoever guesses its URL, and Ollama has no auth of its own.
@@ -231,7 +237,7 @@ async function onAnyEngine<T>(path: string, body: unknown, timeoutMs: number, mo
 
 export async function listModels(): Promise<string[]> {
   try {
-    const res = await request(`${HOST}/api/tags`, {
+    const res = await request(`${firstHost()}/api/tags`, {
       headers: authHeaders(),
       headersTimeout: 10_000,
       bodyTimeout: 10_000,
@@ -239,7 +245,7 @@ export async function listModels(): Promise<string[]> {
     const body = (await res.body.json()) as { models?: { name: string }[] };
     return (body.models ?? []).map((m) => m.name);
   } catch (err) {
-    throw new OllamaUnavailable(err instanceof Error ? err.message : String(err), HOST);
+    throw new OllamaUnavailable(err instanceof Error ? err.message : String(err), firstHost());
   }
 }
 
@@ -338,9 +344,17 @@ export async function generate(
     },
   };
 
+  // Where the run is pointed at a hosted engine, the request goes out in the chat-completions
+  // shape instead. Read before the cache, because the cache has to know who would answer.
+  const hosted = hostedConfig();
+
   // Keyed on the request itself, so a changed prompt, schema, model or option misses rather than
-  // replaying an answer to a question nobody is asking any more.
-  const key = cacheEnabled() ? cacheKey(body) : null;
+  // replaying an answer to a question nobody is asking any more. And on the engine that answers:
+  // keyed on the requested model alone, a hosted run replayed the local engine's answers as its
+  // own, and a comparison of two engines compared one engine with itself. A local request keeps
+  // the key it always had, so the local cache is still valid.
+  const identity = hosted ? { ...body, model: hosted.model, provider: hosted.provider } : body;
+  const key = cacheEnabled() ? cacheKey(identity) : null;
   if (key) {
     const hit = cacheGet(key);
     if (hit) return { ...hit, fromCache: true, fromResume: false };
@@ -348,17 +362,15 @@ export async function generate(
 
   // What this unit already read before it was interrupted. Same key, so a changed prompt misses.
   const resume = resumePath();
-  const resumeKey = resume ? (key ?? cacheKey(body)) : null;
+  const resumeKey = resume ? (key ?? cacheKey(identity)) : null;
   if (resume && resumeKey) {
     const hit = cacheGet(resumeKey, resume);
     if (hit) return { ...hit, fromCache: false, fromResume: true };
   }
 
-  // Where the run is pointed at a hosted engine, the request goes out in the chat-completions
-  // shape instead. Everything on either side of this -- the cache above, the runaway and silence
-  // checks below -- is the same, because a second engine that took a second code path would be a
+  // Everything on either side of this -- the cache above, the runaway and silence checks below --
+  // is the same for both engines, because a second engine that took a second code path would be a
   // second set of failures rather than a comparison.
-  const hosted = hostedConfig();
   let text: string;
   let promptTokens: number;
   let completionTokens: number;

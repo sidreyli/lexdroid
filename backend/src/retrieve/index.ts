@@ -416,36 +416,127 @@ export const RUBRIC_LANGUAGE = 'en';
  * not "this provision is held in English": Malaysia's banking code of practice has one English
  * section beside 128 Malay ones, and dropping every Malay section of an instrument with any English
  * in it lost the other 127. So a provision is a second copy only where its own counterpart is
- * there -- a section of the same instrument, in the rubric's language, under the same label --
- * paired one to one, so that a label the Malay text uses three times is excused by three English
- * sections and not by one. An unlabelled section cannot be paired and is kept.
+ * there.
+ *
+ * And a counterpart is not the next section with the same number. One registered instrument can
+ * hold several documents that each number from 1.1 -- a data protection officer guideline and a
+ * breach notification guideline filed together -- and pairing by the label alone suppressed a
+ * provision against a different provision that happened to share it, so the one that mattered was
+ * never read. A translation keeps what language cannot change: the section numbers, years, act
+ * numbers and sums it cites, and roughly its length. A section is paired with a same-labelled one
+ * in the rubric's language only where those agree, one to one; where nothing tells the candidates
+ * apart, it is kept. Reading a provision twice costs time. Never reading it costs the answer.
  */
 export function otherLanguageCopies(db: Db, economy: string): Set<number> {
   const rows = db
     .prepare(
-      `SELECT s.id, d.instrument_id AS instrument, s.label, s.language
+      `SELECT s.id, d.instrument_id AS instrument, s.label, s.language, s.heading_path
          FROM section s
          JOIN document d ON d.id = s.document_id
          JOIN instrument i ON i.id = d.instrument_id
         WHERE i.economy_code = ? AND s.label IS NOT NULL AND s.language IS NOT NULL
         ORDER BY d.id, s.ordinal`,
     )
-    .all(economy) as { id: number; instrument: number; label: string; language: string }[];
+    .all(economy) as { id: number; instrument: number; label: string; language: string; heading_path: string }[];
+  const pathOf = new Map(rows.map((r) => [r.id, r.heading_path]));
 
-  const counterparts = new Map<string, number>();
+  // Only a label held in both the rubric's language and another can pair, so only those sections'
+  // text is fetched.
   const keyOf = (r: { instrument: number; label: string }): string => `${r.instrument}|${r.label}`;
-  for (const r of rows) {
-    if (r.language === RUBRIC_LANGUAGE) counterparts.set(keyOf(r), (counterparts.get(keyOf(r)) ?? 0) + 1);
+  const inRubric = new Set(rows.filter((r) => r.language === RUBRIC_LANGUAGE).map(keyOf));
+  const inOther = new Set(rows.filter((r) => r.language !== RUBRIC_LANGUAGE).map(keyOf));
+  const pairable = rows.filter((r) => inRubric.has(keyOf(r)) && inOther.has(keyOf(r)));
+  if (pairable.length === 0) return new Set();
+
+  const textOf = new Map<number, string>();
+  const byId = db.prepare('SELECT text FROM section WHERE id = ?');
+  for (const r of pairable) textOf.set(r.id, (byId.get(r.id) as { text: string } | undefined)?.text ?? '');
+
+  const groups = new Map<string, { label: string; rubric: number[]; other: number[] }>();
+  for (const r of pairable) {
+    const g = groups.get(keyOf(r)) ?? { label: r.label, rubric: [], other: [] };
+    (r.language === RUBRIC_LANGUAGE ? g.rubric : g.other).push(r.id);
+    groups.set(keyOf(r), g);
   }
+
   const second = new Set<number>();
-  for (const r of rows) {
-    if (r.language === RUBRIC_LANGUAGE) continue;
-    const left = counterparts.get(keyOf(r)) ?? 0;
-    if (left === 0) continue;
-    counterparts.set(keyOf(r), left - 1);
-    second.add(r.id);
+  for (const g of groups.values()) {
+    const taken = new Set<number>();
+    for (const other of g.other) {
+      const candidates = g.rubric.filter((id) => !taken.has(id));
+      const match = counterpartOf(
+        textOf.get(other)!,
+        candidates.map((id) => ({ id, text: textOf.get(id)!, headingPath: pathOf.get(id) })),
+        g.label,
+        pathOf.get(other),
+      );
+      if (match === null) continue;
+      taken.add(match);
+      second.add(other);
+    }
   }
   return second;
+}
+
+/**
+ * The figures a provision cites -- "12A", "709", "2010", "4.2" -- which a translation keeps. Not
+ * its own number, which every candidate shares by construction and so tells none of them apart.
+ */
+export function figuresOf(text: string, label = ''): Set<string> {
+  const own = label.replace(/[.\s]+$/, '').toUpperCase();
+  return new Set(
+    (text.match(/\d+(?:\.\d+)*[A-Z]{0,2}\b/g) ?? []).map((f) => f.toUpperCase()).filter((f) => f !== own),
+  );
+}
+
+/**
+ * The numbers of the parts a provision is filed under -- "2" for "Schedule 2 > 1 Fees", "I" for
+ * "Part I > 1 Duties" -- which a translation of the path keeps even where its words change.
+ */
+function placeOf(headingPath: string | undefined): Set<string> {
+  if (!headingPath) return new Set();
+  const parents = headingPath.split(' > ').slice(0, -1).join(' ');
+  return new Set((parents.match(/\b(?:\d+[A-Z]?|[IVXLC]+)\b/g) ?? []).map((t) => t.toUpperCase()));
+}
+
+/**
+ * Which of the candidates in the rubric's language is this provision in another, or null.
+ *
+ * A candidate qualifies where the two are of a length a translation could be and cite the same
+ * figures, at least half of them in common. Where neither cites any figure, only a lone candidate
+ * qualifies, because nothing else could tell two of them apart. The best qualifying one wins, and a
+ * tie between two is no answer.
+ */
+export function counterpartOf(
+  text: string,
+  candidates: { id: number; text: string; headingPath?: string | undefined }[],
+  label = '',
+  headingPath?: string,
+): number | null {
+  const mine = figuresOf(text, label);
+  const where = placeOf(headingPath);
+  const scored: { id: number; score: number }[] = [];
+  for (const c of candidates) {
+    // Filed under differently numbered parts, they are different provisions, whatever they cite.
+    // Only where both say where they are filed: a translation's parse often drops the parent.
+    const there = placeOf(c.headingPath);
+    if (where.size > 0 && there.size > 0 && ![...where].some((p) => there.has(p))) continue;
+    const ratio = text.length / Math.max(1, c.text.length);
+    if (ratio < 0.5 || ratio > 2.2) continue;
+    const theirs = figuresOf(c.text, label);
+    if (mine.size === 0 && theirs.size === 0) {
+      if (candidates.length === 1) scored.push({ id: c.id, score: 0 });
+      continue;
+    }
+    if (mine.size === 0 || theirs.size === 0) continue;
+    const shared = [...mine].filter((f) => theirs.has(f)).length;
+    const jaccard = shared / (mine.size + theirs.size - shared);
+    if (jaccard >= 0.5) scored.push({ id: c.id, score: jaccard });
+  }
+  scored.sort((a, b) => b.score - a.score);
+  if (scored.length === 0) return null;
+  if (scored.length > 1 && scored[0]!.score === scored[1]!.score) return null;
+  return scored[0]!.id;
 }
 
 /**

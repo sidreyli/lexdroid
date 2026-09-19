@@ -79,6 +79,7 @@ const ADDED_COLUMNS: readonly { table: string; column: string; type: string }[] 
   { table: 'cell', column: 'sections_read', type: 'INTEGER' },
   { table: 'cell', column: 'governing', type: 'TEXT' },
   { table: 'cell', column: 'surfaced_instruments', type: 'TEXT' },
+  { table: 'cell', column: 'framework_failed', type: 'INTEGER' },
   { table: 'cell_answer', column: 'absence_basis', type: 'TEXT' },
   { table: 'reading', column: 'engine_call', type: 'TEXT' },
   { table: 'cell_answer', column: 'rationale', type: 'TEXT' },
@@ -93,6 +94,11 @@ const ADDED_COLUMNS: readonly { table: string; column: string; type: string }[] 
   { table: 'run', column: 'fx_rates', type: 'TEXT' },
   { table: 'cell_answer', column: 'confirmations_asked', type: 'INTEGER' },
   { table: 'cell_answer', column: 'confirmations_applied', type: 'INTEGER' },
+  { table: 'answer_basis', column: 'quote', type: 'TEXT' },
+  { table: 'reading', column: 'rejected', type: 'INTEGER' },
+  { table: 'reading', column: 'unreadable', type: 'INTEGER' },
+  { table: 'unread_document', column: 'attempts', type: 'INTEGER NOT NULL DEFAULT 1' },
+  { table: 'run_cost', column: 'usd_unknown', type: 'INTEGER NOT NULL DEFAULT 0' },
 ];
 
 function addMissingColumns(db: Db): void {

@@ -79,12 +79,16 @@ export function replayingWhilePaying(cacheOn: boolean, usdPerHour: number): bool
  * a larger number here.
  */
 export function childEngineEnv(hosts: string[], engine?: HostedEngine): Record<string, string> {
-  // A hosted engine has no hosts of its own to hand out, so the pool is given the placeholder it
-  // needs to exist and every request goes out over the chat-completions client instead.
+  // A hosted engine generates over the chat-completions client, so the Ollama pool is left with
+  // what only Ollama does: the embeddings behind every search. It used to be handed the hosted
+  // engine's own URL, which speaks another protocol -- the first query embedding went to the chat
+  // endpoint, the host was retired as dead, and the worker had no engine left before reading one
+  // provision. The embedding engine is its own setting, and the local one unless said otherwise.
   if (engine?.hosted) {
+    const embedding = (process.env['LEXDROID_EMBED_HOSTS'] ?? 'http://127.0.0.1:11434').trim();
     return {
-      OLLAMA_HOSTS: hosts[0] ?? 'http://127.0.0.1:11434',
-      OLLAMA_HOST: hosts[0] ?? 'http://127.0.0.1:11434',
+      OLLAMA_HOSTS: embedding,
+      OLLAMA_HOST: embedding.split(',')[0]!.trim(),
       LEXDROID_READ_CONCURRENCY: '1',
       LEXDROID_HOSTED_BASE_URL: engine.baseUrl,
       LEXDROID_HOSTED_MODEL: engine.model,

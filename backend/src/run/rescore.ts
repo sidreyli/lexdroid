@@ -17,7 +17,7 @@
  */
 import type { Db } from '../db/index.js';
 import { recordedDecider } from '../decide/record.js';
-import { loadConfirmations, type ConfirmationSet } from '../read/confirmations.js';
+import { confirmationsForRun, type ConfirmationSet } from '../read/confirmations.js';
 import { ratesOfRun } from './index.js';
 
 export interface RescoreResult {
@@ -30,12 +30,12 @@ export interface RescoreResult {
 }
 
 export interface RescoreOptions {
-  /** The verdicts to score against. Everything banked, when not given. */
+  /** The verdicts to score against. The run's own engine's, when not given. */
   confirmations?: ConfirmationSet;
 }
 
 export function rescoreRun(db: Db, runId: string, opts: RescoreOptions = {}): RescoreResult {
-  const confirmations = opts.confirmations ?? loadConfirmations(db);
+  const confirmations = opts.confirmations ?? confirmationsForRun(db, runId);
   const { cells, rebuild } = recordedDecider(db, runId, ratesOfRun(db, runId), { confirmations });
 
   const updateCell = db.prepare('UPDATE cell SET state = ?, unresolved_reason = ? WHERE id = ?');
@@ -47,8 +47,8 @@ export function rescoreRun(db: Db, runId: string, opts: RescoreOptions = {}): Re
   );
   const clearBasis = db.prepare('DELETE FROM answer_basis WHERE cell_id = ?');
   const insertBasis = db.prepare(
-    `INSERT OR IGNORE INTO answer_basis (cell_id, ordinal, instrument_id, section_id, measure)
-     VALUES (?, ?, ?, ?, ?)`,
+    `INSERT OR IGNORE INTO answer_basis (cell_id, ordinal, instrument_id, section_id, measure, quote)
+     VALUES (?, ?, ?, ?, ?, ?)`,
   );
 
   const out: RescoreResult = { cells: 0, changed: 0, nowUnresolved: 0, nowAnswered: 0 };
@@ -94,16 +94,16 @@ export function rescoreRun(db: Db, runId: string, opts: RescoreOptions = {}): Re
       clearBasis.run(cell.id);
       let ordinal = 0;
       for (const e of decision.basis) {
-        insertBasis.run(cell.id, (ordinal += 1), e.instrumentId, e.sectionId, e.finding.measure);
+        insertBasis.run(cell.id, (ordinal += 1), e.instrumentId, e.sectionId, e.finding.measure, e.finding.quote);
       }
       // Where a zero rests on an instrument rather than a provision of it, that instrument is the
       // basis, and the export needs it to cite what the absence was read against.
       if (decision.basis.length === 0 && decision.absence) {
-        insertBasis.run(cell.id, (ordinal += 1), decision.absence.instrumentId, null, null);
+        insertBasis.run(cell.id, (ordinal += 1), decision.absence.instrumentId, null, null, null);
       }
       const framework = decision.state === 'restricted' ? decision.frameworkBasis[0] : undefined;
       if (framework && decision.basis.length === 0) {
-        insertBasis.run(cell.id, (ordinal += 1), framework.instrumentId, null, null);
+        insertBasis.run(cell.id, (ordinal += 1), framework.instrumentId, null, null, null);
       }
     }
   })();

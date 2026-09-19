@@ -297,6 +297,18 @@ export interface SectionReading {
   /** Findings that could not show themselves in the provision. Kept and counted, never scored. */
   rejected: { finding: Finding; reason: string }[];
   /**
+   * Of the answer's items, the ones too malformed to be findings at all: no indicator, nothing
+   * quoted, or none of the facts the schema requires. What they claimed was never seen, so a
+   * reading with any of them is incomplete -- its findings count, but it is not a provision read
+   * in full -- and a reading made of nothing else failed.
+   */
+  unreadable?: number;
+  /**
+   * Engine calls this reading took: one per part of a provision too long to read in one pass.
+   * Absent is one. The run's cost is counted in calls made, not in provisions read.
+   */
+  calls?: number;
+  /**
    * Why this provision was not read, when it was not. Null on every reading that happened.
    *
    * A provision the engine never answered on is not a provision with nothing in it, and the two
@@ -319,6 +331,11 @@ export interface SectionReading {
    * attributable to the run whose engine actually produced it.
    */
   carriedFrom?: string;
+}
+
+/** Whether a provision was read, and every item of the answer about it could be read too. */
+export function readInFull(r: SectionReading): boolean {
+  return r.failure === null && !r.unreadable;
 }
 
 /** What a reading is about: the provision, and the instrument it sits in. */
@@ -918,6 +935,8 @@ export async function readSection(
     pillarId,
     findings: failed.length ? [] : findings,
     rejected: readings.flatMap((r) => r.rejected),
+    ...(readings.some((r) => r.unreadable) ? { unreadable: readings.reduce((n, r) => n + (r.unreadable ?? 0), 0) } : {}),
+    calls: parts.length,
     failure: failed.length ? failed.join('; ') : null,
     model: readings[readings.length - 1]!.model,
     promptTokens: readings.reduce((a, r) => a + r.promptTokens, 0),
@@ -970,6 +989,7 @@ async function readPart(
 
   const findings: Finding[] = [];
   const rejected: { finding: Finding; reason: string }[] = [];
+  let unreadable = 0;
 
   // An answer that is not the object asked for is an answer we do not have. It used to become an
   // empty list of findings, which is the ruling "read, and nothing applies" -- evidence for a zero
@@ -1002,11 +1022,27 @@ async function readPart(
       // Not a finding at all -- no indicator, or no quote to check. Nothing in it can be verified,
       // but the reader did claim something, so the claim is counted rather than lost.
       rejected.push({ finding: placeholder(raw), reason: 'the finding names no indicator or quotes nothing' });
+      unreadable += 1;
       continue;
     }
-    const reason = missingFacts(raw) ?? rejectionFor(f, section.text, allowed);
+    const missing = missingFacts(raw);
+    if (missing) {
+      rejected.push({ finding: f, reason: missing });
+      unreadable += 1;
+      continue;
+    }
+    // Well formed and checked against the provision: a claim the provision does not bear out is a
+    // verdict on the claim, and the reading stands.
+    const reason = rejectionFor(f, section.text, allowed);
     if (reason) rejected.push({ finding: f, reason });
     else findings.push(f);
+  }
+
+  // The reader said something about this provision and none of it could be read. Banked as an
+  // empty list it was "read, and nothing applies" -- the same false negative an unparseable answer
+  // used to be -- so it is what that is now: a failure, read again rather than scored.
+  if (unreadable > 0 && findings.length === 0) {
+    return { ...unusable(`${unreadable} of ${list.length} item(s) in the answer could not be read as findings`), rejected };
   }
 
   return {
@@ -1014,6 +1050,7 @@ async function readPart(
     pillarId,
     findings,
     rejected,
+    ...(unreadable > 0 ? { unreadable } : {}),
     failure: null,
     model: res.model,
     promptTokens: res.promptTokens,

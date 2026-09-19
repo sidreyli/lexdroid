@@ -45,6 +45,9 @@ CREATE TABLE IF NOT EXISTS run_cost (
   cached_calls    INTEGER NOT NULL DEFAULT 0, -- served from the response cache, not billable
   wall_seconds    REAL NOT NULL DEFAULT 0,
   usd             REAL NOT NULL DEFAULT 0,    -- 0 for local engines; recorded so the claim is checkable
+  -- 1 where the engine charges and its price was not recorded: a hosted engine's bill is the
+  -- provider's, and `usd` then says nothing. Shown as unknown, never as a measured zero.
+  usd_unknown     INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (run_id, engine, model)
 );
 
@@ -217,7 +220,10 @@ CREATE TABLE IF NOT EXISTS unread_document (
   document_id     INTEGER PRIMARY KEY REFERENCES document(id) ON DELETE CASCADE,
   reason          TEXT NOT NULL,              -- scanned-no-ocr | ocr-below-threshold | landing-page | empty | parse-error
   detail          TEXT,
-  recorded_at     TEXT NOT NULL
+  recorded_at     TEXT NOT NULL,
+  -- Times this address has come back unreadable. A transient failure is asked for again until
+  -- this reaches the limit; a permanent one is not asked for again at all.
+  attempts        INTEGER NOT NULL DEFAULT 1
 );
 
 CREATE TABLE IF NOT EXISTS section (
@@ -418,6 +424,10 @@ CREATE TABLE IF NOT EXISTS cell (
   -- The instruments this cell's own search surfaced, best rank first. A zero is cited against
   -- these, and a count alone cannot say which Act was read -- so the run could not reproduce it.
   surfaced_instruments TEXT,                  -- JSON [{instrumentId, instrumentTitle, rank, currentTo}]
+  -- Framework candidates the engine failed to read. The ones it did read are the cell's
+  -- framework_reading rows; these leave none, and without the count a replay could not tell a
+  -- framework nobody could read from one that was read and found missing. NULL: not recorded.
+  framework_failed INTEGER,
   UNIQUE (run_id, economy_code, indicator_id)
 );
 
@@ -458,6 +468,11 @@ CREATE TABLE IF NOT EXISTS reading (
   -- against the pillar's own schema.
   attributes      TEXT NOT NULL DEFAULT '{}', -- JSON
   reasoning       TEXT,
+  -- Items of the answer that did not become findings: refused against the provision, and of those
+  -- the ones too malformed to be findings at all. A reading with unreadable items was not read in
+  -- full. NULL: recorded before either was counted, and unknown rather than zero.
+  rejected        INTEGER,
+  unreadable      INTEGER,
   prompt_tokens   INTEGER,
   output_tokens   INTEGER,
   latency_ms      INTEGER,
@@ -539,6 +554,9 @@ CREATE TABLE IF NOT EXISTS answer_basis (
   -- Null for a framework indicator: ESCAP decides those over instruments, not provisions.
   section_id      INTEGER REFERENCES section(id),
   measure         TEXT,
+  -- Which of the provision's findings under that measure the answer counted. A provision can
+  -- carry two, and the row has to quote the one the band was decided on. NULL: not recorded.
+  quote           TEXT,
   UNIQUE (cell_id, section_id, measure, instrument_id)
 );
 CREATE INDEX IF NOT EXISTS idx_answer_basis_cell ON answer_basis(cell_id);

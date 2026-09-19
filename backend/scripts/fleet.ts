@@ -30,6 +30,7 @@ import {
 } from '../src/run/fleet.js';
 import { indicatorsOfPillar, loadRubric } from '../src/rubric/index.js';
 import { READING_MODEL } from '../src/engines/ollama.js';
+import { resetEnginePool } from '../src/engines/pool.js';
 import { probeEngine, describeReport, usable, mismatchedEngine, fingerprintOf } from '../src/engines/probe.js';
 import { probeHosted } from '../src/engines/hosted.js';
 import { cacheEnabled } from '../src/engines/cache.js';
@@ -90,7 +91,11 @@ function parseArgs(argv: string[]): Args {
       .split(',')
       .map((h) => h.trim().replace(/[/]+$/, ''))
       .filter((h) => h.length > 0),
-    model: get('model') ?? READING_MODEL,
+    // The model that will actually answer, resolved once and used for the run record, the workers
+    // and the second reading. A hosted engine answers as its declared model whatever --model says;
+    // defaulting to the local reader named a hosted run's verdicts after an engine that never saw
+    // them, and a later run on the local engine then scored with them as its own.
+    model: engine?.hosted ? engine.model : (get('model') ?? engine?.model ?? READING_MODEL),
     depth: get('depth') !== null ? Number(get('depth')) : null,
     carryFrom: get('carry'),
     joinRunId: get('run'),
@@ -214,6 +219,20 @@ async function main(): Promise<void> {
     console.error(`\n${duplicate} is listed twice. Two workers on one engine have their reads`);
     console.error('batched together, which changes the answers. One worker per engine.\n');
     process.exit(1);
+  }
+
+  // This process reads too -- the embeddings behind preparing the corpus, and the second reading
+  // after the workers finish -- so it has to be pointed at the same engines they are. It used to
+  // take whatever the shell had, and the .env it loads arrives after the engine client has already
+  // looked. A stale hosted setting from an earlier fleet in the same shell is cleared here for the
+  // same reason the workers clear theirs.
+  if (!args.engine?.hosted) {
+    process.env['OLLAMA_HOSTS'] = args.hosts.join(',');
+    process.env['OLLAMA_HOST'] = args.hosts[0]!;
+    for (const k of ['LEXDROID_HOSTED_BASE_URL', 'LEXDROID_HOSTED_MODEL', 'LEXDROID_HOSTED_PROVIDER']) {
+      delete process.env[k];
+    }
+    resetEnginePool();
   }
 
   // A hosted engine has no Ollama server to probe, so it is asked the only question that matters:
@@ -391,10 +410,6 @@ async function main(): Promise<void> {
   // 'complete' it was indistinguishable from a run that had been exported, tagged and verified,
   // and the reviewer's first sight of the problem was an empty submission.
   let exportFailed = false;
-  // Rented hardware bills for the hour it is held, not for the seconds it decodes, so the
-  // charge is hosts x wall time. Zero for a laptop, which is why the default is zero.
-  const rent = args.usdPerHour * args.hosts.length * (seconds / 3600);
-  if (rent > 0) recordRent(db, run.id, run.engine, args.model, rent);
   // A fleet that joined a run it did not open does not close it. Two fleets sharing a run finish at
   // different times, and the first to finish closing it locked the second out of its own remaining
   // units -- three pillars refused entry to a run that was still being worked on.
@@ -468,7 +483,18 @@ async function main(): Promise<void> {
     }
   }
 
-  if (!args.joinRunId) finishRun(run, failed.length > 0 || exportFailed ? 'failed' : 'complete');
+  // Rented hardware bills for the hour it is held, not for the seconds it decodes, so the
+  // charge is hosts x wall time -- to here, after the confirmation pass and the export, which
+  // hold the hosts too. Measured before them, the rent left out the last hour of every run.
+  // Zero for a laptop, which is why the default is zero.
+  const held = (Date.now() - started) / 1000;
+  const rent = args.usdPerHour * args.hosts.length * (held / 3600);
+  if (rent > 0) recordRent(db, run.id, run.engine, args.model, rent);
+
+  // One outcome for the record, the printed line and the exit code. The record used to count a
+  // failed export while the other two did not, so a run stored as failed exited 0 and said complete.
+  const outcome = failed.length > 0 || exportFailed ? 'failed' : 'complete';
+  if (!args.joinRunId) finishRun(run, outcome);
 
   console.log('');
   console.log(`=== ${done.length} unit(s) in ${(seconds / 60).toFixed(1)} minutes ===`);
@@ -481,7 +507,7 @@ async function main(): Promise<void> {
   console.log(
     args.joinRunId
       ? `  run ${run.id} left open: this fleet joined it and does not close what it did not open`
-      : `  run ${run.id} recorded as ${failed.length > 0 ? 'failed' : 'complete'}`,
+      : `  run ${run.id} recorded as ${outcome}`,
   );
   if (rent > 0) {
     console.log(`  rent: $${rent.toFixed(2)} for ${args.hosts.length} host(s) at $${args.usdPerHour}/hour`);
@@ -490,7 +516,7 @@ async function main(): Promise<void> {
   if (failed.length > 0) console.log(`  a failed unit left its reason in ${logDir}`);
 
   db.close();
-  process.exit(failed.length > 0 ? 1 : 0);
+  process.exit(outcome === 'failed' ? 1 : 0);
 }
 
 main().catch((err: unknown) => {

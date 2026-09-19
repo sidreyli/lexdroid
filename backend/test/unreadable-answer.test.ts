@@ -81,10 +81,12 @@ describe('an answer the reader cannot use', () => {
 describe('a claim inside a well-formed answer', () => {
   const measure = MEASURES['9.3']![0]!.token;
 
-  it('counts an item that is not a finding at all, rather than dropping it', async () => {
+  // Counted, and not banked as "nothing applies": the reader claimed something and none of it could
+  // be read, which is a failure to read the provision rather than a reading of it.
+  it('counts an item that is not a finding at all, and fails the reading it was all of', async () => {
     answers.push('{"findings":[{"note":"see the schedule"}]}');
     const r = await read();
-    expect(r.failure).toBeNull();
+    expect(r.failure).toMatch(/could not be read as findings/);
     expect(r.findings).toEqual([]);
     expect(r.rejected).toHaveLength(1);
     expect(r.rejected[0]!.reason).toMatch(/names no indicator or quotes nothing/);

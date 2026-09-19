@@ -34,7 +34,8 @@ import type { Db } from '../db/index.js';
 import { locateQuote } from '../util/locate.js';
 import { detectLanguage } from '../parse/language.js';
 import { loadProfile } from '../profile/index.js';
-import { loadConfirmations } from '../read/confirmations.js';
+import { confirmationsForRun } from '../read/confirmations.js';
+import { quoteKey } from '../decide/index.js';
 
 export interface BuildResult {
   rows: number;
@@ -58,8 +59,11 @@ export interface BuildResult {
  * verifyRun afterwards, so they heal. A reviewer's accept or reject is not recomputable by anything
  * -- it is a person's judgement, and a re-export was silently destroying it.
  *
- * Keyed by what the reviewer actually looked at. A row whose quotation or citation changed is not
- * the row they approved, and it correctly loses the approval rather than inheriting it.
+ * Keyed by what the pipeline generated, not by the row as a reviewer left it. A row whose generated
+ * quotation or citation changed is not the row they approved, and it correctly loses the approval.
+ * But the identity used to be read off the row after the reviewer's own edit, so a corrected row
+ * never matched the regenerated one -- which holds the model's words again -- and the correction
+ * was the one decision a rebuild always dropped.
  */
 function rowIdentity(r: {
   cell_id: number;
@@ -78,6 +82,75 @@ function rowIdentity(r: {
     (r.verbatim_snippet ?? '').trim(),
     (r.source_url ?? '').trim(),
   ]);
+}
+
+/** What a correction may change on a row, by the field name the interface records it under. */
+const EDITABLE_ROW: Readonly<Record<string, string>> = {
+  article: 'article',
+  locationReference: 'location_reference',
+  verbatimSnippet: 'verbatim_snippet',
+  quoteCharStart: 'quote_char_start',
+  quoteCharEnd: 'quote_char_end',
+  mappingRationale: 'mapping_rationale',
+  notes: 'notes',
+};
+const EDITABLE_ANSWER: Readonly<Record<string, string>> = {
+  score: 'score',
+  bandOrdinal: 'band_ordinal',
+  bandCriterion: 'band_criterion',
+};
+
+type ChangedFields = Record<string, { from?: unknown; to?: unknown }>;
+
+function changedOf(raw: string | null): ChangedFields {
+  try {
+    const parsed = raw ? (JSON.parse(raw) as unknown) : {};
+    return parsed && typeof parsed === 'object' ? (parsed as ChangedFields) : {};
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * A row as the pipeline wrote it, before anyone edited it: for each field an edit touched, the
+ * value the first such edit changed it from.
+ */
+function generated<T extends Parameters<typeof rowIdentity>[0]>(
+  row: T,
+  reviews: { changed_fields: string | null }[],
+): T {
+  const out = { ...row };
+  const first = (field: string): { from?: unknown } | undefined =>
+    reviews.map((r) => changedOf(r.changed_fields)[field]).find((c) => c !== undefined);
+  const article = first('article');
+  if (article) out.article = (article.from as string | null) ?? null;
+  const snippet = first('verbatimSnippet');
+  if (snippet) out.verbatim_snippet = (snippet.from as string | null) ?? null;
+  return out;
+}
+
+/** A reviewer's correction, written onto a row and the answer behind it. */
+function reapply(db: Db, rowId: number, raw: string | null): void {
+  const changed = changedOf(raw);
+  const set = (columns: Readonly<Record<string, string>>): { sql: string[]; values: unknown[] } => {
+    const sql: string[] = [];
+    const values: unknown[] = [];
+    for (const [field, change] of Object.entries(changed)) {
+      const column = columns[field];
+      if (!column) continue;
+      sql.push(`${column} = ?`);
+      values.push(change.to ?? null);
+    }
+    return { sql, values };
+  };
+  const onRow = set(EDITABLE_ROW);
+  if (onRow.sql.length > 0) db.prepare(`UPDATE export_row SET ${onRow.sql.join(', ')} WHERE id = ?`).run(...onRow.values, rowId);
+  const onAnswer = set(EDITABLE_ANSWER);
+  if (onAnswer.sql.length > 0) {
+    db.prepare(
+      `UPDATE cell_answer SET ${onAnswer.sql.join(', ')} WHERE cell_id = (SELECT cell_id FROM export_row WHERE id = ?)`,
+    ).run(...onAnswer.values, rowId);
+  }
 }
 
 interface CarriedReview {
@@ -104,6 +177,7 @@ interface CellRow {
 interface BasisRow {
   section_id: number;
   measure: string | null;
+  quote: string | null;
   reading_id: number | null;
   reading_quote: string | null;
   attributes: string | null;
@@ -149,10 +223,11 @@ interface Finding {
 /**
  * The finding behind one basis entry, out of the reading it was recorded in.
  *
- * Keyed on the measure because the decision is: one provision answers a measure once, so the
- * pair is unique and a reading that carried several findings gives back the one that counted.
+ * By the measure and the quote the basis recorded: a provision can carry two findings under one
+ * measure, and the first of them is not necessarily the one the band was decided on. A basis
+ * written before the quote was recorded falls back to the first under its measure, as it always did.
  */
-function findingOf(attributes: string | null, measure: string | null): Finding | null {
+function findingOf(attributes: string | null, measure: string | null, quote: string | null): Finding | null {
   if (!attributes) return null;
   let parsed: unknown;
   try {
@@ -161,7 +236,12 @@ function findingOf(attributes: string | null, measure: string | null): Finding |
     return null;
   }
   if (!Array.isArray(parsed)) return null;
-  return (parsed as Finding[]).find((f) => f.measure === measure) ?? null;
+  const underMeasure = (parsed as Finding[]).filter((f) => f.measure === measure);
+  if (quote !== null) {
+    const counted = underMeasure.find((f) => quoteKey(f.quote) === quoteKey(quote));
+    if (counted) return counted;
+  }
+  return underMeasure[0] ?? null;
 }
 
 const MONTHS = [
@@ -436,7 +516,7 @@ export function buildExportRows(db: Db, runId: string): BuildResult {
     .all(runId) as CellRow[];
 
   const basisFor = db.prepare(
-    `SELECT b.section_id, b.measure, r.id AS reading_id, r.quote AS reading_quote, r.attributes,
+    `SELECT b.section_id, b.measure, b.quote, r.id AS reading_id, r.quote AS reading_quote, r.attributes,
             s.text AS section_text, s.char_start AS section_char_start,
             s.heading_path, s.label, s.anchor, s.language, s.page,
             d.url AS doc_url, d.media_type, d.extraction,
@@ -512,25 +592,29 @@ export function buildExportRows(db: Db, runId: string): BuildResult {
 
   // The second reading's verdicts, so a row can say whether anything checked it. Banked by the
   // confirmation pass; a run that never ran one simply finds nothing here and says so.
-  const confirmations = loadConfirmations(db);
+  const confirmations = confirmationsForRun(db, runId);
 
   let reviewsCarried = 0;
   let reviewsDropped = 0;
 
   db.transaction(() => {
-    // Taken before the delete, because the delete cascades them away.
-    const priorReviews = (
-      db
-        .prepare(
-          `SELECT e.cell_id, e.section_id, e.article, e.verbatim_snippet, e.source_url,
-                  r.action, r.attestation, r.changed_fields, r.reviewer, r.acted_at
-             FROM review_action r
-             JOIN export_row e ON e.id = r.export_row_id
-             JOIN cell c ON c.id = e.cell_id
-            WHERE c.run_id = ?`,
-        )
-        .all(runId) as (Parameters<typeof rowIdentity>[0] & Omit<CarriedReview, 'identity'>)[]
-    ).map((r) => ({ ...r, identity: rowIdentity(r) }));
+    // Taken before the delete, because the delete cascades them away. In the order they were made,
+    // because that is the order the edits have to be put back in.
+    const reviewRows = db
+      .prepare(
+        `SELECT e.id AS row_id, e.cell_id, e.section_id, e.article, e.verbatim_snippet, e.source_url,
+                r.action, r.attestation, r.changed_fields, r.reviewer, r.acted_at
+           FROM review_action r
+           JOIN export_row e ON e.id = r.export_row_id
+           JOIN cell c ON c.id = e.cell_id
+          WHERE c.run_id = ?
+          ORDER BY r.id`,
+      )
+      .all(runId) as (Parameters<typeof rowIdentity>[0] & Omit<CarriedReview, 'identity'> & { row_id: number })[];
+    const priorReviews = reviewRows.map((r) => ({
+      ...r,
+      identity: rowIdentity(generated(r, reviewRows.filter((x) => x.row_id === r.row_id))),
+    }));
 
     db.prepare('DELETE FROM export_row WHERE cell_id IN (SELECT id FROM cell WHERE run_id = ?)').run(runId);
 
@@ -539,7 +623,7 @@ export function buildExportRows(db: Db, runId: string): BuildResult {
 
       if (cell.state === 'restricted') {
         for (const b of basisFor.all(cell.id) as BasisRow[]) {
-          const f = findingOf(b.attributes, b.measure);
+          const f = findingOf(b.attributes, b.measure, b.quote);
           const quote = f?.quote ?? b.reading_quote;
           // Located per finding, because the quote differs per finding and the reading carries
           // only the first one's span.
@@ -706,6 +790,9 @@ export function buildExportRows(db: Db, runId: string): BuildResult {
           continue;
         }
         reinsert.run(id, r.action, r.attestation, r.changed_fields, r.reviewer, r.acted_at);
+        // And what the reviewer changed, onto the row that replaced the one they changed it on. The
+        // verdict alone said "corrected" over the model's uncorrected words.
+        if (r.action === 'edit') reapply(db, id, r.changed_fields);
         reviewsCarried += 1;
       }
     }

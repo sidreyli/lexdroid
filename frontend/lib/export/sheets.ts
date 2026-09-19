@@ -61,25 +61,70 @@ function provisionKey(row: ExportRow): string {
 
 const normalise = (s: string | null): string => (s ?? "").replace(/\s+/g, " ").trim().toLowerCase();
 
+/**
+ * Every row of each engine, paired with the other engine's row about the same provision.
+ *
+ * A provision can carry several rows -- two indicators, or two clauses under one -- and keeping the
+ * first per provision dropped the rest from a comparison that must "cover every provision either
+ * engine produced": a second finding of A's vanished, and a provision where the engines differed
+ * was reported identical. So within a provision the rows are paired closest first -- same indicator
+ * and same words, then same indicator, then whatever is left, which is where the indicator differs
+ * -- and a row with no partner is listed as one engine's alone.
+ */
 export function compareProvisions(a: ExportRow[], b: ExportRow[]): ProvisionComparison[] {
-  const byKeyA = new Map<string, ExportRow>();
-  for (const row of a) if (!byKeyA.has(provisionKey(row))) byKeyA.set(provisionKey(row), row);
-  const byKeyB = new Map<string, ExportRow>();
-  for (const row of b) if (!byKeyB.has(provisionKey(row))) byKeyB.set(provisionKey(row), row);
+  const group = (rows: ExportRow[]): Map<string, ExportRow[]> => {
+    const m = new Map<string, ExportRow[]>();
+    for (const row of rows) m.set(provisionKey(row), [...(m.get(provisionKey(row)) ?? []), row]);
+    return m;
+  };
+  const byKeyA = group(a);
+  const byKeyB = group(b);
+
+  const pairs: [ExportRow | null, ExportRow | null][] = [];
+  for (const key of new Set([...byKeyA.keys(), ...byKeyB.keys()])) {
+    const left = [...(byKeyA.get(key) ?? [])];
+    const right = [...(byKeyB.get(key) ?? [])];
+    const take = (match: (x: ExportRow, y: ExportRow) => boolean): void => {
+      for (const x of [...left]) {
+        const i = right.findIndex((y) => match(x, y));
+        if (i < 0) continue;
+        pairs.push([x, right[i]!]);
+        right.splice(i, 1);
+        left.splice(left.indexOf(x), 1);
+      }
+    };
+    take((x, y) => x.indicatorId === y.indicatorId && normalise(x.verbatimSnippet) === normalise(y.verbatimSnippet));
+    take((x, y) => x.indicatorId === y.indicatorId);
+    take(() => true);
+    for (const x of left) pairs.push([x, null]);
+    for (const y of right) pairs.push([null, y]);
+  }
 
   const out: ProvisionComparison[] = [];
-  for (const [key, rowA] of byKeyA) {
-    const rowB = byKeyB.get(key);
+  for (const [rowA, rowB] of pairs) {
     if (!rowB) {
       out.push({
-        lawName: rowA.lawName,
-        article: rowA.article ?? "",
-        indicatorId: rowA.indicatorId,
+        lawName: rowA!.lawName,
+        article: rowA!.article ?? "",
+        indicatorId: rowA!.indicatorId,
         foundBy: "Engine A",
         indicatorDiffers: false,
         citationDiffers: false,
         quoteDiffers: false,
         howTheyDiffer: "Engine B did not produce this provision",
+      });
+      continue;
+    }
+    if (!rowA) {
+      out.push({
+        lawName: rowB.lawName,
+        article: rowB.article ?? "",
+        indicatorId: rowB.indicatorId,
+        foundBy: "Engine B",
+        indicatorDiffers: false,
+        citationDiffers: false,
+        quoteDiffers: false,
+        howTheyDiffer: "Engine A did not produce this provision",
       });
       continue;
     }
@@ -101,20 +146,6 @@ export function compareProvisions(a: ExportRow[], b: ExportRow[]): ProvisionComp
       citationDiffers,
       quoteDiffers,
       howTheyDiffer: how.length === 0 ? "identical" : how.join("; "),
-    });
-  }
-
-  for (const [key, rowB] of byKeyB) {
-    if (byKeyA.has(key)) continue;
-    out.push({
-      lawName: rowB.lawName,
-      article: rowB.article ?? "",
-      indicatorId: rowB.indicatorId,
-      foundBy: "Engine B",
-      indicatorDiffers: false,
-      citationDiffers: false,
-      quoteDiffers: false,
-      howTheyDiffer: "Engine A did not produce this provision",
     });
   }
 
@@ -158,16 +189,27 @@ export function addEngineComparison(
   sheet.addRow(["End time (hh:mm)", clock(passA.run?.finishedAt), clock(passB.run?.finishedAt)]);
   sheet.addRow(["Elapsed (minutes)", minutes(passA.run), minutes(passB.run)]);
   sheet.addRow(["Documents fetched during this pass", passA.documentsFetched, passB.documentsFetched]);
-  sheet.addRow(["Cost of this pass (US$)", passA.run?.usd ?? 0, passB.run?.usd ?? 0]);
+  // Unknown is said, not rounded to nothing: a hosted engine's bill was never recorded here.
+  const cost = (run: typeof passA.run): number | string => (!run ? "" : run.usd === null ? "unknown" : run.usd);
+  sheet.addRow(["Cost of this pass (US$)", cost(passA.run), cost(passB.run)]);
   sheet.addRow(["Evidence rows produced", passA.rows.length, passB.rows.length]);
 
   // The check a steward performs against the Run Record, stated on the sheet so it is not a claim
   // the reader has to go and verify somewhere else.
-  const zeroFetch = passB.documentsFetched === 0;
+  // Zero fetched means something only of a second pass that ran. Counted over no run at all, the
+  // sheet certified a pass that did not exist.
+  const ran = passB.run !== null && passB.run.status === "complete";
+  const zeroFetch = ran && passB.run!.sourceMode === "cache-only" && passB.documentsFetched === 0;
   const claim = sheet.addRow([
-    zeroFetch
-      ? "Engine B fetched 0 documents, as required. The figure is counted from this run's own fetch log."
-      : `Engine B fetched ${passB.documentsFetched} document(s). This must be 0 — the second pass is not a clean second pass.`,
+    !passB.run
+      ? "No second pass has been run, so there is no zero-fetch result to report."
+      : !ran
+        ? `The second pass (${passB.run.id}) is ${passB.run.status}, not complete; its fetch count is not a result yet.`
+        : passB.run.sourceMode !== "cache-only"
+          ? `The second pass (${passB.run.id}) was allowed to fetch. It must run cache-only to count as a clean second pass.`
+          : zeroFetch
+            ? "Engine B fetched 0 documents, as required. The figure is counted from this run's own fetch log."
+            : `Engine B fetched ${passB.documentsFetched} document(s). This must be 0 — the second pass is not a clean second pass.`,
   ]);
   claim.font = { bold: true, color: { argb: zeroFetch ? "FF1B5E20" : "FFB71C1C" } };
   sheet.addRow([]);

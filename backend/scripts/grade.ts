@@ -40,7 +40,7 @@
 import { openDb } from '../src/db/index.js';
 import { scorecard, tally, movement } from '../src/eval/scorecard.js';
 import { rescoreRun } from '../src/run/rescore.js';
-import { loadConfirmations } from '../src/read/confirmations.js';
+import { confirmationsForRun } from '../src/read/confirmations.js';
 
 function arg(name: string): string | null {
   const i = process.argv.indexOf(`--${name}`);
@@ -64,7 +64,7 @@ const before = scorecard(db, run.id);
 const b = tally(before);
 
 db.exec('BEGIN');
-rescoreRun(db, run.id, { confirmations: loadConfirmations(db) });
+rescoreRun(db, run.id, { confirmations: confirmationsForRun(db, run.id) });
 const after = scorecard(db, run.id);
 const a = tally(after);
 const moves = movement(before, after);

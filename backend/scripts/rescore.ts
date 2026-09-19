@@ -12,7 +12,7 @@
  */
 import { openDb } from '../src/db/index.js';
 import { rescoreRun } from '../src/run/rescore.js';
-import { loadConfirmations } from '../src/read/confirmations.js';
+import { confirmationsForRun } from '../src/read/confirmations.js';
 import { scorecard, tally } from '../src/eval/scorecard.js';
 
 function arg(name: string): string | null {
@@ -36,7 +36,7 @@ if (!run) {
 }
 
 const before = tally(scorecard(db, run.id));
-const banked = loadConfirmations(db).size;
+const banked = confirmationsForRun(db, run.id).size;
 console.log(`\nRe-scoring ${run.id}`);
 console.log(`  ${banked} banked verdict(s) in play`);
 console.log(`  before: ${before.agree}/${before.cells - before.ungraded} agree with ESCAP`);

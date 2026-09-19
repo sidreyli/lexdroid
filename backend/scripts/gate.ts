@@ -16,6 +16,7 @@ import { loadRubric, indicatorsOfPillar } from '../src/rubric/index.js';
 import type { Indicator } from '../src/rubric/types.js';
 import { answerPillar } from '../src/cell/index.js';
 import { engineReconnects, haveModel, OllamaUnavailable, READING_MODEL } from '../src/engines/ollama.js';
+import { hostedConfig, probeHosted } from '../src/engines/hosted.js';
 import { cacheEnabled, cacheSize } from '../src/engines/cache.js';
 import { openBaseline, BASELINE_DB_PATH, sameInstrument, escapScore } from '../src/baseline/index.js';
 import { openRun, joinRun, recordPillarAnswer, recordStage, recordEvent, finishRun, codeRevision, settleRates } from '../src/run/index.js';
@@ -162,7 +163,16 @@ async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   const model = args.model ?? READING_MODEL;
 
-  if (!(await haveModel(model))) {
+  // A hosted engine is asked whether it answers; Ollama is asked whether it has the model. Asking
+  // a hosted engine's URL for Ollama's model list fails on the protocol, not on the model.
+  const hosted = hostedConfig();
+  if (hosted) {
+    const probe = await probeHosted();
+    if (!probe.ok) {
+      console.error(`\n${hosted.provider} / ${hosted.model} did not answer: ${probe.detail}\n`);
+      process.exit(1);
+    }
+  } else if (!(await haveModel(model))) {
     console.error(`\n${model} is not installed. Run: ollama pull ${model}\n`);
     process.exit(1);
   }

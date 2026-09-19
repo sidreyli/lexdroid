@@ -92,10 +92,26 @@ describe('following a redirect', () => {
   it('stops rather than loops where a site redirects to itself', async () => {
     const { origin, hits } = await serve({ routes: { '/loop': { to: '/loop' } } });
     const db = openDb(':memory:');
-    const res = await new Fetcher({ db, sourceMode: 'fetch' }).fetch(`${origin}/loop`);
+    const res = await new Fetcher({ db, sourceMode: 'fetch', minDelayMs: 20 }).fetch(`${origin}/loop`);
     // Six requests: the first and five hops. It gives up and reports the redirect it was given.
     expect(res.status).toBe(302);
     expect(hits.filter((h) => h === '/loop').length).toBe(6);
+    db.close();
+  });
+
+  // The pace is one request per interval, and a hop is a request. A redirect to the same host
+  // used to go straight out, so a portal that bounces through itself was asked twice at once.
+  it('paces a redirect to the same host like any other request', async () => {
+    const { origin } = await serve({ routes: { '/act/1': { to: '/view/1' }, '/view/1': { body: 'the Act' } } });
+    const db = openDb(':memory:');
+    const fetcher = new Fetcher({ db, sourceMode: 'fetch', minDelayMs: 300 });
+    await fetcher.fetch(`${origin}/act/1`);
+    const at = (db.prepare(`SELECT url, outcome, wait_ms FROM fetch_log ORDER BY id`).all() as {
+      url: string; outcome: string; wait_ms: number;
+    }[]);
+    const hop = at.find((r) => r.outcome === 'redirect-wait');
+    expect(hop?.url).toBe(`${origin}/view/1`);
+    expect(hop!.wait_ms).toBeGreaterThan(200);
     db.close();
   });
 

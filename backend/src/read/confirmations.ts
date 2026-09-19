@@ -46,11 +46,14 @@ export function noConfirmations(): ConfirmationSet {
  *
  * A verdict to a question since reworded is not an answer to the new one, and is left out; so is a
  * row whose question was never recorded. `model` narrows to one engine's verdicts, which is what a
- * run asking with that engine must use; without it every model's count, and where two models
- * disagree about one question the question is treated as unanswered rather than decided by
- * whichever row came last.
+ * run asking with that engine must use. `null` is every model's, for a diagnostic that asks for it
+ * by name; where two models disagree about one question the question is treated as unanswered
+ * rather than decided by whichever row came last.
+ *
+ * There is no default. Every model's verdicts was the default once, and a second engine's pass
+ * then rewrote the first engine's scores: a run's answer changed because another run happened.
  */
-export function loadConfirmations(db: Db, opts: { model?: string } = {}): ConfirmationSet {
+export function loadConfirmations(db: Db, opts: { model: string | null }): ConfirmationSet {
   const byKey = new Map<string, boolean | null>();
   const current = new Map<string, string | null>();
   const questionNow = (indicatorId: string, measure: string): string | null => {
@@ -81,6 +84,19 @@ export function loadConfirmations(db: Db, opts: { model?: string } = {}): Confir
       return byKey.get(`${sectionId}/${indicatorId}/${measure}`) ?? undefined;
     },
   };
+}
+
+/**
+ * The verdicts a run may score with: its own engine's, and nobody else's.
+ *
+ * Another engine's verdict about the same provision is not a second reading of this run, it is a
+ * different reader's opinion, and to this run the question stays unasked.
+ */
+export function confirmationsForRun(db: Db, runId: string): ConfirmationSet {
+  const run = db.prepare('SELECT engine_model FROM run WHERE id = ?').get(runId) as
+    | { engine_model: string }
+    | undefined;
+  return run ? loadConfirmations(db, { model: run.engine_model }) : noConfirmations();
 }
 
 /**

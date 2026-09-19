@@ -11,12 +11,12 @@
 import type { Db } from '../db/index.js';
 import { citationUrl } from '../export/index.js';
 import { loadRubric } from '../rubric/index.js';
-import { decide, type Decision, type Evidence, type FrameworkEvidence, type SurfacedInstrument } from './index.js';
+import { decide, sameFinding, type Decision, type Evidence, type FrameworkEvidence, type SurfacedInstrument } from './index.js';
 import type { FxRates } from './currency.js';
 import { amendsAnotherAct, citesADefinition, inheritsAPower } from '../parse/identity.js';
 import { loadProfile } from '../profile/index.js';
 import type { InstrumentType } from '../profile/types.js';
-import { loadConfirmations, noConfirmations, confirmedFlag, type ConfirmationSet } from '../read/confirmations.js';
+import { confirmationsForRun, noConfirmations, confirmedFlag, type ConfirmationSet } from '../read/confirmations.js';
 
 export interface RecordedCell {
   id: number;
@@ -25,6 +25,7 @@ export interface RecordedCell {
   sections_read: number | null;
   sections_indexed: number | null;
   surfaced: number | null;
+  framework_failed: number | null;
   governing: string | null;
   score: number | null;
   band_ordinal: number | null;
@@ -75,10 +76,10 @@ export function recordedDecider(
   opts: RebuildOptions = {},
 ): { cells: RecordedCell[]; rebuild: (cell: RecordedCell) => Decision | null } {
   const confirmations =
-    opts.confirmations ?? (scoredWithConfirmations(db, runId) ? loadConfirmations(db) : noConfirmations());
+    opts.confirmations ?? (scoredWithConfirmations(db, runId) ? confirmationsForRun(db, runId) : noConfirmations());
   const cells = db
     .prepare(
-      `SELECT c.id, c.economy_code, c.indicator_id, c.sections_read, c.sections_indexed, c.surfaced,
+      `SELECT c.id, c.economy_code, c.indicator_id, c.sections_read, c.sections_indexed, c.surfaced, c.framework_failed,
               c.governing, a.score, a.band_ordinal
          FROM cell c LEFT JOIN cell_answer a ON a.cell_id = c.id
         WHERE c.run_id = ? ORDER BY c.indicator_id`,
@@ -163,18 +164,8 @@ export function recordedDecider(
         }
         if (!Array.isArray(findings)) continue;
         for (const finding of findings as Evidence['finding'][]) {
-          // The same provision reported twice for the same measure is one measure, as it was when
-          // the run built this list.
-          if (
-            evidence.some(
-              (e) =>
-                e.sectionId === r.section_id &&
-                e.finding.indicatorId === finding.indicatorId &&
-                e.finding.measure === finding.measure,
-            )
-          ) {
-            continue;
-          }
+          // The same claim reported twice is one claim, as it was when the run built this list.
+          if (evidence.some((e) => sameFinding(e, { sectionId: r.section_id, finding }))) continue;
           evidence.push({
             finding,
             sectionId: r.section_id,
@@ -237,7 +228,12 @@ export function recordedDecider(
       coverage: {
         sectionsRead: cell.sections_read ?? 0,
         sectionsIndexed: cell.sections_indexed ?? 0,
-        instrumentsConsidered: cell.surfaced ?? 0,
+        // What the live decision counted: the instruments read as a possible framework, which are
+        // this cell's framework readings. `surfaced` is the number of provisions the search found,
+        // and a replay reading it here reported a framework nobody could read as absent.
+        instrumentsConsidered:
+          indicator.shape === 'framework' ? frameworkEvidence.length : (cell.surfaced ?? 0),
+        ...(cell.framework_failed !== null ? { frameworkUnread: cell.framework_failed } : {}),
       },
       rates,
     });

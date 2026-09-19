@@ -49,6 +49,11 @@ export function queryWith<T>(sql: string, params: unknown[]): T[] {
   return d.prepare(sql).all(...params) as T[];
 }
 
+/** Whether the store has a column yet: one written by an older backend has not had it added. */
+function hasColumn(table: string, column: string): boolean {
+  return query<{ name: string }>(`PRAGMA table_info(${table})`).some((c) => c.name === column);
+}
+
 function jsonOr<T>(raw: unknown, fallback: T): T {
   try {
     return raw ? (JSON.parse(String(raw)) as T) : fallback;
@@ -139,7 +144,9 @@ export const liveCells = cached(() => {
       JOIN run r ON r.id = c.run_id
       LEFT JOIN instrument ci ON ci.id = ca.controlling_instrument_id
      ORDER BY r.started_at DESC`);
-  if (rows.length === 0) return null;
+  // No database is a fresh clone; a database with nothing in this table is an answer, and an
+  // empty one is not the checked-in snapshot's.
+  if (!storeIsLive()) return null;
   return rows.map((c) => ({
     ...c,
     queries: jsonOr(c["queries"], [] as string[]),
@@ -179,10 +186,12 @@ export const liveExportRows = cached(() => {
       LEFT JOIN instrument i ON i.id = d.instrument_id
       LEFT JOIN reading rd ON rd.id = e.reading_id
      ORDER BY e.id`);
-  if (rows.length === 0) return null;
+  // No database is a fresh clone; a database with nothing in this table is an answer, and an
+  // empty one is not the checked-in snapshot's.
+  if (!storeIsLive()) return null;
 
-  const gates = query<{ rowId: number; gate: string; passed: number; detail: string | null }>(`
-    SELECT export_row_id AS rowId, gate, passed, detail
+  const gates = query<{ rowId: number; gate: string; passed: number; detail: string | null; checkedAt: string }>(`
+    SELECT export_row_id AS rowId, gate, passed, detail, checked_at AS checkedAt
       FROM gate_result ORDER BY export_row_id, gate`);
 
   const ids = [...new Set(rows.map((r) => r["sectionId"]).filter(Boolean))];
@@ -223,12 +232,17 @@ export const liveExportRows = cached(() => {
       context,
       gates: gates
         .filter((g) => g.rowId === r["id"])
-        .map((g) => ({ gate: g.gate, passed: !!g.passed, detail: nullIfBlank(g.detail) })),
+        .map((g) => ({ gate: g.gate, passed: !!g.passed, detail: nullIfBlank(g.detail), checkedAt: g.checkedAt })),
     };
   });
 });
 
 export const liveRuns = cached(() => {
+  // A hosted engine's price is the provider's and was not recorded; its cost is unknown, and
+  // summing it as zero published a free run.
+  const unknownUsd = hasColumn("run_cost", "usd_unknown")
+    ? "(SELECT COALESCE(MAX(usd_unknown), 0) FROM run_cost rc WHERE rc.run_id = r.id)"
+    : "0";
   const rows = query<Record<string, unknown>>(`
     SELECT r.id, r.started_at AS startedAt, r.finished_at AS finishedAt, r.economies,
            r.pillars, r.engine, r.engine_model AS model, r.source_mode AS sourceMode,
@@ -236,12 +250,15 @@ export const liveRuns = cached(() => {
            r.status, r.notes,
            (SELECT COUNT(*) FROM cell c WHERE c.run_id = r.id) AS cells,
            (SELECT COUNT(*) FROM export_row e JOIN cell c ON c.id = e.cell_id WHERE c.run_id = r.id) AS rows_,
-           (SELECT COALESCE(SUM(usd), 0) FROM run_cost rc WHERE rc.run_id = r.id) AS usd,
+           CASE WHEN ${unknownUsd} = 1 THEN NULL
+                ELSE (SELECT COALESCE(SUM(usd), 0) FROM run_cost rc WHERE rc.run_id = r.id) END AS usd,
            (SELECT COALESCE(SUM(calls), 0) FROM run_cost rc WHERE rc.run_id = r.id) AS calls,
            (SELECT COALESCE(SUM(prompt_tokens + output_tokens), 0) FROM run_cost rc WHERE rc.run_id = r.id) AS tokens,
            (SELECT COALESCE(SUM(wall_seconds), 0) FROM run_cost rc WHERE rc.run_id = r.id) AS wallSeconds
       FROM run r ORDER BY r.started_at DESC`);
-  if (rows.length === 0) return null;
+  // No database is a fresh clone; a database with nothing in this table is an answer, and an
+  // empty one is not the checked-in snapshot's.
+  if (!storeIsLive()) return null;
 
   const stages = query<{ runId: string; stage: string; seconds: number; items: number }>(`
     SELECT run_id AS runId, stage, SUM(seconds) AS seconds, SUM(items) AS items
@@ -264,7 +281,7 @@ export const liveRunEvents = cached(() => {
   const runs = query<{ id: string; status: string }>(
     `SELECT id, status FROM run ORDER BY started_at DESC LIMIT 8`,
   );
-  if (runs.length === 0) return null;
+  if (!storeIsLive()) return null;
   const watched = [
     ...runs.filter((r) => r.status === "running").map((r) => r.id),
     ...runs.slice(0, 3).map((r) => r.id),

@@ -21,11 +21,13 @@ import { randomUUID } from 'node:crypto';
 import type { Db } from '../db/index.js';
 import { loadRubric } from '../rubric/index.js';
 import { FRAMEWORK_OF, type PillarAnswer } from '../cell/index.js';
+import { readInFull } from '../read/index.js';
 import { refile, type Decision, type Evidence } from '../decide/index.js';
 import type { FxRates } from '../decide/currency.js';
 import { locateQuote } from '../util/locate.js';
 import type { RetrievalRecord } from '../retrieve/index.js';
 import type { RunEvent } from './events.js';
+import { hostedConfig } from '../engines/hosted.js';
 
 /** The name a run answers to. Local engines cost nothing, and that is recorded rather than assumed. */
 export const DEFAULT_ENGINE = 'engine-a';
@@ -265,8 +267,8 @@ export function recordPillarAnswer(run: RunContext, answer: PillarAnswer): void 
   const insertCell = db.prepare(
     `INSERT INTO cell (run_id, economy_code, indicator_id, state, unresolved_reason, answered_at,
                        queries, depth, surfaced, sections_indexed, sections_read, governing,
-                       surfaced_instruments)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                       surfaced_instruments, framework_failed)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   );
   const insertShortlist = db.prepare(
     `INSERT OR IGNORE INTO shortlist_entry (cell_id, section_id, channel, query, rank, score, read_at)
@@ -275,8 +277,9 @@ export function recordPillarAnswer(run: RunContext, answer: PillarAnswer): void 
   const insertReading = db.prepare(
     `INSERT OR REPLACE INTO reading
        (cell_id, section_id, engine, model, applies, quote, quote_char_start, quote_char_end,
-        subclause, attributes, reasoning, prompt_tokens, output_tokens, latency_ms, engine_call, read_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        subclause, attributes, reasoning, prompt_tokens, output_tokens, latency_ms, engine_call, read_at,
+        rejected, unreadable)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   );
   const insertFrameworkReading = db.prepare(
     `INSERT OR REPLACE INTO framework_reading
@@ -287,8 +290,8 @@ export function recordPillarAnswer(run: RunContext, answer: PillarAnswer): void 
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   );
   const insertBasis = db.prepare(
-    `INSERT OR IGNORE INTO answer_basis (cell_id, ordinal, instrument_id, section_id, measure)
-     VALUES (?, ?, ?, ?, ?)`,
+    `INSERT OR IGNORE INTO answer_basis (cell_id, ordinal, instrument_id, section_id, measure, quote)
+     VALUES (?, ?, ?, ?, ?, ?)`,
   );
   const insertAnswer = db.prepare(
     `INSERT OR REPLACE INTO cell_answer
@@ -370,7 +373,9 @@ export function recordPillarAnswer(run: RunContext, answer: PillarAnswer): void 
           record?.depth ?? null,
           record?.surfaced ?? null,
           record?.indexedSections ?? null,
-          answer.readings.length,
+          // Read, not sent: the live decision counts only the provisions the engine answered for,
+          // and a replay reading every attempt here decided over coverage the run never had.
+          answer.readings.filter(readInFull).length,
           // The register's verdict on which instruments govern the question. Recorded because the
           // score is derived from it, and a score that cannot be re-derived is not computed.
           JSON.stringify((record?.governing ?? []).map((g) => g.instrumentId)),
@@ -378,6 +383,7 @@ export function recordPillarAnswer(run: RunContext, answer: PillarAnswer): void 
           // of these, and a count cannot say which -- so a zero could not be reproduced from the
           // record that was meant to evidence it.
           JSON.stringify(surfacedOf(record)),
+          answer.frameworkUnread?.[decision.indicatorId] ?? null,
         ).lastInsertRowid,
       );
 
@@ -463,6 +469,11 @@ export function recordPillarAnswer(run: RunContext, answer: PillarAnswer): void 
           reading.durationMs,
           `${reading.carriedFrom ?? run.id}:p${answer.pillarId}:s${reading.sectionId}`,
           now,
+          // What the answer held that did not become a finding, so a replay can tell a clean
+          // negative from a reading whose claims were all thrown away. The call's, repeated on each
+          // of its rows like the tokens are.
+          reading.rejected.length,
+          reading.unreadable ?? 0,
         );
       }
 
@@ -511,13 +522,13 @@ export function recordPillarAnswer(run: RunContext, answer: PillarAnswer): void 
       let ordinal = 0;
       for (const e of decision.basis) {
         if (!ownsSection(e.sectionId)) continue;
-        insertBasis.run(cellId, (ordinal += 1), e.instrumentId, e.sectionId, e.finding.measure);
+        insertBasis.run(cellId, (ordinal += 1), e.instrumentId, e.sectionId, e.finding.measure, e.finding.quote);
       }
       // A framework is one measure however many instruments carry it, so the leading instrument is
       // the basis and the rest are corroboration the row names in its notes. `frameworkBasis`
       // otherwise holds what was examined and found wanting, which is a record, not a basis.
       const framework = decision.state === 'restricted' ? decision.frameworkBasis[0] : undefined;
-      if (framework) insertBasis.run(cellId, (ordinal += 1), framework.instrumentId, null, null);
+      if (framework) insertBasis.run(cellId, (ordinal += 1), framework.instrumentId, null, null, null);
 
       insertAnswer.run(
         cellId,
@@ -603,6 +614,32 @@ export function recordPillarAnswer(run: RunContext, answer: PillarAnswer): void 
  * What the run cost to rent, which is not what it cost to compute.
  * A hired GPU bills for the hour whether it is decoding or idle, so the launcher charges hours.
  */
+/**
+ * What a pass over a run's findings cost, added to the run's own record.
+ *
+ * The confirmation pass asks one question per finding and was billed nowhere, so a run's recorded
+ * cost was its first reading alone.
+ */
+export function recordPassCost(
+  db: Db,
+  runId: string,
+  model: string,
+  cost: { calls: number; promptTokens: number; outputTokens: number; seconds: number },
+): void {
+  const run = db.prepare('SELECT engine FROM run WHERE id = ?').get(runId) as { engine: string } | undefined;
+  if (!run) return;
+  db.prepare(
+    `INSERT INTO run_cost (run_id, engine, model, calls, prompt_tokens, output_tokens, wall_seconds, usd, usd_unknown)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)
+     ON CONFLICT (run_id, engine, model) DO UPDATE SET
+       calls = calls + excluded.calls,
+       prompt_tokens = prompt_tokens + excluded.prompt_tokens,
+       output_tokens = output_tokens + excluded.output_tokens,
+       wall_seconds = wall_seconds + excluded.wall_seconds,
+       usd_unknown = MAX(usd_unknown, excluded.usd_unknown)`,
+  ).run(runId, run.engine, model, cost.calls, cost.promptTokens, cost.outputTokens, cost.seconds, hostedConfig() ? 1 : 0);
+}
+
 export function recordRent(db: Db, runId: string, engine: string, model: string, usd: number): void {
   db.prepare(
     `INSERT INTO run_cost (run_id, engine, model, usd) VALUES (?, ?, ?, ?)
@@ -651,7 +688,8 @@ function note(db: Db, run: RunContext, text: string): void {
 
 /** One engine call per provision per pillar, plus one per framework candidate. */
 function addCost(db: Db, run: RunContext, answer: PillarAnswer): void {
-  const calls = answer.readings.length + answer.frameworkReadings.length;
+  // Calls made, not provisions read: a long provision is read in parts, one call each.
+  const calls = answer.readings.reduce((n, r) => n + (r.calls ?? 1), 0) + answer.frameworkReadings.length;
   const prompt =
     answer.readings.reduce((n, r) => n + r.promptTokens, 0) +
     answer.frameworkReadings.reduce((n, r) => n + r.promptTokens, 0);
@@ -660,14 +698,15 @@ function addCost(db: Db, run: RunContext, answer: PillarAnswer): void {
     answer.frameworkReadings.reduce((n, r) => n + r.completionTokens, 0);
 
   db.prepare(
-    `INSERT INTO run_cost (run_id, engine, model, calls, prompt_tokens, output_tokens, cached_calls, wall_seconds, usd)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)
+    `INSERT INTO run_cost (run_id, engine, model, calls, prompt_tokens, output_tokens, cached_calls, wall_seconds, usd, usd_unknown)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
      ON CONFLICT (run_id, engine, model) DO UPDATE SET
        calls = calls + excluded.calls,
        prompt_tokens = prompt_tokens + excluded.prompt_tokens,
        output_tokens = output_tokens + excluded.output_tokens,
        cached_calls = cached_calls + excluded.cached_calls,
-       wall_seconds = wall_seconds + excluded.wall_seconds`,
+       wall_seconds = wall_seconds + excluded.wall_seconds,
+       usd_unknown = MAX(usd_unknown, excluded.usd_unknown)`,
   ).run(
     run.id,
     run.engine,
@@ -677,6 +716,8 @@ function addCost(db: Db, run: RunContext, answer: PillarAnswer): void {
     output,
     answer.cachedCalls + answer.carriedCalls,
     answer.engineMs / 1000,
+    // A hosted engine bills by the token at a price this run was never told.
+    hostedConfig() ? 1 : 0,
   );
 
   // A run that replayed even one answer says so on its own record, not only in a column someone

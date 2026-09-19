@@ -120,6 +120,11 @@ export interface Coverage {
   sectionsIndexed: number;
   /** Instruments considered, for framework indicators. */
   instrumentsConsidered: number;
+  /**
+   * Framework candidates put to the engine that it failed to read. An absence resting on an
+   * instrument nobody read is not an absence. Unknown where a run predates the count.
+   */
+  frameworkUnread?: number;
 }
 
 export type CellState = 'restricted' | 'no-restriction' | 'unresolved';
@@ -586,10 +591,10 @@ const RULES: Record<string, Rule> = {
    * PDPA requires an organisation to cease retaining personal data once its purpose has ended,
    * while the Companies Act requires accounting records kept for five years.
    *
-   * Requiring the period to be stated in the same provision was too strict and was measured to be
-   * wrong: the Employment Act requires records kept "for the period prescribed" and leaves the
-   * number to regulations, which is still a floor. The period is recorded as evidence where the
-   * provision names one, and is not what the band turns on.
+   * The period has to be stated. Counting "for the period prescribed" was once measured as closer
+   * to ESCAP's cells, but ESCAP's own guide scores an unspecified period 0.00 and the finals
+   * template names it a mapping trap, so `hold` rules those floors out before they get here. What
+   * is left states a period in the words it cites.
    */
   '7.3': (indicator, qualifying) => {
     const floors = qualifying.filter((e) => e.finding.measure === 'minimum-retention');
@@ -1212,6 +1217,45 @@ function applyException(indicator: Indicator, evidence: Evidence[]): {
  * without a court order; where the provision does not say, neither answer is supported by the
  * document, and guessing is what a reviewer would catch.
  */
+/**
+ * Whether two findings from one provision are the same claim.
+ *
+ * The provision, the indicator, the measure and the words quoted. Without the words, the first of
+ * two powers in one section stood for both: a power that needs a court order hid the one beside it
+ * that does not, and the cell scored as if neither existed. With them, the copy of a clause that a
+ * long provision's overlapping parts return twice is still one finding, which is what the rule was
+ * for. One measure per row is the export's business and is enforced there.
+ */
+export function sameFinding(
+  a: { sectionId: number; finding: Pick<Finding, 'indicatorId' | 'measure' | 'quote'> },
+  b: { sectionId: number; finding: Pick<Finding, 'indicatorId' | 'measure' | 'quote'> },
+): boolean {
+  return (
+    a.sectionId === b.sectionId &&
+    a.finding.indicatorId === b.finding.indicatorId &&
+    a.finding.measure === b.finding.measure &&
+    quoteKey(a.finding.quote) === quoteKey(b.finding.quote)
+  );
+}
+
+/** A quote compared as words: case, spacing and the marks around it do not make it another. */
+export function quoteKey(quote: string | null | undefined): string {
+  return (quote ?? '')
+    .toLowerCase()
+    .replace(/[‘’“”"']/g, '')
+    .replace(/\s+/g, ' ')
+    .replace(/^[\s:;,.(]+|[\s:;,.)]+$/g, '');
+}
+
+/** A number of days, weeks, months or years, in English or Malay, in figures or in words. */
+const DURATION =
+  /\b(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|fifteen|eighteen|twenty|thirty|sixty|ninety|satu|dua|tiga|empat|lima|enam|tujuh|lapan|sembilan|sepuluh)(?:\s*\(\d+\))?\s+(?:calendar\s+|clear\s+|working\s+|business\s+)?(?:years?|months?|weeks?|days?|tahun|bulan|minggu|hari)\b/i;
+
+/** Whether the words copied from a provision state how long something lasts. */
+export function statesDuration(...words: (string | null | undefined)[]): boolean {
+  return words.some((w) => !!w && DURATION.test(w));
+}
+
 function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
   kept: Evidence[];
   held: { evidence: Evidence; reason: string }[];
@@ -1302,6 +1346,22 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
       ruledOut.push({
         evidence: e,
         reason: `the provision does not state ${definedBy(indicatorId, e.finding.measure)}, which is what makes it this measure`,
+      });
+      continue;
+    }
+    // A minimum retention period is a period. ESCAP's guide to 7.3: "If the duration (e.g., day,
+    // month, year) is clearly specified, the measure is the minimum period of data retention.
+    // However, if the retention period is not specified, you can mark a measure in the database
+    // and score it as 0.00" -- and the finals template lists "a 'prescribed period' with no number"
+    // among the mapping traps. So a duty to keep records "for the period prescribed" is recorded
+    // and ruled out, not scored and not held: it is a real duty, and it is not this measure.
+    //
+    // Read from the words copied out of the provision, not from the reader's statedPeriod, which
+    // is its own paraphrase and has named a period the provision leaves to regulations.
+    if (e.finding.measure === 'minimum-retention' && !statesDuration(e.finding.quote, e.finding.definingWords)) {
+      ruledOut.push({
+        evidence: e,
+        reason: 'the provision states no retention period; a period left to be prescribed elsewhere is not a minimum period',
       });
       continue;
     }
@@ -2268,6 +2328,7 @@ function decideFramework(input: DecideInput): Decision {
     (f) => f.establishesFramework && f.frameworkShown !== false && f.bindingness !== 'advisory',
   );
 
+  const unread = coverage.frameworkUnread ?? 0;
   if (coverage.instrumentsConsidered === 0) {
     return {
       indicatorId: indicator.id,
@@ -2281,8 +2342,11 @@ function decideFramework(input: DecideInput): Decision {
       frameworkBasis: [],
       absence: null,
       coverage,
-      decidingFact: 'no instrument was examined',
+      decidingFact: unread > 0 ? `${unread} instrument(s) could not be read` : 'no instrument was examined',
       rationale:
+        (unread > 0
+          ? `${unread} instrument(s) were put to the engine for this framework and none could be read. `
+          : '') +
         'No instrument was examined for this framework, so its absence cannot be reported. An economy with no framework and an economy nobody looked at produce the same silence, and only one of them is a finding.',
     };
   }
@@ -2324,6 +2388,26 @@ function decideFramework(input: DecideInput): Decision {
       ordinal === lowest
         ? `a framework, which this indicator scores without regard to its reach: ${partial.map((c) => c.instrumentTitle).join(', ')}`
         : `a framework limited in reach or subject: ${partial.map((c) => c.instrumentTitle).join(', ')}`;
+  } else if (unread > 0) {
+    // The instrument that goes unread is as likely as any to be the framework, and the likelier:
+    // the long consolidated Act is the one a reading overruns on.
+    return {
+      indicatorId: indicator.id,
+      economy,
+      state: 'unresolved',
+      score: null,
+      band: null,
+      basis: [],
+      excluded: [],
+      held: [],
+      frameworkBasis: [],
+      absence: null,
+      coverage,
+      decidingFact: `${unread} instrument(s) could not be read`,
+      rationale:
+        `None of the ${coverage.instrumentsConsidered} instrument(s) read establishes such a framework, but ` +
+        `${unread} more could not be read, so its absence cannot be reported.`,
+    };
   } else {
     ordinal = 1;
     reason = `none of the ${coverage.instrumentsConsidered} instrument(s) examined establishes such a framework`;

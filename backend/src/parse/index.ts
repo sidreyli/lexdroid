@@ -92,6 +92,12 @@ export function storeDocument(
         : null;
     if (wrong) parsed = { ...parsed, unread: { reason: 'another-instrument', detail: wrong.detail } };
 
+    // The same bytes parsed into the same provisions is the document already stored, and storing
+    // it again deleted every section and every reading that cited one -- cascaded out of runs that
+    // had nothing to do with this parse. Nothing about it has changed, so nothing is touched.
+    const unchanged = unchangedDocument(db, instrumentId, fetched, parsed);
+    if (unchanged !== null) return { documentId: unchanged, sectionCount: parsed.sections.length, unread: false, unreadReason: null };
+
     // A regulator's site publishes consultations, releases and news beside its instruments, and
     // a page that files one under a neutral name still says what it is in its opening words.
     // Answers cited a consultation paper as Malaysia's data protection guidance, and a news item
@@ -151,13 +157,22 @@ export function storeDocument(
     db.prepare('DELETE FROM document WHERE instrument_id = ? AND url = ? AND id <> ?')
       .run(instrumentId, fetched.url, documentId);
 
+    // How many times this address has come back unreadable, carried across the re-store below so
+    // a document that is empty every time is eventually left alone rather than asked for forever.
+    const tried = (db
+      .prepare(
+        `SELECT MAX(u.attempts) AS n FROM unread_document u JOIN document d ON d.id = u.document_id
+          WHERE d.instrument_id = ? AND d.url = ?`,
+      )
+      .get(instrumentId, fetched.url) as { n: number | null }).n ?? 0;
+
     db.prepare('DELETE FROM section WHERE document_id = ?').run(documentId);
     db.prepare('DELETE FROM unread_document WHERE document_id = ?').run(documentId);
     db.prepare('DELETE FROM document_text WHERE document_id = ?').run(documentId);
 
     if (parsed.unread) {
-      db.prepare('INSERT INTO unread_document (document_id, reason, detail, recorded_at) VALUES (?, ?, ?, ?)')
-        .run(documentId, parsed.unread.reason, parsed.unread.detail, new Date().toISOString());
+      db.prepare('INSERT INTO unread_document (document_id, reason, detail, recorded_at, attempts) VALUES (?, ?, ?, ?, ?)')
+        .run(documentId, parsed.unread.reason, parsed.unread.detail, new Date().toISOString(), tried + 1);
       return { documentId, sectionCount: 0, unread: true, unreadReason: parsed.unread };
     }
 
@@ -176,6 +191,42 @@ export function storeDocument(
     indexSections(db, documentId);
     return { documentId, sectionCount: parsed.sections.length, unread: false, unreadReason: null };
   })();
+}
+
+/**
+ * The stored document these bytes already are, parsed into exactly these provisions, or null.
+ *
+ * Null wherever anything differs -- another hash, an unread result, one section's text, label,
+ * offsets or language -- because then the parse is the point, and replacing is what it is for.
+ */
+function unchangedDocument(db: Db, instrumentId: number, fetched: FetchResult, parsed: ParsedDocument): number | null {
+  if (parsed.unread) return null;
+  const doc = db
+    .prepare('SELECT id FROM document WHERE instrument_id = ? AND url = ? AND content_hash = ?')
+    .get(instrumentId, fetched.url, fetched.contentHash) as { id: number } | undefined;
+  if (!doc) return null;
+  const text = db.prepare('SELECT text FROM document_text WHERE document_id = ?').get(doc.id) as { text: string } | undefined;
+  if (text?.text !== parsed.text) return null;
+  const stored = db
+    .prepare(
+      `SELECT ordinal, heading_path, label, text, char_start, char_end, page, language, anchor, repealed
+         FROM section WHERE document_id = ? ORDER BY ordinal`,
+    )
+    .all(doc.id) as {
+    ordinal: number; heading_path: string; label: string | null; text: string; char_start: number; char_end: number;
+    page: number | null; language: string | null; anchor: string | null; repealed: number;
+  }[];
+  if (stored.length === 0 || stored.length !== parsed.sections.length) return null;
+  const same = parsed.sections.every((s, i) => {
+    const t = stored[i]!;
+    return (
+      t.ordinal === s.ordinal && t.heading_path === s.headingPath && t.label === (s.label ?? null) &&
+      t.text === s.text && t.char_start === s.charStart && t.char_end === s.charEnd &&
+      t.page === (s.page ?? null) && t.language === (s.language ?? null) && t.anchor === (s.anchor ?? null) &&
+      t.repealed === (s.repealed ? 1 : 0)
+    );
+  });
+  return same ? doc.id : null;
 }
 
 /**

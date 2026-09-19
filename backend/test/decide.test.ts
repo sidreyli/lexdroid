@@ -1231,6 +1231,30 @@ describe('a framework indicator, which asks about instruments rather than provis
     expect(d.decidingFact).not.toContain('Personal Data Protection Act');
   });
 
+  it('does not report a framework absent while a candidate for it went unread', () => {
+    const d = decide({
+      indicator: i72,
+      economy: 'MYS',
+      evidence: [],
+      frameworkEvidence: [instrument({ establishesFramework: false })],
+      coverage: { ...examined, instrumentsConsidered: 1, frameworkUnread: 1 },
+    });
+    expect(d.state).toBe('unresolved');
+    expect(d.score).toBeNull();
+    expect(d.decidingFact).toContain('could not be read');
+  });
+
+  it('still finds a framework when another candidate went unread', () => {
+    const d = decide({
+      indicator: i72,
+      economy: 'MYS',
+      evidence: [],
+      frameworkEvidence: [instrument({})],
+      coverage: { ...examined, instrumentsConsidered: 1, frameworkUnread: 1 },
+    });
+    expect(d.score).toBe(0);
+  });
+
   it('falls to the middle band when no instrument is dedicated to the subject at all', () => {
     const d = decide({
       indicator: i72,

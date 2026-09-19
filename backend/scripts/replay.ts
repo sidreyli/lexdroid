@@ -16,6 +16,7 @@ import { writeFileSync } from 'node:fs';
 import { openDb } from '../src/db/index.js';
 import {
   decide,
+  sameFinding,
   topBandScoresAbsence,
   type Evidence,
   type FrameworkEvidence,
@@ -28,7 +29,7 @@ import { citationUrl } from '../src/export/index.js';
 import { amendsAnotherAct, citesADefinition } from '../src/parse/identity.js';
 import { scorecard, tally, verdictFor, pillarOf, type CellResult } from '../src/eval/scorecard.js';
 import type { Finding } from '../src/read/index.js';
-import { loadConfirmations, noConfirmations } from '../src/read/confirmations.js';
+import { confirmationsForRun, noConfirmations } from '../src/read/confirmations.js';
 
 function arg(name: string): string | null {
   const i = process.argv.indexOf(`--${name}`);
@@ -97,12 +98,13 @@ type CellRow = {
   governing: string | null;
   surfaced_instruments: string | null;
   sections_read: number | null;
+  framework_failed: number | null;
   sections_indexed: number | null;
 };
 
 const cells = db
   .prepare(
-    `SELECT id, economy_code, indicator_id, governing, surfaced_instruments, sections_read, sections_indexed
+    `SELECT id, economy_code, indicator_id, governing, surfaced_instruments, sections_read, framework_failed, sections_indexed
      FROM cell WHERE run_id = ? ORDER BY economy_code, indicator_id`,
   )
   .all(runId) as CellRow[];
@@ -159,7 +161,7 @@ const storedAnswer = db.prepare('SELECT score FROM cell_answer WHERE cell_id = ?
  * pass ruled out is a provision read twice and found not to carry the measure.
  */
 const bare = process.argv.includes('--no-confirmed');
-const confirmations = bare ? noConfirmations() : loadConfirmations(db);
+const confirmations = bare ? noConfirmations() : confirmationsForRun(db, runId);
 console.log(`
   ${confirmations.size} banked confirmation(s) in play`);
 
@@ -218,14 +220,8 @@ for (const cell of cells) {
     // A zero is cited against what the search surfaced, which is every instrument read, not only
     // the ones something was found in -- a cell that finds nothing still has to cite the Act it read.
     for (const finding of JSON.parse(row['attributes']) as Finding[]) {
-      // The same provision reported twice for one measure is one measure, as the live pipeline has it.
-      const already = evidence.some(
-        (e) =>
-          e.sectionId === row['section_id'] &&
-          e.finding.indicatorId === finding.indicatorId &&
-          e.finding.measure === finding.measure,
-      );
-      if (already) continue;
+      // The same claim reported twice is one claim, as the live pipeline has it.
+      if (evidence.some((e) => sameFinding(e, { sectionId: row['section_id'], finding }))) continue;
       const kind = binding.get(row['instrument_kind']);
       const confirmed = confirmations.verdict(row['section_id'], finding.indicatorId, finding.measure);
       evidence.push({
@@ -265,6 +261,7 @@ for (const cell of cells) {
     instrumentsConsidered: isFramework
       ? frameworkEvidence.length
       : ((consideredFor.get(runId, cell.economy_code, JSON.stringify(pillarIndicators)) as { n: number }).n ?? 0),
+    ...(isFramework && cell.framework_failed !== null ? { frameworkUnread: cell.framework_failed } : {}),
   };
 
   const governing: number[] = cell.governing ? JSON.parse(cell.governing) : [];

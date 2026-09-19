@@ -155,6 +155,17 @@ interface RowRecord {
   status: string | null;
   status_basis: string | null;
   timeframe_basis: string | null;
+  /**
+   * Where the row cites an instrument as a framework rather than a provision: what the reader said
+   * of its own quotation, what the instrument's status is, and the text of its documents. Null for
+   * every other row.
+   */
+  framework?: {
+    quoteVerified: number | null;
+    status: string | null;
+    statusBasis: string | null;
+    texts: string[];
+  } | null;
 }
 
 /**
@@ -186,6 +197,34 @@ export function verifyRun(db: Db, runId: string): VerifyResult {
         WHERE c.run_id = ? ORDER BY e.id`,
     )
     .all(runId) as RowRecord[];
+
+  // A framework row names the instrument, not a provision, and the instrument is the one the cell's
+  // framework basis rests on -- where the framework reading of it is on the record.
+  const frameworkOf = db.prepare(
+    `SELECT f.quote_verified AS quoteVerified, i.status, i.status_basis AS statusBasis, i.id AS instrumentId
+       FROM answer_basis b
+       JOIN framework_reading f ON f.cell_id = b.cell_id AND f.instrument_id = b.instrument_id
+       JOIN instrument i ON i.id = b.instrument_id
+      WHERE b.cell_id = ? AND b.section_id IS NULL
+      ORDER BY b.ordinal LIMIT 1`,
+  );
+  const textsOf = db.prepare(
+    `SELECT dt.text FROM document d JOIN document_text dt ON dt.document_id = d.id WHERE d.instrument_id = ?`,
+  );
+  for (const row of rows) {
+    if (row.section_id !== null) continue;
+    const f = frameworkOf.get(row.cell_id) as
+      | { quoteVerified: number | null; status: string | null; statusBasis: string | null; instrumentId: number }
+      | undefined;
+    row.framework = f
+      ? {
+          quoteVerified: f.quoteVerified,
+          status: f.status,
+          statusBasis: f.statusBasis,
+          texts: (textsOf.all(f.instrumentId) as { text: string }[]).map((t) => t.text),
+        }
+      : null;
+  }
 
   const hostsByEconomy = new Map<string, Set<string>>();
   const record = db.prepare(
@@ -313,6 +352,39 @@ function gatesFor(row: RowRecord, hosts: Set<string>): GateOutcome[] {
       gate: 'one-measure',
       passed: measures <= 1,
       detail: measures <= 1 ? null : `${measures} measures on one row`,
+    });
+  }
+
+  // An instrument cited as a framework. Not a per-provision discovery, but its quotation is still a
+  // quotation, and the instrument still has to be law in force: these rows went out with the host
+  // checked and nothing else.
+  if (!cites && row.framework && row.verbatim_snippet) {
+    const quote = row.verbatim_snippet;
+    const found = row.framework.texts.some((t) => quoteAppearsIn(t, quote));
+    out.push({
+      gate: 'quote-in-source',
+      passed: found,
+      detail: found
+        ? null
+        : row.framework.texts.length === 0
+          ? 'the instrument has no document text in the store to find the quotation in'
+          : `not found in the instrument: "${quote.slice(0, 80)}"`,
+    });
+    out.push({
+      gate: 'framework-quote-verified',
+      passed: row.framework.quoteVerified === 1,
+      detail: row.framework.quoteVerified === 1 ? null : 'the reader could not verify its own quotation of the framework',
+    });
+    const status = row.framework.status ?? 'unknown';
+    out.push({
+      gate: 'in-force',
+      passed: status === 'in-force' && row.framework.statusBasis !== null,
+      detail:
+        status !== 'in-force'
+          ? `the instrument's status is "${status}"`
+          : row.framework.statusBasis === null
+            ? 'the instrument is marked in force with nothing recorded to evidence it'
+            : null,
     });
   }
 

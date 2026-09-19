@@ -651,11 +651,12 @@ export class Fetcher {
         this.log(next.toString(), 'robots-disallowed', null, 0, 0);
         throw new RobotsDisallowed(next.toString());
       }
-      if (next.host !== new URL(at).host) {
-        // Another host's pace, not this one's: the queue we are inside belongs to the origin.
-        const waited = await this.wait(next.host);
-        if (waited > 0) this.log(next.toString(), 'redirect-wait', null, 0, waited);
-      }
+      // Every hop is a request, and the pace is counted in requests. Only a hop to another host
+      // used to wait, so a portal that redirects to itself -- a session cookie bounce, a trailing
+      // slash -- was asked twice inside one interval. The destination's pace either way: the
+      // queue we are inside belongs to the origin.
+      const waited = await this.wait(next.host);
+      if (waited > 0) this.log(next.toString(), 'redirect-wait', null, 0, waited);
       at = next.toString();
     }
   }

@@ -19,6 +19,7 @@ import type { Db } from '../db/index.js';
 import { confirmMeasure, measureOf, questionOf } from './confirm.js';
 import { READING_MODEL } from '../engines/ollama.js';
 import type { Emit } from '../run/events.js';
+import { recordPassCost } from '../run/index.js';
 
 export interface ConfirmPassOptions {
   runId: string;
@@ -85,6 +86,7 @@ export async function confirmPass(db: Db, opts: ConfirmPassOptions): Promise<Con
   const emit = opts.emit ?? ((): void => {});
   const model = opts.model ?? READING_MODEL;
   const started = Date.now();
+  const spent = { calls: 0, promptTokens: 0, outputTokens: 0, seconds: 0 };
 
   // Answered means a verdict for this question from this model. A failed ask is not one -- it used
   // to count, so a provision the engine once failed on was never asked again -- and neither is a
@@ -158,6 +160,10 @@ export async function confirmPass(db: Db, opts: ConfirmPassOptions): Promise<Con
         new Date().toISOString(),
       );
       result.asked += 1;
+      spent.calls += 1;
+      spent.promptTokens += c.promptTokens;
+      spent.outputTokens += c.completionTokens;
+      spent.seconds += c.durationMs / 1000;
       if (c.failure) result.failed += 1;
       else if (c.words) result.confirmed += 1;
       else result.ruledOut += 1;
@@ -177,6 +183,7 @@ export async function confirmPass(db: Db, opts: ConfirmPassOptions): Promise<Con
   await Promise.all(Array.from({ length: Math.max(1, opts.workers ?? 1) }, () => worker()));
 
   result.seconds = (Date.now() - started) / 1000;
+  if (spent.calls > 0) recordPassCost(db, opts.runId, model, spent);
   emit({
     stage: 'confirm',
     kind: 'finished',

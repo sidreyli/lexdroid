@@ -121,6 +121,8 @@ export interface Gate {
   gate: string;
   passed: boolean;
   detail: string | null;
+  /** When the gate was run. A reviewer's decision clears it only if made after. */
+  checkedAt?: string | null;
 }
 
 /** The window of document text around a citation, with the quote rebased onto it. */
@@ -224,7 +226,8 @@ export interface Run {
   notes: string | null;
   cells: number;
   rows: number;
-  usd: number;
+  /** Null where an engine the run used charges at a price that was not recorded. */
+  usd: number | null;
   calls: number;
   tokens: number;
   wallSeconds: number;

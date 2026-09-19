@@ -45,6 +45,19 @@ describe('what a child gate is told about engines', () => {
     expect(env['LEXDROID_HOSTED_MODEL']).toBe('m');
   });
 
+  // A hosted engine speaks chat completions; the pool the child is given is for embeddings, which
+  // only an Ollama answers. Handing it the hosted URL retired the host on the first query.
+  it('gives a hosted child an embedding engine, not the hosted URL', () => {
+    const before = process.env['LEXDROID_EMBED_HOSTS'];
+    delete process.env['LEXDROID_EMBED_HOSTS'];
+    const env = childEngineEnv(['https://api.example/v1'], { hosted: true, baseUrl: 'https://api.example/v1', model: 'm', provider: 'p' });
+    expect(env['OLLAMA_HOSTS']).toBe('http://127.0.0.1:11434');
+    process.env['LEXDROID_EMBED_HOSTS'] = 'http://10.0.0.5:11434';
+    expect(childEngineEnv(['https://api.example/v1'], { hosted: true, baseUrl: 'https://api.example/v1', model: 'm', provider: 'p' })['OLLAMA_HOST']).toBe('http://10.0.0.5:11434');
+    if (before === undefined) delete process.env['LEXDROID_EMBED_HOSTS'];
+    else process.env['LEXDROID_EMBED_HOSTS'] = before;
+  });
+
   it('never carries a key it was handed rather than one the environment holds', () => {
     // The registry file records which engines exist; it never records a key, and a key must not
     // reach a child through an argument either.

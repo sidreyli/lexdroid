@@ -454,3 +454,44 @@ describe('citing a provision inside a PDF', () => {
     expect(citationUrl(PDF, null)).toBe(PDF);
   });
 });
+
+describe('a row citing an instrument as a framework (F12)', () => {
+  // The framework rows went out with the host checked and nothing else: a quotation nobody found
+  // in the instrument, of an instrument nobody showed to be in force, passed every gate it met.
+  function frameworkRow(quote: string, quoteVerified: number): Db {
+    const db = storeWithOneAnswer();
+    const now = '2026-09-07T00:00:00.000Z';
+    db.exec(`INSERT INTO cell (id, run_id, economy_code, indicator_id, state) VALUES (9, 'r1', 'SGP', '7.1', 'restricted');
+             INSERT INTO cell_answer (cell_id, score, band_ordinal, band_criterion, computed_at) VALUES (9, 0, 2, 'framework', '${now}');
+             INSERT INTO answer_basis (cell_id, ordinal, instrument_id, section_id, measure) VALUES (9, 1, 1, NULL, NULL);`);
+    db.prepare(
+      `INSERT INTO framework_reading (cell_id, instrument_id, engine, model, establishes_framework, quote, quote_verified, read_at)
+       VALUES (9, 1, 'engine-a', 'm', 1, ?, ?, ?)`,
+    ).run(quote, quoteVerified, now);
+    db.prepare(
+      `INSERT INTO export_row (cell_id, economy, law_name, indicator_id, verbatim_snippet, source_url, created_at)
+       VALUES (9, 'SGP', 'Companies Act 1967', '7.1', ?, 'https://sso.agc.gov.sg/Act/CoA1967', ?)`,
+    ).run(quote, now);
+    return db;
+  }
+  const gatesOf = (db: Db) =>
+    Object.fromEntries(
+      (db.prepare(`SELECT gate, passed FROM gate_result g JOIN export_row e ON e.id = g.export_row_id WHERE e.cell_id = 9`).all() as {
+        gate: string; passed: number;
+      }[]).map((g) => [g.gate, g.passed]),
+    );
+
+  it('passes a quotation the instrument holds, of an instrument in force', () => {
+    const db = frameworkRow(QUOTE, 1);
+    verifyRun(db, 'r1');
+    expect(gatesOf(db)).toMatchObject({ 'quote-in-source': 1, 'framework-quote-verified': 1, 'in-force': 1 });
+    db.close();
+  });
+
+  it('fails a quotation the instrument does not hold', () => {
+    const db = frameworkRow('An Act to regulate the processing of personal data', 0);
+    verifyRun(db, 'r1');
+    expect(gatesOf(db)).toMatchObject({ 'quote-in-source': 0, 'framework-quote-verified': 0 });
+    db.close();
+  });
+});

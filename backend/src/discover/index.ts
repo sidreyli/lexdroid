@@ -378,6 +378,17 @@ export function adapterFor(db: Db, profile: EconomyProfile, via: string): Adapte
   return portal?.adapter ? ADAPTERS[portal.adapter] ?? null : null;
 }
 
+/**
+ * Why a document may read next time when it did not this time: an empty body, which is what a
+ * timeout or a rate limit's blank page looks like, and a parser that threw. Everything else -- a
+ * scan with no OCR, a landing page, another instrument's text, a type no parser handles -- is a
+ * fact about the document, and asking again gets the same answer.
+ */
+export const RETRYABLE = ['empty', 'parse-error'] as const;
+
+/** Three tries in all: the first, and two more. Past that it is the document, not the moment. */
+export const MAX_ATTEMPTS = 3;
+
 export async function materialise(
   db: Db,
   profile: EconomyProfile,
@@ -394,7 +405,17 @@ export async function materialise(
     ? `i.economy_code = ? AND EXISTS (SELECT 1 FROM document d WHERE d.instrument_id = i.id)`
     : opts.refresh
       ? 'i.economy_code = ?'
-      : `i.economy_code = ? AND NOT EXISTS (SELECT 1 FROM document d WHERE d.instrument_id = i.id)`;
+      : // Nothing fetched yet, or fetched and unreadable for a reason that may not recur. A row
+        // existing is not the instrument having been read: an empty page, a timeout's partial body
+        // or a parser error left one behind, and the default used to skip every instrument that had
+        // one, so a document shortlisted for an answer was never asked for a second time.
+        `i.economy_code = ? AND (
+           NOT EXISTS (SELECT 1 FROM document d WHERE d.instrument_id = i.id)
+           OR (NOT EXISTS (SELECT 1 FROM document d JOIN section s ON s.document_id = d.id WHERE d.instrument_id = i.id)
+               AND EXISTS (SELECT 1 FROM document d JOIN unread_document u ON u.document_id = d.id
+                            WHERE d.instrument_id = i.id
+                              AND u.reason IN (${RETRYABLE.map((r) => `'${r}'`).join(', ')})
+                              AND u.attempts < ${MAX_ATTEMPTS})))`;
   const params: unknown[] = [profile.code];
   let sql = `SELECT i.id, i.title, i.source_url, i.discovered_via, i.title_provisional, i.also_at
                FROM instrument i WHERE ${where}`;

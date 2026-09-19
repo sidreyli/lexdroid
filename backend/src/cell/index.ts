@@ -27,6 +27,7 @@ import {
   openingOf,
   readFramework,
   readSection,
+  readInFull,
   subjectQueries,
   READING_MODEL,
   type FrameworkReading,
@@ -39,6 +40,7 @@ import { loadConfirmations, confirmedFlag, tallyConfirmations, type Confirmation
 import type { FxRates } from '../decide/currency.js';
 import {
   decide,
+  sameFinding,
   type Coverage,
   type Decision,
   type Evidence,
@@ -103,6 +105,8 @@ export interface PillarAnswer {
    * A cell that establishes none still examined them, and the record has to say which.
    */
   frameworkExamined: Record<string, FrameworkEvidence[]>;
+  /** Framework candidates the engine failed to read, by indicator. They leave no reading behind. */
+  frameworkUnread?: Record<string, number>;
   /** Findings the engine returned that the check refused. A measurement, not noise. */
   rejectedFindings: number;
   /** Of those, the ones refused because the words were not in the provision. */
@@ -325,19 +329,9 @@ export async function answerPillar(
     const row = byId.get(reading.sectionId);
     if (!row) continue;
     for (const finding of reading.findings) {
-      // The same provision reported twice for the same measure is one measure. ESCAP asks for one
-      // measure per row and marks up rows that carry several; two identical findings would become
-      // two rows saying the same thing.
-      if (
-        evidence.some(
-          (e) =>
-            e.sectionId === row.id &&
-            e.finding.indicatorId === finding.indicatorId &&
-            e.finding.measure === finding.measure,
-        )
-      ) {
-        continue;
-      }
+      // The same claim reported twice is one claim. Two different clauses of one provision filed
+      // under one measure are two, and the second may be the one that decides the cell.
+      if (evidence.some((e) => sameFinding(e, { sectionId: row.id, finding }))) continue;
       evidence.push({
         finding,
         sectionId: row.id,
@@ -378,6 +372,7 @@ export async function answerPillar(
   // 4. Framework indicators ask about instruments, not provisions, so they get their own reading.
   const frameworkReadings: FrameworkReading[] = [];
   const frameworkByIndicator = new Map<string, FrameworkEvidence[]>();
+  const frameworkUnread = new Map<string, number>();
   for (const indicator of indicators.filter((i) => i.shape === 'framework')) {
     const subject = frameworkSubject(indicator);
     if (!subject) continue;
@@ -426,6 +421,7 @@ export async function answerPillar(
     const examined = readingsHere
       .map((r, n) => ({ r, c: candidates[n]! }))
       .filter((x) => x.r.failure === null);
+    frameworkUnread.set(indicator.id, readingsHere.length - examined.length);
     if (examined.length < readingsHere.length) {
       log(`  ${indicator.id}: ${readingsHere.length - examined.length} instrument(s) went unexamined`);
     }
@@ -483,10 +479,12 @@ export async function answerPillar(
 
     const coverage: Coverage = {
       // Answered, not sent: a provision the engine failed on was not read, and counting it made a
-      // zero say it rested on more reading than it did.
-      sectionsRead: readings.filter((r) => r.failure === null).length,
+      // zero say it rested on more reading than it did. Nor one whose answer was partly unreadable:
+      // its findings stand, but it was not read in full.
+      sectionsRead: readings.filter(readInFull).length,
       sectionsIndexed: indexedSections,
       instrumentsConsidered: isFramework ? frameworkEvidence.length : new Set(rows.map((r) => r.instrument_id)).size,
+      ...(isFramework ? { frameworkUnread: frameworkUnread.get(indicator.id) ?? 0 } : {}),
     };
     // Which instruments the register said govern this question. Worked out in Zone 1 from their
     // titles, and needed in Zone 3 to tell the Act that governs the subject from the Act that is
@@ -520,6 +518,7 @@ export async function answerPillar(
     readings,
     frameworkReadings,
     frameworkExamined: Object.fromEntries(frameworkByIndicator),
+    frameworkUnread: Object.fromEntries(frameworkUnread),
     rejectedFindings: readings.reduce((n, r) => n + r.rejected.length, 0),
     rejectedQuotes: readings.reduce(
       (n, r) => n + r.rejected.filter((x) => x.reason.includes('not in the provision')).length,

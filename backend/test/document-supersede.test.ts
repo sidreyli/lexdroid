@@ -71,3 +71,29 @@ describe('reading the same address again', () => {
     expect(docs.map((d) => d.id)).toEqual([english.documentId, malay.documentId]);
   });
 });
+
+describe('storing a document that has not changed (F10)', () => {
+  it('keeps its sections, and every reading that cites one', () => {
+    const { db, instrumentId } = register();
+    const first = storeDocument(db, { instrumentId, fetched: fetched('<p>five</p>'), parsed: parsed(['Citation', 'Definitions']) });
+    const ids = (db.prepare('SELECT id FROM section ORDER BY ordinal').all() as { id: number }[]).map((r) => r.id);
+    db.exec(`INSERT INTO run (id, started_at, economies, pillars, engine, engine_model, source_mode, code_revision, rubric_derived_at, status)
+               VALUES ('r', 'now', '["SGP"]', '[7]', 'engine-a', 'm', 'fetch', 'x', 'now', 'complete');
+             INSERT INTO cell (id, run_id, economy_code, indicator_id) VALUES (1, 'r', 'SGP', '7.3');`);
+    db.prepare(`INSERT INTO reading (cell_id, section_id, engine, model, applies, read_at) VALUES (1, ?, 'engine-a', 'm', 0, 'now')`).run(ids[0]);
+
+    const again = storeDocument(db, { instrumentId, fetched: fetched('<p>five</p>'), parsed: parsed(['Citation', 'Definitions']) });
+    expect(again.documentId).toBe(first.documentId);
+    expect((db.prepare('SELECT id FROM section ORDER BY ordinal').all() as { id: number }[]).map((r) => r.id)).toEqual(ids);
+    expect(db.prepare('SELECT count(*) n FROM reading').get()).toEqual({ n: 1 });
+    db.close();
+  });
+
+  it('still replaces the sections when the parse of the same bytes has changed', () => {
+    const { db, instrumentId } = register();
+    storeDocument(db, { instrumentId, fetched: fetched('<p>five</p>'), parsed: parsed(['Citation', 'Definitions']) });
+    storeDocument(db, { instrumentId, fetched: fetched('<p>five</p>'), parsed: parsed(['Citation', 'Definitions', 'Schedule']) });
+    expect(db.prepare('SELECT count(*) n FROM section').get()).toEqual({ n: 3 });
+    db.close();
+  });
+});
