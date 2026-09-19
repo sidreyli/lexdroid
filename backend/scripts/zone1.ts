@@ -169,9 +169,14 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (args.refresh && args.sourceMode === 'cache-only') {
+    throw new Error('--refresh asks for current bytes and --cache-only forbids asking: pick one');
+  }
   const fetcher = new Fetcher({
     db,
-    sourceMode: args.sourceMode,
+    // Refreshing is the fetcher's mode, so every request the adapters make for the document --
+    // listings, wrappers, API records, the parts of a compilation -- is fetched again too.
+    sourceMode: args.refresh ? 'refresh' : args.sourceMode,
     ...(args.delayMs ? { minDelayMs: args.delayMs } : {}),
     onLog: (l) => console.log(l),
   });

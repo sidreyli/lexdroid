@@ -22,7 +22,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { brotliDecompressSync, gunzipSync, inflateSync } from 'node:zlib';
-import { Agent, interceptors, request } from 'undici';
+import { Agent, request } from 'undici';
 import type { Db } from '../db/index.js';
 
 /**
@@ -47,9 +47,10 @@ import type { Db } from '../db/index.js';
  * still names us and our purpose. The site's stated terms for machine access are its robots.txt --
  * six seconds between requests, /search disallowed -- and we obey both, before and after this.
  *
- * Redirects are followed by an interceptor rather than a request option: government sites move
- * documents constantly, and a 301 that is not followed looks exactly like a document that does
- * not exist. Five hops is generous and still terminates.
+ * Redirects are followed, because government sites move documents constantly and a 301 that is not
+ * followed looks exactly like a document that does not exist. Five hops is generous and still
+ * terminates. They are followed by hand rather than by a dispatcher interceptor, for the reason
+ * given at MAX_REDIRECTS.
  */
 const BROWSER_CIPHERS = [
   'TLS_AES_128_GCM_SHA256',
@@ -69,10 +70,14 @@ const BROWSER_CIPHERS = [
   'AES256-SHA',
 ].join(':');
 
+// Redirects are followed by hand in `send`, not by an interceptor: each hop is a request to a URL
+// the site chose rather than one we chose, and it has to pass the same robots check and appear in
+// the same log as any other. The interceptor followed them silently.
 const dispatcher = new Agent({
   connections: 8,
   connect: { ciphers: BROWSER_CIPHERS, ecdhCurve: 'X25519:prime256v1:secp384r1', minVersion: 'TLSv1.2' },
-}).compose(interceptors.redirect({ maxRedirections: 5 }));
+});
+const MAX_REDIRECTS = 5;
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -107,7 +112,6 @@ export const USER_AGENT =
   'Chrome/140.0.0.0 Safari/537.36 LexDroid/0.1 (UN ESCAP RDTII research; polite, 1 req/s)';
 
 const DEFAULT_DELAY_MS = 1000;
-const MAX_DELAY_MS = 30_000;
 const TIMEOUT_MS = 60_000;
 
 /** How long to wait after a throttled response, in order. Long, because the answer is to stop. */
@@ -223,7 +227,19 @@ function isSoftBlock(res: { status: number; body: Buffer }): boolean {
   return false;
 }
 
-export type SourceMode = 'fetch' | 'cache-only';
+/**
+ * Where bytes come from.
+ *
+ *   fetch       the cache first, the network for what it lacks
+ *   cache-only  the cache and nothing else; a miss is an error, never a request
+ *   refresh     the network for everything, robots.txt included; the cache is written, not read
+ *
+ * `refresh` is a mode of the fetcher rather than a flag on one call because a document is rarely
+ * one request: an adapter resolves a listing, a wrapper page, an API record and the parts of a
+ * compiled Act, each through this fetcher. Asking the top-level call to refresh used to leave all
+ * of those answering from disk, and the "fresh" document was assembled from last month's bytes.
+ */
+export type SourceMode = 'fetch' | 'cache-only' | 'refresh';
 
 export interface FetchResult {
   url: string;
@@ -382,11 +398,26 @@ interface Robots {
   fetched: boolean;
 }
 
+/** The name we answer to in robots.txt: the product token in our user agent. */
+export const ROBOTS_TOKEN = 'lexdroid';
+
+/**
+ * The rules robots.txt gives us, read the way RFC 9309 says to read them.
+ *
+ * The first version kept only the wildcard group and forgot it the moment a second user-agent line
+ * followed -- so "User-agent: *" grouped with another name lost every rule under it -- and never
+ * looked for a group addressed to us by name, which is the group a site writes when it means us.
+ * Now: consecutive user-agent lines form one group; a group naming our token governs us if there is
+ * one, and the wildcard groups otherwise; every group that applies is merged.
+ *
+ * The crawl delay the site asks for is honoured whatever it is. It used to be capped at thirty
+ * seconds, which is not honouring it.
+ */
 export function parseRobots(text: string): Robots {
-  const disallow: string[] = [];
-  const allow: string[] = [];
-  let crawlDelayMs: number | null = null;
-  let inStar = false;
+  interface Group { agents: string[]; disallow: string[]; allow: string[]; crawlDelayMs: number | null }
+  const groups: Group[] = [];
+  let current: Group | null = null;
+  let rulesSeen = false;
 
   for (const raw of text.split(/\r?\n/)) {
     const line = raw.replace(/#.*$/, '').trim();
@@ -397,26 +428,53 @@ export function parseRobots(text: string): Robots {
     const value = line.slice(colon + 1).trim();
 
     if (field === 'user-agent') {
-      // A group applies to us if it is the wildcard group. We do not claim a name of our own in
-      // robots terms, so anything more specific is somebody else's rules.
-      inStar = value === '*';
+      if (!current || rulesSeen) {
+        current = { agents: [], disallow: [], allow: [], crawlDelayMs: null };
+        groups.push(current);
+        rulesSeen = false;
+      }
+      current.agents.push(value.toLowerCase());
       continue;
     }
-    if (!inStar) continue;
-    if (field === 'disallow' && value) disallow.push(value);
-    else if (field === 'allow' && value) allow.push(value);
+    if (!current) continue;
+    if (field === 'disallow' || field === 'allow' || field === 'crawl-delay') rulesSeen = true;
+    if (field === 'disallow' && value) current.disallow.push(value);
+    else if (field === 'allow' && value) current.allow.push(value);
     else if (field === 'crawl-delay') {
       const seconds = Number(value);
-      if (Number.isFinite(seconds) && seconds > 0) crawlDelayMs = Math.min(seconds * 1000, MAX_DELAY_MS);
+      if (Number.isFinite(seconds) && seconds > 0) current.crawlDelayMs = Math.max(current.crawlDelayMs ?? 0, seconds * 1000);
     }
   }
-  return { disallow, allow, crawlDelayMs, fetched: true };
+
+  const named = groups.filter((g) => g.agents.some((a) => a !== '*' && ROBOTS_TOKEN.includes(a.split('/')[0]!)));
+  const applying = named.length > 0 ? named : groups.filter((g) => g.agents.includes('*'));
+  const delays = applying.map((g) => g.crawlDelayMs).filter((d): d is number => d !== null);
+  return {
+    disallow: applying.flatMap((g) => g.disallow),
+    allow: applying.flatMap((g) => g.allow),
+    crawlDelayMs: delays.length ? Math.max(...delays) : null,
+    fetched: true,
+  };
 }
 
-/** Longest-match wins, the convention every major crawler follows. Allow beats Disallow on a tie. */
-function robotsPermits(robots: Robots, pathname: string): boolean {
-  const match = (rules: string[]): number =>
-    rules.reduce((best, rule) => (pathname.startsWith(rule) ? Math.max(best, rule.length) : best), -1);
+/**
+ * How much of a path a robots rule matches: the rule's length where it matches, -1 where not.
+ * `*` matches any run of characters and a final `$` anchors the rule to the end of the path.
+ */
+function ruleMatch(rule: string, path: string): number {
+  if (!rule.includes('*') && !rule.endsWith('$')) return path.startsWith(rule) ? rule.length : -1;
+  const anchored = rule.endsWith('$');
+  const body = anchored ? rule.slice(0, -1) : rule;
+  const pattern = body.split('*').map((s) => s.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('.*');
+  return new RegExp(`^${pattern}${anchored ? '$' : ''}`).test(path) ? rule.length : -1;
+}
+
+/**
+ * Longest match wins, the convention every major crawler follows, and RFC 9309's. Allow beats
+ * Disallow on a tie. `path` is the path with its query, which is what the rules are written against.
+ */
+export function robotsPermits(robots: Robots, path: string): boolean {
+  const match = (rules: string[]): number => rules.reduce((best, rule) => Math.max(best, ruleMatch(rule, path)), -1);
   const d = match(robots.disallow);
   if (d < 0) return true;
   return match(robots.allow) >= d;
@@ -570,7 +628,39 @@ export class Fetcher {
   }
 
   /** Raw request. Callers go through fetch(), which adds the cache, robots and the log. */
-  private async send(url: string): Promise<SendResult> {
+  private async send(url: string, opts: { robotsFile?: boolean } = {}): Promise<SendResult> {
+    let at = url;
+    for (let hop = 0; ; hop += 1) {
+      const res = await this.sendOne(at);
+      const location = res.location;
+      if (res.status < 300 || res.status >= 400 || !location || hop >= MAX_REDIRECTS) {
+        return { status: res.status, mediaType: res.mediaType, body: res.body, finalUrl: at };
+      }
+      const next = new URL(location, at);
+      this.log(at, 'redirect', res.status, 0, 0);
+      // robots.txt itself is never disallowed (RFC 9309 follows its redirects), and checking it
+      // against the rules it is about to supply would ask for itself forever.
+      if (opts.robotsFile) {
+        at = next.toString();
+        continue;
+      }
+      // The destination's own rules, which are not necessarily the origin's.
+      const robots = await this.ensureRobots(next.host, next.origin);
+      if (!robotsPermits(robots, next.pathname + next.search)) {
+        this.stats.disallowed += 1;
+        this.log(next.toString(), 'robots-disallowed', null, 0, 0);
+        throw new RobotsDisallowed(next.toString());
+      }
+      if (next.host !== new URL(at).host) {
+        // Another host's pace, not this one's: the queue we are inside belongs to the origin.
+        const waited = await this.wait(next.host);
+        if (waited > 0) this.log(next.toString(), 'redirect-wait', null, 0, waited);
+      }
+      at = next.toString();
+    }
+  }
+
+  private async sendOne(url: string): Promise<SendResult & { location: string | null }> {
     const res = await request(url, {
       method: 'GET',
       dispatcher,
@@ -597,10 +687,9 @@ export class Fetcher {
     const ctValue = (Array.isArray(ct) ? ct[0] : ct) ?? 'application/octet-stream';
     const mediaType = (ctValue.split(';')[0] ?? 'application/octet-stream').trim().toLowerCase();
 
-    // The redirect interceptor records where it went; the last hop is what actually served us.
-    const history = (res.context as { history?: URL[] } | undefined)?.history;
-    const finalUrl = history?.length ? String(history[history.length - 1]) : url;
-    return { status: res.statusCode, mediaType, body, finalUrl };
+    const loc = res.headers['location'];
+    const location = (Array.isArray(loc) ? loc[0] : loc) ?? null;
+    return { status: res.statusCode, mediaType, body, finalUrl: url, location };
   }
 
   /**
@@ -627,7 +716,7 @@ export class Fetcher {
 
     let robotsBody: string | null = null;
 
-    const cached = this.readCache(`${origin}/robots.txt`);
+    const cached = this.sourceMode === 'refresh' ? null : this.readCache(`${origin}/robots.txt`);
     if (cached) {
       robotsBody = cached.body.toString('utf8');
       s.robots = parseRobots(robotsBody);
@@ -637,7 +726,7 @@ export class Fetcher {
       // Fetched under the default delay: we do not yet know what the site would prefer.
       await this.wait(host);
       try {
-        const res = await this.send(`${origin}/robots.txt`);
+        const res = await this.send(`${origin}/robots.txt`, { robotsFile: true });
         if (res.status === 404 || res.status === 410) {
           absent = true;
           s.robots = noRules();
@@ -725,7 +814,7 @@ export class Fetcher {
     const parsed = new URL(url);
     const host = parsed.host;
 
-    if (!opts.refresh) {
+    if (!opts.refresh && this.sourceMode !== 'refresh') {
       const cached = this.readCache(url);
       if (cached) {
         this.stats.cached += 1;
@@ -750,7 +839,7 @@ export class Fetcher {
 
     return this.queue(host, async () => {
       const robots = await this.ensureRobots(host, parsed.origin);
-      if (!robotsPermits(robots, parsed.pathname)) {
+      if (!robotsPermits(robots, parsed.pathname + parsed.search)) {
         this.stats.disallowed += 1;
         this.log(url, 'robots-disallowed', null, 0, 0);
         throw new RobotsDisallowed(url);
@@ -767,7 +856,11 @@ export class Fetcher {
         // Every attempt is logged, retries included. fetch_log is the run record that makes
         // "we crawled politely" checkable rather than claimed, and a record that counts three
         // requests as one understates what actually left this machine.
-        this.log(url, isSoftBlock(res) ? 'soft-blocked' : 'ok', res.status, res.body.length, waitMs);
+        //
+        // Logged at the address that served the bytes, not the one we asked for. B3 reads these
+        // rows to show that no disallowed path was ever fetched, and a redirect into a disallowed
+        // path recorded under the permitted address we asked for would be invisible to it.
+        this.log(res.finalUrl, isSoftBlock(res) ? 'soft-blocked' : 'ok', res.status, res.body.length, waitMs);
 
         // Back off and retry a throttled or empty response before giving up on it. The delays are
         // long on purpose: the point is to stop asking, not to ask more insistently.
@@ -783,7 +876,7 @@ export class Fetcher {
           await new Promise((r) => setTimeout(r, pause));
           waitMs += pause;
           res = await this.sendThroughDrops(url, host);
-          this.log(url, isSoftBlock(res) ? 'soft-blocked' : 'ok', res.status, res.body.length, pause);
+          this.log(res.finalUrl, isSoftBlock(res) ? 'soft-blocked' : 'ok', res.status, res.body.length, pause);
         }
         if (isSoftBlock(res)) {
           this.stats.softBlocked += 1;
