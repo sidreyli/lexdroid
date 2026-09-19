@@ -12,8 +12,8 @@ import type { ParsedSection } from './types.js';
 // Parentheses and line breaks belong to the name, not after it: whole families of Malaysian and
 // Singaporean instruments are told apart only by what is inside the brackets, which a PDF wraps.
 const STATES_NAME = [
-  /(?:may be|is)\s+cited\s+as\s+the\s+([A-Z][^.,;]{4,110})/,
-  /This\s+(?:Act|Ordinance|Enactment|Regulations?|Rules|Order)\s+is\s+the\s+([A-Z][^.,;]{4,110})/,
+  /(?:may be|is)\s+cited\s+as\s+the\s+([A-Z][^.,;]{4,160})/,
+  /This\s+(?:Act|Ordinance|Enactment|Regulations?|Rules|Order)\s+is\s+the\s+([A-Z][^.,;]{4,160})/,
 ];
 
 /** Words too common to distinguish one instrument from another. */
@@ -49,8 +49,11 @@ function keyWords(s: string): string[] {
  * filed one as "Wordpress Revolutionize" -- is not a legal title, so it has nothing to contradict
  * the document with. The document's own words are the better evidence and it takes their name.
  */
+// The kinds of instrument a register files, in both official languages of the economies read.
+// "Notification", "Direction" and "By-laws" were missing, which left 179 real titles -- every
+// Singaporean notification among them -- looking as though they named nothing.
 const NAMES_AN_INSTRUMENT =
-  /\b(act|ordinance|enactment|regulations?|rules?|order|notice|guidelines?|code|bill|constitution|charter|decree|akta|peraturan|perintah|kaedah|undang)\b/i;
+  /\b(acts?|ordinance|enactment|regulations?|rules?|orders?|schemes?|notice|notifications?|directions?|directives?|by-?laws?|guidelines?|guides?|guidance|standards?|circulars?|codes?|bill|constitution|charter|decree|akta|peraturan|perintah|kaedah|undang|garis panduan|pekeliling|pemberitahuan|arahan|notis|piawaian|tata ?amalan|kod)\b/i;
 
 export function namesAnInstrument(title: string): boolean {
   return NAMES_AN_INSTRUMENT.test(title);
@@ -69,7 +72,7 @@ export function statedName(sections: Pick<ParsedSection, 'text'>[], within = 14)
 }
 
 /** The Malay drafting formula: "Akta ini bolehlah dinamakan Akta X". */
-const STATES_NAME_MS = /boleh(?:lah)?\s+(?:dinamakan|disebut)\s+(?:sebagai\s+)?([A-Z][^.,;]{4,110})/;
+const STATES_NAME_MS = /boleh(?:lah)?\s+(?:dinamakan|disebut)\s+(?:sebagai\s+)?([A-Z][^.,;]{4,160})/;
 /** The words a Malay title names its kind of instrument with. */
 const MALAY_KIND = /\b(?:akta|peraturan|perintah|kaedah|enakmen|ordinan)\b/i;
 
@@ -95,6 +98,22 @@ export function statedNames(
     if (ms) out.push({ name: clean(ms[1]!), language: 'ms' });
   }
   return out;
+}
+
+/**
+ * The name a document is to be registered under when the register's own title names nothing.
+ *
+ * Its citation clause first, in either language, because that is the instrument naming itself in
+ * law. The parser's guess at a title only after that, and only where the guess names an instrument:
+ * a PDF's guess is its running header, which is how a data protection standard came to be called
+ * "No. Descriptions" -- the header of a table -- and an online safety regulation "provider or
+ * licensed content applications service".
+ */
+export function ownName(sections: Pick<ParsedSection, 'text'>[], parserTitle: string | null): string | null {
+  const names = statedNames(sections);
+  const stated = names.find((n) => n.language === 'en') ?? names[0];
+  if (stated) return stated.name;
+  return parserTitle && namesAnInstrument(parserTitle) ? parserTitle : null;
 }
 
 /**

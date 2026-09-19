@@ -18,7 +18,7 @@ import type { Fetcher } from '../fetch/index.js';
 import { RobotsDisallowed, CacheMiss, HostSuspended } from '../fetch/index.js';
 import { parseDocument, storeDocument, verifyOffsets } from '../parse/index.js';
 import { soleDocumentLink } from '../parse/html.js';
-import { namesAnInstrument, statedName } from '../parse/identity.js';
+import { namesAnInstrument, ownName } from '../parse/identity.js';
 import type { EconomyProfile } from '../profile/types.js';
 import { portalId } from '../profile/index.js';
 import { crawlAdapter } from './crawl.js';
@@ -487,7 +487,7 @@ export async function materialise(
       // all, takes the name it calls itself by.
       // Its citation provision where the parser found no title: a portal that filed an Order under
       // its own page theme still served a document whose section 1 says what the Order is.
-      const callsItself = parsed.title ?? statedName(parsed.sections);
+      const callsItself = ownName(parsed.sections, parsed.title);
       if ((row.title_provisional || !namesAnInstrument(row.title)) && callsItself) {
         db.prepare('UPDATE instrument SET title = ?, title_provisional = 0 WHERE id = ?')
           .run(callsItself, row.id);

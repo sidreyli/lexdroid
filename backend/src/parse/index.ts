@@ -15,6 +15,7 @@ import { parseIndiaCode } from './indiacode.js';
 import { parsePdf } from './pdf.js';
 import { parseSso } from './sso.js';
 import { identityMismatch } from './identity.js';
+import { opensAsPublishedAbout, publishedAbout } from '../discover/titles.js';
 import type { ParsedDocument, UnreadReason } from './types.js';
 
 export * from './types.js';
@@ -90,6 +91,28 @@ export function storeDocument(
         ? identityMismatch(parsed.sections, filed.title, { titleProvisional: filed.title_provisional === 1 })
         : null;
     if (wrong) parsed = { ...parsed, unread: { reason: 'another-instrument', detail: wrong.detail } };
+
+    // A regulator's site publishes consultations, releases and news beside its instruments, and
+    // a page that files one under a neutral name still says what it is in its opening words.
+    // Answers cited a consultation paper as Malaysia's data protection guidance, and a news item
+    // about a review of an Act as the Act. A legislation database is not asked: it publishes
+    // nothing else, and its titles use these words as the names of laws.
+    if (filed && !parsed.unread) {
+      const portal = db
+        .prepare(`SELECT p.kind FROM instrument i JOIN portal p ON 'portal:' || p.id = i.discovered_via WHERE i.id = ?`)
+        .get(instrumentId) as { kind: string } | undefined;
+      const opening = parsed.text.replace(/\s+/g, ' ').trim().slice(0, 90);
+      const about = publishedAbout(filed.title) ? filed.title : opensAsPublishedAbout(opening) ? opening : undefined;
+      if (portal && portal.kind !== 'legislation-database' && portal.kind !== 'gazette' && about !== undefined) {
+        parsed = {
+          ...parsed,
+          unread: {
+            reason: 'not-an-instrument',
+            detail: `"${about.slice(0, 90)}" is published about an instrument, not an instrument, so nothing in it may be cited as law.`,
+          },
+        };
+      }
+    }
     db.prepare(
       `INSERT INTO document (instrument_id, url, content_hash, media_type, bytes, http_status,
                              fetched_at, from_cache, extraction, section_count)

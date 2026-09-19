@@ -61,7 +61,31 @@ const ABOUT_OPENS =
 
 /** A sentence has a finite verb, and no title has one. These are the ones a headline uses. */
 const HEADLINE =
-  /\b(launch(es|ed)|publish(es|ed)|update[sd]|announce[sd]?|conclude[sd]|strengthen(s|ing)|pioneer(s|ing)|driv(es|ing)|seek[s]? feedback|comes? into force|take[s]? effect)\b/i;
+  /\b(launch(es|ed)|publish(es|ed)|update[sd]|announce[sd]?|conclude[sd]|strengthen(s|ing)|pioneer(s|ing)|driv(es|ing)|seek[s]? feedback|comes? into force|take[s]? effect|review(s|ing|ed))\b/i;
+
+/**
+ * Whether a name says the thing is published about an instrument rather than being one: a
+ * consultation on it, a release announcing it, a headline reporting it.
+ *
+ * Asked of a document's title and of its own opening words, because a regulator files a
+ * consultation paper under a page name that does not say so -- "PC 01/2020 - Review of Personal
+ * Data Protection Act 2010" opens "PUBLIC CONSULTATION PAPER NO. 01/2020". Not asked of a
+ * legislation database, whose titles use the same words as the name of the law: "... (Annual
+ * Report) Regulations", "... (Reviewing Tribunal) Rules".
+ */
+export function publishedAbout(name: string): boolean {
+  const t = name.replace(/\s+/g, ' ').trim();
+  return ABOUT.test(t) || ABOUT_OPENS.test(t) || HEADLINE.test(t);
+}
+
+/**
+ * The same question of a document's own opening words, which are prose and not a name: only the
+ * phrases that say outright what the thing is -- "consultation paper", "press release". A web
+ * page opens with its site's navigation, and "Explore", "Find" and "Updates" there are menu items.
+ */
+export function opensAsPublishedAbout(opening: string): boolean {
+  return ABOUT.test(opening.replace(/\s+/g, ' ').trim());
+}
 
 export type InstrumentKind = 'act' | 'regulation' | 'notice' | 'guideline' | 'order' | 'rule';
 
