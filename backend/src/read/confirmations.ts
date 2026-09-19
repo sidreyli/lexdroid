@@ -19,6 +19,7 @@
  *   failure set     nobody read it. Not a provision found wanting, and not a verdict.
  */
 import type { Db } from '../db/index.js';
+import { questionFor } from './question.js';
 
 export interface ConfirmationSet {
   /** How many verdicts are in force. A failed ask is not one. */
@@ -38,27 +39,46 @@ export function noConfirmations(): ConfirmationSet {
 }
 
 /**
- * Every verdict banked so far.
+ * Every verdict banked so far that answers the question the catalogue asks today.
  *
  * Read once per run rather than per cell: the table is keyed by the question, not the run, so the
  * same provision filed under the same measure in three cells is one row read one time.
+ *
+ * A verdict to a question since reworded is not an answer to the new one, and is left out; so is a
+ * row whose question was never recorded. `model` narrows to one engine's verdicts, which is what a
+ * run asking with that engine must use; without it every model's count, and where two models
+ * disagree about one question the question is treated as unanswered rather than decided by
+ * whichever row came last.
  */
-export function loadConfirmations(db: Db): ConfirmationSet {
-  const byKey = new Map<string, boolean>();
+export function loadConfirmations(db: Db, opts: { model?: string } = {}): ConfirmationSet {
+  const byKey = new Map<string, boolean | null>();
+  const current = new Map<string, string | null>();
+  const questionNow = (indicatorId: string, measure: string): string | null => {
+    const k = `${indicatorId}/${measure}`;
+    if (!current.has(k)) current.set(k, questionFor(indicatorId, measure));
+    return current.get(k) ?? null;
+  };
   for (const row of db
     .prepare(
-      `SELECT section_id, indicator_id, measure, words
-         FROM measure_confirmation WHERE failure IS NULL`,
+      `SELECT section_id, indicator_id, measure, question, words
+         FROM measure_confirmation
+        WHERE failure IS NULL AND question IS NOT NULL${opts.model ? ' AND model = ?' : ''}`,
     )
-    .all() as { section_id: number; indicator_id: string; measure: string; words: string | null }[]) {
-    byKey.set(`${row.section_id}/${row.indicator_id}/${row.measure}`, row.words !== null);
+    .all(...(opts.model ? [opts.model] : [])) as {
+    section_id: number; indicator_id: string; measure: string; question: string; words: string | null;
+  }[]) {
+    if (row.question !== questionNow(row.indicator_id, row.measure)) continue;
+    const key = `${row.section_id}/${row.indicator_id}/${row.measure}`;
+    const verdict = row.words !== null;
+    byKey.set(key, byKey.has(key) && byKey.get(key) !== verdict ? null : verdict);
   }
+  for (const [k, v] of byKey) if (v === null) byKey.delete(k);
 
   return {
     size: byKey.size,
     verdict(sectionId, indicatorId, measure) {
       if (!measure) return undefined;
-      return byKey.get(`${sectionId}/${indicatorId}/${measure}`);
+      return byKey.get(`${sectionId}/${indicatorId}/${measure}`) ?? undefined;
     },
   };
 }

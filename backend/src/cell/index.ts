@@ -154,6 +154,7 @@ interface SectionRow {
   instrument_kind: InstrumentType['kind'];
   instrument_status: Evidence['instrumentStatus'];
   language: string | null;
+  repealed: number;
   source_url: string;
   media_type: string | null;
   heading_path: string;
@@ -221,7 +222,7 @@ export async function answerPillar(
   // The second question's banked answers, read once for the pillar. A provision the pass read and
   // found not to carry the measure is evidence for a zero, and the live run has to see that at the
   // moment it scores -- otherwise the stored score and every later re-derivation of it disagree.
-  const confirmations = opts.confirmations ?? loadConfirmations(db);
+  const confirmations = opts.confirmations ?? loadConfirmations(db, { model: opts.model ?? READING_MODEL });
   const indicators = indicatorsOfPillar(pillarId, rubric);
   if (indicators.length === 0) throw new Error(`No indicators in pillar ${pillarId}`);
   const pillarName = indicators[0]!.pillarName;
@@ -348,6 +349,7 @@ export async function answerPillar(
         definesATerm: citesADefinition(row.text, finding.definingWords ?? finding.quote),
         inheritsAPower: inheritsAPower(row.text, finding.quote),
         sectionLanguage: row.language,
+        ...(row.repealed ? { sectionRepealed: true } : {}),
         ...(row.instrument_status ? { instrumentStatus: row.instrument_status } : {}),
         ...(bindingness.get(row.instrument_kind) ? { bindingness: bindingness.get(row.instrument_kind)! } : {}),
         ...confirmedFlag(confirmations.verdict(row.id, finding.indicatorId, finding.measure)),
@@ -480,7 +482,9 @@ export async function answerPillar(
     }
 
     const coverage: Coverage = {
-      sectionsRead: rows.length,
+      // Answered, not sent: a provision the engine failed on was not read, and counting it made a
+      // zero say it rested on more reading than it did.
+      sectionsRead: readings.filter((r) => r.failure === null).length,
       sectionsIndexed: indexedSections,
       instrumentsConsidered: isFramework ? frameworkEvidence.length : new Set(rows.map((r) => r.instrument_id)).size,
     };
@@ -757,7 +761,7 @@ function sectionRows(db: Db, ids: number[]): SectionRow[] {
   const placeholders = ids.map(() => '?').join(',');
   return db
     .prepare(
-      `SELECT s.id, s.heading_path, s.text, s.anchor, s.page, s.language,
+      `SELECT s.id, s.heading_path, s.text, s.anchor, s.page, s.language, s.repealed,
               d.instrument_id, i.title AS instrument_title, i.kind AS instrument_kind, i.status AS instrument_status,
               d.url AS source_url,
               d.media_type

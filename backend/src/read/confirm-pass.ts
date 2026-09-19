@@ -16,7 +16,7 @@
  * the store; this asks one question about each and banks the answer.
  */
 import type { Db } from '../db/index.js';
-import { confirmMeasure, measureOf } from './confirm.js';
+import { confirmMeasure, measureOf, questionOf } from './confirm.js';
 import { READING_MODEL } from '../engines/ollama.js';
 import type { Emit } from '../run/events.js';
 
@@ -86,21 +86,29 @@ export async function confirmPass(db: Db, opts: ConfirmPassOptions): Promise<Con
   const model = opts.model ?? READING_MODEL;
   const started = Date.now();
 
+  // Answered means a verdict for this question from this model. A failed ask is not one -- it used
+  // to count, so a provision the engine once failed on was never asked again -- and neither is a
+  // verdict to a question the catalogue has since changed, or another model's.
   const already = db.prepare(
-    'SELECT 1 FROM measure_confirmation WHERE section_id = ? AND indicator_id = ? AND measure = ?',
+    `SELECT 1 FROM measure_confirmation
+      WHERE section_id = ? AND indicator_id = ? AND measure = ? AND model = ? AND question = ?
+        AND failure IS NULL`,
   );
+  // Replacing only the row for this same question and model: a failure is superseded by the
+  // answer that follows it, and nothing banked under any other question is touched.
   const insert = db.prepare(
     `INSERT OR REPLACE INTO measure_confirmation
-       (section_id, indicator_id, measure, words, failure, model, prompt_tokens, output_tokens, latency_ms, asked_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (section_id, indicator_id, measure, question, words, failure, model, prompt_tokens, output_tokens, latency_ms, asked_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   );
 
   const questions = questionsOf(db, opts.runId);
   // A measure the catalogue does not define cannot be asked about, and asking anyway would bank a
   // refusal against a question that was never put.
-  const pending = questions.filter(
-    (q) => measureOf(q.indicatorId, q.measure) && !already.get(q.sectionId, q.indicatorId, q.measure),
-  );
+  const pending = questions.filter((q) => {
+    const m = measureOf(q.indicatorId, q.measure);
+    return m && !already.get(q.sectionId, q.indicatorId, q.measure, model, questionOf(m));
+  });
   const todo = opts.limit && opts.limit > 0 ? pending.slice(0, opts.limit) : pending;
 
   const result: ConfirmPassResult = {
@@ -138,9 +146,12 @@ export async function confirmPass(db: Db, opts: ConfirmPassOptions): Promise<Con
         q.sectionId,
         q.indicatorId,
         q.measure,
+        questionOf(measure),
         c.words,
         c.failure,
-        c.model,
+        // The model asked for, which is the key a later lookup uses; the engine's own spelling of
+        // its name can carry a tag.
+        model,
         c.promptTokens,
         c.completionTokens,
         c.durationMs,

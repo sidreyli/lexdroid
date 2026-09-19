@@ -425,6 +425,19 @@ export function recordPillarAnswer(run: RunContext, answer: PillarAnswer): void 
           });
           continue;
         }
+        // A provision the engine did not answer on was not read. Written as a reading it became
+        // applies = 0 -- "read, and nothing applies" -- which is the evidence a zero is made of,
+        // made out of an engine failure. It goes on the discard record instead, where it is
+        // countable and says what went wrong.
+        if (reading.failure !== null) {
+          recordDiscard(run, {
+            stage: 'read',
+            subject: `${decision.indicatorId} :: section ${reading.sectionId}`,
+            reason: 'the engine gave no usable answer on this provision',
+            detail: reading.failure,
+          });
+          continue;
+        }
         // Filed the way the decision filed it, not the way the reader did. These rows are what a
         // later verification re-derives the score from, and a finding the rubric moved between two
         // indicators used to be written under the one the reader named -- so the cell that acted

@@ -338,6 +338,37 @@ export interface SectionInput {
  * quietly answered from the first tenth.
  */
 const MAX_SECTION_CHARS = 12_000;
+/** How much consecutive parts of a long provision share, so a sentence cut by one is whole in the next. */
+const PART_OVERLAP_CHARS = 1_500;
+
+/**
+ * A provision cut into the parts it is read in: itself, when it fits one reading, and otherwise
+ * overlapping parts that together cover every character of it.
+ *
+ * It used to be cut at twelve thousand characters with a note that it continued, and nothing
+ * downstream knew: 643 provisions in the corpus are longer than that, and a duty in the rest of any
+ * of them could be neither found nor confirmed, while "nothing applies" was banked for the whole.
+ * Each part ends at a paragraph or sentence break where one is near, so a clause is not split
+ * mid-word, and starts far enough back that a clause the previous part cut is shown whole.
+ */
+export function windowsOf(text: string, size = MAX_SECTION_CHARS, overlap = PART_OVERLAP_CHARS): string[] {
+  if (text.length <= size) return [text];
+  const parts: string[] = [];
+  let start = 0;
+  for (;;) {
+    let end = Math.min(start + size, text.length);
+    if (end < text.length) {
+      const floor = start + Math.floor(size * 0.6);
+      const para = text.lastIndexOf('\n', end);
+      const stop = Math.max(text.lastIndexOf('. ', end), text.lastIndexOf('; ', end));
+      if (para > floor) end = para + 1;
+      else if (stop > floor) end = stop + 2;
+    }
+    parts.push(text.slice(start, end));
+    if (end >= text.length) return parts;
+    start = Math.max(end - overlap, start + 1);
+  }
+}
 /**
  * How much of an instrument's own provisions the framework reader is shown beside its opening.
  *
@@ -392,11 +423,14 @@ function rubricBlock(indicators: readonly Indicator[]): string {
     .join('\n\n');
 }
 
-function prompt(section: SectionInput, pillarName: string, indicators: readonly Indicator[]): string {
-  const text =
-    section.text.length > MAX_SECTION_CHARS
-      ? `${section.text.slice(0, MAX_SECTION_CHARS)}\n[the provision continues beyond what is shown]`
-      : section.text;
+function prompt(
+  section: SectionInput,
+  pillarName: string,
+  indicators: readonly Indicator[],
+  shown: string = section.text,
+  part: { index: number; of: number } | null = null,
+): string {
+  const text = shown;
 
   return [
     `Subject area: ${pillarName}`,
@@ -409,7 +443,9 @@ function prompt(section: SectionInput, pillarName: string, indicators: readonly 
     `Instrument: ${section.instrumentTitle}`,
     `Provision: ${section.headingPath}`,
     '',
-    'Provision text:',
+    part
+      ? `Provision text, part ${part.index} of ${part.of} (the provision is long and is shown in overlapping parts; report what this part states):`
+      : 'Provision text:',
     '"""',
     text,
     '"""',
@@ -860,11 +896,53 @@ export async function readSection(
   indicators: readonly Indicator[],
   opts: ReadOptions = {},
 ): Promise<SectionReading> {
+  const parts = windowsOf(section.text);
+  if (parts.length === 1) return readPart(section, parts[0]!, null, pillarId, pillarName, indicators, opts);
+
+  // A long provision, read part by part. Its findings are pooled, one per indicator, measure and
+  // quote, since the overlap shows a clause twice. A part that could not be read leaves text
+  // nobody saw, and "nothing applies" cannot be said of a provision partly unseen: the whole
+  // reading fails and is read again, rather than being banked as though it were complete.
+  const readings: SectionReading[] = [];
+  for (const [n, shown] of parts.entries()) {
+    readings.push(await readPart(section, shown, { index: n + 1, of: parts.length }, pillarId, pillarName, indicators, opts));
+  }
+  const failed = readings.map((r, n) => (r.failure ? `part ${n + 1} of ${parts.length}: ${r.failure}` : null)).filter(Boolean);
+  const seen = new Set<string>();
+  const findings = readings.flatMap((r) => r.findings).filter((f) => {
+    const key = `${f.indicatorId}|${f.measure}|${f.quote}`;
+    return seen.has(key) ? false : (seen.add(key), true);
+  });
+  return {
+    sectionId: section.sectionId,
+    pillarId,
+    findings: failed.length ? [] : findings,
+    rejected: readings.flatMap((r) => r.rejected),
+    failure: failed.length ? failed.join('; ') : null,
+    model: readings[readings.length - 1]!.model,
+    promptTokens: readings.reduce((a, r) => a + r.promptTokens, 0),
+    completionTokens: readings.reduce((a, r) => a + r.completionTokens, 0),
+    durationMs: readings.reduce((a, r) => a + r.durationMs, 0),
+    fromCache: readings.every((r) => r.fromCache),
+    fromResume: readings.every((r) => r.fromResume),
+  };
+}
+
+/** One reading of one part of a provision -- the whole of it, where it fits. */
+async function readPart(
+  section: SectionInput,
+  shown: string,
+  part: { index: number; of: number } | null,
+  pillarId: number,
+  pillarName: string,
+  indicators: readonly Indicator[],
+  opts: ReadOptions,
+): Promise<SectionReading> {
   const allowed = new Set(indicators.map((i) => i.id));
   const started = Date.now();
   let res;
   try {
-    res = await generate(prompt(section, pillarName, indicators), SYSTEM, {
+    res = await generate(prompt(section, pillarName, indicators, shown, part), SYSTEM, {
       schema: schemaFor(indicators),
       ...(opts.model ? { model: opts.model } : {}),
       ...(opts.contextTokens ? { contextTokens: opts.contextTokens } : {}),
@@ -893,17 +971,40 @@ export async function readSection(
   const findings: Finding[] = [];
   const rejected: { finding: Finding; reason: string }[] = [];
 
-  let parsed: { findings?: unknown } = {};
+  // An answer that is not the object asked for is an answer we do not have. It used to become an
+  // empty list of findings, which is the ruling "read, and nothing applies" -- evidence for a zero
+  // made out of a response nobody could read. It is a failure, and a failure is not a verdict.
+  const unusable = (why: string): SectionReading => ({
+    sectionId: section.sectionId,
+    pillarId,
+    findings: [],
+    rejected: [],
+    failure: `${why} (${res.text.length} characters of output)`,
+    model: res.model,
+    promptTokens: res.promptTokens,
+    completionTokens: res.completionTokens,
+    durationMs: res.durationMs,
+    fromCache: res.fromCache,
+    fromResume: res.fromResume,
+  });
+  let parsed: unknown;
   try {
-    parsed = JSON.parse(res.text) as { findings?: unknown };
+    parsed = JSON.parse(res.text);
   } catch {
-    parsed = {};
+    return unusable('the answer was not JSON');
   }
+  const list = typeof parsed === 'object' && parsed !== null ? (parsed as { findings?: unknown }).findings : undefined;
+  if (!Array.isArray(list)) return unusable('the answer has no list of findings');
 
-  for (const raw of Array.isArray(parsed.findings) ? parsed.findings : []) {
+  for (const raw of list) {
     const f = coerce(raw);
-    if (!f) continue;
-    const reason = rejectionFor(f, section.text, allowed);
+    if (!f) {
+      // Not a finding at all -- no indicator, or no quote to check. Nothing in it can be verified,
+      // but the reader did claim something, so the claim is counted rather than lost.
+      rejected.push({ finding: placeholder(raw), reason: 'the finding names no indicator or quotes nothing' });
+      continue;
+    }
+    const reason = missingFacts(raw) ?? rejectionFor(f, section.text, allowed);
     if (reason) rejected.push({ finding: f, reason });
     else findings.push(f);
   }
@@ -921,6 +1022,35 @@ export async function readSection(
     fromCache: res.fromCache,
     fromResume: res.fromResume,
   };
+}
+
+/**
+ * The substantive facts a finding left out, or null.
+ *
+ * `coerce` fills a missing verb force with "requires", a missing mandatory with true and a missing
+ * party kind with "organisation", which is right for a reading banked before the field existed and
+ * wrong for a fresh one: the schema requires all three, so an answer without them did not follow
+ * it, and filling them in would invent an obligation the reader never stated.
+ */
+function missingFacts(raw: unknown): string | null {
+  const r = raw as Record<string, unknown>;
+  const missing = [
+    ['dutyForce', ['requires', 'forbids', 'permits', 'declares'].includes(r['dutyForce'] as string)],
+    ['mandatory', typeof r['mandatory'] === 'boolean'],
+    ['dutyBearerKind', ['government', 'organisation', 'individual'].includes(r['dutyBearerKind'] as string)],
+  ]
+    .filter(([, ok]) => !ok)
+    .map(([name]) => name);
+  return missing.length ? `the finding does not state ${missing.join(', ')}` : null;
+}
+
+/** Whatever can be said of a claim too malformed to be a finding, so that it can be counted. */
+function placeholder(raw: unknown): Finding {
+  const r = typeof raw === 'object' && raw !== null ? (raw as Record<string, unknown>) : {};
+  return (
+    coerce({ ...r, indicatorId: typeof r['indicatorId'] === 'string' && r['indicatorId'] ? r['indicatorId'] : '?', quote: typeof r['quote'] === 'string' && r['quote'].trim() ? r['quote'] : '(none)' }) ??
+    (coerce({ indicatorId: '?', quote: '(none)' }) as Finding)
+  );
 }
 
 /** A response object into a Finding, or null if the required fields are not there. */
@@ -1324,6 +1454,11 @@ export async function readFramework(
   let p: Record<string, unknown> = {};
   try {
     p = JSON.parse(res.text) as Record<string, unknown>;
+    // Valid JSON that does not answer the question is the same lost answer. `{}` read every field
+    // as false, and "establishes no framework" is the one claim here that votes for a zero.
+    if (typeof p !== 'object' || p === null || typeof p['establishesFramework'] !== 'boolean') {
+      throw new Error('the answer does not say whether the instrument establishes a framework');
+    }
   } catch {
     // An answer that did not parse is an answer we do not have, and the rule a dozen lines above
     // applies to it exactly as it applies to an engine that refused: a framework indicator scores 0
@@ -1351,7 +1486,7 @@ export async function readFramework(
       quote: '',
       reasoning: '',
       quoteVerified: false,
-      failure: `the engine's answer did not parse as JSON (${res.completionTokens} output tokens)`,
+      failure: `the engine's answer was not the JSON asked for (${res.completionTokens} output tokens)`,
       model: res.model,
       promptTokens: res.promptTokens,
       completionTokens: res.completionTokens,

@@ -136,14 +136,24 @@ describe('a provision the corpus holds in two languages', () => {
     const doc = (instrumentId: number) =>
       Number(db.prepare(`INSERT INTO document (instrument_id, url, content_hash, media_type, bytes, http_status, fetched_at, from_cache, extraction, section_count)
                   VALUES (?, ?, ?, 'application/pdf', 1, 200, '2026-09-19', 1, 'pdf-text', 2)`).run(instrumentId, `https://x/${instrumentId}.pdf`, `h${instrumentId}`).lastInsertRowid);
-    const sec = (documentId: number, ordinal: number, language: string) =>
+    const sec = (documentId: number, ordinal: number, language: string, label: string | null) =>
       Number(db.prepare(`INSERT INTO section (document_id, ordinal, heading_path, label, text, char_start, char_end, page, language, anchor)
-                  VALUES (?, ?, 'x', null, 'text', 0, 4, 1, ?, null)`).run(documentId, ordinal, language).lastInsertRowid);
+                  VALUES (?, ?, 'x', ?, 'text', 0, 4, 1, ?, null)`).run(documentId, ordinal, label, language).lastInsertRowid);
     const both = doc(inst('Bilingual Act'));
-    const ms = sec(both, 0, 'ms');
-    const en = sec(both, 1, 'en');
-    const only = sec(doc(inst('Malay-only Enactment')), 0, 'ms');
-    return { db, ms, en, only };
+    const ms = sec(both, 0, 'ms', '1');
+    const en = sec(both, 1, 'en', '1');
+    const only = sec(doc(inst('Malay-only Enactment')), 0, 'ms', '1');
+    // One English section beside ten Malay ones: the shape of a code of practice whose English
+    // edition is a single page.
+    const mostlyMalay = doc(inst('Kod Tata Amalan'));
+    sec(mostlyMalay, 0, 'en', '1.1');
+    const malay = Array.from({ length: 10 }, (_, n) => sec(mostlyMalay, n + 1, 'ms', `1.${n + 1}`));
+    // A label the Malay text uses twice, against one English section of it.
+    const repeats = doc(inst('Restarting Regulations'));
+    const enOnce = sec(repeats, 0, 'en', '2');
+    const msTwice = [sec(repeats, 1, 'ms', '2'), sec(repeats, 2, 'ms', '2')];
+    const unlabelled = sec(both, 2, 'ms', null);
+    return { db, ms, en, only, malay, enOnce, msTwice, unlabelled };
   }
 
   it('is read once, in the rubric language', () => {
@@ -156,6 +166,20 @@ describe('a provision the corpus holds in two languages', () => {
   it('keeps the only copy an instrument has, whatever its language', () => {
     const { db, only } = corpus();
     expect(otherLanguageCopies(db, 'MYS').has(only)).toBe(false);
+  });
+
+  it('drops only the provision whose own counterpart is there, not every provision beside some English', () => {
+    const { db, malay } = corpus();
+    const second = otherLanguageCopies(db, 'MYS');
+    expect(malay.filter((id) => second.has(id))).toHaveLength(1);
+  });
+
+  it('pairs one to one, and keeps what cannot be paired', () => {
+    const { db, enOnce, msTwice, unlabelled } = corpus();
+    const second = otherLanguageCopies(db, 'MYS');
+    expect(second.has(enOnce)).toBe(false);
+    expect(msTwice.filter((id) => second.has(id))).toHaveLength(1);
+    expect(second.has(unlabelled)).toBe(false);
   });
 });
 

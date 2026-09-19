@@ -70,6 +70,8 @@ export interface Evidence {
   inheritsAPower?: boolean;
   /** The language the provision is written in. Absent where the corpus predates the field. */
   sectionLanguage?: string | null;
+  /** The parser read the provision itself as repealed or deleted, whatever the instrument's status. */
+  sectionRepealed?: boolean;
 }
 
 /** What a framework-shaped indicator is decided from. One per candidate instrument. */
@@ -1157,6 +1159,13 @@ function currentLaw(evidence: Evidence[]): {
         reason:
           `the register records this instrument as ${status}, and only an instrument in force ` +
           `states the law the economy applies today`,
+      });
+    } else if (e.sectionRepealed) {
+      // An Act in force still prints the provisions it has repealed, and a repealed provision is
+      // not a measure the economy applies.
+      excluded.push({
+        evidence: e,
+        reason: 'the source marks this provision as repealed or deleted, so it states no current law',
       });
     } else {
       kept.push(e);

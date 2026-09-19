@@ -90,7 +90,7 @@ export function recordedDecider(
   // per-cell rebuild produces a smaller input and can land on a different answer. Australia's
   // de minimis cell is where that showed: recorded as answered, re-derived as unanswerable.
   const evidenceForPillar = db.prepare(
-    `SELECT r.attributes, r.section_id, s.heading_path, s.text, s.anchor, s.page, s.language,
+    `SELECT r.attributes, r.section_id, s.heading_path, s.text, s.anchor, s.page, s.language, s.repealed,
             d.url AS doc_url, d.media_type,
             i.id AS instrument_id, i.title, i.kind AS instrument_kind, i.status AS instrument_status
        FROM reading r
@@ -153,7 +153,7 @@ export function recordedDecider(
         attributes: string; section_id: number; heading_path: string; text: string;
         anchor: string | null; page: number | null; doc_url: string; media_type: string | null;
         instrument_id: number; title: string; instrument_kind: InstrumentType['kind'];
-        instrument_status: Evidence['instrumentStatus']; language: string | null;
+        instrument_status: Evidence['instrumentStatus']; language: string | null; repealed: number;
       }[]) {
         let findings: unknown = [];
         try {
@@ -185,6 +185,7 @@ export function recordedDecider(
             definesATerm: citesADefinition(r.text, finding.definingWords ?? finding.quote),
             inheritsAPower: inheritsAPower(r.text, finding.quote),
             sectionLanguage: r.language,
+            ...(r.repealed ? { sectionRepealed: true } : {}),
             citation: citationUrl(r.doc_url, r.anchor, { page: r.page, mediaType: r.media_type }),
             // What this economy says an instrument of that kind can do. The live run reads it from
             // the profile and this rebuild did not, so a guideline that binds nobody was counted

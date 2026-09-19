@@ -106,6 +106,29 @@ describe('a duty stated in an instrument that is no longer law', () => {
     expect(d.state).toBe('restricted');
   });
 
+  it('is not a basis where the Act is in force and the provision itself is repealed', () => {
+    // An Act in force prints the sections it has repealed, marked "[Deleted]" or "(Repealed)".
+    // The instrument's status says nothing about them: it is in force, and the words under that
+    // heading are the words of a rule that no longer applies.
+    const d = answer({
+      ...carriedBy(6, 'PERSONAL DATA PROTECTION ACT 2010'),
+      instrumentStatus: 'in-force',
+      sectionRepealed: true,
+    });
+    expect(d.state).toBe('no-restriction');
+    expect(d.basis).toEqual([]);
+    expect(d.excluded.map((x) => x.reason).join(' ')).toContain('repealed or deleted');
+  });
+
+  it('counts a provision the parser did not mark, which is nearly all of them', () => {
+    const d = answer({
+      ...carriedBy(7, 'PERSONAL DATA PROTECTION ACT 2010'),
+      instrumentStatus: 'in-force',
+      sectionRepealed: false,
+    });
+    expect(d.state).toBe('restricted');
+  });
+
   it('counts a corpus registered before the status was carried', () => {
     const d = answer(carriedBy(5, 'COMMUNICATIONS AND MULTIMEDIA ACT 1998'));
     expect(d.state).toBe('restricted');

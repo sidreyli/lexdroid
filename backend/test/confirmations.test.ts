@@ -15,17 +15,32 @@ import {
   noConfirmations,
   tallyConfirmations,
 } from '../src/read/confirmations.js';
+import { questionFor } from '../src/read/question.js';
 
-function storeWith(rows: { section: number; indicator: string; measure: string; words: string | null; failure?: string }[]) {
+interface Row {
+  section: number;
+  indicator: string;
+  measure: string;
+  words: string | null;
+  failure?: string;
+  /** The question this verdict answered. The one in force today, where the row does not say. */
+  question?: string | null;
+  model?: string;
+}
+
+function storeWith(rows: Row[]) {
   const db = openDb(':memory:');
   const insert = db.prepare(
-    `INSERT INTO measure_confirmation (section_id, indicator_id, measure, words, failure, model, asked_at)
-     VALUES (?, ?, ?, ?, ?, 'test-model', '2026-09-16T00:00:00.000Z')`,
+    `INSERT INTO measure_confirmation (section_id, indicator_id, measure, words, failure, question, model, asked_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, '2026-09-16T00:00:00.000Z')`,
   );
   // section_id has a foreign key; the rows under test are read back by key alone, so the
   // referenced sections do not need to exist for this.
   db.pragma('foreign_keys = OFF');
-  for (const r of rows) insert.run(r.section, r.indicator, r.measure, r.words, r.failure ?? null);
+  for (const r of rows) {
+    const question = r.question === undefined ? questionFor(r.indicator, r.measure) : r.question;
+    insert.run(r.section, r.indicator, r.measure, r.words, r.failure ?? null, question, r.model ?? 'test-model');
+  }
   return db;
 }
 
@@ -60,6 +75,46 @@ describe('the banked second-reading verdicts', () => {
     expect(set.verdict(1, '12.4', 'ecommerce-licence')).toBeUndefined();
     expect(set.verdict(1, '12.3', 'payment-licence')).toBeUndefined();
     expect(set.verdict(1, '12.3', null)).toBeUndefined();
+    db.close();
+  });
+
+  it('ignores a verdict that answered a question we no longer ask', () => {
+    // The measure's wording is part of the question. When it changes, every verdict banked under
+    // the old wording answered something else, and reading it as an answer to the new question is
+    // how a cell comes to cite a confirmation that was never given. 32 of the 3,282 banked rows
+    // are in this state, from three revisions of the measure list.
+    const db = storeWith([
+      { section: 1, indicator: '12.3', measure: 'ecommerce-licence', words: 'holds a licence', question: 'superseded:107fd58' },
+    ]);
+    expect(loadConfirmations(db).verdict(1, '12.3', 'ecommerce-licence')).toBeUndefined();
+    db.close();
+  });
+
+  it('ignores a verdict banked before the question was recorded at all', () => {
+    const db = storeWith([
+      { section: 1, indicator: '12.3', measure: 'ecommerce-licence', words: 'holds a licence', question: null },
+    ]);
+    expect(loadConfirmations(db).verdict(1, '12.3', 'ecommerce-licence')).toBeUndefined();
+    db.close();
+  });
+
+  it('takes only the engine the run is reading with, where one is named', () => {
+    // Two engines can answer the same question differently, and a cell scored by one must not be
+    // evidenced by the other's second reading.
+    const db = storeWith([
+      { section: 1, indicator: '12.3', measure: 'ecommerce-licence', words: 'holds a licence', model: 'engine-a' },
+    ]);
+    expect(loadConfirmations(db, { model: 'engine-a' }).verdict(1, '12.3', 'ecommerce-licence')).toBe(true);
+    expect(loadConfirmations(db, { model: 'engine-b' }).verdict(1, '12.3', 'ecommerce-licence')).toBeUndefined();
+    db.close();
+  });
+
+  it('refuses to choose where two engines answered the same question differently', () => {
+    const db = storeWith([
+      { section: 1, indicator: '12.3', measure: 'ecommerce-licence', words: 'holds a licence', model: 'engine-a' },
+      { section: 1, indicator: '12.3', measure: 'ecommerce-licence', words: null, model: 'engine-b' },
+    ]);
+    expect(loadConfirmations(db).verdict(1, '12.3', 'ecommerce-licence')).toBeUndefined();
     db.close();
   });
 
