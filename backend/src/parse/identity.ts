@@ -144,6 +144,27 @@ function spellOut(words: string[], other: string[]): string[] {
 }
 
 /**
+ * The year a name cites its instrument by, or null where it gives none.
+ *
+ * English drafting puts the year straight after the kind -- "Copyright Act 1968" -- and Malay puts
+ * it after the subject -- "Akta Hak Cipta 1987" -- so the rule is the first year at or after the
+ * word that names the kind, in either order. That is also what excludes a revised edition's own
+ * date, "Copyright Act 1987 (Revised 2006)", which comes later in the name and is not the year the
+ * Act is cited by.
+ *
+ * A number no statute book could be dated by is not a year. A Malaysian Order whose name the parser
+ * recovered as "... Order/2063" would otherwise have contradicted its own register entry, and the
+ * document it refused is a real instrument -- the defect there is in the parse, not in the filing.
+ */
+function enactmentYear(name: string): string | null {
+  const kind = /\b(?:act|akta|enactment|enakmen|ordinance|ordinan)\b/i.exec(name);
+  if (!kind) return null;
+  const year = /\b(1[6-9]\d{2}|20\d{2})\b/.exec(name.slice(kind.index))?.[1];
+  if (!year) return null;
+  return Number(year) <= new Date().getUTCFullYear() + 1 ? year : null;
+}
+
+/**
  * Whether two names are the same instrument.
  *
  * Compared head-first in both directions because each side truncates differently: a catalogue
@@ -151,6 +172,14 @@ function spellOut(words: string[], other: string[]): string[] {
  * opening with the other's first identifying words is the same instrument.
  */
 export function namesMatch(stated: string, title: string): boolean {
+  // The year an instrument is named for is part of its name, and keyWords drops every number, so
+  // the Copyright Act 1968 and a Copyright Act 1998 compared equal. Where both names state the year
+  // after their kind -- "Act 1968", "Akta 1987" -- different years are different instruments. A
+  // name that states no year, or a revised edition's later date elsewhere in the name, is no
+  // contradiction.
+  const ya = enactmentYear(stated);
+  const yb = enactmentYear(title);
+  if (ya && yb && ya !== yb) return false;
   const a0 = keyWords(stated);
   const b0 = keyWords(title);
   const a = spellOut(a0, b0);

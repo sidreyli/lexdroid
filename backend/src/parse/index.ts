@@ -165,11 +165,12 @@ export function storeDocument(
       .run(documentId, parsed.text, parsed.parser, new Date().toISOString());
 
     const insert = db.prepare(
-      `INSERT INTO section (document_id, ordinal, heading_path, label, text, char_start, char_end, page, language, anchor)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO section (document_id, ordinal, heading_path, label, text, char_start, char_end, page, language, anchor, repealed)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
+    // Every parser works out whether a provision is repealed, and this is where it used to be lost.
     for (const s of parsed.sections) {
-      insert.run(documentId, s.ordinal, s.headingPath, s.label, s.text, s.charStart, s.charEnd, s.page, s.language, s.anchor);
+      insert.run(documentId, s.ordinal, s.headingPath, s.label, s.text, s.charStart, s.charEnd, s.page, s.language, s.anchor, s.repealed ? 1 : 0);
     }
 
     indexSections(db, documentId);

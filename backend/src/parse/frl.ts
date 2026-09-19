@@ -142,12 +142,20 @@ function firstClass(el: Element): string {
   return (el.attribs['class'] ?? '').trim().split(/\s+/)[0] ?? '';
 }
 
+/** Exposed for the test that holds the register's dates to dates that exist. */
+export const __isoDate = (text: string): string | null => isoDate(text);
+
 /** "4 June 2026" as an ISO date, or null if the register wrote something else. */
 function isoDate(text: string): string | null {
   const m = /(\d{1,2})\s+([A-Za-z]+)\s+(\d{4})/.exec(text);
   if (!m) return null;
   const month = MONTHS.indexOf(m[2]!.toLowerCase());
   if (month < 0) return null;
+  // A day the month does not have is a misreading, not a date: "31 February" is refused.
+  const day = Number(m[1]);
+  const year = Number(m[3]);
+  const d = new Date(Date.UTC(year, month, day));
+  if (d.getUTCMonth() !== month || d.getUTCDate() !== day) return null;
   return `${m[3]}-${String(month + 1).padStart(2, '0')}-${m[1]!.padStart(2, '0')}`;
 }
 

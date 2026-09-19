@@ -121,4 +121,31 @@ describe('a name the drafting writes differently from the register', () => {
       namesMatch('Arbitration Act 2005', 'CONVENTION ON THE RECOGNITION AND ENFORCEMENT OF FOREIGN ARBITRAL AWARDS ACT 1985'),
     ).toBe(false);
   });
+
+  it('holds apart two Acts of the same name from different years', () => {
+    // The comparison drops every number, so a 1968 Act and a 1998 Act of the same name were the
+    // same instrument, and a document filed under one was accepted as the other. The year an Act
+    // is named for is part of its name.
+    expect(namesMatch('Copyright Act 1968', 'COPYRIGHT ACT 1998')).toBe(false);
+    expect(namesMatch('Akta Hak Cipta 1987', 'AKTA HAK CIPTA 1997')).toBe(false);
+    expect(namesMatch('Copyright Act 1968', 'COPYRIGHT ACT 1968')).toBe(true);
+  });
+
+  it('does not read a number no statute book could be dated by as a year', () => {
+    // A Malaysian Order whose name the parser recovered as "Order/2063". The parse is wrong; the
+    // filing is not, and refusing the document would lose a real instrument over it.
+    expect(
+      namesMatch(
+        'Maintenance Orders (Facilities for Enforcement) (Extension of the Act) Order/2063',
+        'MAINTENANCE ORDERS (FACILITIES FOR ENFORCEMENT) (EXTENSION OF THE ACT) ORDER 2004',
+      ),
+    ).toBe(true);
+  });
+
+  it('says nothing about a year where only one name states one', () => {
+    // A register entry that gives no year is not a contradiction, and a revised edition prints a
+    // later date somewhere else in the name without changing which Act it is.
+    expect(namesMatch('Labuan Offshore Trusts Act', 'LABUAN OFFSHORES TRUSTS ACT 1996')).toBe(true);
+    expect(namesMatch('Copyright Act 1987', 'COPYRIGHT ACT 1987 (REVISED 2006)')).toBe(true);
+  });
 });

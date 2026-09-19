@@ -470,18 +470,23 @@ export async function materialise(
              official_number = COALESCE(?, official_number),
              commenced_on = COALESCE(?, commenced_on),
              last_amended_on = COALESCE(?, last_amended_on),
-             timeframe_basis = COALESCE(?, timeframe_basis),
-             language = COALESCE(?, language)
+             timeframe_basis = COALESCE(?, timeframe_basis)
            WHERE id = ?`,
         ).run(
           parsed.meta['officialNumber'] ?? null,
           parsed.meta['commencedOn'] ?? null,
           parsed.meta['lastAmendedOn'] ?? null,
           [parsed.meta['commencementBasis'], parsed.meta['lastAmendedBasis']].filter(Boolean).join(' | ') || null,
-          parsed.sections[0]?.language ?? null,
           row.id,
         );
       }
+
+      // The language is what the document is written in, which the parser reads off the text and
+      // not off a date line. It used to be set inside the block above, so an instrument whose page
+      // published no number and no dates -- most of the Malay-language corpus -- stayed recorded as
+      // whatever language the register guessed, and the retrieval side then paired it wrongly.
+      const language = parsed.sections[0]?.language ?? null;
+      if (language) db.prepare('UPDATE instrument SET language = ? WHERE id = ?').run(language, row.id);
 
       // A document registered under an upload slug, or under a title that names no instrument at
       // all, takes the name it calls itself by.
