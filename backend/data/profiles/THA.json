@@ -39,6 +39,13 @@
       "note": "Issued by the regulator an Act creates (e.g. the Bank of Thailand, the Personal Data Protection Committee, the NBTC). Binds the regulated sector; bindingness and commencement are established from the enabling provision and the Notification's own text, never inferred from the title alone."
     },
     {
+      "rank": 3,
+      "kind": "rule",
+      "localName": "ระเบียบ (Rabiab / Regulation)",
+      "bindingness": "binding",
+      "note": "Agency-issued procedural or administrative regulation, lower in the hierarchy than an Act, Royal Decree, or Ministerial Regulation. Declared here mainly so an undeclared kind does not silently default to binding without anyone having chosen that (see backend/test/bindingness.test.ts) -- the discovery pipeline's generic title classifier can tag a document 'rule' even though this profile did not design a distinct Thai category for it. Classified 'binding' as a judgment call, not a confirmed legal determination: a ระเบียบ generally binds regulated parties within its own scope, but this should be revisited if a specific Thai rule-classified document's actual legal force turns out to differ in practice."
+    },
+    {
       "rank": 4,
       "kind": "guideline",
       "localName": "แนวปฏิบัติ / คำแนะนำ (Guideline or advisory)",
