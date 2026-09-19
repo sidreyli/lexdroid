@@ -109,6 +109,18 @@ export function storeDocument(
       .prepare('SELECT id FROM document WHERE url = ? AND content_hash = ?')
       .get(fetched.url, fetched.contentHash) as { id: number };
 
+    // The lexical index is contentless, so nothing cascades into it. A section deleted below
+    // leaves its index row behind, and the replacement the re-parse writes gets a new id, so the
+    // old row is never reached again. Six hundred thousand had built up that way -- four index
+    // rows for every section the corpus actually holds -- and bm25 weighs each term against the
+    // whole table, which means every lexical rank was being computed against mostly deleted text.
+    // Forgetting them belongs here, before the rows they point at are gone and their ids with them.
+    db.prepare(
+      `DELETE FROM section_fts WHERE rowid IN (
+         SELECT s.id FROM section s JOIN document d ON d.id = s.document_id
+          WHERE d.instrument_id = ? AND d.url = ?)`,
+    ).run(instrumentId, fetched.url);
+
     // The same address read again is the same document, not a second one. Keying only on the bytes
     // let a re-read leave the stale reading in place beside the fresh one, so every provision the
     // corpus held twice was retrieved twice and counted twice.
