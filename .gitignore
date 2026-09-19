@@ -7,6 +7,8 @@ dist/
 backend/data/lexdroid.db
 backend/data/lexdroid.db-*
 backend/data/lexdroid.db.*
+# Copies taken before a change that rewrites the store, kept until the change is trusted.
+backend/data/lexdroid.*.db
 # Snapshots taken with VACUUM INTO so rules can be graded while a run holds the write lock.
 backend/data/lexdroid.snapshot.db
 backend/data/lexdroid.snapshot.db-*
