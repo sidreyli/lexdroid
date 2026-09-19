@@ -23,7 +23,7 @@ const attach = process.argv.includes('--attach');
 const offsets = process.argv.includes('--offsets');
 
 if ([detach, attach, offsets].filter(Boolean).length !== 1 || ((detach || offsets) && !economy)) {
-  console.log('usage: reanchor -- [--economy MYS] [--title "..."] (--detach | --attach | --offsets)');
+  console.log('usage: reanchor -- [--economy MYS] [--title "..."] [--parser frl-generic] (--detach | --attach | --offsets)');
   process.exit(1);
 }
 
@@ -38,7 +38,11 @@ if (offsets) {
 if (detach) {
   console.log(`\nDetach -- parking ${economy}'s citations before a re-parse\n`);
   const title = arg('title');
-  const { parked, readingsReleased, held } = detachCitations(db, economy, title ? { titleLike: title } : {});
+  const parser = arg('parser');
+  const { parked, readingsReleased, held } = detachCitations(db, economy, {
+    ...(title ? { titleLike: title } : {}),
+    ...(parser ? { parser } : {}),
+  });
   console.log(`  ${String(parked.answer_basis).padStart(6)}  answer_basis row(s) parked`);
   console.log(`  ${String(parked.export_row).padStart(6)}  export_row row(s) parked`);
   console.log(`  ${String(readingsReleased).padStart(6)}  export row(s) released from the reading behind them`);

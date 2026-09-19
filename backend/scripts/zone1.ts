@@ -37,6 +37,8 @@ interface Args {
   embed: boolean;
   refresh: boolean;
   reparse: boolean;
+  /** Only instruments with a document this parser produced: the scope of a parser fix. */
+  parser: string | null;
   /** Re-read only the documents nothing could be read out of. */
   unread: boolean;
   status: boolean;
@@ -69,6 +71,7 @@ function parseArgs(argv: string[]): Args {
     read: readArg !== null ? (readArg === 'all' ? 0 : Number(readArg))
       : (get('about') !== null || get('pillars') !== null || has('reparse') || has('unread')) ? 0 : anyStage ? null : 0,
     title: get('title'),
+    parser: get('parser'),
     kind: get('kind'),
     embed: has('embed') || !anyStage,
     refresh: has('refresh'),
@@ -233,6 +236,22 @@ Shortlist -- ranking the register against ${asked.length} question(s), ${args.to
       ...(args.title ? { titleLike: args.title } : {}),
       ...(args.kind ? { kind: args.kind } : {}),
       ...(shortlisted ? { instrumentIds: shortlisted } : {}),
+      ...(args.parser
+        ? {
+            instrumentIds: (db
+              .prepare(
+                `SELECT DISTINCT d.instrument_id id FROM document d
+                   JOIN document_text dt ON dt.document_id = d.id
+                   JOIN instrument i ON i.id = d.instrument_id
+                  WHERE i.economy_code = ? AND dt.parser = ?`,
+              )
+              .all(args.economy, args.parser) as { id: number }[])
+              .map((r) => r.id)
+              .filter((id) => !shortlisted || shortlisted.includes(id))
+              // An empty list is read as no filter at all, which would re-parse the economy.
+              .concat([0]),
+          }
+        : {}),
       refresh: args.refresh,
       reparse: args.reparse,
       unreadOnly: args.unread,
@@ -240,6 +259,16 @@ Shortlist -- ranking the register against ${asked.length} question(s), ${args.to
     });
     const by = (o: string) => results.filter((r) => r.outcome === o).length;
     console.log(`  ${by('parsed')} parsed, ${by('unread')} unread, ${by('error')} failed`);
+    // A failure is not a statistic. Re-parsing Malaysia ended "1404 parsed, 20 unread, 162 failed"
+    // and exited 0, and the 162 were not a random 162: a document a past answer cites cannot have
+    // its sections deleted, so the ones that refused to re-parse were very nearly all of the ones
+    // the cells rest on. The run looked like it had worked. Exit code, not prose -- and set rather
+    // than thrown, so the index and status stages below still run and still show the corpus.
+    if (by('error') > 0) {
+      console.log(`  a parse that failed is a failure: exiting non-zero. If these are foreign key`);
+      console.log(`  errors, the citations are still attached -- see "npm run -w backend reanchor".`);
+      process.exitCode = 1;
+    }
     // Kept separate from "failed" on purpose. These were never asked for, so nothing is known
     // about them either way, and rolling them into a failure count would turn an interrupted run
     // into a corpus that looks like it has holes in it.

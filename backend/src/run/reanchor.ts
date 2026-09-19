@@ -80,13 +80,23 @@ export interface DetachOptions {
    * 593 of Australia's, to re-parse one APRA paper. Those readings were never going to be deleted.
    */
   titleLike?: string;
+  /**
+   * Only instruments with a document the named parser produced -- the scope of a parser fix,
+   * which changes exactly those documents and should cost the readings of no others.
+   */
+  parser?: string;
   at?: string;
 }
 
 export function detachCitations(db: Db, economy: string, opts: DetachOptions = {}): DetachResult {
   const at = opts.at ?? new Date().toISOString();
-  const like = opts.titleLike ? ` AND i.title LIKE '%' || ? || '%'` : '';
-  const scope: unknown[] = opts.titleLike ? [economy, opts.titleLike] : [economy];
+  const like =
+    (opts.titleLike ? ` AND i.title LIKE '%' || ? || '%'` : '') +
+    (opts.parser
+      ? ` AND i.id IN (SELECT pd.instrument_id FROM document pd
+                         JOIN document_text pt ON pt.document_id = pd.id WHERE pt.parser = ?)`
+      : '');
+  const scope: unknown[] = [economy, ...(opts.titleLike ? [opts.titleLike] : []), ...(opts.parser ? [opts.parser] : [])];
   const sectionsOf = `
     SELECT s.id FROM section s
       JOIN document d ON d.id = s.document_id
