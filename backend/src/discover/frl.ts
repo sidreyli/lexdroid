@@ -15,8 +15,7 @@
  *     register builds, and the register's own table of contents links straight into it, fragment
  *     and all. That is the link a citation should carry, so it is the document we fetch.
  */
-import { createHash } from 'node:crypto';
-import { HostSuspended, type Fetcher, type FetchResult } from '../fetch/index.js';
+import { cacheComposed, HostSuspended, type Fetcher, type FetchResult } from '../fetch/index.js';
 import type { Adapter, DiscoveredInstrument } from './types.js';
 
 const DEFAULT_API = 'https://api.prod.legislation.gov.au/v1/';
@@ -335,7 +334,7 @@ export const frlAdapter: Adapter = {
       url: parts.length === 1 ? parts[0]! : url,
       finalUrl: parts.length === 1 ? parts[0]! : url,
       body: merged,
-      contentHash: createHash('sha256').update(merged).digest('hex'),
+      contentHash: cacheComposed(merged),
       mediaType: 'text/html',
     };
   },

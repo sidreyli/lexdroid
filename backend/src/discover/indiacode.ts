@@ -11,7 +11,7 @@
  * again before registration. A portal query that ignores its filter therefore creates a visible
  * count shortfall; it never leaks one State's law into a claim about India.
  */
-import { createHash } from 'node:crypto';
+import { cacheComposed } from '../fetch/index.js';
 import type { FetchResult } from '../fetch/index.js';
 import type { Adapter, DiscoveredInstrument } from './types.js';
 
@@ -423,7 +423,7 @@ export const indiaCodeAdapter: Adapter = {
       status: 200,
       mediaType: INDIA_CODE_MEDIA_TYPE,
       body,
-      contentHash: createHash('sha256').update(body).digest('hex'),
+      contentHash: cacheComposed(body),
       fromCache: responses.every((r) => r.fromCache),
       fetchedAt: itemResponse.fetchedAt,
     };

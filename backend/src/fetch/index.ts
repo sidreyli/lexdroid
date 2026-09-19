@@ -356,6 +356,23 @@ function writeFileMkdir(path: string, data: Buffer | string): void {
   writeFileSync(path, data);
 }
 
+/**
+ * Put bytes that were assembled rather than fetched into the blob cache.
+ *
+ * An adapter that joins several responses into one document -- the volumes of an Act, the
+ * provisions of a consolidated page -- produces bytes that no single request ever returned. Those
+ * are the bytes a provision is read out of, and the ones the document row's hash is taken over,
+ * but only the parts were ever written to the cache. So the hash addressed nothing: 1,231 of 4,050
+ * documents could not be re-checked against their own stored bytes, and 199 of them carried a
+ * citation. Composing a document and storing it are one act, not two.
+ */
+export function cacheComposed(body: Buffer): string {
+  const hash = sha256(body);
+  const path = blobPath(hash);
+  if (!existsSync(path)) writeFileMkdir(path, body);
+  return hash;
+}
+
 /** The subset of robots.txt that matters: what we may not fetch, and how slowly. */
 interface Robots {
   disallow: string[];

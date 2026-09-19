@@ -10,8 +10,7 @@
  * the fetcher; discovery uses the browse listings, which are allowed, rather than the search box.
  */
 import * as cheerio from 'cheerio';
-import { createHash } from 'node:crypto';
-import { HostSuspended, type Fetcher } from '../fetch/index.js';
+import { cacheComposed, HostSuspended, type Fetcher } from '../fetch/index.js';
 import type { FetchResult } from '../fetch/index.js';
 import { provisionIds } from '../parse/sso.js';
 import type { Adapter, DiscoveredInstrument } from './types.js';
@@ -260,7 +259,7 @@ export const ssoAdapter: Adapter = {
       // responses is not addressable at any one of their URLs, and a citation has to resolve.
       url,
       body,
-      contentHash: createHash('sha256').update(body).digest('hex'),
+      contentHash: cacheComposed(body),
       fromCache: responses.every((r) => r.fromCache),
     };
   },
