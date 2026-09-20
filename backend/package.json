@@ -44,7 +44,8 @@
     "engine-check": "tsx scripts/engine-check.ts",
     "calibration": "tsx scripts/calibration.ts",
     "zone1-audit": "tsx scripts/zone1-audit.ts",
-    "recache-composed": "tsx scripts/recache-composed.ts"
+    "recache-composed": "tsx scripts/recache-composed.ts",
+    "lexical-ab": "tsx scripts/lexical-ab.ts"
   },
   "dependencies": {
     "@tesseract.js-data/eng": "^1.0.0",
