@@ -184,8 +184,28 @@ export function storeDocument(
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
     // Every parser works out whether a provision is repealed, and this is where it used to be lost.
+    //
+    // Stored exactly as the parser produced it, unnormalised: char_start/char_end were computed
+    // against this exact text, and verifyOffsets below depends on document_text.text.slice(start,
+    // end) reproducing it byte-for-byte. Normalizing here (Thai's NFC/SARA-AM handling included)
+    // would silently break that invariant -- normalization can change a string's length, which
+    // shifts every later offset without anyone touching char_start/char_end. Normalization for
+    // search purposes happens only in db/index.ts's indexSections(), on the copy written into
+    // section_fts, which has no offset invariant to preserve.
     for (const s of parsed.sections) {
-      insert.run(documentId, s.ordinal, s.headingPath, s.label, s.text, s.charStart, s.charEnd, s.page, s.language, s.anchor, s.repealed ? 1 : 0);
+      insert.run(
+        documentId,
+        s.ordinal,
+        s.headingPath,
+        s.label,
+        s.text,
+        s.charStart,
+        s.charEnd,
+        s.page,
+        s.language,
+        s.anchor,
+        s.repealed ? 1 : 0,
+      );
     }
 
     indexSections(db, documentId);
