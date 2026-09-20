@@ -90,3 +90,37 @@ describe('telling a ruled-out measure from an answer that did not arrive', () =>
     expect(ruling(JSON.stringify({ words: MEASURE.gloss })).failure).toMatch(/not the provision/);
   });
 });
+
+/**
+ * "None" is the answer "no", written in the wrong type.
+ *
+ * Malaysia's first confirmation pass asked 1,524 questions and banked 1,132 failures and not one
+ * refusal: where the engine meant null it wrote the word, the word is not in the provision, and
+ * every one of those refusals was thrown away. The pass contributed nothing to that run's scores.
+ */
+describe('a refusal written as a word', () => {
+  const ruling = (words: unknown) => rulingOf(JSON.stringify({ words }), SECTION, MEASURE);
+
+  it('reads the tokens that stand for null as the ordinary no', () => {
+    for (const token of ['none', 'None', 'NULL', 'Null', 'nil', 'N/A', 'no', 'false', '-', 'none.']) {
+      const r = ruling(token);
+      expect({ token, ...r }).toEqual({ token, words: null, failure: null });
+    }
+  });
+
+  it('still keeps words the provision carries', () => {
+    expect(ruling('holds a licence granted by the Authority').words).toBe(
+      'holds a licence granted by the Authority',
+    );
+  });
+
+  it('still fails on a quote the provision does not carry', () => {
+    expect(ruling('holds a permit issued by the Minister').failure).toMatch(/not the provision/);
+  });
+
+  it('leaves a provision whose own words are longer than a token alone', () => {
+    // Nothing on the list reaches the shortest quote a confirmation accepts, so no real quote can
+    // be read as a refusal by being short.
+    expect(ruling('not applicable to a licensee').failure).toMatch(/not the provision/);
+  });
+});

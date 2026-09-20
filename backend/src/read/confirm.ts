@@ -140,10 +140,11 @@ async function askOnce(
 /**
  * The reader's answer as a ruling: words that stand, a "no", or no answer at all.
  *
- * Only an explicit null is a "no". An answer that does not parse, that has no `words`, that gives
- * something other than a string, or that gives words which are not in the provision is not a
- * ruling on the provision -- it used to become one, and a "no" is evidence for a zero. Words that
- * merely hand back our own description are the same: the reader did not answer from the text.
+ * An explicit null is a "no", and so is the word "none" written where the schema asked for null --
+ * see SAYS_NO. An answer that does not parse, that has no `words`, that gives something other than
+ * a string, or that gives words which are not in the provision is not a ruling on the provision --
+ * it used to become one, and a "no" is evidence for a zero. Words that merely hand back our own
+ * description are the same: the reader did not answer from the text.
  */
 export function rulingOf(text: string, sectionText: string, measure: Measure): { words: string | null; failure: string | null } {
   let parsed: unknown;
@@ -158,10 +159,31 @@ export function rulingOf(text: string, sectionText: string, measure: Measure): {
   const raw = (parsed as { words: unknown }).words;
   if (raw === null || (typeof raw === 'string' && !raw.trim())) return { words: null, failure: null };
   if (typeof raw !== 'string') return { words: null, failure: 'the words field is not text' };
+  if (saysNo(raw)) return { words: null, failure: null };
   const words = confirmedWords(raw, sectionText, measure);
   return words
     ? { words, failure: null }
     : { words: null, failure: 'the words given are not the provision\'s own' };
+}
+
+/**
+ * The answer "no", written as a word rather than as null.
+ *
+ * The schema asks for a string or null, and the engine usually writes null. Where it writes "none"
+ * instead, that is the same answer in the wrong type, and reading it as a quote banks a failure --
+ * the words are not in the provision, because they were never meant to be. A failure is not a "no"
+ * downstream, so the zero that answer is evidence for is lost. Malaysia's first confirmation pass
+ * banked 1,132 of these and 0 refusals, and scored as though the second reading had never run.
+ *
+ * Every token here is shorter than the shortest quote a confirmation accepts, so none of them
+ * could have stood as words in any case, and this can only turn a failure into the "no" that was
+ * given. Longer phrases are deliberately not listed: "not applicable" could be a provision's own
+ * words, and guessing at the reader's meaning is how a quote gets discarded.
+ */
+const SAYS_NO = new Set(['null', 'none', 'nil', 'n/a', 'na', 'no', 'false', '-', '--']);
+
+function saysNo(raw: string): boolean {
+  return SAYS_NO.has(raw.trim().toLowerCase().replace(/[.]+$/, ''));
 }
 
 /**

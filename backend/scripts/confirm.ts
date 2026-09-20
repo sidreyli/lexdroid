@@ -31,8 +31,19 @@ if (hostsArg) {
 const hosts = engineHosts();
 
 const db = openDb();
-const runId =
-  arg('run') ?? (db.prepare('SELECT id FROM run ORDER BY started_at DESC LIMIT 1').get() as { id: string }).id;
+// A run is named by a prefix here as everywhere else. Taken literally, a short id matched no cell,
+// the pass found nothing to ask, and it reported a clean zero -- the shape of a pass that ran.
+const wanted = arg('run');
+const found = (
+  wanted
+    ? db.prepare('SELECT id FROM run WHERE id LIKE ?').get(`${wanted}%`)
+    : db.prepare('SELECT id FROM run ORDER BY started_at DESC LIMIT 1').get()
+) as { id: string } | undefined;
+if (!found) {
+  console.log(`\nNo run ${wanted}.\n`);
+  process.exit(1);
+}
+const runId = found.id;
 const workers = Number(arg('workers') ?? String(hosts.length));
 const model = arg('model') ?? READING_MODEL;
 
