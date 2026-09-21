@@ -89,6 +89,81 @@ export function opensAsPublishedAbout(opening: string): boolean {
 
 export type InstrumentKind = 'act' | 'regulation' | 'notice' | 'guideline' | 'order' | 'rule';
 
+/** One word an economy names a kind of instrument by, and the kind it names. */
+export interface InstrumentWord {
+  word: string;
+  kind: InstrumentKind;
+}
+
+/** Most binding first, so a title carrying two words is classified by the stronger. */
+const KIND_PRECEDENCE: InstrumentKind[] = ['act', 'regulation', 'rule', 'order', 'notice', 'guideline'];
+
+/** A word written in some script other than the Latin alphabet. */
+const NON_LATIN = /[^\p{ASCII}\p{Script=Latin}]/u;
+
+/**
+ * The words an economy names its own instruments by, taken from its Zone 0 profile.
+ *
+ * Everything above this line is English, in English word order, and that is the whole of what
+ * decided whether a link named an instrument. It is why `crawl` and `sitemap` found **zero**
+ * instruments on the Thai Customs Department -- a permitted, server-rendered, perfectly
+ * crawlable site -- and why they would find zero on Russia's official publication venue, which
+ * is permissive and enumerable and publishes nothing but law.
+ *
+ * The profile already answers this. `instrumentTypes[].localName` says what the economy calls
+ * each kind, beside the kind it maps to, and nothing was ever asking it. So Zone 0 tells
+ * discovery how to read the economy, which is the job the architecture gives it.
+ *
+ * Two rules keep this from admitting everything:
+ *
+ *   Only non-Latin terms are taken. The four English-language profiles describe their tiers
+ *   rather than naming them -- "Subsidiary legislation -- Orders", "Act of the Commonwealth
+ *   Parliament" -- and harvesting words from those would match any page mentioning legislation.
+ *   Those profiles yield no vocabulary at all, so their behaviour is exactly what it was.
+ *
+ *   A word shared by two kinds is dropped, because it cannot say which. Mongolian files both a
+ *   Khural resolution and a Government resolution under тогтоол, and Russian puts Российской
+ *   Федерации in most of its tiers; what survives is the part that actually discriminates --
+ *   Засгийн газрын against Улсын Их Хурлын, Постановление against Указ.
+ */
+export function instrumentWords(
+  types: readonly { localName: string; kind: InstrumentKind }[] | undefined,
+): InstrumentWord[] {
+  const byWord = new Map<string, Set<InstrumentKind>>();
+  // A loaded profile always declares these -- the schema requires at least one -- but a caller
+  // assembling a profile by hand need not have, and a register walk is not the place to throw.
+  for (const type of types ?? []) {
+    // "ລັດຖະບັນຍັດ (Presidential Ordinance) / ຄຳສັ່ງ (Order)" -- the glosses are ours, not the
+    // economy's, and a title never carries them.
+    const local = type.localName.replace(/\([^()]*\)/g, ' ');
+    for (const term of local.split(/[/,;]|--/)) {
+      for (const word of term.split(/\s+/)) {
+        const w = word.trim();
+        if (w.length < 3 || !NON_LATIN.test(w)) continue;
+        const kinds = byWord.get(w) ?? new Set<InstrumentKind>();
+        kinds.add(type.kind);
+        byWord.set(w, kinds);
+      }
+    }
+  }
+
+  const out: InstrumentWord[] = [];
+  for (const [word, kinds] of byWord) {
+    if (kinds.size !== 1) continue;
+    out.push({ word, kind: [...kinds][0]! });
+  }
+  // Longest first, so a title matching both a phrase and a word inside it is read by the phrase.
+  return out.sort((a, b) => b.word.length - a.word.length);
+}
+
+/** The kind a title names in the economy's own words, or null where it names none of them. */
+function kindFromVocabulary(title: string, vocabulary: readonly InstrumentWord[]): InstrumentKind | null {
+  const found = new Set<InstrumentKind>();
+  for (const { word, kind } of vocabulary) if (title.includes(word)) found.add(kind);
+  if (found.size === 0) return null;
+  return KIND_PRECEDENCE.find((k) => found.has(k)) ?? null;
+}
+
 /** Which of the register's kinds this title names. The most binding word in it wins. */
 export function kindOf(title: string): InstrumentKind {
   const t = title.toLowerCase();
@@ -116,13 +191,24 @@ function stem(title: string): string {
  * doubtful cases fills the register with news; an instrument missed here is still reachable when
  * a later listing names it properly.
  */
-export function instrumentTitle(text: string): { title: string; kind: InstrumentKind } | null {
+export function instrumentTitle(
+  text: string,
+  vocabulary: readonly InstrumentWord[] = [],
+): { title: string; kind: InstrumentKind } | null {
   const title = text.replace(/\s+/g, ' ').trim();
   if (title.length < 10 || title.length > 170) return null;
   if (ABOUT.test(title) || ABOUT_OPENS.test(title) || HEADLINE.test(title)) return null;
   if (HOUSEKEEPING.test(title)) return null;
   // A title is a name, not a sentence.
   if (/[.?!]$/.test(title) || /,\s*\w+\s+\w+\s+\w+\s+\w+\s+\w+/.test(title)) return null;
+
+  // The economy's own words first, where its profile supplied any. The filters above still ran,
+  // so a bilingual portal's English press release is refused on the same terms it always was --
+  // but nothing below this line can recognise a title that is not in English, and on the
+  // economies that matter here that is every title.
+  const local = kindFromVocabulary(title, vocabulary);
+  if (local) return { title, kind: local };
+
   const s = stem(title);
   // Or the noun sits inside the bracket the title ends on: "... (Online Content Rules)".
   const inBracket = /\(([^()]{6,90})\)$/.exec(s)?.[1] ?? null;

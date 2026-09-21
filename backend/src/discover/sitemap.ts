@@ -84,7 +84,7 @@ export const sitemapAdapter: Adapter = {
     const out = new Map<string, DiscoveredInstrument>();
     for (const url of urls) {
       if (isSection(url)) continue;
-      const named = instrumentTitle(slugWords(url));
+      const named = instrumentTitle(slugWords(url), ctx.vocabulary);
       if (!named) continue;
       // The slug is how the publisher filed it, not always how the instrument names itself; the
       // parser replaces it from the document's own citation provision where it says one.

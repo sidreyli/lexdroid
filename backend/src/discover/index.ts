@@ -30,6 +30,7 @@ import { lomSubsidAdapter } from './lom-subsid.js';
 import { sitemapAdapter } from './sitemap.js';
 import { ssoAdapter } from './sso.js';
 import { wpAdapter } from './wp.js';
+import { instrumentWords } from './titles.js';
 import type { Adapter, DiscoveredInstrument } from './types.js';
 
 export * from './types.js';
@@ -73,6 +74,14 @@ export async function register(
 ): Promise<RegisterResult[]> {
   const results: RegisterResult[] = [];
   const now = new Date().toISOString();
+
+  // What this economy calls its own instruments, read off its Zone 0 profile once for the whole
+  // walk. Empty for an economy that publishes in English, which is what leaves those registers
+  // exactly as they were.
+  const vocabulary = instrumentWords(profile.instrumentTypes);
+  if (vocabulary.length > 0) {
+    log(`reading titles in ${profile.name}'s own words: ${vocabulary.length} terms`);
+  }
 
   const insert = db.prepare(
     `INSERT INTO instrument (economy_code, title, official_number, kind, status, status_basis,
@@ -130,7 +139,7 @@ export async function register(
 
     let found: DiscoveredInstrument[] = [];
     try {
-      found = await adapter.discover({ portal, fetcher, log, setAside });
+      found = await adapter.discover({ portal, fetcher, log, setAside, vocabulary });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       results.push({ portal: portal.name, found: 0, added: 0, error: message });

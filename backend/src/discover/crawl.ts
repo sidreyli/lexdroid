@@ -133,7 +133,7 @@ export const crawlAdapter: Adapter = {
         target.hash = '';
         const at = target.toString();
 
-        const named = instrumentTitle(text);
+        const named = instrumentTitle(text, ctx.vocabulary);
         if (named && !found.has(at)) {
           found.set(at, {
             title: named.title,

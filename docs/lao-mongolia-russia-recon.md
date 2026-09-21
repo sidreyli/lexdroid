@@ -251,3 +251,92 @@ sub-national instruments.
 2. Sample more Lao gazette PDFs to confirm scan-only.
 3. Check what `Disallow: /File` covers on `publication.pravo.gov.ru` before any document fetch.
 4. Write `MNG.json` first, then `RUS.json`, then `LAO.json`.
+
+---
+
+## Mongolia's register adapter — specification, and the one thing that blocks it
+
+*Added 21 September 2026, after the title-recognition fix landed. Everything below was measured
+against the live site; the adapter is not written, and this says exactly why.*
+
+### The blocker, stated first
+
+`legalinfo.mn`'s listing endpoint is **POST-only in effect**. `GET /mn/ajaxListBody/?...` answers
+200 with valid JSON, but ignores every parameter — `filtercategorytypeid=27` and
+`filtercategorytypeid=33` return byte-identical bodies, and `page=3` returns page 1. Verified by
+comparing returned `lawId` sets. The application reads `$_POST`.
+
+`backend/src/fetch/index.ts` issues `method: 'GET'` and nothing else. So this adapter cannot be
+written without teaching the Fetcher to POST — and that module owns robots enforcement, the
+per-host rate limit, the cache and `fetch_log`, all of which key on a URL identifying a request.
+A POST needs the request body folded into the cache key or two different queries collide in the
+cache.
+
+That is a deliberate, self-contained change to the most safety-critical module in the repository,
+and it is what checklist item 25 (politeness on by default) is marked on. It should be made on its
+own, with `fetch.test.ts`, `robots-rules.test.ts` and `robots-absent.test.ts` green, rather than
+folded into an adapter.
+
+### What is already established, so the adapter is transcription once that lands
+
+Endpoint: `POST https://legalinfo.mn/mn/ajaxListBody/`, form-encoded, returning `{Html, word}`
+where `Html` is a rendered fragment of **20 rows**. Parameters that matter:
+`filtercategorytypeid`, `isactive`, `page`, `sort`, `sortType`. Confirmed working: categories 30,
+33 and 34 each return distinct and correct content, and `page=1` against `page=2` returns disjoint
+`lawId` sets.
+
+Row shape — the fragment marks its own fields, so no positional parsing is needed:
+
+```html
+<div class="legal-list-component" ...>
+  <div data-block="title">
+    <a href="https://legalinfo.mn/mn/detail?lawId=5756" class="act-name">TITLE</a>
+    <span style="font-style: italic">Төрийн мэдээлэл эмхэтгэл: 1996 он, №03</span>
+  </div>
+  <div data-block="enacteddate"><span>1996-01-02</span></div>
+  <div data-block="enforcementdate"><span>1996-01-02</span></div>
+  <div data-block="inactive">…</div>
+</div>
+```
+
+So each row yields a title, a document URL, the gazette reference, the enacted date and the
+effective date — `commencedOn` comes off `enforcementdate`, and the listing walked (`isactive`)
+is the `statusBasis`, which is the portal answering the standing question rather than us inferring
+it. Documents are then server-rendered in full at `/mn/detail?lawId=<ID>`.
+
+### The categories, with the kind each maps to
+
+Taken from the portal's own footer, which publishes the counts. **The kind comes from the category
+walked, not from the title** — which is what makes it evidence rather than a guess, and is why the
+adapter should walk per category rather than the unfiltered listing.
+
+| id | Category | Count | kind |
+|---:|---|---:|---|
+| 26 | Монгол Улсын Үндсэн Хууль (Constitution) | 1 | `act` |
+| 27 | Монгол Улсын хууль (Law of Mongolia) | 956 | `act` |
+| 29 | Монгол Улсын олон улсын гэрээ (International treaty) | 699 | `act` — ratified treaties have force of law; flag in notes |
+| 30 | Ерөнхийлөгчийн зарлиг (Presidential decree) | 218 | `order` |
+| 28 | Улсын Их Хурлын тогтоол (Khural resolution) | 2,589 | `order` |
+| 33 | Засгийн газрын тогтоол (Government resolution) | 5,778 | `regulation` |
+| 34 | Сайдын тушаал (Ministerial order) | 988 | `notice` |
+| 35 | Засгийн газрын агентлагийн даргын тушаал (agency head's order) | 217 | `notice` |
+| 36 | УИХ-аас томилогддог байгууллагын… шийдвэр | 132 | `notice` |
+| 390 | Хууль, хяналтын байгууллага | 6 | `notice` |
+| 180 | Төрийн зарим чиг үүргийг… хэрэгжүүлж буй байгууллага | 3 | `notice` |
+| 186 | Зөвлөл, хороо, бусад байгууллага (councils, committees) | 605 | `guideline` |
+| 37 | **Аймаг, нийслэлийн ИТХ-ын шийдвэр** (provincial assembly) | 1,212 | sub-national — see `MNG.json` jurisdictionScope |
+| 38 | **Аймаг, нийслэлийн Засаг даргын захирамж** (governor's order) | 86 | sub-national |
+| 31 | Үндсэн хуулийн цэцийн шийдвэр (Constitutional Court) | 332 | not an instrument — skip |
+| 32 | Улсын дээд шүүхийн тогтоол (Supreme Court) | 259 | not an instrument — skip |
+| 16231124857801 | Шүүхийн ерөнхий зөвлөл (General Council of Courts) | 9 | skip |
+| | **Total** | **14,090** | |
+
+Note id **27 is the Laws of Mongolia**, not the in-force filter. The listing page's navigation puts
+"Хүчинтэй эрх зүйн акт" (in-force acts) beside the same href, and reading the nav rather than the
+footer gets this wrong — it did here first time.
+
+### Cost of the walk
+
+14,090 instruments at 20 rows a page is **705 requests**, about twelve minutes at the one-second
+floor, and no model time. The register is built once and queried by all 61 indicators. Skipping the
+three court categories and the two sub-national ones drops it to roughly 560.
