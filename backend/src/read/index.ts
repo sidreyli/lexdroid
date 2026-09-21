@@ -256,6 +256,18 @@ export interface Finding {
    * names. Applied in Zone 3 only with the words beside it, so it can be checked, not just trusted.
    */
   withinException?: boolean;
+  /**
+   * The condition the measure waits on, copied from the provision, or null where it operates on
+   * everyone it names from the moment it commences.
+   *
+   * Several rubric bands separate a measure that reaches every circumstance from one that reaches
+   * a specific circumstance, and the only reach any field recorded was the sector. So a limit that
+   * bites only once a defendant has proved something, or only on conduct before a dated decision,
+   * counted as reaching every circumstance because it named no sector -- and read as the widest
+   * form of the measure the rubric has.
+   * Optional because readings banked before it was asked do not carry it.
+   */
+  conditionWords?: string | null;
   /** A power that may be exercised is not a requirement that must be met. */
   mandatory: boolean;
   /** 6.1's lowest band includes "transfer is prohibited to one country". */
@@ -588,6 +600,12 @@ function prompt(
     'withinException: true only if the indicator you filed this under states an exception above,',
     'and what targetWords names falls within it. False if the indicator states none, or if it does',
     'not cover what the provision is aimed at.',
+    'conditionWords: if the provision only bites once something is established -- a fact a party',
+    'must prove, a finding the court must reach, a date the conduct must fall before or after --',
+    'copy the words stating it: "who proves that the defendant was not aware", "committed before the',
+    'decision to allow the amendment". Null where it applies to everyone it names as soon as it',
+    'is in force. An exception carving conduct out is exceptionWords; this is the condition the',
+    'measure itself waits on.',
     '',
     'Two further facts are easy to answer carelessly.',
     'statedPeriod: the length of time the provision itself names, such as "5 years". Null if it',
@@ -655,6 +673,7 @@ const schemaFor = (indicators: readonly Indicator[]) => ({
           dataDescription: { type: ['string', 'null'] },
           targetWords: { type: ['string', 'null'] },
           withinException: { type: 'boolean' },
+          conditionWords: { type: ['string', 'null'] },
           appliesOnlyToGovernmentData: { type: 'boolean' },
           mandatory: { type: 'boolean' },
           countriesNamed: { type: 'array', maxItems: 24, items: { type: 'string' } },
@@ -690,6 +709,7 @@ const schemaFor = (indicators: readonly Indicator[]) => ({
           'dataScope',
           'targetWords',
           'withinException',
+          'conditionWords',
           'appliesOnlyToGovernmentData',
           'mandatory',
         ],
@@ -714,6 +734,17 @@ function normaliseForQuoteCheck(s: string): string {
     // set, not words. A reader quoting faithfully drops them, and failing it for that is wrong.
     .replace(/["“”″*]/g, '')
     .replace(/[‐-―−]/g, '-')
+    // The letters and numbers that mark items in a statutory list are the page's scaffolding, not
+    // the provision's words. A reader quoting a multi-part definition flattens it -- which is the
+    // only way to quote one -- and the markers then sit inside the span it is checked against.
+    // Australia's section 113E lists the four fairness factors as (a) to (d); the reader returned
+    // all four in order, joined by the semicolons that are already there, and the finding was
+    // refused as words "not in the provision" in the cell whose top band is the fair dealing model.
+    .replace(/\((?:[a-z]{1,2}|[ivxl]{1,4}|\d{1,3})\)/gi, ' ')
+    // Commas and semicolons for the same reason. What makes a quotation faithful is the
+    // provision's words in the provision's order; where a list is flattened the pointing changes
+    // and the words do not. Nothing here loosens which words must be there, or in what order.
+    .replace(/[,;]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
     .toLowerCase();
@@ -839,7 +870,21 @@ export function rejectionFor(f: Finding, sectionText: string, allowed: Set<strin
   if (f.dutyBearer && !inProvision(f.dutyBearer)) {
     return `the party said to bear the duty, "${f.dutyBearer}", is not in the provision`;
   }
-  if (!inProvision(f.dutyAct)) {
+  // Guarded like every other field, which this one alone was not -- and guarded against the floor
+  // as well as against absence, because below the floor the check cannot run.
+  //
+  // `inProvision` needs MIN_PHRASE_CHARS to match anything at all, so a shorter phrase fails it
+  // whatever the provision says. That turned 890 findings away with "is not in the provision"
+  // about words that are in the provision, 811 of them the copula "is": a provision reading "It
+  // is a permitted use of a work to make a fair use of the work" grants rather than commands, so
+  // there is no act to name and the reader wrote the only verb there. Section 190 of Singapore's
+  // Copyright Act 2021 died exactly that way, in the cell whose top band is fair use.
+  //
+  // So an act too short to be checked is an act not stated, which is the same answer as an absent
+  // one and for the same reason: it makes no claim this stage can test. Whether a measure may go
+  // without an act is Zone 3's question, and nothing there turns on the field -- `dutyForce` and
+  // `permits` carry that, and the quote, the measure and the defining words are still checked here.
+  if (f.dutyAct && f.dutyAct.trim().length >= MIN_PHRASE_CHARS && !inProvision(f.dutyAct)) {
     return `the act said to be imposed, "${f.dutyAct}", is not in the provision`;
   }
   // Where a place is claimed it has to be in the provision, for the same reason the party and the
@@ -889,6 +934,9 @@ export function rejectionFor(f: Finding, sectionText: string, allowed: Set<strin
   }
   if (f.targetWords && !inProvision(f.targetWords)) {
     return `the words said to name what the measure is aimed at, "${f.targetWords}", are not in the provision`;
+  }
+  if (f.conditionWords && !inProvision(f.conditionWords)) {
+    return `the words said to state the condition the measure waits on, "${f.conditionWords}", are not in the provision`;
   }
   return null;
 }
@@ -1090,11 +1138,31 @@ function placeholder(raw: unknown): Finding {
   );
 }
 
+/**
+ * The words a reader writes when it means the field is empty.
+ *
+ * The schema offers null and the reader mostly takes it, but 2,810 findings in the store answered
+ * with the word instead, 2,610 of them for the party bound. A string is truthy, so "Null" was
+ * checked against the provision as though it were a claim about the text, and every one of those
+ * findings was thrown away for not containing it. Singapore's fair use test -- section 191 of the
+ * Copyright Act 2021, retrieved at rank 1 and quoted correctly -- died that way, in the cell whose
+ * top band is fair use. Decide already asks whether a measure is a permission before demanding a
+ * party bound; it never got the chance, because verification ran first.
+ *
+ * Only words that mean "there is none". "X" and the like mean "I do not know", which is a
+ * different answer, and they stay as they are.
+ */
+const MEANS_EMPTY = /^(?:null|none|nil|n\/a|not applicable|not specified|unspecified|unstated|\(none\))$/i;
+
 /** A response object into a Finding, or null if the required fields are not there. */
 function coerce(raw: unknown): Finding | null {
   if (typeof raw !== 'object' || raw === null) return null;
   const r = raw as Record<string, unknown>;
-  const str = (v: unknown): string | null => (typeof v === 'string' && v.trim() ? v.trim() : null);
+  const str = (v: unknown): string | null => {
+    if (typeof v !== 'string') return null;
+    const t = v.trim();
+    return t && !MEANS_EMPTY.test(t) ? t : null;
+  };
 
   const indicatorId = str(r['indicatorId']);
   const quote = str(r['quote']);
@@ -1150,6 +1218,7 @@ function coerce(raw: unknown): Finding | null {
     scopeUnstated: sectorScope === null || dataScope === null,
     appliesOnlyToGovernmentData: r['appliesOnlyToGovernmentData'] === true,
     targetWords: str(r['targetWords']),
+    conditionWords: str(r['conditionWords']),
     withinException: r['withinException'] === true,
     mandatory: r['mandatory'] !== false,
     countriesNamed: Array.isArray(r['countriesNamed'])

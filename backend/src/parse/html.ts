@@ -61,7 +61,9 @@ export function parseHtml(html: string, url: string): ParsedDocument {
   }
 
   const builder = new SectionBuilder();
+  const mainEl = $main.get(0) ?? null;
   const headings = $main.find('h1, h2, h3, h4').toArray().filter((h) => nodeText([h]).trim().length > 0);
+
 
   if (headings.length >= 2) {
     const trail: string[] = [];
@@ -71,14 +73,9 @@ export function parseHtml(html: string, url: string): ParsedDocument {
       trail.length = Math.min(trail.length, level - 1);
       trail[level - 1] = heading;
 
-      const body: string[] = [];
-      let node = $(h).next();
       const stop = headings[i + 1];
-      while (node.length && node.get(0) !== stop) {
-        body.push(nodeText(node.toArray()));
-        node = node.next();
-      }
-      const sectionText = [heading, body.join('\n').trim()].filter(Boolean).join('\n');
+      const body = bodyBetween($, mainEl, h, stop);
+      const sectionText = [heading, body.trim()].filter(Boolean).join('\n');
       builder.add({
         headingPath: trail.filter(Boolean).join(' > '),
         label: PROVISION_LINE.exec(heading)?.[1] ?? null,
@@ -126,6 +123,74 @@ export function parseHtml(html: string, url: string): ParsedDocument {
   }
 
   return { extraction: 'html', text: builder.text, sections: builder.sections, unread: null, title, meta: {}, parser: 'html' };
+}
+
+/** Whether `node` is the target or an ancestor of it. */
+function isOrContains(node: AnyNode, target: AnyNode | undefined): boolean {
+  for (let cur: AnyNode | null = target ?? null; cur; cur = (cur.parent as AnyNode | null) ?? null) {
+    if (cur === node) return true;
+  }
+  return false;
+}
+
+/**
+ * A heading's body: everything between it and the next heading, in document order.
+ *
+ * v1 walked the heading's own siblings, which is right only for a page that puts headings and
+ * paragraphs side by side. Three shapes broke it, and all three are in this corpus.
+ *
+ * A page that wraps each heading in its own block leaves `h.next()` empty and the body in the
+ * *wrapper's* next sibling, so every heading parsed with no text at all: the .au Domain
+ * Administration Rules came out 84 headings and 2,134 characters, and rule 2.4.1 -- the Australian
+ * presence requirement ESCAP cites for 12.7 -- was among the half megabyte dropped.
+ *
+ * A page that nests the *next* heading inside a sibling block never matches the stop by identity,
+ * so the walk ran to the end of the container: APRA's prudential handbook gave "Chapter 2 -
+ * Financial resilience" 177,802 characters, chapters 3 to 5 included, which each then repeated
+ * them. Stopping at the block that holds the next heading fixes that, but strands the text sitting
+ * inside it ahead of the heading, so that much is collected by descending.
+ *
+ * And content above the heading's own nesting level -- a trailing footnote block, on the OAIC
+ * guidance pages -- is reached here by climbing when a level runs out, which a sibling walk
+ * cannot do.
+ *
+ * Walking document order rather than one level of it answers all three with the same rule.
+ */
+function bodyBetween($: cheerio.CheerioAPI, mainEl: AnyNode | null, from: AnyNode, stop: AnyNode | undefined): string {
+  const textBefore = (container: AnyNode, target: AnyNode): string[] => {
+    const out: string[] = [];
+    for (const child of $(container).contents().toArray()) {
+      if (child === target) break;
+      if (isOrContains(child, target)) {
+        out.push(...textBefore(child, target));
+        break;
+      }
+      out.push(nodeText([child]));
+    }
+    return out;
+  };
+
+  const out: string[] = [];
+  for (let cur: AnyNode = from; ; ) {
+    // The next node in document order that `cur` does not contain: its own next sibling, or -- when
+    // this level is exhausted -- the next sibling of the nearest ancestor that still has one.
+    let next: AnyNode | null = null;
+    for (let c: AnyNode | null = cur; c && c !== mainEl; c = (c.parent as AnyNode | null) ?? null) {
+      const sib = $(c).next();
+      if (sib.length) {
+        next = sib.get(0)!;
+        break;
+      }
+    }
+    if (!next || next === stop) break;
+    if (stop && isOrContains(next, stop)) {
+      out.push(...textBefore(next, stop));
+      break;
+    }
+    out.push(nodeText([next]));
+    cur = next;
+  }
+  return out.join('\n');
 }
 
 function unread(title: string | null, reason: 'empty' | 'landing-page', detail: string): ParsedDocument {

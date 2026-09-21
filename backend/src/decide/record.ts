@@ -115,7 +115,7 @@ export function recordedDecider(
   // re-run: the point is to re-derive the decision, not to redo the search and decide over a
   // different list.
   const surfacedFor = db.prepare(
-    `SELECT i.id AS instrumentId, i.title AS instrumentTitle, MIN(se.rank) AS rank
+    `SELECT i.id AS instrumentId, i.title AS instrumentTitle, i.kind AS kind, MIN(se.rank) AS rank
        FROM shortlist_entry se
        JOIN section s ON s.id = se.section_id
        JOIN document d ON d.id = s.document_id

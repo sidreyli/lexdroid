@@ -239,6 +239,20 @@ const reachesBroadly = (f: Finding, eitherAxisIsEnough: boolean): boolean => {
 const reachesNarrowly = (f: Finding, eitherAxisIsEnough: boolean): boolean =>
   !reachesBroadly(f, eitherAxisIsEnough);
 
+/**
+ * Whether the provision says of itself that it is a summary of others.
+ *
+ * Tested on the heading the provision was filed under rather than on its words, because its words
+ * are the duty restated -- that is what an outline is for, and why one reads as operative law.
+ * Named in the general forms drafting manuals use, so a jurisdiction that writes "Guide to this
+ * Part" or "Overview of this Division" is covered by the same rule as one that writes "Simplified
+ * outline"; where a jurisdiction writes none, nothing here fires.
+ */
+const OUTLINE_HEADING =
+  /\b(simplified outline|outline of this (?:part|division|chapter|act|schedule)|guide to this (?:part|division|chapter|act)|overview of this (?:part|division|chapter|act))/i;
+
+const announcesItselfAsAnOutline = (e: Evidence): boolean => OUTLINE_HEADING.test(e.headingPath ?? '');
+
 /** A power that may be used is not a requirement that must be met. Read from the verb the finding
  *  quotes, not the mandatory flag beside it -- that flag called "may appoint" mandatory. */
 const isRequirement = (f: Finding): boolean =>
@@ -376,10 +390,20 @@ function escalating(severe: { measure: string; what: string }, lesser: { measure
  * 4.3 and 4.9 rank "affecting all circumstances and sectors" above "a specific circumstance or
  * sector", and reach is already a fact every finding carries, so nothing new has to be read.
  */
+/**
+ * For the bands that read "affecting all circumstances and sectors" against "affecting to a
+ * specific circumstance or sector". Both halves have to be asked. Asking only the sector put
+ * Singapore's patent cell in the top band on section 69 of its Patents Act -- damages withheld
+ * from a defendant who proves he did not know he was infringing -- while Australia's section 123
+ * says the same thing in the discretionary voice and scored no restriction at all. A limit every
+ * patent statute carries cannot be what separates two economies, and the band text already said
+ * so: a restriction waiting on a condition reaches that circumstance, not every circumstance.
+ */
 function escalatingByReach(what: string): Rule {
   return (_indicator, qualifying) => {
-    const wide = qualifying.filter((e) => e.finding.sectorScope === 'all');
-    const narrow = qualifying.filter((e) => e.finding.sectorScope !== 'all');
+    const everyCircumstance = (e: Evidence) => !e.finding.conditionWords;
+    const wide = qualifying.filter((e) => e.finding.sectorScope === 'all' && everyCircumstance(e));
+    const narrow = qualifying.filter((e) => e.finding.sectorScope !== 'all' || !everyCircumstance(e));
     if (wide.length > 0) return { ordinal: 1, reason: `${what} reaching every sector`, counted: [...wide, ...narrow] };
     if (measureCount(narrow) > 1) {
       return { ordinal: 1, reason: `${measureCount(narrow)} sector-specific ${what}s`, counted: narrow };
@@ -1365,6 +1389,21 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
       });
       continue;
     }
+    // An outline is a signpost to provisions elsewhere in the same instrument. Drafting manuals
+    // require them to be written in the operative voice -- "Carriers must provide other carriers
+    // with access to telecommunications transmission towers" is a heading called "Simplified
+    // outline", and the Part it introduces is where that duty is actually imposed. Read as a
+    // provision it is a duty with no section number, and the passive-sharing cell was decided on
+    // one. Held for the same reason a definition is: the requirement is real and is stated
+    // somewhere else, so this is no evidence that the economy imposes none.
+    if (announcesItselfAsAnOutline(e)) {
+      held.push({
+        evidence: e,
+        reason:
+          'the words cited summarise provisions elsewhere in the instrument rather than impose a duty, so the requirement is in the provision summarised',
+      });
+      continue;
+    }
     // A definition says what a term means and requires nothing of anybody. It comes before the
     // confirmation below because that pass rightly answers no -- and the reason it answers no is
     // that the duty is elsewhere in the Act, which is evidence the requirement exists, not evidence
@@ -1983,6 +2022,13 @@ export interface SurfacedInstrument {
   rank: number;
   /** The date the published text is current to, where the portal states one. */
   currentTo?: string | null;
+  /**
+   * What the register says this document is. Read here for one purpose: to keep a publication
+   * about the law from being reported as the law that governs a subject. Absent for a corpus
+   * registered before the kind was carried, which reads as an instrument -- the behaviour every
+   * earlier run had.
+   */
+  kind?: string | null;
 }
 
 export interface DecideInput {
@@ -2027,40 +2073,60 @@ function governingFirst<T extends { instrumentId: number }>(evidence: T[], gover
 /**
  * Which instrument a zero is reported against.
  *
- * Preference is for an instrument the reader found this *pillar's* requirements in: an Act with
- * four data-protection duties in it plainly regulates data protection, whatever its title, and
- * "this Act governs the area and does not require X" is a claim about a document. Only the
- * pillar's own evidence counts, so an instrument that scored under a different pillar cannot be
- * dressed up as governing this one.
+ * Preference is for an instrument the reader found this *indicator's* requirements in, then this
+ * pillar's: an Act with four data-protection duties in it plainly regulates data protection,
+ * whatever its title, and "this Act governs the area and does not require X" is a claim about a
+ * document. Only the pillar's own evidence counts, so an instrument that scored under a different
+ * pillar cannot be dressed up as governing this one.
  *
- * Failing that, the highest-ranked instrument the search returned, labelled as no more than that.
+ * The indicator is asked before the pillar because a pillar is not always one subject. Pillar 12
+ * bundles online sales, licensing, payment standards, local presence and consumer protection, so
+ * an instrument that genuinely regulates one of them passes a pillar-wide test for all of them.
+ * Measured on the run of 21 September 2026: 14 of 47 cells reported a zero against an instrument
+ * the reader had examined and found no provision of that bore on the question at all -- six of
+ * them against one content-safety Act, standing as the instrument governing payment-security
+ * standards, mandated payment intermediaries and local presence requirements. For the first of
+ * those the reader had found provisions bearing on the indicator in eight other instruments,
+ * including the one the published index names. A finding elsewhere in the pillar is still worth
+ * more than a title match, so it stays as the second preference rather than being dropped.
+ *
+ * Failing both, the highest-ranked instrument the search returned, labelled as no more than that.
  * The Maintenance of Parents Act at rank 1 of a data-localisation search must not be reported as
  * the instrument governing data localisation, and the difference between the two labels is the
  * whole point of keeping them apart.
  */
 function absenceFor(input: DecideInput): Absence | null {
-  const surfaced = input.surfaced ?? [];
+  // A publication about the law cannot witness the law's silence. It is not a document that could
+  // have imposed the thing said to be missing, so its not imposing it says nothing at all, and
+  // "X regulates this area and requires no Y" would be a claim about a consultation paper. The
+  // register's own kind answers this; see `registeredKind` for how a document earns it.
+  const surfaced = (input.surfaced ?? []).filter((s) => s.kind !== 'publication');
   if (surfaced.length === 0) return null;
 
   const perInstrument = new Map<number, number>();
+  const perIndicator = new Map<number, number>();
   for (const e of input.evidence) {
     perInstrument.set(e.instrumentId, (perInstrument.get(e.instrumentId) ?? 0) + 1);
+    if (e.finding.indicatorId === input.indicator.id) {
+      perIndicator.set(e.instrumentId, (perIndicator.get(e.instrumentId) ?? 0) + 1);
+    }
   }
 
   // The register's verdict first, then the weight of evidence. Ordering by finding count alone
   // was ordering by size: the biggest general statute in the corpus answers most searches, and so
   // Australia reported nine of its zeros against the Competition and Consumer Act.
   const named = new Map((input.governing ?? []).map((id, i) => [id, i] as const));
-  const governing = surfaced
-    .filter((s) => (perInstrument.get(s.instrumentId) ?? 0) > 0)
-    .sort((a, b) => {
-      const byRegister =
-        (named.get(a.instrumentId) ?? Number.MAX_SAFE_INTEGER) -
-        (named.get(b.instrumentId) ?? Number.MAX_SAFE_INTEGER);
-      if (byRegister !== 0) return byRegister;
-      const byFindings = (perInstrument.get(b.instrumentId) ?? 0) - (perInstrument.get(a.instrumentId) ?? 0);
-      return byFindings !== 0 ? byFindings : a.rank - b.rank;
-    })[0];
+  const order = (counts: Map<number, number>) => (a: SurfacedInstrument, b: SurfacedInstrument): number => {
+    const byRegister =
+      (named.get(a.instrumentId) ?? Number.MAX_SAFE_INTEGER) -
+      (named.get(b.instrumentId) ?? Number.MAX_SAFE_INTEGER);
+    if (byRegister !== 0) return byRegister;
+    const byFindings = (counts.get(b.instrumentId) ?? 0) - (counts.get(a.instrumentId) ?? 0);
+    return byFindings !== 0 ? byFindings : a.rank - b.rank;
+  };
+  const bore = (counts: Map<number, number>): SurfacedInstrument | undefined =>
+    surfaced.filter((s) => (counts.get(s.instrumentId) ?? 0) > 0).sort(order(counts))[0];
+  const governing = bore(perIndicator) ?? bore(perInstrument);
 
   if (governing) {
     return {
@@ -2276,12 +2342,17 @@ function decideOn(input: DecideInput): Decision {
     };
   }
 
-  // Whether the band rests on provisions found or on their absence. Fourteen indicators score
-  // their maximum for something not being there, and such a cell has found no measure whatever
-  // its score -- it cites the instrument it was read against, the way ESCAP's own zero rows do.
+  // Whether the cell reports a restriction. That is the score's question, and a zero answers no.
   const found = chosenBand.score > 0 && !scoresOnAbsence(indicator, rule, chosen.ordinal);
-  const basis = found ? leadWithWhatWasCounted(qualifying, chosen.counted) : [];
-  const absence = found ? null : witness;
+  // Whether the band rests on provisions found or on their absence. A different question, and
+  // reading it off the score alone was wrong on the fourteen indicators that score their maximum
+  // for something not being there. On those the polarity is flipped, so a zero is the protective
+  // provision being present -- and a cell that said "effective protection of trade secrets" cited
+  // no provision at all, because its score was zero. The rule is the one that knows: it hands back
+  // the evidence it counted, and a band it reached with nothing counted is the band absence earns.
+  const onProvisions = (chosen.counted?.length ?? 0) > 0;
+  const basis = onProvisions ? leadWithWhatWasCounted(qualifying, chosen.counted) : [];
+  const absence = onProvisions ? null : witness;
 
   return {
     indicatorId: indicator.id,

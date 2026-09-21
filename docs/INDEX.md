@@ -7,6 +7,8 @@ LexDroid's implementation notes:
 - `india-integration.md` — implemented Central-law foundation, supplied-document acceptance
   evidence, rollout sequence and declared India-specific limits.
 - `reader-batch.md` — the reader-side fixes held for one re-run, each with its rule.
+- `aus-sgp-disagreements.md` — every cell where Australia or Singapore differs from ESCAP, sorted
+  into retrieval failures, over-reads and genuine finds, and why agreement is the wrong target.
 
 Each document appears twice: the **original** (`.pdf`, `.xlsx`, `.docx`, `.csv`) and a **readable
 text extraction** (`.md`) with the same basename. Read the `.md`; open the original when the layout

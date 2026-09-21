@@ -37,6 +37,7 @@
     "parse-check": "tsx scripts/parse-check.ts",
     "reanchor": "tsx scripts/reanchor.ts",
     "repair-economy": "tsx scripts/repair-economy.ts",
+    "repair-register": "tsx scripts/repair-register.ts",
     "confirm": "tsx scripts/confirm.ts",
     "reach": "tsx scripts/reach.ts",
     "benchmark": "tsx scripts/benchmark.ts",
@@ -45,7 +46,8 @@
     "calibration": "tsx scripts/calibration.ts",
     "zone1-audit": "tsx scripts/zone1-audit.ts",
     "recache-composed": "tsx scripts/recache-composed.ts",
-    "lexical-ab": "tsx scripts/lexical-ab.ts"
+    "lexical-ab": "tsx scripts/lexical-ab.ts",
+    "cell-audit": "tsx scripts/cell-audit.ts"
   },
   "dependencies": {
     "@tesseract.js-data/eng": "^1.0.0",

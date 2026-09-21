@@ -51,7 +51,7 @@ export type Portal = z.infer<typeof Portal>;
 export const InstrumentType = z.object({
   rank: z.number().int().min(1),
   /** Our normalised kind, matching instrument.kind in the store. */
-  kind: z.enum(['act', 'regulation', 'notice', 'guideline', 'order', 'rule']),
+  kind: z.enum(['act', 'regulation', 'notice', 'guideline', 'order', 'rule', 'publication']),
   /** What this economy actually calls it. */
   localName: z.string().min(1),
   bindingness: z.enum(['binding', 'binding-on-licensees', 'advisory']),

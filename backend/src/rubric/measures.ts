@@ -693,6 +693,20 @@ export const MEASURES: Record<string, Measure[]> = {
       defines: 'the words requiring the towers, ducts, poles or sites to be shared',
       gloss:
         'a duty on a telecommunications operator to share passive infrastructure -- towers, masts, ducts, poles, trenches or sites -- with another operator',
+      alsoAsked: [
+        // Sharing is the policy word; access on request is the drafting one. A statute rarely
+        // imposes a duty to "share" -- it says one operator must, if asked, let the other onto the
+        // tower -- and the indicator's own name carries the policy word into four of its five
+        // questions, so a provision matching the one question written in the statute's voice was
+        // outranked by provisions matching all five weakly.
+        //
+        // Clause 33 of Schedule 1 to Australia's Telecommunications Act 1997 is the case: "A
+        // carrier (the first carrier) must, if requested to do so by another carrier (the second
+        // carrier), give the second carrier access to a [tower]", with clauses 34, 35 and 38 for
+        // sites, underground facilities and co-operation. The cell reached the right band without
+        // them and cited an offshore-energy Act for it.
+        'a duty on one operator to give another operator access, on request, to a tower, to the site of a tower, or to an underground facility',
+      ],
       actor: 'the operator that owns the infrastructure',
     },
   ],
@@ -715,10 +729,22 @@ export const MEASURES: Record<string, Measure[]> = {
   '5.7': [
     {
       token: 'independent-telecom-authority',
-      defines: 'the words stating the regulator acts independently or takes no direction',
+      /**
+       * The band is "Independent telecom authority is established", and this used to ask for
+       * something else: words stating the regulator takes no direction. A no-direction clause is
+       * one way a system shows independence and not the usual one -- the usual one is establishing
+       * the regulator as a body of its own, with its own officers and its own functions, outside
+       * the ministry. No Australian provision says ACMA is free of direction, because it is not;
+       * section 6 of its Act establishes it as a listed entity with its own accountable authority,
+       * which is what the band describes. So the measure demanded a sentence the corpus could not
+       * contain, and the only finding that ever satisfied it came from the Gene Technology Act --
+       * "the Regulator is not subject to direction from anyone" -- which is the right words about
+       * the wrong regulator.
+       */
+      defines: 'the words establishing the regulator as a body of its own, with its own officers or functions rather than as part of a ministry',
       permits: true,
       gloss:
-        'the establishment of a telecommunications or communications regulator, stated to act independently or not to be subject to direction in the exercise of its functions',
+        'the establishment of a telecommunications or communications regulator as a body separate from the ministry, with its own officers and its own functions',
       actor: 'the regulator being established',
     },
   ],
@@ -801,6 +827,22 @@ export const MEASURES: Record<string, Measure[]> = {
       defines: 'the words requiring the payment services licence',
       gloss:
         'a requirement to hold a licence to provide payment services, and the conditions that must be met to keep it',
+      alsoAsked: [
+        // The same permission said the other way a statute says it. One convention licenses the
+        // provider and the gloss above finds it; the other forbids anyone but an authorised
+        // institution to hold the value, and the two share no word -- the second never says
+        // "licence" at all. `LICENCE` below already accepts a word meaning authorisation, so the
+        // gate was never the obstacle; nothing asked the question.
+        //
+        // Australia is drafted the second way. Section 22 of the Payment Systems (Regulation) Act
+        // 1998 -- "Holder of stored value must be an ADI or be authorised or exempted under this
+        // Part", an offence carrying 200 penalty units -- sits in the instrument the register
+        // already names as governing the cell, and was not in the top 600 on any question the cell
+        // asked. Section 23, the power to grant the authority, was read; the duty to hold one was
+        // not, and the cell answered "no payment licensing requirement found" on 20 findings. With
+        // this line the provision is first.
+        'a requirement to be authorised, or to hold an authority or exemption, in order to hold stored value or issue a payment facility',
+      ],
       actor: 'the payment service provider',
     },
   ],
@@ -986,7 +1028,23 @@ export const MEASURES: Record<string, Measure[]> = {
       crossesBorder: true,
       gloss:
         'a value of imported goods below which no customs duty, import duty or import tax is charged, however the provision names it -- a de minimis, a relief, an exemption by value, a threshold for informal clearance',
-      alsoAsked: ['goods of a value not exceeding a stated amount are exempt from import duty or sales tax'],
+      alsoAsked: [
+        'goods of a value not exceeding a stated amount are exempt from import duty or sales tax',
+        // The same threshold said the other way a statute says it, because the two drafting
+        // conventions do not share a word. One writes the relief -- goods under the figure are
+        // exempt -- and the line above finds it. The other writes the clearance: goods under the
+        // figure need not be entered or declared at all, and so no duty is assessed on them. The
+        // gloss has named informal clearance all along and nothing asked for it.
+        //
+        // Australia is drafted the second way and was scored "no de minimis" because of it.
+        // Section 68 of the Customs Act 1901 excuses a consignment "of a value not exceeding
+        // $1,000" from entry for home consumption -- the AUD 1,000 threshold, stated in the
+        // provision, in the corpus, and 160th of 308 on the questions the cell asked. With this
+        // line it is 7th of the depth. Checked on the other two economies before it was kept:
+        // Singapore's Imports Relief Order schedule and its Customs (Duties -- Exemption) Order
+        // come up, and Malaysia's Customs Act 1967 sections on clearance.
+        'goods whose value does not exceed a stated amount are cleared without an import declaration or entry for home consumption',
+      ],
       actor: 'the importer of the goods',
     },
   ],
@@ -1301,6 +1359,14 @@ const RESTRICTION = new RegExp(
  * international standard, which is a question about meaning, so it is asked of the reader in
  * `defines` instead. See the note on LOCALITY, which lost the economy names for the same reason.
  */
+/**
+ * What a law gives someone to enforce a right with: an order, an award, or the standing to go and
+ * ask for one. A measure defined as a remedy is not made out by words that only name the thing
+ * being protected.
+ */
+const REMEDY =
+  /\b(remed\w*|injunct\w*|damages|account of profits|compensat\w*|liable|liability|relief|restrain\w*|action\w*|proceeding\w*|sue|sued|suit|claim\w*|breach of confidence|enforc\w*)\b/i;
+
 export const MEASURE_NAMES: Readonly<Record<string, RegExp>> = {
   // A licence measure needs a word meaning licence. Five indicators turn on one.
   'content-licence': LICENCE,
@@ -1323,6 +1389,13 @@ export const MEASURE_NAMES: Readonly<Record<string, RegExp>> = {
   'mra-certification-accepted': /\b(mutual recognition|foreign\w*|overseas|another (country|economy|jurisdiction)|recognis\w*|recogniz\w*)\b/i,
   'foreign-exclusion-from-standards': /\b(foreign\w*|non-?resident\w*|overseas|nationa\w*)\b/i,
   'national-payment-standard': STANDARD,
+  // 4.1's two measures differ by one thing, and the rubric says which: the stronger is "the words
+  // giving the holder a remedy for the unauthorised use or disclosure", the weaker is "the words
+  // imposing the duty of confidence". Both name a trade secret, so naming one cannot be what tells
+  // them apart -- and copying the subject back as the defining words is how the weaker was read as
+  // the stronger. Only the stronger is asked for a remedy; the clause keeps no entry here, because
+  // a duty of confidence is made out by the duty and the confidence alone.
+  'trade-secret-protection': REMEDY,
   // Named by its negation rather than by a term of art: see WITHOUT_PUBLICITY above.
   'opaque-standard-setting': WITHOUT_PUBLICITY,
   // A residual band with no term of art to ask for: see RESTRICTION above.
@@ -1349,6 +1422,13 @@ export const MEASURE_NAMES: Readonly<Record<string, RegExp>> = {
   'local-representative': /\b(represent\w*|agent\w*|office\w*|establish\w*|resident\w*)\b/i,
   'local-presence': /\b(present\w*|establish\w*|office\w*|branch\w*|subsidiar\w*|incorporat\w*|resident\w*)\b/i,
   'local-domain-or-presence': /\b(domain\w*|present\w*|establish\w*|office\w*|branch\w*|subsidiar\w*|incorporat\w*)\b/i,
+  // The band is "Independent telecom authority is established", so the word is established. With
+  // the measure widened to match that band, nothing else asked whether the provision creates
+  // anything: the cell then scored on "ACMA means the Australian Communications and Media
+  // Authority" -- a definitions entry -- and on a simplified outline saying ACMA reports to the
+  // Minister each year. Naming a regulator is not establishing one, and a system that creates a
+  // statutory body says so in one of these words.
+  'independent-telecom-authority': /\b(establish\w*|constitut\w*|incorporat\w*|body corporate|listed entity|statutory (?:authority|body|agency|corporation)|created by|set up)\b/i,
   // The officer measure is a person put in a position, and the role words already carry that.
   // Pillar 8's two identity measures are named by identity, and were not asked for it. The top
   // band took a customs declaration for imported timber, a duty to keep a record of "personal
@@ -1466,8 +1546,25 @@ export const MEASURE_DOMAIN: Readonly<Record<string, RegExp>> = {
   'ecommerce-licence': ONLINE_TRADE,
 };
 
+/**
+ * The communications sector, in the words a statute uses to name it.
+ *
+ * 5.7 asks whether the economy has an independent telecom regulator, and until the measure above
+ * was corrected it was answered by the Gene Technology Regulator, on a provision saying it is not
+ * subject to direction from anyone. Widening the measure to the establishment of a regulator --
+ * which is what the band says -- makes that failure mode worse rather than better, because every
+ * statute establishing any regulator would then answer it. So the subject has to be the sector.
+ *
+ * "communication" as well as "telecom": the two are not the same word, and the authority this
+ * indicator is about is called the Australian Communications and Media Authority. A list matching
+ * only "telecom" recognises the phrase one drafter chose and turns away another's.
+ */
+const COMMUNICATIONS = /\b(telecom\w*|communication\w*|broadcast\w*|carriage service\w*|carrier\w*|spectrum|radiocommunication\w*|postal|media)\b/i;
+
 export const SUBJECT_DOMAIN: Readonly<Record<string, RegExp>> = {
   ...PILLAR_12_DOMAINS,
+  // See COMMUNICATIONS above: the measure asks for a regulator, so the subject has to say which.
+  '5.7': COMMUNICATIONS,
   // Terms of art: a patent is a patent, a copyright a copyright, a trade secret a trade secret and
   // an encryption standard an encryption standard, in every one of these legal systems. The sector
   // domains that were here with them are gone -- see the note above.

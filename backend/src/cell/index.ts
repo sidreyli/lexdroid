@@ -452,12 +452,14 @@ export async function answerPillar(
   // The consolidation's own currency date answers this; the last amendment is the fallback for a
   // register that publishes one and not the other. Reading the amendment date alone said a
   // Malaysian Act was current to its last amendment, which is a different and stronger claim.
-  const currentTo = new Map<number, string | null>(
-    (db.prepare(
-      `SELECT id, COALESCE(current_to, last_amended_on) AS current_to FROM instrument
-        WHERE economy_code = ?`,
-    ).all(economy) as { id: number; current_to: string | null }[]).map((r) => [r.id, r.current_to]),
-  );
+  const registered = db.prepare(
+    `SELECT id, COALESCE(current_to, last_amended_on) AS current_to, kind FROM instrument
+      WHERE economy_code = ?`,
+  ).all(economy) as { id: number; current_to: string | null; kind: string | null }[];
+  const currentTo = new Map<number, string | null>(registered.map((r) => [r.id, r.current_to]));
+  // Carried for the same reason as the date beside it: the decision reports a zero against one of
+  // these, and what the register says the document is decides whether it may be reported at all.
+  const kindOfInstrument = new Map<number, string | null>(registered.map((r) => [r.id, r.kind]));
   const decisions = indicators.map((indicator) => {
     const isFramework = indicator.shape === 'framework';
     const frameworkEvidence = frameworkByIndicator.get(indicator.id) ?? [];
@@ -474,6 +476,7 @@ export async function answerPillar(
         instrumentTitle: section.instrumentTitle,
         rank: section.rank,
         currentTo: currentTo.get(section.instrumentId) ?? null,
+        kind: kindOfInstrument.get(section.instrumentId) ?? null,
       });
     }
 

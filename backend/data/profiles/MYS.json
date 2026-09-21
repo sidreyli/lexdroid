@@ -75,6 +75,13 @@
       "localName": "Regulator guidelines",
       "bindingness": "advisory",
       "note": "Personal Data Protection Department guidance and similar. Evidence of how a regulator reads a binding instrument, never the source of an obligation on their own."
+    },
+    {
+      "rank": 5,
+      "kind": "publication",
+      "localName": "Publication about the law",
+      "bindingness": "advisory",
+      "note": "A document a body published about the law rather than an instrument of it: a consultation paper, a media release, an FAQ, a landing page for an Act held in the statute book. Registered because it is real evidence of how a regulator reads an obligation, and never the source of one. Assigned where the source states neither an identifier nor a standing."
     }
   ],
   "portals": [

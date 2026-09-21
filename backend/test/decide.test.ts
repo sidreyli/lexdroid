@@ -154,6 +154,44 @@ describe('a cell that scores zero', () => {
     expect(d.rationale).toContain('imposes no local storage requirements');
   });
 
+  it('prefers an instrument that bears on this indicator over one that bears on the pillar', () => {
+    // A pillar is not always one subject. Australia's content-safety Act genuinely regulates part
+    // of pillar 12 and so passed a pillar-wide test for all of it, standing as the instrument
+    // governing payment-security standards while the reader had found no provision of it bearing
+    // on that question and had found provisions in eight other instruments that did.
+    const d = decide({
+      indicator: indicator62,
+      economy: 'SGP',
+      evidence: [
+        evidence(9, 'Maintenance of Parents Act 1995', { indicatorId: '6.1', measure: 'transfer-ban' }),
+        evidence(9, 'Maintenance of Parents Act 1995', { indicatorId: '6.1', measure: 'transfer-ban' }),
+        // Bears on the indicator, and did not survive the second reading -- which is how a cell
+        // with evidence for its own question still scores zero.
+        { ...evidence(1, 'Personal Data Protection Act 2012', { indicatorId: '6.2' }), confirmed: false },
+      ],
+      surfaced,
+      coverage,
+    });
+    // Ranked first in the search and holding twice the pillar evidence, and still not it.
+    expect(d.absence?.basis).toBe('governing');
+    expect(d.absence?.instrumentTitle).toBe('Personal Data Protection Act 2012');
+  });
+
+  it('falls back to the pillar when nothing bears on the indicator itself', () => {
+    // The weaker signal is still worth more than a title match, so it is ordered behind the
+    // indicator's own evidence rather than discarded.
+    const d = decide({
+      indicator: indicator62,
+      economy: 'SGP',
+      evidence: [evidence(1, 'Personal Data Protection Act 2012', { indicatorId: '6.1', measure: 'transfer-ban' })],
+      // no finding bears on 6.2 itself, so the pillar's evidence decides
+      surfaced,
+      coverage,
+    });
+    expect(d.absence?.basis).toBe('governing');
+    expect(d.absence?.instrumentTitle).toBe('Personal Data Protection Act 2012');
+  });
+
   it('will not call the top search result the governing instrument', () => {
     // The failure this guards against. With no pillar evidence anywhere, the highest-ranked hit
     // for a data-localisation search was the Maintenance of Parents Act; reporting that as the

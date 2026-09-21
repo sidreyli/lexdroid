@@ -87,7 +87,20 @@ export function opensAsPublishedAbout(opening: string): boolean {
   return ABOUT.test(opening.replace(/\s+/g, ' ').trim());
 }
 
-export type InstrumentKind = 'act' | 'regulation' | 'notice' | 'guideline' | 'order' | 'rule';
+export type InstrumentKind =
+  | 'act'
+  | 'regulation'
+  | 'notice'
+  | 'guideline'
+  | 'order'
+  | 'rule'
+  /**
+   * A document a body published *about* the law: a consultation paper, a media release, an FAQ,
+   * a landing page for an Act held elsewhere. Registered, because it is a real document and good
+   * evidence of how a regulator reads an obligation, but not as an instrument of the law. See
+   * `registeredKind` for the test, and the profiles for what each economy lets one of these do.
+   */
+  | 'publication';
 
 /** Which of the register's kinds this title names. The most binding word in it wins. */
 export function kindOf(title: string): InstrumentKind {
@@ -98,6 +111,48 @@ export function kindOf(title: string): InstrumentKind {
   if (/\border\b/.test(t)) return 'order';
   if (/\b(notice|notification|determination|directive|circular)\b/.test(t)) return 'notice';
   return 'guideline';
+}
+
+/**
+ * The kind a listing's entry will support, which is not always the kind its title claims.
+ *
+ * `kindOf` reads a title, and a title that *mentions* an Act reads exactly like one that *is* an
+ * Act: "Compulsory Licensing: Clarify The Scope Of 'Reasonable Requirements Of The Public' Test In
+ * The Patents Act" carries the noun and is a consultation paper. Position cannot separate those --
+ * the paper's noun trails, where the drafting convention puts it -- so the title alone cannot
+ * decide, and 73 regulator publications across three economies were registered as Acts.
+ *
+ * What separates them is what the listing says beside the title. A statute book states an
+ * identifier or a standing for everything it publishes; a regulator's news page states neither,
+ * because the page is not a register and its subject is not in force or repealed, it is an
+ * article. So: a document is registered as primary legislation only where its source states an
+ * identifier or a standing for it.
+ *
+ * Scoped to that claim and no wider, because only primary legislation is corroborated this way.
+ * A regulator's genuine guidance carries no gazette number and is not "in force" as a statute is,
+ * so the same test applied to every kind retires the real ones: Australia's .au Domain
+ * Administration Rules at 84 sections, which ESCAP cites, and Malaysia's PDPA Codes of Practice
+ * at 737. It is also where the damage was. The shortlist holds half of every governing list for
+ * Acts, to stop 23,693 regulations burying 1,264 statutes, and a paper admitted to that reserve
+ * spends the reading window a statute needed.
+ *
+ * Deliberately a disjunction, and Singapore is why. 87 of its statutes carry no official number --
+ * Statutes Online names them by title alone -- and every one of them carries a standing. Demanding
+ * both would retire the Banking Act 1970.
+ *
+ * This costs no coverage. Where a regulator's page about an Act is demoted, the Act itself is
+ * already in the register from the statute book, at full length: the Cybersecurity Act 2018 at 146
+ * sections beside a 4-section agency page, the Payment Services Act 2019 at 139 beside a
+ * 1-section one. The demoted copy is not a second copy of the law; it is a page about it.
+ */
+export function registeredKind(
+  claimed: InstrumentKind,
+  entry: { officialNumber?: string | null; status?: string | null },
+): InstrumentKind {
+  if (claimed !== 'act') return claimed;
+  const numbered = (entry.officialNumber ?? '').trim() !== '';
+  const stood = (entry.status ?? '').trim() !== '' && entry.status !== 'unknown';
+  return numbered || stood ? claimed : 'publication';
 }
 
 /** The title with the year, gazette number and edition markers taken off the end. */

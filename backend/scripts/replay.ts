@@ -155,6 +155,28 @@ const consideredFor = db.prepare(
 const storedAnswer = db.prepare('SELECT score FROM cell_answer WHERE cell_id = ?');
 
 /**
+ * What the register calls each instrument, for the surfaced list a zero is cited against.
+ *
+ * A run banks its surfaced instruments as JSON, and the runs already in the store were banked
+ * before the kind was carried: all 1,160 entries of the Australia/Singapore run hold an id, a
+ * title, a rank and a currency date, and no kind. `absenceFor` turns away a publication about the
+ * law, so read from the JSON alone that guard can never fire and a replay scores a consultation
+ * paper as the Act that governs the subject -- which is the behaviour the guard exists to stop.
+ *
+ * The rebuild path does not have this hole: `recordedDecider` joins the register for the kind
+ * rather than trusting the banked row. This does the same, so all three ways of scoring a run see
+ * the same register.
+ *
+ * The banked value still wins where a run recorded one. This fills a gap; it does not overrule a
+ * run that answered for itself.
+ */
+const kindOfInstrument = new Map<number, string | null>(
+  (db.prepare('SELECT id, kind FROM instrument').all() as { id: number; kind: string | null }[]).map(
+    (r) => [r.id, r.kind],
+  ),
+);
+
+/**
  * The second reading's answers, where --confirmed asks for them.
  *
  * Off by default so the replay of a run reproduces that run. On, every finding the confirmation
@@ -200,9 +222,9 @@ for (const cell of cells) {
   const evidence: Evidence[] = [];
   // The cell's own search, where the run recorded it. Older runs kept only its size, and a zero
   // cited against a count cannot be reproduced -- so those fall back to everything read.
-  const surfaced: SurfacedInstrument[] = cell.surfaced_instruments
-    ? (JSON.parse(cell.surfaced_instruments) as SurfacedInstrument[])
-    : [];
+  const surfaced: SurfacedInstrument[] = (
+    cell.surfaced_instruments ? (JSON.parse(cell.surfaced_instruments) as SurfacedInstrument[]) : []
+  ).map((s) => ({ ...s, kind: s.kind ?? kindOfInstrument.get(s.instrumentId) ?? null }));
   const recorded = surfaced.length > 0;
 
   const pillarIndicators = siblings.get(`${cell.economy_code}/${pillarOfIndicator(cell.indicator_id)}`) ?? [];
@@ -215,6 +237,7 @@ for (const cell of cells) {
         instrumentTitle: row['instrument_title'],
         rank: surfaced.length,
         currentTo: row['last_amended_on'] ?? null,
+        kind: row['instrument_kind'] ?? null,
       });
     }
     // A zero is cited against what the search surfaced, which is every instrument read, not only
@@ -287,6 +310,10 @@ for (const cell of cells) {
         `ruled out ${d.excluded.length}, surfaced ${surfaced.length}`,
     );
     for (const h of d.held.slice(0, 5)) console.log(`    held: ${h.reason}`);
+    for (const e of d.basis.slice(0, 5)) {
+      console.log(`    cites: ${e.instrumentTitle} -- ${e.finding.measure} -- "${(e.finding.quote ?? '').slice(0, 150)}"`);
+    }
+    if (d.absence) console.log(`    read against: ${d.absence.instrumentTitle} (${d.absence.basis})`);
   }
   const was = (storedAnswer.get(cell.id) as { score: number | null } | undefined)?.score ?? null;
   for (const [disposition, list] of [

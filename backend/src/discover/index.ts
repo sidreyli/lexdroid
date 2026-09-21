@@ -19,6 +19,7 @@ import { RobotsDisallowed, CacheMiss, HostSuspended } from '../fetch/index.js';
 import { parseDocument, storeDocument, verifyOffsets } from '../parse/index.js';
 import { soleDocumentLink } from '../parse/html.js';
 import { namesAnInstrument, ownName } from '../parse/identity.js';
+import { registeredKind } from './titles.js';
 import type { EconomyProfile } from '../profile/types.js';
 import { portalId } from '../profile/index.js';
 import { crawlAdapter } from './crawl.js';
@@ -141,14 +142,20 @@ export async function register(
     }
 
     let added = 0;
+    let publications = 0;
     db.transaction(() => {
       for (const item of found) {
         // A re-walk re-asserts what the listing says: an instrument stays in the register, and
         // its standing is refreshed from the listing it was found on this time.
         const before = db.prepare('SELECT 1 FROM instrument WHERE economy_code = ? AND source_url = ?')
           .get(profile.code, item.url);
+        // What the listing corroborates, not what the title claims. `kindOf` reads the title, and
+        // a paper named after the Act it discusses reads as that Act -- which is how a regulator's
+        // consultation papers came to hold seats in the reserve the shortlist keeps for statutes.
+        const kind = registeredKind(item.kind, item);
+        if (kind !== item.kind) publications += 1;
         insert.run(
-          profile.code, item.title, item.officialNumber ?? null, item.kind,
+          profile.code, item.title, item.officialNumber ?? null, kind,
           item.status ?? null, item.statusBasis ?? null, item.commencedOn ?? null,
           item.lastAmendedOn ?? null, item.currentTo ?? null, item.currentToBasis ?? null,
           item.madeUnder ?? null, item.url, `portal:${id}`, now,
@@ -173,7 +180,10 @@ export async function register(
         }
       })();
     }
-    log(`  ${found.length} instrument(s) listed, ${added} new to the register`);
+    log(
+      `  ${found.length} instrument(s) listed, ${added} new to the register` +
+        (publications > 0 ? `, ${publications} registered as publications about the law` : ''),
+    );
     // A portal that was walked and yielded nothing is the same hole as a portal nothing can walk,
     // and until now only the second was recorded. Seven of the thirty declared Australian,
     // Malaysian and Singaporean sources are in this state -- the e-Gazette and MyIPO answer 403,
