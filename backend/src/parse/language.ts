@@ -37,7 +37,6 @@ const SCRIPTS: { language: string; pattern: RegExp }[] = [
   { language: 'lo', pattern: /[຀-໿]/g },
   { language: 'my', pattern: /[က-႟]/g }, // Myanmar
   { language: 'km', pattern: /[ក-៿]/g }, // Khmer
-  { language: 'ru', pattern: /[Ѐ-ӿ]/g }, // Cyrillic: Russian, Mongolian, Kazakh
   { language: 'ar', pattern: /[؀-ۿ]/g },
   { language: 'bn', pattern: /[ঀ-৿]/g },
   { language: 'ta', pattern: /[஀-௿]/g },
@@ -45,6 +44,59 @@ const SCRIPTS: { language: string; pattern: RegExp }[] = [
   { language: 'ka', pattern: /[Ⴀ-ჿ]/g },
   { language: 'hy', pattern: /[԰-֏]/g },
 ];
+
+/**
+ * Cyrillic, which unlike the scripts above does NOT settle the question.
+ *
+ * It was in the list, mapped to `ru`, with a comment conceding "Russian, Mongolian, Kazakh" --
+ * so every Mongolian provision was recorded as Russian, and would have gone out that way in
+ * Language of Source, which is a required export column and the one criterion C1c is scored on.
+ * A wrong language there is a false statement about a source document, which this module exists
+ * to refuse.
+ *
+ * Three of the nine sealed live-test economies write Cyrillic, so the question is asked properly:
+ * by the letters one of them has and the others do not, and then by the economy's own declared
+ * languages, exactly as the Latin path below already does for Malay against Indonesian.
+ */
+const CYRILLIC = /[Ѐ-ӿ]/g;
+const CYRILLIC_LANGUAGES = ['ru', 'mn', 'kk'];
+
+/**
+ * Letters that are decisive because one orthography has them and the others do not.
+ *
+ * Russian uses none of these. Kazakh's set is its own; Mongolian shares only Ө and Ү with it, so
+ * Kazakh is tested first and a Kazakh-only letter settles the text against both others.
+ */
+const KAZAKH_LETTERS = /[әғқңұһіӘҒҚҢҰҺІ]/;
+const MONGOLIAN_LETTERS = /[өүӨҮ]/;
+
+/**
+ * Which Cyrillic language this is, or null where nothing says.
+ *
+ * `ru` is the fall-through rather than a guess: it is what Cyrillic is when nothing marks it as
+ * one of the others and no profile narrows it, which is the behaviour every existing caller
+ * already depends on. What changes is that a profile naming Mongolian, or a single Ө in the text,
+ * is now enough to stop a Mongolian provision being filed as Russian.
+ */
+function cyrillicLanguage(text: string, candidates?: readonly string[]): string | null {
+  // A letter the other orthographies do not contain outranks anything the profile says, so a
+  // Mongolian provision is caught as Mongolian even inside an economy that publishes in Russian.
+  //
+  // The evidence only runs that way. Russian has no letter of its own against Mongolian -- its
+  // alphabet is a subset here -- so Russian text inside an economy declared Mongolian falls
+  // through to the profile below and is answered `mn`. That is the same trade the Latin path
+  // makes for Malay against Indonesian, and it is stated rather than hidden: the economy tells
+  // them apart where the text cannot.
+  if (KAZAKH_LETTERS.test(text)) return 'kk';
+  if (MONGOLIAN_LETTERS.test(text)) return 'mn';
+
+  // Nothing in the letters, so the economy decides -- a short provision may contain no Ө or Ү at
+  // all, and the profile already states which languages that economy publishes law in.
+  const pool = (candidates ?? []).filter((c) => CYRILLIC_LANGUAGES.includes(c));
+  if (pool.length === 1) return pool[0]!;
+  if (pool.length === 0 || pool.includes('ru')) return 'ru';
+  return null;
+}
 
 /**
  * The words legal drafting in each Latin-script language cannot do without.
@@ -122,6 +174,14 @@ export function detectLanguage(text: string, opts: DetectOptions = {}): string |
 
   const byScript = scriptOf(text);
   if (byScript) return byScript;
+
+  // Cyrillic is asked on the same terms the scripts above are -- a clear majority over Latin, so
+  // an English provision citing a Russian body is still English -- but answered by its own
+  // resolver, because the script names three languages rather than one.
+  const cyrillic = (text.match(CYRILLIC) ?? []).length;
+  if (cyrillic > 3 && cyrillic > (text.match(/[A-Za-z]/g) ?? []).length) {
+    return cyrillicLanguage(text, opts.candidates);
+  }
 
   const letters = (text.match(/[A-Za-z]/g) ?? []).length;
   if (letters < MIN_LETTERS) return null;

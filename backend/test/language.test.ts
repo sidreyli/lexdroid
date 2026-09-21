@@ -75,3 +75,61 @@ describe('the language of a provision', () => {
     expect(detectLanguage(ENGLISH, { candidates: ['xx'] })).toBe(null);
   });
 });
+
+/**
+ * Cyrillic is written by three of the nine sealed live-test economies, and the script alone
+ * settles none of them.
+ *
+ * It used to be one row in the script table mapped to `ru`, with a comment conceding "Russian,
+ * Mongolian, Kazakh" -- so every Mongolian provision was recorded as Russian, and would have gone
+ * out that way in Language of Source, a required export column and the only thing criterion C1c
+ * is scored on. A wrong language there is a false statement about a source document, which is
+ * precisely what this module refuses to make everywhere else.
+ */
+describe('Cyrillic, which names three languages rather than one', () => {
+  const MONGOLIAN =
+    'Хувь хүний нууцыг хамгаалах тухай хуулийн 16 дугаар зүйлд заасны дагуу мэдээллийг Монгол Улсын нутаг дэвсгэрт байршуулна';
+  const RUSSIAN =
+    'В соответствии со статьей 18 Федерального закона о персональных данных оператор обязан обеспечить запись и хранение персональных данных';
+
+  it('tells Mongolian from Russian by the letters Russian does not have', () => {
+    // Ө/ө and Ү/ү are Mongolian Cyrillic and appear in no Russian word. One is decisive, so this
+    // holds without the profile having to say anything -- which is what the live test needs, when
+    // the economy may be one nobody has written a profile for yet.
+    expect(detectLanguage(MONGOLIAN)).toBe('mn');
+    expect(detectLanguage(RUSSIAN)).toBe('ru');
+  });
+
+  it('lets the economy decide where the letters are silent', () => {
+    // A short Mongolian provision may contain no Ө or Ү at all, and the profile already states
+    // which languages the economy publishes law in.
+    const noMarkers = 'Энэ хуулийн зорилт нь мэдээлэл хамгаалах харилцааг зохицуулахад оршино.';
+    expect(detectLanguage(noMarkers, { candidates: ['mn'] })).toBe('mn');
+    expect(detectLanguage(noMarkers, { candidates: ['ru'] })).toBe('ru');
+  });
+
+  it('still answers Russian where nothing narrows it, which every existing caller depends on', () => {
+    expect(detectLanguage(RUSSIAN, { candidates: ['ru'] })).toBe('ru');
+    expect(detectLanguage(RUSSIAN, { candidates: [] })).toBe('ru');
+  });
+
+  it('finds Mongolian inside an economy that publishes in Russian, but not the reverse', () => {
+    // The evidence is one-directional and the asymmetry is declared rather than hidden: Mongolian
+    // has letters Russian lacks, so it is caught; Russian has none against Mongolian, so Russian
+    // text in a Mongolian corpus falls through to what the profile says. Same trade the Latin
+    // path makes for Malay against Indonesian.
+    expect(detectLanguage(MONGOLIAN, { candidates: ['ru'] })).toBe('mn');
+    expect(detectLanguage(RUSSIAN, { candidates: ['mn'] })).toBe('mn');
+  });
+
+  it('does not take an English provision naming a Russian body for Russian', () => {
+    const english =
+      'The operator shall not transfer any personal data to a place outside Singapore except as provided in this section.';
+    expect(detectLanguage(english)).toBe('en');
+  });
+
+  it('reads Lao as Lao, which the script table already settled', () => {
+    const lao = 'ກົດໝາຍວ່າດ້ວຍການປົກປ້ອງຂໍ້ມູນສ່ວນບຸກຄົນ ມາດຕາ 12 ຜູ້ຄວບຄຸມຂໍ້ມູນຕ້ອງເກັບຮັກສາ';
+    expect(detectLanguage(lao)).toBe('lo');
+  });
+});
