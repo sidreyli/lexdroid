@@ -80,27 +80,34 @@ describe('the economy profile', () => {
     db.close();
   });
 
-  it('keeps a null-adapter Thai portal note as a one-line summary with a doc pointer, not a re-inlined investigation', () => {
+  it('keeps every null-adapter portal note a one-line summary with a doc pointer, not a re-inlined investigation', () => {
     // The gap-documentation convention agreed for Thailand (see thailand-integration-plan.md's
     // "Conventions" note): full investigative detail -- chunk filenames, HTTP codes, confidence
     // ratings -- lives in the plan doc / adapter spec, not back in the profile JSON. This locks
     // that convention in so a future edit can't silently drift the notes field back to a wall of
     // prose the way earlier drafts of this profile did.
+    //
+    // Asked of every profile rather than of Thailand's, because a convention enforced on one
+    // economy is a convention the next economy is written without. Lao, Mongolia and Russia each
+    // declare portals no adapter reads, for reasons as specific as Thailand's, and each of those
+    // reasons belongs in a doc with the trace rather than in this file.
     const MAX_NULL_ADAPTER_NOTE_LENGTH = 600;
-    const p = loadProfile('THA');
-    const nullAdapterPortals = p.portals.filter((x) => x.adapter === null);
-    expect(nullAdapterPortals.length).toBeGreaterThan(0);
-    for (const portal of nullAdapterPortals) {
-      expect(portal.notes, `${portal.name} has no notes`).toBeTruthy();
-      expect(
-        portal.notes!.length,
-        `${portal.name}'s note is ${portal.notes!.length} chars -- investigative detail belongs in the plan doc, not here`,
-      ).toBeLessThanOrEqual(MAX_NULL_ADAPTER_NOTE_LENGTH);
-      expect(
-        /docs\/thailand-integration-plan\.md|docs\/thailand-ocs-adapter-spec\.md/.test(portal.notes!),
-        `${portal.name}'s note doesn't point to a doc with the full trace`,
-      ).toBe(true);
+    const offenders: string[] = [];
+    for (const code of availableProfiles()) {
+      for (const portal of loadProfile(code).portals.filter((x) => x.adapter === null)) {
+        const note = portal.notes ?? '';
+        if (!note) {
+          offenders.push(`${code} ${portal.name}: no notes, so nothing says why it is unread`);
+        } else if (note.length > MAX_NULL_ADAPTER_NOTE_LENGTH) {
+          offenders.push(
+            `${code} ${portal.name}: ${note.length} chars -- investigative detail belongs in the doc, not here`,
+          );
+        } else if (!/docs\/[a-z0-9-]+\.md/.test(note)) {
+          offenders.push(`${code} ${portal.name}: points at no doc holding the full trace`);
+        }
+      }
     }
+    expect(offenders).toEqual([]);
   });
 });
 
@@ -127,6 +134,24 @@ describe('building a query the index can actually match', () => {
     expect(q).toBe(
       '"ข้อ" OR "้อม" OR "อมู" OR "มูล" OR "ูลส" OR "ลส่" OR "ส่ว" OR "่วน" OR "วนบ" OR "นบุ" OR "บุค" OR "ุคค" OR "คคล"',
     );
+  });
+
+  it('expands a spaceless Lao run too, which the Thai fix omitted', () => {
+    // Lao is written without word spaces exactly as Thai is, and was left out of SPACELESS when
+    // that was written for Chinese and Thai. The omission is silent in the worst way: the whole
+    // phrase reaches FTS5 as one token, the trigram tokenizer can satisfy it only by an exact
+    // contiguous match, and Lao lexical search returns nothing -- indistinguishable from a
+    // genuine absence of results, on the one economy of the three new ones whose corpus is Lao.
+    // "ຂໍ້ມູນສ່ວນບຸກຄົນ" is personal data, the subject of both mandatory pillars.
+    const q = ftsQuery('ຂໍ້ມູນສ່ວນບຸກຄົນ');
+    expect(q).toBeTruthy();
+    expect(q!.split(' OR ').length).toBe(14);
+    expect(q!.startsWith('"ຂໍ້" OR "ໍ້ມ" OR "້ມູ" OR "ມູນ"')).toBe(true);
+    expect(q).not.toContain('"ຂໍ້ມູນສ່ວນບຸກຄົນ"');
+  });
+
+  it('leaves a spaced-script query untouched, so the Lao change costs Latin and Cyrillic nothing', () => {
+    expect(ftsQuery('personal data transfer')).toBe('"personal" OR "data" OR "transfer"');
   });
 
   it('keeps a Thai combining mark attached to the letter before it, not as a token boundary', () => {
