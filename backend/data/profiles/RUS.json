@@ -89,9 +89,9 @@
         11,
         12
       ],
-      "adapter": null,
+      "adapter": "crawl",
       "adapterConfig": {},
-      "notes": "The official publication venue and therefore the commencement evidence for federal law; Consultant+ and Garant are commercial aggregators and are NOT the official source. Permissive robots apart from assets, /Search and /File; declares a sitemap; server-rendered; documents enumerable by date at /document/<20-digit-id>. adapter is null because neither existing adapter reaches it -- the sitemap adapter would test slugs like government, and the crawl adapter own path vocabulary is English. Disallow: /File must be checked before any document fetch. Full trace: docs/lao-mongolia-russia-recon.md."
+      "notes": "The official publication venue and therefore the commencement evidence for federal law; Consultant+ and Garant are commercial aggregators and are NOT the official source. Permissive robots apart from assets, /Search and /File; declares a sitemap; server-rendered; documents enumerable by date at /document/<20-digit-id>, 60 to a listing page. Walked by the crawl adapter, which reaches it now that title recognition reads Russian and LEADS_TO_LAW admits /documents. Disallow: /File must be checked before any document fetch. Full trace: docs/lao-mongolia-russia-recon.md."
     },
     {
       "name": "State System of Legal Information (pravo.gov.ru)",

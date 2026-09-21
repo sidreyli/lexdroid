@@ -35,9 +35,17 @@ const MAX_DEPTH = 3;
  * no link's text is. So did "licen[cs]", "vacanc", "guideline" against "guidelines", and "act"
  * against "acts" -- which is to say the filter accepted exact singulars and refused /acts,
  * /rules, /regulations, /guidelines and /licensing on all six sites the crawl adapter reads.
+ *
+ * "documents" is here for the same reason "instruments" is, and it was the whole of what stopped
+ * this adapter reaching Russia. `publication.pravo.gov.ru` is permissive, server-rendered and
+ * publishes nothing but law, and it files all of it under /documents/<body>/... -- so every path
+ * was refused, including the leaf, and the register came back empty. A word is not English or
+ * foreign here; what matters is that a government files its law behind it. Note this is a word
+ * about the path and the link text, not about the instrument: `instrumentTitle` decides what is
+ * an instrument, and it reads the economy's own vocabulary.
  */
 const LEADS_TO_LAW =
-  /\b(?:legislat\w*|legal|regulat\w*|licen[cs]\w*|regist\w*|instruments?|gazettes?|statut\w*|codes?|guidelines?|standards?|acts?|rules?|orders?|determinations?|directions?|directives?|circulars?|notices?|polic(?:y|ies)|complian\w*|enforce\w*)\b/i;
+  /\b(?:legislat\w*|legal|regulat\w*|licen[cs]\w*|regist\w*|instruments?|documents?|gazettes?|statut\w*|codes?|guidelines?|standards?|acts?|rules?|orders?|determinations?|directions?|directives?|circulars?|notices?|polic(?:y|ies)|complian\w*|enforce\w*)\b/i;
 /** And the parts of a site that never do, however many links they carry. */
 const LEADS_AWAY =
   /\b(?:news|media|press|events?|careers?|vacanc(?:y|ies)|contact|about-us|search|login|subscribe|rss|calendar|galler(?:y|ies)|videos?|podcasts?)\b/i;

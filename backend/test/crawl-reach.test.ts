@@ -100,4 +100,25 @@ describe('the pages a crawl opens looking for instruments', () => {
     expect(named).not.toBeNull();
     expect(named?.title).toBe('Content Code (Third Edition)');
   });
+
+  it('opens the section a government files its law under, when that word is "documents"', () => {
+    // The same defect one word further on, and the whole of what stopped this adapter reaching
+    // Russia. `publication.pravo.gov.ru` is the official publication venue -- permissive,
+    // server-rendered, publishing nothing but law -- and it files all of it under
+    // /documents/<body>/..., so every path was refused and the register came back empty. That is
+    // the failure this file exists for: a page never opened holds instruments no ranking,
+    // reading or rule can recover, and the cell reports that it searched and found nothing.
+    expect(leadsToLaw('/documents/block/government', 'Правительство')).toBe(true);
+    expect(leadsToLaw('/documents/government/daily', 'Документы за день')).toBe(true);
+    expect(leadsToLaw('/document/0001202609170019', 'О внесении изменений')).toBe(true);
+  });
+
+  it('still refuses the parts of a site that carry no law, however many links they hold', () => {
+    // Widening what is opened spends the sixty-page budget, so the words that lead away still
+    // have to win. A newsroom is a newsroom whether or not it calls its pages documents.
+    expect(leadsToLaw('/news/media-release', 'Media release')).toBe(false);
+    expect(leadsToLaw('/about-us/careers', 'Careers')).toBe(false);
+    expect(leadsToLaw('/search?q=data', 'Search')).toBe(false);
+    expect(leadsToLaw('/media/documents', 'Press documents')).toBe(false);
+  });
 });
