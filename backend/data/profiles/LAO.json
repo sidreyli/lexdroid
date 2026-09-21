@@ -79,9 +79,9 @@
         11,
         12
       ],
-      "adapter": null,
+      "adapter": "crawl",
       "adapterConfig": {},
-      "notes": "The promulgation venue and therefore the commencement evidence. Reachable and well structured -- server-rendered Yii PHP, listings paginated and sortable by issue and effective date, genuinely Lao-language -- but BLOCKED ON OCR: documents are image-only PDF scans (one sampled carried zero /Font and zero /ToUnicode), and backend/src/parse/ocr.ts is hardcoded to [eng, hin]. Lao produces no cells until a Lao language pack and a Lao-script confidence heuristic are added there. Full trace: docs/lao-mongolia-russia-recon.md."
+      "notes": "The promulgation venue and therefore the commencement evidence. Server-rendered Yii PHP; listings paginated at /index.php?r=site/index and sortable by issue and effective date; genuinely Lao-language (12,412 Lao characters on the homepage alone). Documents are image-only PDF scans, which OCR now reads: one sampled page recovered 1,761 Lao characters at 77.0 confidence in 10.2s, retaining article numbers and the made-under citation chain. Lao rows therefore sit on the 0.65 OCR confidence rung. Full trace: docs/lao-mongolia-russia-recon.md."
     },
     {
       "name": "Lao Trade Portal",

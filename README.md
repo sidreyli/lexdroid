@@ -276,9 +276,9 @@ as for the language model.
 | Singapore | `sso.agc.gov.sg` (+ 8) | en | **Yes** — 61/61 indicators | 6,857 registered |
 | India | `indiacode.gov.in` (+ 10) | en, hi | **No** — profile and adapter only | Portal adapter written and tested; no cells produced |
 | Thailand | `searchlaw.ocs.go.th` (+ 7) | th | **No** — profile only | Six of eight portals confirmed blocked or client-rendered; `docs/thailand-integration-plan.md` |
-| Mongolia | `legalinfo.mn` (+ 4) | mn | **No** — profile only | Register endpoint and full-text documents both verified reachable; adapter not yet written |
-| Russian Federation | `publication.pravo.gov.ru` (+ 4) | ru | **No** — profile only | Permissive and enumerable; blocked only by English-only title recognition |
-| Lao PDR | `laoofficialgazette.gov.la` (+ 4) | lo | **No** — profile only | Reachable, but the gazette is scan-only and OCR has no Lao pack |
+| Mongolia | `legalinfo.mn` (+ 4) | mn | **No** — profile only | Register endpoint and full-text documents both verified reachable; adapter needs POST support in the fetcher |
+| Russian Federation | `publication.pravo.gov.ru` (+ 4) | ru | **No** — profile, adapter ready | Permissive and enumerable; walked by `crawl`, no register run yet |
+| Lao PDR | `laoofficialgazette.gov.la` (+ 4) | lo | **No** — profile, adapter ready | Walked by `crawl`; gazette is scan-only and read by the Lao OCR pack at 77% confidence |
 
 **Stated honestly:** eight economies are profiled; **three have been run end to end**, and they are
 the three mandatory ones. Of the nine sealed live-test economies, LexDroid has produced cells for
@@ -377,13 +377,19 @@ comparison pass will be filled in once the engine has been run. It is not estima
   Malay and 7 unclassifiable. `lom.agc.gov.my` publishes English versions and our discovery reaches
   those first. C1c is scored on the language of the source, so this is a real gap, not a
   presentational one.
-- **Lao PDR cannot produce a cell until OCR learns Lao.** `laoofficialgazette.gov.la` is reachable,
-  paginated and genuinely Lao-language, but it publishes image-only scans — one sampled at 1.09 MB
-  carried zero `/Font` and zero `/ToUnicode` — and `backend/src/parse/ocr.ts` is packaged with
-  English and Hindi only. Nothing is wrong with the profile or the portal; the text simply cannot
-  be read yet. When it can, Lao rows will sit on the 0.65 confidence rung, because that is what
-  "located in OCR-recovered text" is worth, and that is a real ceiling on Lao rather than a number
-  to explain away.
+- **Every Lao row is OCR-recovered, and capped at 0.65 confidence because of it.**
+  `laoofficialgazette.gov.la` publishes image-only scans — one sampled at 1.09 MB carried zero
+  `/Font` and zero `/ToUnicode`. The Lao language pack reads them: 1,761 Lao characters off one
+  page at 77.0 confidence in 10.2 seconds, retaining article numbers and the made-under citation
+  chain. But "located in text recovered by OCR" is what the 0.65 rung means, and it is a real
+  ceiling on Lao rather than a number to explain away.
+- **Lao ligature orthography can still cost recall.** Lao writes some clusters either as one
+  ligature codepoint or as `ຫ` plus the base consonant (`ໝ` against `ຫ`+`ມ`), Unicode defines no
+  canonical decomposition, and `normalize('NFC')` is a no-op on them — the same situation
+  `backend/src/util/thai.ts` handles for Thai. Two spellings of one word are two trigram sets, so
+  a query and a document that disagree do not match. Sized and written up in
+  `docs/lao-mongolia-russia-recon.md`; not fixed, because the one sample also shows OCR confusing
+  `ມ` with `ນ` and normalising alone would not have recovered it.
 - **Cyrillic tells Mongolian from Russian in one direction only.** Mongolian Cyrillic carries Ө and
   Ү, which Russian does not, so a Mongolian provision is recognised on its own evidence. Russian
   has no letter of its own against Mongolian, so Russian text inside an economy declared Mongolian

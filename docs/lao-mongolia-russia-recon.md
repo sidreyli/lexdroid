@@ -340,3 +340,71 @@ footer gets this wrong — it did here first time.
 14,090 instruments at 20 rows a page is **705 requests**, about twelve minutes at the one-second
 floor, and no model time. The register is built once and queried by all 61 indicators. Skipping the
 three court categories and the two sub-national ones drops it to roughly 560.
+
+---
+
+## Lao OCR — done, measured, and one thing it turned up
+
+*21 September 2026. `@tesseract.js-data/lao@1.0.0` (MIT) added beside the English and Hindi packs,
+`'lao'` added to the worker and to the language directory, and the fallback order made a table so
+a page that reads as Hindi never costs a Lao pass.*
+
+### Acceptance evidence
+
+The sampled gazette scan — `06-28-8-2026_0001.pdf`, 1,087,136 bytes, zero `/Font`, zero
+`/ToUnicode` — was put through the stage cold:
+
+| | |
+|---|---|
+| Time | **10.2 s** for one page |
+| Confidence | **77.0** |
+| Lao characters recovered | **1,761** |
+| Latin characters | 0 |
+| Lines | 35 |
+
+The text is legally usable, not just present. The page is an Instruction (`ຄໍາສັງແນະນໍາ`) on
+agricultural contracts issued by a provincial administration committee, and it opens by citing its
+own enabling powers:
+
+> `ອີງຕາມ ມາດຕາ 20, ຂໍ້ທີ 16 ຂອງກົດຫນາຍວ່າດ້ວຍການປົກຄອງທ້ອງຖິ່ນ (ສະບັບປັບປຸງ) ສະບັບເລກທີ 78/ສພຊ`
+> — *pursuant to Article 20, point 16 of the Law on Local Administration (revised), No. 78/ສພຊ*
+
+> `ອິງຕາມ ດໍາລັດວ່າດ້ວຍກະສິກໍາແບບມີສັນຍາ ສະບັບເລກທີ 56/ລບ`
+> — *pursuant to the Decree on contract farming, No. 56/ລບ*
+
+Article numbers, instrument numbers and the made-under chain all survive OCR. `ດໍາລັດ` (Decree) is
+`LAO.json`'s `regulation` tier and `ຄໍາແນະນຳ` (Instruction) its `guideline` tier, so the
+vocabulary added for title recognition reaches this text too.
+
+**So Lao is no longer blocked.** It sits on the 0.65 confidence rung — *"quoted words located in
+text recovered by OCR"* — which is a real ceiling and is stated in `README.md` Known Limitations.
+
+### The thing it turned up: Lao ligature orthography
+
+OCR returned `ກົດຫນາຍ` where the profile's vocabulary has `ກົດໝາຍ` (law). Lao writes some
+consonant clusters either as a single ligature codepoint or as `ຫ` plus the base consonant:
+
+| Ligature | Decomposed |
+|---|---|
+| `ໝ` U+0EDD | `ຫ` + `ມ` |
+| `ໜ` U+0EDC | `ຫ` + `ນ` |
+
+Unicode defines no canonical decomposition for these, so `normalize('NFC')` is a no-op on them —
+**exactly the situation `backend/src/util/thai.ts` exists for** with Thai SARA AM, and its header
+already predicted this class of bug would appear elsewhere.
+
+Two consequences, both real:
+
+1. **Title recognition can miss.** A Lao title OCR'd in decomposed form will not match a
+   vocabulary term written with the ligature, or the reverse.
+2. **Lexical search can miss.** Two spellings of one word are two different trigram sets, so a
+   query and a document that disagree about the spelling do not match.
+
+The fix is a `canonicalizeLao` beside `canonicalizeThai`, folding `ຫ`+`ມ` → `ໝ` and `ຫ`+`ນ` → `ໜ`,
+applied at the same two call sites (`index/index.ts` for the query side, `db/index.ts` for the
+indexing side) and in `instrumentWords`/`instrumentTitle` for the vocabulary.
+
+**Not fixed here, deliberately.** This sample also shows OCR confusing `ມ` with `ນ` — the two are
+visually close — so `ກົດຫນາຍ` is partly a misread and partly an orthographic variant, and
+normalising alone would not have recovered it. Distinguishing the two needs more than one page of
+evidence. Written down so it is a known, sized piece of work rather than a silent recall loss.

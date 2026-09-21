@@ -42,13 +42,14 @@ export interface OcrPage {
 }
 
 /**
- * Put both packaged languages in one local directory because Tesseract accepts one langPath.
+ * Put every packaged language in one local directory because Tesseract accepts one langPath.
  * This is runtime data under backend/data, not a download and not a modification of node_modules.
  */
 function localLanguageData(): string {
   const packs = [
     localRequire('@tesseract.js-data/eng') as LanguagePackage,
     localRequire('@tesseract.js-data/hin') as LanguagePackage,
+    localRequire('@tesseract.js-data/lao') as LanguagePackage,
   ];
   mkdirSync(TESSDATA_DIR, { recursive: true });
   mkdirSync(TESSERACT_CACHE, { recursive: true });
@@ -61,8 +62,24 @@ function localLanguageData(): string {
   return TESSDATA_DIR;
 }
 
+/**
+ * The non-English packs, and what it takes to prefer one over the English pass.
+ *
+ * Tried in order and only while the one before it has not answered, so a page that reads as
+ * Hindi never costs a Lao pass. An English page costs neither: it is answered by the first pass
+ * and returns before any of this.
+ *
+ * Lao is here because the Lao Official Gazette publishes image-only scans -- one sampled at
+ * 1.09 MB carried zero /Font and zero /ToUnicode -- so every Lao document reaches the pipeline
+ * through this stage or not at all.
+ */
+const FALLBACK_LANGUAGES: { code: 'hin' | 'lao'; script: RegExp; minCharacters: number }[] = [
+  { code: 'hin', script: /[ऀ-ॿ]/g, minCharacters: 20 },
+  { code: 'lao', script: /[຀-໿]/g, minCharacters: 20 },
+];
+
 export async function createTesseractEngine(): Promise<OcrEngine> {
-  const worker = await Tesseract.createWorker(['eng', 'hin'], Tesseract.OEM.LSTM_ONLY, {
+  const worker = await Tesseract.createWorker(['eng', 'hin', 'lao'], Tesseract.OEM.LSTM_ONLY, {
     langPath: localLanguageData(),
     cachePath: TESSERACT_CACHE,
     gzip: true,
@@ -78,10 +95,10 @@ export async function createTesseractEngine(): Promise<OcrEngine> {
     preserve_interword_spaces: '1',
     user_defined_dpi: '300',
   };
-  const useLanguage = async (language: 'eng' | 'hin'): Promise<void> => {
+  const useLanguage = async (language: 'eng' | 'hin' | 'lao'): Promise<void> => {
     await worker.reinitialize(language);
     // reinitialize resets Tesseract's variables, so keep the document-layout assumptions stable
-    // after every English/Hindi switch.
+    // after every language switch.
     await worker.setParameters(parameters);
   };
   await useLanguage('eng');
@@ -95,15 +112,23 @@ export async function createTesseractEngine(): Promise<OcrEngine> {
       const legalEnglish = (english.text.match(/\b(?:the|and|shall|act|rules?|order|government|section)\b/gi) ?? []).length;
       if (english.confidence >= 70 && legalEnglish >= 2) return english;
 
-      await useLanguage('hin');
-      let hindi: OcrRecognition;
-      try {
-        hindi = await recognize(image);
-      } finally {
-        await useLanguage('eng');
+      // Not English, so ask the other packs in turn and stop at the first that answers in its own
+      // script. A page that reads as Hindi never costs a Lao pass, and an English page reached
+      // none of this.
+      for (const { code, script, minCharacters } of FALLBACK_LANGUAGES) {
+        await useLanguage(code);
+        let attempt: OcrRecognition;
+        try {
+          attempt = await recognize(image);
+        } finally {
+          await useLanguage('eng');
+        }
+        const inScript = (attempt.text.match(script) ?? []).length;
+        // The script has to actually be there, and the pass must not be markedly worse than the
+        // English one -- a wrong pack on an English page produces confident nonsense.
+        if (inScript >= minCharacters && attempt.confidence >= english.confidence - 10) return attempt;
       }
-      const devanagari = (hindi.text.match(/[\u0900-\u097f]/g) ?? []).length;
-      return devanagari >= 20 && hindi.confidence >= english.confidence - 10 ? hindi : english;
+      return english;
     },
     async close() {
       await worker.terminate();
