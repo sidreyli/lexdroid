@@ -25,6 +25,7 @@ import { crawlAdapter } from './crawl.js';
 import { drupalAdapter } from './drupal.js';
 import { frlAdapter } from './frl.js';
 import { indiaCodeAdapter } from './indiacode.js';
+import { legalinfoAdapter } from './legalinfo.js';
 import { lomAdapter } from './lom.js';
 import { lomSubsidAdapter } from './lom-subsid.js';
 import { sitemapAdapter } from './sitemap.js';
@@ -40,6 +41,7 @@ const ADAPTERS: Record<string, Adapter> = {
   drupal: drupalAdapter,
   frl: frlAdapter,
   indiacode: indiaCodeAdapter,
+  legalinfo: legalinfoAdapter,
   lom: lomAdapter,
   'lom-subsid': lomSubsidAdapter,
   sitemap: sitemapAdapter,

@@ -11,9 +11,19 @@
   "authoritativeLanguage": "mn",
   "languageNote": "Mongolian, written in Cyrillic script. Cyrillic spaces its words, so unlike Thai or Lao it needs no spaceless-script handling in the trigram index. It does need language detection that can tell Mongolian from Russian: backend/src/parse/language.ts currently maps the whole Cyrillic block to 'ru' (its own comment concedes 'Cyrillic: Russian, Mongolian, Kazakh'), which would record every Mongolian provision as Russian in Language of Source -- a required export column that drives criterion C1c. Mongolian Cyrillic carries Ө/ө (U+04E8/U+04E9) and Ү/ү (U+04AE/U+04AF), which standard Russian orthography does not, and the profile's own officialLanguages already narrow the candidates. legalinfo.mn also serves an /en edition; it is a translation of partial coverage and the Mongolian text governs, so a row quoting the English says so via translationNote in src/export/index.ts. No Mongolian text is translated anywhere in the pipeline -- provisions are quoted in Mongolian and language_of_source records it, per docs/architecture.md's rule against full-document translation.",
   "jurisdictionScope": {
-    "held": "national and local",
-    "note": "Mongolia is unitary, so this is not the federal scope question Australia and Russia have -- but it is not empty either, and the risk runs the opposite way. legalinfo.mn publishes national law and sub-national instruments in one repository: 1,212 aimag and capital-city citizens' assembly decisions (Аймаг, нийслэлийн ИТХ-ын шийдвэр) and 86 governors' orders (Аймаг, нийслэлийн Засаг даргын захирамж), against roughly 12,800 national instruments. Nothing is missing from the corpus; what must not happen is a provincial rule being read as an economy-level answer, which is the same error docs/india-integration.md deferred State and Union Territory law to avoid. An indicator answered on an aimag instrument alone is a scope condition to record, not a national finding.",
-    "notHeld": []
+    "held": "national",
+    "note": "Mongolia is unitary, so this is not the federal scope question Australia and Russia have -- but it is not empty either. legalinfo.mn publishes national law and sub-national instruments in one repository: 1,212 aimag and capital-city citizens assembly decisions and 86 governors orders, against roughly 12,800 national instruments. The legalinfo adapter registers the national categories only, the way docs/india-integration.md deferred State and Union Territory law, and records the two local categories it passed over rather than dropping them silently -- set adapterConfig.includeLocal to walk them. The risk this guards is the inverse of Australias: not a tier missing from the corpus, but a provincial rule read as an economy-level answer.",
+    "notHeld": [
+      {
+        "tier": "Aimag and capital-city instruments",
+        "note": "Each aimag and the capital legislate within the competence the law gives them, and legalinfo.mn publishes those decisions and orders alongside national law. An indicator answered only on one of them is a scope condition to record, not a national finding.",
+        "citedAs": [
+          "Аймаг,?\\s*нийслэлийн\\s+(?:ИТХ|Иргэдийн|Засаг)[^,.;]{0,40}",
+          "нийслэлийн\\s+Засаг\\s+даргын\\s+захирамж",
+          "аймгийн\\s+(?:ИТХ|Иргэдийн\\s+Төлөөлөгчдийн\\s+Хурлын|Засаг\\s+даргын)[^,.;]{0,30}"
+        ]
+      }
+    ]
   },
   "instrumentTypes": [
     {
@@ -79,9 +89,9 @@
         11,
         12
       ],
-      "adapter": null,
+      "adapter": "legalinfo",
       "adapterConfig": {},
-      "notes": "The primary legislation database and the India-Code equivalent: roughly 14,090 instruments across 17 published categories, and the most tractable portal this repository has profiled. No robots.txt (the site 404s it), so the conservative unknown-robots delay applies. Server-rendered PHP, no SPA. The register is reachable through the site own listing endpoint, and documents are served in full as HTML with Pdf and Word exports beside them. adapter is null only because the bespoke adapter this shape needs is not written yet. Full trace: docs/lao-mongolia-russia-recon.md."
+      "notes": "The primary legislation database and the India-Code equivalent: roughly 14,090 instruments across 17 published categories, and the most tractable portal this repository has profiled. No robots.txt (the site 404s it), so the conservative unknown-robots delay applies. Server-rendered PHP, no SPA. The register is reachable through the site own listing endpoint, and documents are served in full as HTML with Pdf and Word exports beside them. Walked by the legalinfo adapter, one category at a time so the instrument kind comes from the register rather than the title. Full trace: docs/lao-mongolia-russia-recon.md."
     },
     {
       "name": "Bank of Mongolia (Монголбанк)",

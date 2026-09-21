@@ -339,7 +339,8 @@ footer gets this wrong — it did here first time.
 
 14,090 instruments at 20 rows a page is **705 requests**, about twelve minutes at the one-second
 floor, and no model time. The register is built once and queried by all 61 indicators. Skipping the
-three court categories and the two sub-national ones drops it to roughly 560.
+three court categories (600) and the two sub-national ones (1,298) leaves 12,192 national
+instruments, which is 610 requests.
 
 ---
 
