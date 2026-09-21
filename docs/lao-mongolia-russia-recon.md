@@ -409,3 +409,65 @@ indexing side) and in `instrumentWords`/`instrumentTitle` for the vocabulary.
 visually close — so `ກົດຫນາຍ` is partly a misread and partly an orthographic variant, and
 normalising alone would not have recovered it. Distinguishing the two needs more than one page of
 evidence. Written down so it is a known, sized piece of work rather than a silent recall loss.
+
+---
+
+## Mongolia's register, built — 21 September 2026
+
+`npm run -w backend zone1 -- --economy MNG --register`
+
+**11,962 instruments registered.** Mongolia's statute book is now the second-largest single-portal
+register in this corpus, ahead of Singapore's 6,857. The walk cost **607 network requests, two
+served from cache, zero refused by robots.txt, zero refused by the host and zero failed**, at
+28.6 MB, in about eleven minutes at the one-second floor. No model time.
+
+| Category | Registered | Portal states |
+|---|---:|---:|
+| Монгол Улсын Үндсэн Хууль (Constitution) | 1 | 1 |
+| Монгол Улсын хууль (Law of Mongolia) | 950 | 956 |
+| Монгол Улсын олон улсын гэрээ (International treaty) | 696 | 699 |
+| Ерөнхийлөгчийн зарлиг (Presidential decree) | 212 | 218 |
+| Улсын Их Хурлын тогтоол (Khural resolution) | 2,565 | 2,589 |
+| Засгийн газрын тогтоол (Government resolution) | 5,755 | 5,778 |
+| Сайдын тушаал (Ministerial order) | 873 | 988 |
+| Засгийн газрын агентлагийн даргын тушаал | 193 | 217 |
+| УИХ-аас томилогддог байгууллагын шийдвэр | 119 | 132 |
+| Хууль, хяналтын байгууллага | 3 | 6 |
+| Төрийн зарим чиг үүргийг хэрэгжүүлж буй байгууллага | 3 | 3 |
+| Зөвлөл, хороо, бусад байгууллага | 592 | 605 |
+| **Total** | **11,962** | **12,192** |
+
+As stored: 5,755 `regulation`, 2,777 `order`, 1,647 `act`, 1,191 `notice`, 592 `guideline` — which
+sums to the category walk exactly, so the kind on every row came from the category it was found
+under rather than from its title. All 11,962 are recorded `in-force` on the listing's own authority,
+and **11,960 of 11,962 carry a commencement date** taken from the row's effective-date field.
+
+### The 230-instrument shortfall, and what it is not
+
+1.9% fewer registered than the portal's footer states, distributed unevenly — Laws are 0.6% short,
+Ministerial orders 11.6%.
+
+The obvious hypothesis was the in-force filter: the walk passes `isactive=1`, and a footer count
+that included repealed instruments would explain it. **Tested, and it does not.** Category 390
+returns four rows with `isactive=1` and the same four rows without it, against a stated six.
+
+Two things that do account for part of it, and one that is still open:
+
+- **Cross-category duplication.** The adapter keys on document URL across the whole walk, so an
+  instrument listed under two categories is registered once. Category 390 registered three of the
+  four rows it returned for exactly this reason — the fourth was already held. That is correct, and
+  it means the portal's per-category counts cannot be summed into a corpus size.
+- **The footer may count what the listing does not return.** Four against six on 390 is the
+  endpoint's own answer, not a filter artefact.
+- **Open:** whether the remaining gap is stale footer counts, instruments the listing paginates
+  past, or a genuine difference in what the two views hold. It is 1.9% and it is recorded per
+  category on the run, so it is visible rather than silent — but it has not been explained, and
+  this note should not be read as having explained it.
+
+### What the other Mongolian portals gave
+
+`www.mongolbank.mn` was walked by the `sitemap` adapter and listed **no instruments**: the
+conventional `/sitemap.xml` exists and contains no URLs, the `Sitemap:` line in its robots.txt
+being commented out. Recorded as a hole rather than counted as covered. The Communications
+Regulatory Commission, the State Great Khural and Mongolian Customs have no adapter and are
+recorded the same way.

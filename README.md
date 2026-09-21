@@ -281,7 +281,7 @@ as for the language model.
 | Singapore | `sso.agc.gov.sg` (+ 8) | en | **Yes** — 61/61 indicators | 6,857 registered |
 | India | `indiacode.gov.in` (+ 10) | en, hi | **No** — profile and adapter only | Portal adapter written and tested; no cells produced |
 | Thailand | `searchlaw.ocs.go.th` (+ 7) | th | **No** — profile only | Six of eight portals confirmed blocked or client-rendered; `docs/thailand-integration-plan.md` |
-| Mongolia | `legalinfo.mn` (+ 4) | mn | **No** — profile only | Register endpoint and full-text documents both verified reachable; adapter needs POST support in the fetcher |
+| Mongolia | `legalinfo.mn` (+ 4) | mn | **No** — register built, no cells | **11,962 instruments registered** from 607 requests, zero refused; 11,960 with a commencement date |
 | Russian Federation | `publication.pravo.gov.ru` (+ 4) | ru | **No** — profile, adapter ready | Permissive and enumerable; walked by `crawl`, no register run yet |
 | Lao PDR | `laoofficialgazette.gov.la` (+ 4) | lo | **No** — profile, adapter ready | Walked by `crawl`; gazette is scan-only and read by the Lao OCR pack at 77% confidence |
 
