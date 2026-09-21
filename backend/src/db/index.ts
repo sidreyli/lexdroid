@@ -100,6 +100,7 @@ const ADDED_COLUMNS: readonly { table: string; column: string; type: string }[] 
   { table: 'reading', column: 'unreadable', type: 'INTEGER' },
   { table: 'unread_document', column: 'attempts', type: 'INTEGER NOT NULL DEFAULT 1' },
   { table: 'run_cost', column: 'usd_unknown', type: 'INTEGER NOT NULL DEFAULT 0' },
+  { table: 'fetch_log', column: 'method', type: "TEXT NOT NULL DEFAULT 'GET'" },
 ];
 
 function addMissingColumns(db: Db): void {

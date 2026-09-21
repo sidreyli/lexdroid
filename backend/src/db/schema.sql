@@ -366,7 +366,12 @@ CREATE TABLE IF NOT EXISTS fetch_log (
   http_status     INTEGER,
   bytes           INTEGER,
   wait_ms         INTEGER NOT NULL DEFAULT 0, -- time spent held by the rate limiter
-  outcome         TEXT NOT NULL               -- ok | cached | robots-disallowed | error | skipped-cache-only
+  outcome         TEXT NOT NULL,              -- ok | cached | robots-disallowed | error | skipped-cache-only
+  -- Almost always GET. A portal whose register is only reachable by POST -- legalinfo.mn answers
+  -- a GET with page one of an unfiltered listing whatever it is asked -- produces several rows
+  -- at one url that are different requests, and a log that cannot tell them apart understates
+  -- what left this machine. C5a is scored on these rows.
+  method          TEXT NOT NULL DEFAULT 'GET'
 );
 
 CREATE INDEX IF NOT EXISTS idx_fetch_log_run ON fetch_log(run_id);

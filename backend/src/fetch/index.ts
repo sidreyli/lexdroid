@@ -358,8 +358,34 @@ interface CacheRecord {
 
 const sha256 = (v: Buffer | string): string => createHash('sha256').update(v).digest('hex');
 
-function recordPath(url: string): string {
-  const h = sha256(url);
+/**
+ * A form-encoded POST body, with its fields in a fixed order.
+ *
+ * Sorted because the order decides the cache key, and an object's property order is an accident
+ * of how a caller wrote it. Two adapters asking the same question in a different order must hit
+ * the same cache entry or the second one pays for a request the first already made.
+ */
+export function encodeForm(form: Record<string, string>): string {
+  return Object.keys(form)
+    .sort()
+    .map((k) => `${encodeURIComponent(k)}=${encodeURIComponent(form[k] ?? '')}`)
+    .join('&');
+}
+
+/**
+ * What identifies a request in the cache.
+ *
+ * The URL alone, for every GET -- which is every request this pipeline made until Mongolia. A
+ * POST needs its body too: legalinfo.mn's register lives behind one path and the parameters are
+ * the whole question, so keying on the URL would serve the first category's answer for all
+ * seventeen of them. Silently, and with the shape of a working crawl.
+ */
+function cacheKey(url: string, body: string | null): string {
+  return body === null ? url : `POST ${url}\n${sha256(body)}`;
+}
+
+function recordPath(key: string): string {
+  const h = sha256(key);
   return join(CACHE_DIR, 'url', h.slice(0, 2), `${h}.json`);
 }
 
@@ -548,17 +574,24 @@ export class Fetcher {
     return s;
   }
 
-  private log(url: string, outcome: string, status: number | null, bytes: number, waitMs: number): void {
+  private log(
+    url: string,
+    outcome: string,
+    status: number | null,
+    bytes: number,
+    waitMs: number,
+    method: 'GET' | 'POST' = 'GET',
+  ): void {
     this.db
       .prepare(
-        `INSERT INTO fetch_log (run_id, host, url, requested_at, http_status, bytes, wait_ms, outcome)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO fetch_log (run_id, host, url, requested_at, http_status, bytes, wait_ms, outcome, method)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run(this.runId, new URL(url).host, url, new Date().toISOString(), status, bytes, waitMs, outcome);
+      .run(this.runId, new URL(url).host, url, new Date().toISOString(), status, bytes, waitMs, outcome, method);
   }
 
-  private readCache(url: string): FetchResult | null {
-    const rp = recordPath(url);
+  private readCache(key: string): FetchResult | null {
+    const rp = recordPath(key);
     if (!existsSync(rp)) return null;
     const rec = JSON.parse(readFileSync(rp, 'utf8')) as CacheRecord;
 
@@ -628,10 +661,15 @@ export class Fetcher {
   }
 
   /** Raw request. Callers go through fetch(), which adds the cache, robots and the log. */
-  private async send(url: string, opts: { robotsFile?: boolean } = {}): Promise<SendResult> {
+  private async send(url: string, opts: { robotsFile?: boolean; body?: string | null } = {}): Promise<SendResult> {
     let at = url;
+    // Only the first hop carries the body. A 301, 302 or 303 answering a POST is followed as a
+    // GET -- which is what every browser does and what RFC 9110 requires of 303 -- so a redirect
+    // never re-submits the form somewhere the caller did not name.
+    let body = opts.body ?? null;
     for (let hop = 0; ; hop += 1) {
-      const res = await this.sendOne(at);
+      const res = await this.sendOne(at, body);
+      body = null;
       const location = res.location;
       if (res.status < 300 || res.status >= 400 || !location || hop >= MAX_REDIRECTS) {
         return { status: res.status, mediaType: res.mediaType, body: res.body, finalUrl: at };
@@ -661,24 +699,38 @@ export class Fetcher {
     }
   }
 
-  private async sendOne(url: string): Promise<SendResult & { location: string | null }> {
+  private async sendOne(url: string, requestBody: string | null = null): Promise<SendResult & { location: string | null }> {
+    // A form post is what a browser sends when a page's own script asks its own site a question,
+    // so the headers say that rather than contradicting the user agent we already present.
+    const posting = requestBody !== null;
     const res = await request(url, {
-      method: 'GET',
+      method: posting ? 'POST' : 'GET',
+      ...(posting ? { body: requestBody } : {}),
       dispatcher,
       headersTimeout: TIMEOUT_MS,
       bodyTimeout: TIMEOUT_MS,
       headers: {
         'user-agent': USER_AGENT,
-        accept: 'text/html,application/xhtml+xml,application/pdf,application/xml;q=0.9,*/*;q=0.8',
+        accept: posting
+          ? 'application/json, text/javascript, */*; q=0.01'
+          : 'text/html,application/xhtml+xml,application/pdf,application/xml;q=0.9,*/*;q=0.8',
         'accept-language': 'en-GB,en;q=0.9',
         'accept-encoding': 'gzip, deflate, br',
+        ...(posting
+          ? {
+              'content-type': 'application/x-www-form-urlencoded; charset=UTF-8',
+              'x-requested-with': 'XMLHttpRequest',
+              origin: new URL(url).origin,
+              referer: new URL(url).origin + '/',
+            }
+          : {}),
         // A request whose user agent claims to be Chrome while its other headers say otherwise is
         // the exact inconsistency bot detection scores on, and ours claims Chrome because the CDN
         // requires it. If we present as a browser, we ask like one.
-        'sec-fetch-dest': 'document',
-        'sec-fetch-mode': 'navigate',
-        'sec-fetch-site': 'none',
-        'upgrade-insecure-requests': '1',
+        'sec-fetch-dest': posting ? 'empty' : 'document',
+        'sec-fetch-mode': posting ? 'cors' : 'navigate',
+        'sec-fetch-site': posting ? 'same-origin' : 'none',
+        ...(posting ? {} : { 'upgrade-insecure-requests': '1' }),
       },
     });
     const wire = Buffer.from(await res.body.arrayBuffer());
@@ -811,21 +863,32 @@ export class Fetcher {
    * have not seen this URL before. Neither is swallowed: a caller that wants to continue past one
    * must say so.
    */
-  async fetch(url: string, opts: { refresh?: boolean } = {}): Promise<FetchResult> {
+  /**
+   * `form` turns this into a form-encoded POST.
+   *
+   * Everything else about the request is unchanged: robots is consulted on the same path, the
+   * host's queue and its crawl delay apply identically, and every attempt is logged. A POST is a
+   * request to a government server like any other and is paced like one. What it changes is the
+   * cache key, which has to include the body -- see `cacheKey`.
+   */
+  async fetch(url: string, opts: { refresh?: boolean; form?: Record<string, string> } = {}): Promise<FetchResult> {
     const parsed = new URL(url);
     const host = parsed.host;
+    const body = opts.form ? encodeForm(opts.form) : null;
+    const method = body === null ? 'GET' : 'POST';
+    const key = cacheKey(url, body);
 
     if (!opts.refresh && this.sourceMode !== 'refresh') {
-      const cached = this.readCache(url);
+      const cached = this.readCache(key);
       if (cached) {
         this.stats.cached += 1;
-        this.log(url, 'cached', cached.status, cached.body.length, 0);
+        this.log(url, 'cached', cached.status, cached.body.length, 0, method);
         return cached;
       }
     }
 
     if (this.sourceMode === 'cache-only') {
-      this.log(url, 'skipped-cache-only', null, 0, 0);
+      this.log(url, 'skipped-cache-only', null, 0, 0, method);
       throw new CacheMiss(url);
     }
 
@@ -842,7 +905,7 @@ export class Fetcher {
       const robots = await this.ensureRobots(host, parsed.origin);
       if (!robotsPermits(robots, parsed.pathname + parsed.search)) {
         this.stats.disallowed += 1;
-        this.log(url, 'robots-disallowed', null, 0, 0);
+        this.log(url, 'robots-disallowed', null, 0, 0, method);
         throw new RobotsDisallowed(url);
       }
 
@@ -853,7 +916,7 @@ export class Fetcher {
         // of the logic below treats it as a refusal. The walk that prompted this lost a register
         // of 847 Acts to one reset on the fourth page: the three pages already gathered were
         // discarded, and the same page served 1.3MB on the next attempt.
-        let res = await this.sendThroughDrops(url, host);
+        let res = await this.sendThroughDrops(url, host, body);
         // Every attempt is logged, retries included. fetch_log is the run record that makes
         // "we crawled politely" checkable rather than claimed, and a record that counts three
         // requests as one understates what actually left this machine.
@@ -861,7 +924,7 @@ export class Fetcher {
         // Logged at the address that served the bytes, not the one we asked for. B3 reads these
         // rows to show that no disallowed path was ever fetched, and a redirect into a disallowed
         // path recorded under the permitted address we asked for would be invisible to it.
-        this.log(res.finalUrl, isSoftBlock(res) ? 'soft-blocked' : 'ok', res.status, res.body.length, waitMs);
+        this.log(res.finalUrl, isSoftBlock(res) ? 'soft-blocked' : 'ok', res.status, res.body.length, waitMs, method);
 
         // Back off and retry a throttled or empty response before giving up on it. The delays are
         // long on purpose: the point is to stop asking, not to ask more insistently.
@@ -876,8 +939,8 @@ export class Fetcher {
           );
           await new Promise((r) => setTimeout(r, pause));
           waitMs += pause;
-          res = await this.sendThroughDrops(url, host);
-          this.log(res.finalUrl, isSoftBlock(res) ? 'soft-blocked' : 'ok', res.status, res.body.length, pause);
+          res = await this.sendThroughDrops(url, host, body);
+          this.log(res.finalUrl, isSoftBlock(res) ? 'soft-blocked' : 'ok', res.status, res.body.length, pause, method);
         }
         if (isSoftBlock(res)) {
           this.stats.softBlocked += 1;
@@ -907,7 +970,7 @@ export class Fetcher {
 
         writeFileMkdir(blobPath(contentHash), res.body);
         writeFileMkdir(
-          recordPath(url),
+          recordPath(key),
           JSON.stringify(
             { url, finalUrl: res.finalUrl, status: res.status, mediaType: res.mediaType, contentHash, bytes: res.body.length, fetchedAt } satisfies CacheRecord,
             null, 2,
@@ -919,7 +982,7 @@ export class Fetcher {
         return { url, finalUrl: res.finalUrl, status: res.status, mediaType: res.mediaType, body: res.body, contentHash, fromCache: false, fetchedAt };
       } catch (err) {
         this.stats.errors += 1;
-        this.log(url, 'error', null, 0, waitMs);
+        this.log(url, 'error', null, 0, waitMs, method);
         if (isNamedRefusal(err)) throw err;
 
         // A transport fault. It counts as a refusal, so a host that has gone quiet is stopped by
@@ -944,14 +1007,14 @@ export class Fetcher {
    * -- robots, a cooldown, a suspension -- is never retried, and every attempt is logged, so a
    * quiet host still shows up in fetch_log as the several requests it really cost.
    */
-  private async sendThroughDrops(url: string, host: string): Promise<SendResult> {
+  private async sendThroughDrops(url: string, host: string, body: string | null = null): Promise<SendResult> {
     for (let attempt = 0; ; attempt += 1) {
       try {
-        return await this.send(url);
+        return await this.send(url, { body });
       } catch (err) {
         if (isNamedRefusal(err) || attempt >= this.transportRetryMs.length) throw err;
         const pause = this.transportRetryMs[attempt]!;
-        this.log(url, 'error', null, 0, 0);
+        this.log(url, 'error', null, 0, 0, body === null ? 'GET' : 'POST');
         this.onLog(
           `  ${host}: ${err instanceof Error ? err.message : String(err)} -- no answer. ` +
             `Asking again in ${pause / 1000}s.`,
