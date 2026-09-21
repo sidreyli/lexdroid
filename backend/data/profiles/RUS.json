@@ -1,0 +1,188 @@
+{
+  "code": "RUS",
+  "name": "Russian Federation",
+  "legalSystem": {
+    "family": "civil-law",
+    "note": "Federal civil-law system, codified. A Federal Law (Федеральный закон) or a Code (Кодекс) states the regime and delegates its operative detail downward to a Government resolution (Постановление Правительства), which typically approves a Положение or Правила as an annex, and then to the orders (приказ) of the federal executive body responsible -- Roskomnadzor for data, the Bank of Russia for finance, the Federal Customs Service for goods. A citation of the Federal Law alone is frequently the wrong instrument, the same delegation problem Thailand's Act/Royal-Decree chain and Mongolia's тогтоол/тушаал chain present. Legislation takes effect on official publication, and the official venue is publication.pravo.gov.ru -- so the publication date recorded there, not the instrument's own date, is the commencement evidence."
+  },
+  "officialLanguages": [
+    "ru"
+  ],
+  "authoritativeLanguage": "ru",
+  "languageNote": "Russian, in Cyrillic script. Cyrillic spaces its words, so the trigram index needs no spaceless-script handling as Thai and Lao do, and backend/src/parse/language.ts already classifies the Cyrillic block as 'ru' correctly for this economy -- Russia is the one Cyrillic economy that file gets right by default. No Russian text is translated anywhere in the pipeline: provisions are quoted in Russian and language_of_source records it, per docs/architecture.md's rule against full-document translation. What does need translating is the question rather than the law -- queriesFor() in src/retrieve/index.ts builds its queries from English rubric text, and the lexical channel of retrieval is a trigram index, so an English query cannot match Cyrillic text at all and the fused retrieval silently degrades to the dense channel alone.",
+  "jurisdictionScope": {
+    "held": "federal",
+    "note": "The Russian Federation legislates at two levels. This corpus holds federal law -- what publication.pravo.gov.ru publishes for the President, the Government, the Federal Assembly and the federal executive bodies. The constituent entities (субъекты Российской Федерации -- republics, krais, oblasts, federal cities and autonomous okrugs) legislate on the matters the Constitution leaves to them and publish their own registers, which this corpus does not hold. A federal instrument commonly borrows a term or a regime from a subject's law, which is how one is cited here without being held; the patterns below are how that citation is written.",
+    "notHeld": [
+      {
+        "tier": "Law of a constituent entity of the Russian Federation",
+        "note": "Republics, krais, oblasts, federal cities and autonomous okrugs each legislate within their own competence. An indicator answered only on a subject's law is a scope condition to record, not a federal finding.",
+        "citedAs": [
+          "Закон(?:ом|а|у|е)?\\s+Республики\\s+[А-ЯЁ][а-яё\\-]+",
+          "Закон(?:ом|а|у|е)?\\s+[А-ЯЁ][а-яё]+(?:ской|ского)\\s+(?:области|края|автономного\\s+округа)",
+          "закон(?:ом|а|ы|ами|ов)?\\s+субъект(?:а|ов)\\s+Российской\\s+Федерации"
+        ]
+      }
+    ]
+  },
+  "instrumentTypes": [
+    {
+      "rank": 1,
+      "kind": "act",
+      "localName": "Федеральный закон / Федеральный конституционный закон / Кодекс (Federal Law, Federal Constitutional Law, Code)",
+      "bindingness": "binding",
+      "note": "Primary legislation passed by the Federal Assembly. A Code (Гражданский кодекс, Таможенный кодекс) is the consolidated primary instrument for its field and outranks an ordinary Federal Law within it. Frequently a framework: read the Government resolution and the executive body's приказ made under it before treating the Law's own text as the operative requirement."
+    },
+    {
+      "rank": 2,
+      "kind": "order",
+      "localName": "Указ Президента Российской Федерации (Presidential decree)",
+      "bindingness": "binding",
+      "note": "Issued by the President under a constitutional or statutory power. Binding, and subordinate to a Federal Law where the two speak to the same matter."
+    },
+    {
+      "rank": 2,
+      "kind": "regulation",
+      "localName": "Постановление Правительства Российской Федерации (Government resolution)",
+      "bindingness": "binding",
+      "note": "Adopted by the Government under an enabling Federal Law. The principal operative tier: commonly approves a Положение or Правила as an annex, and the annex carries the detail, so the resolution and its annex are retained together."
+    },
+    {
+      "rank": 3,
+      "kind": "rule",
+      "localName": "Правила / Положение / Административный регламент (Rules, Statute or Administrative regulation)",
+      "bindingness": "binding",
+      "note": "The operative rules approved by, and usually annexed to, a Government resolution or a ministerial приказ rather than standing alone. Declared as its own kind so a document the generic title classifier tags 'rule' does not fall through to binding by omission, which is the hole backend/test/bindingness.test.ts closes. Classified 'binding' as a considered judgment rather than a confirmed legal determination: such an instrument binds within the scope its parent gives it, and a specific document's force is established from that parent and never from the title alone."
+    },
+    {
+      "rank": 3,
+      "kind": "notice",
+      "localName": "Приказ федерального органа исполнительной власти (Order of a federal executive body)",
+      "bindingness": "binding-on-licensees",
+      "note": "Issued by the responsible federal body -- Roskomnadzor, the Bank of Russia, the Federal Customs Service, the Ministry of Digital Development -- under an enabling Law or resolution, and where most sectoral requirements are actually found. Recorded as binding-on-licensees because the bindingness the decision logic needs is reach, not force: an instrument binding the regulated entities of a sector has not established a horizontal framework, and the licence is the confinement whether or not its words name a sector. Bindingness and commencement are established from the enabling provision and the instrument's own text, never inferred from the title. Note that an instrument of this kind requiring state registration with the Ministry of Justice is not in force until registered and published."
+    },
+    {
+      "rank": 4,
+      "kind": "guideline",
+      "localName": "Письмо / Разъяснение / Методические рекомендации (Letter, clarification or methodological recommendation)",
+      "bindingness": "advisory",
+      "note": "Evidence of the regulator's interpretation or of expected practice, not itself the source of a legal obligation unless the instrument and its enabling authority say it binds. A ведомственное письмо is explicitly not a normative legal act in Russian administrative practice."
+    }
+  ],
+  "portals": [
+    {
+      "name": "Official Internet Portal of Legal Information (Официальный интернет-портал правовой информации)",
+      "url": "http://publication.pravo.gov.ru",
+      "kind": "gazette",
+      "authority": "Federal Protective Service / State System of Legal Information",
+      "pillars": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12
+      ],
+      "adapter": null,
+      "adapterConfig": {},
+      "notes": "The official publication venue and therefore the commencement evidence for federal law; Consultant+ and Garant are commercial aggregators and are NOT the official source. Permissive robots apart from assets, /Search and /File; declares a sitemap; server-rendered; documents enumerable by date at /document/<20-digit-id>. adapter is null because neither existing adapter reaches it -- the sitemap adapter would test slugs like government, and the crawl adapter own path vocabulary is English. Disallow: /File must be checked before any document fetch. Full trace: docs/lao-mongolia-russia-recon.md."
+    },
+    {
+      "name": "State System of Legal Information (pravo.gov.ru)",
+      "url": "http://pravo.gov.ru",
+      "kind": "legislation-database",
+      "authority": "Federal Protective Service of the Russian Federation",
+      "pillars": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12
+      ],
+      "adapter": null,
+      "adapterConfig": {},
+      "notes": "The parent legal-information portal. robots.txt is 'User-Agent: * / Disallow:' -- an empty disallow, fully permissive -- read directly 21 September 2026. Server-rendered (nginx, PHP); page structure not yet inspected, so no adapter is claimed. Recorded over http because the environment used on 21 September could not complete a TLS handshake to it while reaching it normally on port 80; that is a fact about that network rather than about this host, and the scheme should be re-checked from an ordinary connection. Full trace: docs/lao-mongolia-russia-recon.md."
+    },
+    {
+      "name": "Bank of Russia (Банк России)",
+      "url": "https://www.cbr.ru",
+      "kind": "regulator",
+      "authority": "Central Bank of the Russian Federation",
+      "pillars": [
+        6,
+        7,
+        8
+      ],
+      "adapter": null,
+      "adapterConfig": {},
+      "notes": "PERMITTED: robots.txt read directly over HTTPS on 21 September 2026 disallows only /search/ and five named files, and sets Clean-param for two tracking parameters. The financial regulator, so it carries the sectoral data and payments requirements for pillars 6, 7 and 8. Page structure not yet inspected, so no adapter is claimed; worth testing the sitemap adapter first. Full trace: docs/lao-mongolia-russia-recon.md."
+    },
+    {
+      "name": "Roskomnadzor (Роскомнадзор)",
+      "url": "https://rkn.gov.ru",
+      "kind": "regulator",
+      "authority": "Federal Service for Supervision of Communications, Information Technology and Mass Media",
+      "pillars": [
+        5,
+        6,
+        7,
+        11
+      ],
+      "adapter": null,
+      "adapterConfig": {},
+      "notes": "UNVERIFIED, not blocked. The connection timed out on both port 443 and port 80 from the environment used on 21 September 2026 -- an environment that proxies all traffic and refused HTTPS to several other healthy government hosts, so no conclusion about this portal is drawn. It must be re-checked from an ordinary connection: Roskomnadzor is the personal-data regulator and maintains the register of data operators, which makes it the single most important regulator source for the two mandatory pillars. Full trace: docs/lao-mongolia-russia-recon.md."
+    },
+    {
+      "name": "Federal Customs Service (Федеральная таможенная служба)",
+      "url": "https://customs.gov.ru",
+      "kind": "regulator",
+      "authority": "Federal Customs Service of Russia",
+      "pillars": [
+        1,
+        2,
+        10,
+        12
+      ],
+      "adapter": null,
+      "adapterConfig": {},
+      "notes": "UNVERIFIED, not blocked -- the same timeout on both ports and the same environment caveat as Roskomnadzor above. Customs and trade law, so it matters for pillars 10 and 12. Note that customs law here is partly supranational: the Customs Code of the Eurasian Economic Union applies directly and is not published on a Russian federal portal, which is a scope limit to state rather than to work around. Full trace: docs/lao-mongolia-russia-recon.md."
+    }
+  ],
+  "commitments": [
+    {
+      "name": "World Trade Organization",
+      "status": "in-force",
+      "sourceUrl": "https://www.wto.org/english/thewto_e/countries_e/russia_e.htm"
+    },
+    {
+      "name": "Eurasian Economic Union",
+      "status": "in-force",
+      "sourceUrl": null
+    }
+  ],
+  "notes": "Researched from Russian government portals read directly with curl on 21 September 2026; the structural claims above were produced by actual requests, and the full trace with response sizes is docs/lao-mongolia-russia-recon.md. ESCAP's completed Russian Federation Round 2 answer sheet remains quarantined in the isolated baseline store per docs/architecture.md and was not opened to write this profile. Two portals are recorded as UNVERIFIED rather than blocked, because the environment that read them proxies all traffic and demonstrably refused HTTPS to hosts that answered normally over HTTP -- the distinction docs/thailand-integration-plan.md insisted on, and the reason it required an environment that could actually reach the sites. The official publication venue is reachable, permissive, server-rendered and enumerable by date, which makes Russia the most tractable of the three new economies after Mongolia; what stands between this profile and a register is that no existing adapter can recognise a Russian instrument title, since both the title classifier and the crawl adapter's path vocabulary are written in English.",
+  "authoredBy": "LexDroid team",
+  "authoredOn": "2026-09-21",
+  "sources": [
+    "http://publication.pravo.gov.ru/robots.txt -- read directly, 21 Sep 2026; permissive, declares its sitemap",
+    "http://publication.pravo.gov.ru/sitemap.xml -- read directly, 21 Sep 2026; 116 KB, flat urlset, 960 locs, all of them browse listings",
+    "http://publication.pravo.gov.ru/documents/block/government -- read directly, 21 Sep 2026; 98 KB server-rendered, 60 /document/<20-digit-id> links, the source of the id structure described above",
+    "http://pravo.gov.ru/ and /robots.txt -- read directly, 21 Sep 2026; 200 in 1.5s over http, real homepage, fully permissive robots",
+    "https://www.cbr.ru/robots.txt -- read directly, 21 Sep 2026",
+    "https://rkn.gov.ru and https://customs.gov.ru -- attempted on both ports, 21 Sep 2026, no connection from a proxied environment; recorded as unverified rather than blocked",
+    "NOT ESCAP's Round 2 database or legal inventory for the Russian Federation: those remain evaluation-only, per the isolation this profile is required to respect"
+  ]
+}

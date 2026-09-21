@@ -32,6 +32,9 @@ suggestion with its working shown, not a verdict.
 **Mandatory pillars:** 6 (Cross-border data policies) and 7 (Domestic data protection and privacy).
 **Also in scope:** all twelve RDTII 2.1 pillars — the sealed live test may fall in any of them.
 **Economies run end to end:** Australia, Malaysia, Singapore — all 61 indicators, all 12 pillars.
+**Economies profiled:** those three plus India, Thailand, Mongolia, the Russian Federation and Lao
+PDR — eight, five of them non-English. Zone 0 only for the last five; see below for what that means
+and what it does not.
 **Ready for the live test:** see [Supported Economies and Portals](#supported-economies-and-portals)
 for an honest statement of what has and has not been run.
 
@@ -272,11 +275,23 @@ as for the language model.
 | Malaysia | `lom.agc.gov.my` (+ 10) | en, ms | **Yes** — 61/61 indicators | 16,822 registered. See the limitation on Malay below. |
 | Singapore | `sso.agc.gov.sg` (+ 8) | en | **Yes** — 61/61 indicators | 6,857 registered |
 | India | `indiacode.gov.in` (+ 10) | en, hi | **No** — profile and adapter only | Portal adapter written and tested; no cells produced |
+| Thailand | `searchlaw.ocs.go.th` (+ 7) | th | **No** — profile only | Six of eight portals confirmed blocked or client-rendered; `docs/thailand-integration-plan.md` |
+| Mongolia | `legalinfo.mn` (+ 4) | mn | **No** — profile only | Register endpoint and full-text documents both verified reachable; adapter not yet written |
+| Russian Federation | `publication.pravo.gov.ru` (+ 4) | ru | **No** — profile only | Permissive and enumerable; blocked only by English-only title recognition |
+| Lao PDR | `laoofficialgazette.gov.la` (+ 4) | lo | **No** — profile only | Reachable, but the gazette is scan-only and OCR has no Lao pack |
 
-**Stated honestly:** of the nine sealed live-test economies, LexDroid has been run against **none**
-end to end. India has a written and tested portal adapter but has not produced cells. The three
-mandatory economies are complete. ESCAP's own guidance is that depth across three beats a thin pass
-over ten, and that is the trade we made.
+**Stated honestly:** eight economies are profiled; **three have been run end to end**, and they are
+the three mandatory ones. Of the nine sealed live-test economies, LexDroid has produced cells for
+**none**. India has a written and tested portal adapter; Thailand, Mongolia, Russia and Lao PDR have
+Zone 0 profiles built from portals read live, with every unread portal recorded with the reason it
+is unread rather than quietly dropped. ESCAP's own guidance is that depth beats a thin pass, and
+that is the trade we made — but the finals brief also sets a floor of six economies processed
+autonomously, at least three of them non-English, and that floor is not yet met.
+
+What stands between the three new non-English economies and their first cells is named and small:
+a listing adapter for Mongolia, title recognition that is not written in English for Russia, and a
+Lao OCR language pack for Lao PDR. The full live trace behind each is
+`docs/lao-mongolia-russia-recon.md`.
 
 ---
 
@@ -362,6 +377,19 @@ comparison pass will be filled in once the engine has been run. It is not estima
   Malay and 7 unclassifiable. `lom.agc.gov.my` publishes English versions and our discovery reaches
   those first. C1c is scored on the language of the source, so this is a real gap, not a
   presentational one.
+- **Lao PDR cannot produce a cell until OCR learns Lao.** `laoofficialgazette.gov.la` is reachable,
+  paginated and genuinely Lao-language, but it publishes image-only scans — one sampled at 1.09 MB
+  carried zero `/Font` and zero `/ToUnicode` — and `backend/src/parse/ocr.ts` is packaged with
+  English and Hindi only. Nothing is wrong with the profile or the portal; the text simply cannot
+  be read yet. When it can, Lao rows will sit on the 0.65 confidence rung, because that is what
+  "located in OCR-recovered text" is worth, and that is a real ceiling on Lao rather than a number
+  to explain away.
+- **Cyrillic tells Mongolian from Russian in one direction only.** Mongolian Cyrillic carries Ө and
+  Ү, which Russian does not, so a Mongolian provision is recognised on its own evidence. Russian
+  has no letter of its own against Mongolian, so Russian text inside an economy declared Mongolian
+  falls through to what the profile says and is recorded as Mongolian. It is the same trade this
+  codebase already makes for Malay against Indonesian, and `backend/test/language.test.ts` asserts
+  the asymmetry rather than leaving it to be discovered.
 - **Confidence does not discriminate strongly.** See above: the rungs order rows correctly but the
   spread is 0.061. Do not treat the number as a probability.
 - **The reading engine can misread a number if it is not made to quote first.** Asked for a

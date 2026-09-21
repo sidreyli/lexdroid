@@ -1,0 +1,160 @@
+{
+  "code": "LAO",
+  "name": "Lao PDR",
+  "legalSystem": {
+    "family": "civil-law",
+    "note": "Unitary socialist republic with a codified civil-law system. The hierarchy runs Constitution (ລັດຖະທຳມະນູນ), Law (ກົດໝາຍ) passed by the National Assembly, Presidential Ordinance (ລັດຖະບັນຍັດ), Government Decree (ດຳລັດ), Prime Ministerial or ministerial Decision (ຂໍ້ຕົກລົງ) and Order (ຄຳສັ່ງ), then Instruction (ຄຳແນະນຳ) and Notification (ແຈ້ງການ). A Law is characteristically a framework whose operative detail arrives in the ດຳລັດ and ຂໍ້ຕົກລົງ made under it, so a citation of the Law alone is frequently the wrong instrument -- the same delegation problem Thailand, Mongolia and Russia each present in their own vocabulary. Legislation is promulgated through the Lao Official Gazette, which is therefore the commencement evidence. This hierarchy should be confirmed against the Law on Making Legislative Acts before any score depends on the relative rank of two instruments; it is recorded here as the working model rather than as a verified legal determination."
+  },
+  "officialLanguages": [
+    "lo"
+  ],
+  "authoritativeLanguage": "lo",
+  "languageNote": "Lao, in Lao script. Two consequences, both of them facts about processing rather than about the law. First, Lao is written without spaces between words, exactly as Thai and Chinese are -- so it needs the spaceless-script handling in backend/src/index/index.ts, whose SPACELESS and SPACELESS_RUN patterns currently name Han, Hiragana, Katakana and Thai and omit Lao. Until \\p{Script=Lao} is added to both, a Lao query reaches FTS5 as a single enormous token that the trigram tokenizer can satisfy only by an exact contiguous match, so Lao lexical search returns nothing and does so silently, indistinguishable from a genuine absence of results. Second, detectLanguage in backend/src/parse/language.ts already classifies the Lao block as 'lo' correctly, so Language of Source needs no work here. No Lao text is translated anywhere in the pipeline: provisions are quoted in Lao and language_of_source records it, per docs/architecture.md's rule against full-document translation.",
+  "jurisdictionScope": {
+    "held": "national",
+    "note": "Lao PDR is unitary and legislates nationally; provincial authorities administer rather than legislate in their own right, so there is no second tier of law this corpus fails to hold. Declared explicitly rather than left null so that the audit can distinguish 'no other tier exists' from 'nobody has said', which is the gap backend/test/jurisdiction-scope.test.ts exists to close.",
+    "notHeld": []
+  },
+  "instrumentTypes": [
+    {
+      "rank": 1,
+      "kind": "act",
+      "localName": "ກົດໝາຍ (Law)",
+      "bindingness": "binding",
+      "note": "Primary legislation passed by the National Assembly (ສະພາແຫ່ງຊາດ). The Constitution (ລັດຖະທຳມະນູນ) sits above these and is registered in the same tier. Characteristically a framework -- read the ດຳລັດ and ຂໍ້ຕົກລົງ made under it before treating the Law's own text as the operative requirement."
+    },
+    {
+      "rank": 2,
+      "kind": "order",
+      "localName": "ລັດຖະບັນຍັດ (Presidential Ordinance) / ຄຳສັ່ງ (Order)",
+      "bindingness": "binding",
+      "note": "A Presidential Ordinance is issued by the President where the National Assembly is not in session or under a power a Law confers; an Order is issued by the Prime Minister or a minister. Binding, and subordinate to a Law where the two speak to the same matter."
+    },
+    {
+      "rank": 2,
+      "kind": "regulation",
+      "localName": "ດຳລັດ (Decree of the Government)",
+      "bindingness": "binding",
+      "note": "Adopted by the Government under an enabling Law, and the principal operative tier for most regulatory requirements. Where a Law states a regime in outline, the ດຳລັດ is usually where the duty, the threshold or the condition is actually found."
+    },
+    {
+      "rank": 3,
+      "kind": "rule",
+      "localName": "ລະບຽບການ (Regulation or rules)",
+      "bindingness": "binding",
+      "note": "Procedural or administrative rules issued by an agency under an enabling instrument, commonly annexed to a Decision rather than standing alone. Declared as its own kind so a document the generic title classifier tags 'rule' does not fall through to binding by omission, which is the hole backend/test/bindingness.test.ts closes. Classified 'binding' as a considered judgment rather than a confirmed legal determination: such an instrument binds within the scope its parent gives it, and a specific document's force is established from that parent and never from the title alone."
+    },
+    {
+      "rank": 3,
+      "kind": "notice",
+      "localName": "ຂໍ້ຕົກລົງ (Decision) / ແຈ້ງການ (Notification)",
+      "bindingness": "binding-on-licensees",
+      "note": "Issued by a minister or the head of the agency an enabling Law creates -- the Bank of the Lao PDR, the Ministry of Technology and Communications, the Ministry of Industry and Commerce -- and where sectoral requirements are actually found. Recorded as binding-on-licensees because the bindingness the decision logic needs is reach, not force: an instrument binding the regulated entities of one sector has not established a horizontal framework, and the licence is the confinement whether or not its words name a sector."
+    },
+    {
+      "rank": 4,
+      "kind": "guideline",
+      "localName": "ຄຳແນະນຳ (Instruction or guidance)",
+      "bindingness": "advisory",
+      "note": "Evidence of the issuing authority's interpretation or of expected practice, not itself the source of a legal obligation unless the instrument and its enabling authority say it binds."
+    }
+  ],
+  "portals": [
+    {
+      "name": "Lao Official Gazette",
+      "url": "http://laoofficialgazette.gov.la",
+      "kind": "gazette",
+      "authority": "Ministry of Justice, Lao PDR",
+      "pillars": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12
+      ],
+      "adapter": null,
+      "adapterConfig": {},
+      "notes": "The promulgation venue and therefore the commencement evidence. Reachable and well structured -- server-rendered Yii PHP, listings paginated and sortable by issue and effective date, genuinely Lao-language -- but BLOCKED ON OCR: documents are image-only PDF scans (one sampled carried zero /Font and zero /ToUnicode), and backend/src/parse/ocr.ts is hardcoded to [eng, hin]. Lao produces no cells until a Lao language pack and a Lao-script confidence heuristic are added there. Full trace: docs/lao-mongolia-russia-recon.md."
+    },
+    {
+      "name": "Lao Trade Portal",
+      "url": "https://laotradeportal.gov.la",
+      "kind": "registry",
+      "authority": "Ministry of Industry and Commerce, Lao PDR",
+      "pillars": [
+        1,
+        2,
+        3,
+        10,
+        12
+      ],
+      "adapter": null,
+      "adapterConfig": {},
+      "notes": "PERMITTED: robots.txt names only Googlebot with an empty disallow and states no rule for other agents, read directly 21 September 2026. Established under the WTO Trade Facilitation Agreement transparency obligations, which usually means a structured register of trade measures with the instrument attached. The most promising second source for Lao and the best candidate for a first register that does not depend on OCR. Page structure not yet inspected, so no adapter is claimed. Full trace: docs/lao-mongolia-russia-recon.md."
+    },
+    {
+      "name": "Ministry of Justice",
+      "url": "https://moj.gov.la",
+      "kind": "legislation-database",
+      "authority": "Ministry of Justice, Lao PDR",
+      "pillars": [],
+      "adapter": null,
+      "adapterConfig": {},
+      "notes": "CLOSED by the site's own instruction. robots.txt reads 'User-agent: * / Disallow: /', read directly 21 September 2026 -- a blanket refusal for every agent. The fetcher respects robots.txt unconditionally (backend/src/fetch/index.ts), so nothing is crawled here and this portal is recorded as a lead a human researcher can follow rather than a source the tool reads. This is a choice the publisher made, not a limitation to work around. Full trace: docs/lao-mongolia-russia-recon.md."
+    },
+    {
+      "name": "National Assembly of the Lao PDR (ສະພາແຫ່ງຊາດ)",
+      "url": "https://www.na.gov.la",
+      "kind": "legislation-database",
+      "authority": "National Assembly of the Lao PDR",
+      "pillars": [],
+      "adapter": null,
+      "adapterConfig": {},
+      "notes": "Serves a robots.txt over HTTPS carrying an EU Digital Single Market Directive article 4 content-signals reservation, read directly 21 September 2026; its actual allow and disallow rules have not yet been read in full and no adapter is claimed until they are. The legislature publishes the Laws it passes, which may duplicate the Gazette -- a regulator copy and a Gazette copy of the same instrument must not be counted as two measures. Full trace: docs/lao-mongolia-russia-recon.md."
+    },
+    {
+      "name": "Bank of the Lao PDR",
+      "url": "https://www.bol.gov.la",
+      "kind": "regulator",
+      "authority": "Bank of the Lao PDR",
+      "pillars": [
+        6,
+        7,
+        8
+      ],
+      "adapter": null,
+      "adapterConfig": {},
+      "notes": "INCONCLUSIVE. HTTPS answered 302 redirecting to itself and HTTP timed out, from the proxied environment used on 21 September 2026; neither is treated as evidence about the portal. Re-check from an ordinary connection. The central bank, so it carries the sectoral data, payments and financial requirements for pillars 6, 7 and 8. Full trace: docs/lao-mongolia-russia-recon.md."
+    }
+  ],
+  "commitments": [
+    {
+      "name": "World Trade Organization",
+      "status": "in-force",
+      "sourceUrl": "https://www.wto.org/english/thewto_e/countries_e/lao_e.htm"
+    },
+    {
+      "name": "Association of Southeast Asian Nations",
+      "status": "in-force",
+      "sourceUrl": null
+    }
+  ],
+  "notes": "Researched from Lao government portals read directly with curl on 21 September 2026; the structural claims above were produced by actual requests, and the full trace with response sizes is docs/lao-mongolia-russia-recon.md. ESCAP's completed Lao PDR Round 2 answer sheet remains quarantined in the isolated baseline store per docs/architecture.md and was not opened to write this profile. Lao is the hardest of the three new economies and the honest position is that it cannot produce a cell today: its primary source is reachable, paginated and genuinely Lao-language, but publishes image-only PDFs, and neither the OCR stage nor the lexical index is currently equipped for Lao. Two specific, small changes unblock it -- \\p{Script=Lao} in the index's spaceless-script patterns, and a Lao Tesseract language pack with a matching confidence heuristic in the OCR stage. Until those land, any Lao row would rest on text nothing could read, and the pipeline's own rule is to flag what could not be read rather than guess at it. Note also that when OCR does run, Lao rows land on the 0.65 confidence rung -- 'quoted words located in text recovered by OCR' -- which is a real ceiling on Lao and belongs in the README's Known Limitations rather than passing unexplained.",
+  "authoredBy": "LexDroid team",
+  "authoredOn": "2026-09-21",
+  "sources": [
+    "http://laoofficialgazette.gov.la/ -- read directly, 21 Sep 2026; 135,842 bytes server-rendered, 12,412 Lao-script characters, Yii routing, the source of the pagination and sort-field structure described above",
+    "http://laoofficialgazette.gov.la/kcfinder/upload/files/06-28-8-2026_0001.pdf -- fetched directly, 21 Sep 2026; 1,087,136 bytes, PDF structure inspected: /Font 0, /ToUnicode 0, /Image 6, /DCTDecode 2, establishing that it is a scan",
+    "https://moj.gov.la/robots.txt -- read directly, 21 Sep 2026; 'User-agent: * / Disallow: /', 26 bytes",
+    "https://laotradeportal.gov.la/robots.txt -- read directly, 21 Sep 2026; Googlebot-only, empty disallow, 32 bytes",
+    "https://www.na.gov.la/robots.txt and https://www.bol.gov.la/robots.txt -- read directly, 21 Sep 2026",
+    "NOT ESCAP's Round 2 database or legal inventory for Lao PDR: those remain evaluation-only, per the isolation this profile is required to respect"
+  ]
+}
