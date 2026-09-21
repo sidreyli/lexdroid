@@ -135,14 +135,14 @@ Declared in `backend/data/engines.json` and frozen at submission.
 
 | | Engine A | Engine B |
 | :---- | :---- | :---- |
-| Provider and model | Ollama, `gemma4-lex-16k` | Groq, `qwen/qwen3-32b` |
-| Version / checkpoint | `gemma4:12b-it-q4_K_M` | `qwen/qwen3-32b` |
+| Provider and model | Ollama, `gemma4-lex-16k` | Groq, `qwen/qwen3.8-27b` |
+| Version / checkpoint | `gemma4:12b-it-q4_K_M` | `qwen/qwen3.8-27b` |
 | Local or hosted API | Local (or a GPU rented by the hour) | Hosted API |
 | Kind | Open weights | Open weights, commercially hosted |
 | Config value | nothing — it is the default | `LEXDROID_HOSTED_API_KEY` in the environment |
 
 They differ in kind on every axis ESCAP names: different model family (Gemma against Qwen),
-different size (12B against 32B), different quantisation, and someone else's hardware. Engine B is
+different size (12B against 27B), different quantisation, and someone else's hardware. Engine B is
 commercially hosted *and* open weights at once, which satisfies both the way the orientation slide
 puts it ("at least one must be open weights") and the way checklist item 20 puts it ("one
 commercial hosted, one open weights").
@@ -158,7 +158,12 @@ npm run -w backend engine-check -- --engine engine-b
 ```
 
 Four checks: reachable, returns structured output, quotes before it interprets, and reads a legal
-provision correctly.
+provision correctly — asked twice, once of an English provision and once of a Russian one whose
+period is written as a word (`пяти`) rather than a digit. The second case is there because five of
+the eight profiled economies do not publish in English, and an engine that reads English perfectly
+but paraphrases Russian produces unlocatable findings at 0.50 rather than citations. Measured
+21 September 2026: Engine B passes both, quoting Cyrillic back character-for-character without
+translating it.
 
 ### Switching between them
 
@@ -350,7 +355,7 @@ arithmetic.
 | OCR | Tesseract, local | $0.00 |
 | Embedding | bge-m3, local | $0.00 |
 | Mapping — Engine A | `gemma4-lex-16k` on 8 rented GPUs | **$19.32** |
-| Mapping — Engine B | `qwen/qwen3-32b` on Groq | not yet measured |
+| Mapping — Engine B | `qwen/qwen3.8-27b` on Groq | not yet measured |
 | Crawling | — | $0.00 |
 | **Total, Engine A** | | **$19.32 for 183 cells — $0.106 per cell** |
 
@@ -365,7 +370,7 @@ The corpus behind those cells — 4,045 documents, 162,901 sections — was buil
 fetches over several days, at $0.00: bandwidth off government portals is the only resource spent,
 which is exactly why the crawler is careful with it.
 
-**Engine B has not been billed yet.** Groq prices `qwen/qwen3-32b` per token; the cost of a
+**Engine B has not been billed yet.** Groq prices `qwen/qwen3.8-27b` per token; the cost of a
 comparison pass will be filled in once the engine has been run. It is not estimated here.
 
 ---
@@ -419,8 +424,15 @@ comparison pass will be filled in once the engine has been run. It is not estima
   attributed to `fetch_log.run_id`, which is what the Run Record reports and what C5a is scored on.
   The corpus was built by command-line passes that correctly belong to no run, and the only run
   since was cache-only. A fetching run through the interface is the remaining rehearsal.
-- **Engine B has not been verified against the live API.** It is fully declared and wired;
-  `engine-check` cannot reach it without a key.
+- **Engine B's declaration was wrong until 21 September 2026, and only calling it found that.**
+  It was declared as `qwen/qwen3-32b`; the first live `engine-check` returned
+  `model_not_found` — Groq had retired that model. The declaration now names `qwen/qwen3.8-27b`
+  and passes all four checks in both English and Russian. A hosted engine can be withdrawn under
+  a frozen declaration in a way a local one cannot, so Engine B should be re-checked shortly
+  before 30 September rather than assumed to still exist.
+- **Engine B is verified but not yet billed.** `engine-check` proves it answers, quotes and reads
+  correctly; no scored run has used it, so the per-token cost in Measured Cost is still blank
+  rather than estimated.
 
 ---
 

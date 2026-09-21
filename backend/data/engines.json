@@ -20,13 +20,13 @@
       "label": "Engine B",
       "kind": "open-weights",
       "provider": "Groq",
-      "model": "qwen/qwen3-32b",
-      "checkpoint": "qwen/qwen3-32b",
+      "model": "qwen/qwen3.8-27b",
+      "checkpoint": "qwen/qwen3.8-27b",
       "hosted": true,
       "hosts": ["https://api.groq.com/openai/v1"],
       "declared": true,
-      "weaknesses": "Reached over the network, so a run depends on somebody else's availability and rate limits. Not quantised as hard as Engine A and reads a longer provision in one pass, which means the two engines disagree most on long consolidated sections -- the comparison is more interesting there and less like a duplicate.",
-      "notes": "Differs from Engine A in kind on every axis ESCAP names: different model family (Qwen against Gemma), different size (32B against 12B), different quantisation, and someone else's hardware. Commercially hosted and open weights at once, which satisfies both the way the orientation puts it and the way the submission checklist puts it. Needs LEXDROID_HOSTED_API_KEY in the environment; verify with: npm run -w backend engine-check -- --engine engine-b"
+      "weaknesses": "Reached over the network, so a run depends on somebody else's availability and rate limits -- and on the provider continuing to serve the model. This declaration named qwen/qwen3-32b until 21 September 2026, when engine-check against the live API returned model_not_found: Groq had retired it. A hosted engine can be withdrawn under a frozen declaration, which a local one cannot, and that is the standing risk of this half of the pair. Not quantised as hard as Engine A and reads a longer provision in one pass, so the two engines disagree most on long consolidated sections -- where the comparison is more interesting and less like a duplicate.",
+      "notes": "Differs from Engine A in kind on every axis ESCAP names: different model family (Qwen against Gemma), different size (27B against 12B), different quantisation, and someone else's hardware. Commercially hosted and open weights at once, which satisfies both the way the orientation puts it and the way the submission checklist puts it. Needs LEXDROID_HOSTED_API_KEY in the environment; verify with: npm run -w backend engine-check -- --engine engine-b"
     }
   ]
 }
