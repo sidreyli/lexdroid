@@ -209,6 +209,27 @@
       "adapter": "sitemap",
       "adapterConfig": {},
       "notes": "Competition enforcement and the consumer protection framework."
+    },
+    {
+      "name": "Singapore Network Information Centre",
+      "url": "https://www.sgnic.sg",
+      "kind": "registry",
+      "authority": "SGNIC",
+      "pillars": [
+        12
+      ],
+      "adapter": "crawl",
+      "adapterConfig": {
+        "seeds": [
+          "https://www.sgnic.sg/domain-registration/policies-agreements"
+        ],
+        "namedBy": [
+          "policy",
+          "agreement",
+          "rule"
+        ]
+      },
+      "notes": "The .sg registry, and the one source this profile had no counterpart to in the other two: Australia declares auDA and Malaysia declares MYNIC, and the eligibility requirements for a domain name are in a registry policy in all three. Rules of Registration, the Acceptable Use Policy, the Registration Agreement and the Code of Practice are PDFs on one page, which is where the walk is seeded. Not a government host, so a row citing it has to say what makes it authoritative."
     }
   ],
   "commitments": [

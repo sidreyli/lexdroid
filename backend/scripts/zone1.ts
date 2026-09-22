@@ -129,13 +129,18 @@ function status(db: ReturnType<typeof openDb>, economy: string): void {
   // a gap in the corpus, and counting it as one overstates the damage: three Acts refused by a
   // throttling host on 6 September were all read on the next run, while the summary went on
   // reporting three documents set aside. So the ledger keeps everything and the summary splits it.
+  // Joined, not filtered: the economy has to be in the WHERE clause. Left in the JOIN alone it
+  // selects every economy's discards and reports the other two as this one's, because their
+  // subjects cannot match this register and so come back with a null document -- Australia read as
+  // 6,024 documents set aside when it had three. And the ledger holds one row per attempt, so a
+  // document re-parsed three times was counted three times; the gap is documents, not attempts.
   const discards = db
     .prepare(
       `SELECT d.reason,
-              SUM(CASE WHEN doc.id IS NULL THEN 1 ELSE 0 END) AS still_missing,
-              COUNT(*) AS total
+              COUNT(DISTINCT CASE WHEN doc.id IS NULL THEN d.subject END) AS still_missing,
+              COUNT(DISTINCT d.subject) AS total
          FROM discard d
-         LEFT JOIN instrument i ON i.source_url = d.subject AND i.economy_code = ?
+         JOIN instrument i ON i.source_url = d.subject AND i.economy_code = ?
          LEFT JOIN document doc ON doc.instrument_id = i.id
         WHERE d.stage IN ('fetch', 'parse')
         GROUP BY d.reason

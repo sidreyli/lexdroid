@@ -36,11 +36,18 @@
  * and running this never needs to be undone. With the rules untouched it must print 0 cells moved:
  * that is the check that the stored scores really are a function of the record, and if it ever
  * prints anything else, no other number here means what it says.
+ *
+ * One thing it cannot assume, and used not to say. Purity holds over the record the run left, and a
+ * re-parse takes the readings out from under a run's own citations -- see `src/run/evidence.ts`.
+ * The emptied cells come back broken whatever the rules do, so a run that has lost evidence is
+ * named at the top and each of its cells is marked where it moved. Malaysia's "40 -> 30, eleven
+ * broken" was quoted twice as a measurement of the rules and is a measurement of the re-parse.
  */
 import { openDb } from '../src/db/index.js';
-import { scorecard, tally, movement } from '../src/eval/scorecard.js';
+import { scorecard, tally, movement, pillarOf } from '../src/eval/scorecard.js';
 import { rescoreRun } from '../src/run/rescore.js';
 import { confirmationsForRun } from '../src/read/confirmations.js';
+import { evidenceLines, pillarsMissingEvidence, runEvidence } from '../src/run/evidence.js';
 
 function arg(name: string): string | null {
   const i = process.argv.indexOf(`--${name}`);
@@ -74,17 +81,27 @@ const graded = a.cells - a.ungraded;
 const fixed = moves.filter((m) => m.to === 'agree');
 const broke = moves.filter((m) => m.from === 'agree');
 
+// A rescore is only a measurement of the rules where the run still holds what it was decided on.
+// Where a re-parse has taken the readings out from under the citations, the cells it emptied come
+// back broken whatever the rules say, so they are named rather than counted silently. Marked by
+// pillar, because reading is pillar-scoped and one orphaned citation convicts the whole union its
+// pillar was read over -- including the cells that cite nothing and cannot show the loss at all.
+const lost = pillarsMissingEvidence(db, run.id);
+const note = (m: { economy: string; indicator: string }) =>
+  lost.has(`${m.economy} ${pillarOf(m.indicator)}`) ? '   [evidence gone, not a rule]' : '';
+
 console.log(`\nRun ${run.id}`);
+for (const line of evidenceLines(runEvidence(db, run.id))) console.log(`  !! ${line}`);
 console.log(`  as answered      ${b.agree}/${graded} agree`);
 console.log(
   `  as the rules now ${a.agree}/${graded} agree   over ${a['over-claim']}  under ${a['under-claim']}  ` +
     `miss ${a['recall-miss']}  abstained ${a.abstained}`,
 );
 console.log(`  +${fixed.length} fixed  -${broke.length} broken  (${moves.length} cell(s) moved)\n`);
-for (const m of fixed) console.log(`    fixed   ${m.economy} ${m.indicator.padEnd(8)} ${m.from} -> agree`);
-for (const m of broke) console.log(`    broke   ${m.economy} ${m.indicator.padEnd(8)} agree -> ${m.to}`);
+for (const m of fixed) console.log(`    fixed   ${m.economy} ${m.indicator.padEnd(8)} ${m.from} -> agree${note(m)}`);
+for (const m of broke) console.log(`    broke   ${m.economy} ${m.indicator.padEnd(8)} agree -> ${m.to}${note(m)}`);
 const sideways = moves.filter((m) => m.to !== 'agree' && m.from !== 'agree');
 for (const m of sideways)
-  console.log(`    still wrong ${m.economy} ${m.indicator.padEnd(8)} ${m.from} -> ${m.to}`);
+  console.log(`    still wrong ${m.economy} ${m.indicator.padEnd(8)} ${m.from} -> ${m.to}${note(m)}`);
 if (moves.length === 0) console.log('    nothing moved: the rules reproduce the stored answers exactly.');
 console.log('');

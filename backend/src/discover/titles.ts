@@ -53,7 +53,21 @@ const ABOUT =
 
 /** The other thing a regulator's site is full of: its own IT help, and notices about itself. */
 const HOUSEKEEPING =
-  /\b(setup guide|user guide|installation|quick start|troubleshooting|service disruption|system maintenance|service interruption|scheduled maintenance|web recruitment|travellers? guide|site map|copyright notice|privacy notice|terms of use|disclaimer)\b/i;
+  /\b(setup guide|user guide|installation|quick start|troubleshooting|service disruption|system maintenance|service interruption|scheduled maintenance|web recruitment|travellers? guide|site map|copyright notice|privacy notice|privacy polic(?:y|ies)|cookie polic(?:y|ies)|terms of use|disclaimer)\b/i;
+
+/**
+ * A link that opens by telling you to follow it is pointing at an instrument, not naming one.
+ *
+ * "Click to view the Financial Services Act 2013", "Download Guidelines for Dispute Resolution"
+ * and "here for the guide" all end in a noun the register knows, so each was admitted and filed
+ * as an instrument under the sentence that pointed at it. What they name is the act of
+ * following, and the thing followed already has a name of its own on the page it lands on.
+ *
+ * "Open" and "go" were tried and taken out: the Open Electricity Market Code of Practice is a
+ * real instrument, and a word that opens a name as often as it opens an instruction is not
+ * evidence of either.
+ */
+const POINTS_AT_IT = /^(?:click|download|view|tap|follow|here|this|these)\b/i;
 
 /** A page about an instrument opens by saying what it does to it. */
 const ABOUT_OPENS =
@@ -165,16 +179,57 @@ function stem(title: string): string {
 }
 
 /**
+ * The nouns one particular source says it names its instruments with.
+ *
+ * `NOUN` is the list every source shares, and it deliberately leaves "policy" out: a site's
+ * privacy policy, a central bank's monetary policy and a ministry's skills framework all carry
+ * the word, and admitting it cost three real citations to gain those three. But a domain
+ * registry's binding rules *are* called policies -- the .my registry publishes a Registrant
+ * Policy and a Registrar Policy, the .sg one an Acceptable Use Policy and Rules of Registration
+ * -- and a treasury's are called Instructions. No word tells those from the privacy page beside
+ * them, because in the word there is no difference.
+ *
+ * What tells them apart is what the source says, which is the same thing that tells a statute
+ * from a page about a statute. A profile that names a source is entitled to say what that source
+ * calls the instruments it publishes, and the claim is checkable by opening the site. So the
+ * extra nouns are declared per portal and reach no further: the registry's "policy" does not make
+ * the telecommunications regulator's privacy policy an instrument.
+ *
+ * Matched in the two positions a title puts a noun in, the same two the shared list is matched
+ * in. The housekeeping filter still runs first, so a source that declares "policy" does not
+ * thereby register its own cookie policy.
+ */
+function namedByDeclared(title: string, stemmed: string, alsoNamedBy: readonly string[]): boolean {
+  for (const raw of alsoNamedBy) {
+    const noun = String(raw).trim();
+    // A declared noun is a word, not a pattern: anything else is a profile typo, and a profile
+    // typo must not become a regular expression the whole register is filtered by.
+    if (!/^[\w' -]{3,40}$/.test(noun)) continue;
+    if (new RegExp(String.raw`\b${noun}s?$`, 'i').test(stemmed)) return true;
+    if (new RegExp(String.raw`^(?:the\s+)?(?:[\w.'-]+\s+){0,3}${noun}s?\s+(?:on|for|of)\b`, 'i').test(title)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
  * The instrument this link names, or null where it names something else.
  *
  * Deliberately strict. A regulator's site is mostly not legislation, so a test that admits the
  * doubtful cases fills the register with news; an instrument missed here is still reachable when
  * a later listing names it properly.
+ *
+ * `alsoNamedBy` is what the portal declares it calls its own instruments; see `namedByDeclared`.
  */
-export function instrumentTitle(text: string): { title: string; kind: InstrumentKind } | null {
+export function instrumentTitle(
+  text: string,
+  alsoNamedBy: readonly string[] = [],
+): { title: string; kind: InstrumentKind } | null {
   const title = text.replace(/\s+/g, ' ').trim();
   if (title.length < 10 || title.length > 170) return null;
   if (ABOUT.test(title) || ABOUT_OPENS.test(title) || HEADLINE.test(title)) return null;
+  if (POINTS_AT_IT.test(title)) return null;
   if (HOUSEKEEPING.test(title)) return null;
   // A title is a name, not a sentence.
   if (/[.?!]$/.test(title) || /,\s*\w+\s+\w+\s+\w+\s+\w+\s+\w+/.test(title)) return null;
@@ -184,6 +239,42 @@ export function instrumentTitle(text: string): { title: string; kind: Instrument
   const named =
     ENDS_WITH_NOUN.test(s) ||
     (inBracket !== null && ENDS_WITH_NOUN.test(inBracket.trim())) ||
-    NAMED_BY_NOUN.test(title);
+    NAMED_BY_NOUN.test(title) ||
+    namedByDeclared(title, s, alsoNamedBy);
   return named ? { title, kind: kindOf(title) } : null;
+}
+
+/**
+ * Whether a title says the document decides a case rather than states a rule.
+ *
+ * An agency that adjudicates publishes its adjudications, and a statute book that carries the
+ * gazette carries them too: "Notice of Affirmative Final Determination of an Anti-Dumping Duty
+ * Investigation with regard to Imports of ..." is filed beside the Act it is made under, is
+ * numbered like it, and reads to a search engine exactly like it -- it uses the Act's own
+ * vocabulary, because it is applying the Act. Its sections are tariff codes and the margins found
+ * against named exporters. Nothing in it states what the law requires of anybody in general, and
+ * a cell that reads it has spent a seat learning what one importer owes.
+ *
+ * Three things have to hold together, because each alone is ordinary in a real title. The
+ * document has to announce a step someone takes in a proceeding; it has to name the proceeding;
+ * and it has to name the particular thing the proceeding is about. A rule that made a measure
+ * generally -- "Safeguards (Safeguard Measure) ... Regulations", "Countervailing and Anti-Dumping
+ * Duties (Expedited Review) Determination" -- states the law for everyone and names no case, so
+ * it fails the third and is kept.
+ *
+ * Written as a category rather than a subject list on purpose: no word here is about dumping,
+ * customs or trade. Any tribunal that publishes its own decisions writes titles this shape, and
+ * an economy whose agencies publish none is untouched -- measured across three registers, it
+ * matches 177 documents in one and none in the other two.
+ */
+const PROCEEDING_STEP =
+  /\b(?:notice|notis|notification)\b[^.]{0,90}?\b(?:initiation|commencement|termination|discontinuance|determination|findings?|extension of (?:the )?time)\b/i;
+const THE_PROCEEDING =
+  /\b(?:investigation|inquiry|enquiry|review of|proceedings?|petition|complaint)\b/i;
+const THE_PARTICULARS =
+  /\b(?:with regard to|in respect of|in the matter of|imports? of|exported (?:from|by))\b/i;
+
+export function determinesAParticularCase(title: string): boolean {
+  const t = (title ?? '').replace(/\s+/g, ' ').trim();
+  return PROCEEDING_STEP.test(t) && THE_PROCEEDING.test(t) && THE_PARTICULARS.test(t);
 }

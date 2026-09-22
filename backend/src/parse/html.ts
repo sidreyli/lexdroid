@@ -14,6 +14,7 @@
 import * as cheerio from 'cheerio';
 import type { AnyNode } from 'domhandler';
 import { nodeText } from './html-text.js';
+import { namesTheSame } from './identity.js';
 import { SectionBuilder, type ParsedDocument } from './types.js';
 
 const STRIP = 'script, style, noscript, nav, header, footer, aside, form, iframe, .nav, .navbar, .menu, .breadcrumb, .cookie, .skip-link';
@@ -220,4 +221,113 @@ export function soleDocumentLink(html: string, pageUrl: string): string | null {
     found.add(target.toString());
   });
   return found.size === 1 ? [...found][0]! : null;
+}
+
+/**
+ * The one file a page publishes under the instrument's own name.
+ *
+ * A regulator that announces a policy document by posting a page linking it has the crawl
+ * register the announcement, and the announcement is not a page of menus -- it carries an embargo
+ * notice and a paragraph of prose, so nothing marks it unread and `soleDocumentLink` never runs.
+ * Malaysia's Policy Document on Electronic Money sat in the corpus as 2,044 characters of press
+ * release for exactly that reason, and it is cited for three cells.
+ *
+ * What identifies the file is not that it is the only one -- Bank Negara's pages link five, the
+ * policy beside its FAQs and two P.U.(A)s -- but that exactly one of them calls itself by the
+ * instrument's name. The caller decides whether to adopt it; naming it is all this does.
+ */
+export function namedDocumentLink(html: string, pageUrl: string, title: string): string | null {
+  const $ = cheerio.load(html);
+  const found = new Set<string>();
+  $('a[href]').each((_, el) => {
+    const href = $(el).attr('href');
+    if (!href || !/\.(?:pdf|docx?|rtf)(?:$|\?)/i.test(href)) return;
+    const text = $(el).text().replace(/\s+/g, ' ').trim();
+    if (!text || !namesTheSame(text, title)) return;
+    try {
+      const target = new URL(href, pageUrl);
+      target.hash = '';
+      // A site linking itself under its other name. Bank Negara's pages are served from
+      // www.bnm.gov.my and two of them link their own policy at bnm.gov.my, which answers 202 to
+      // everything and cost both documents six minutes of backing off before being given up on.
+      // The page came from the host we can read, so ask that host for the file it publishes.
+      const here = new URL(pageUrl).host;
+      if (target.host !== here && target.host.replace(/^www\./i, '') === here.replace(/^www\./i, '')) {
+        target.host = here;
+      }
+      found.add(target.toString());
+    } catch {
+      /* an href that is not a URL names nothing */
+    }
+  });
+  return found.size === 1 ? [...found][0]! : null;
+}
+
+/**
+ * The words a link uses when it is pointing at a file rather than naming one.
+ *
+ * A closed class: what is left of "download the print version" or "(340.7 KB)" once you take away
+ * the mechanics of following a link is nothing at all, and what is left of "Enforcement Approach"
+ * or "P.U. (B) 76/2026" is the name of some other document. That is the whole difference, and it
+ * is a fact about how English links are written rather than about any register -- no word here is
+ * a subject, an agency or an instrument.
+ */
+const POINTING = new Set([
+  'a', 'above', 'an', 'and', 'at', 'attached', 'attachment', 'available', 'below', 'click',
+  'copy', 'document', 'down', 'download', 'file', 'following', 'for', 'format', 'full', 'get',
+  'here', 'in', 'is', 'it', 'link', 'now', 'of', 'on', 'open', 'or', 'page', 'please', 'print',
+  'read', 'see', 'the', 'this', 'to', 'version', 'view', 'viewing', 'website',
+  // What a site writes beside a link to say how big the file is and what kind it is.
+  'doc', 'docx', 'pdf', 'rtf', 'word', 'b', 'kb', 'mb', 'gb', 'byte', 'bytes', 'size',
+]);
+
+/** Nothing but the mechanics of following a link: no name of anything is left. */
+function pointsRatherThanNames(text: string): boolean {
+  const words = text
+    .toLowerCase()
+    .replace(/[\d.,]+/g, ' ')
+    .split(/[^a-z]+/)
+    .filter(Boolean);
+  return words.every((w) => POINTING.has(w));
+}
+
+/**
+ * The one file a page offers when its link calls that file no name at all.
+ *
+ * `soleDocumentLink` runs only where the page was set aside unread, and `namedDocumentLink` only
+ * where the link repeats the instrument's name. A registry that publishes each of its policies as
+ * a page of one paragraph saying the policy "can be downloaded here" falls between the two: the
+ * paragraph is prose, so the page reads, and "here" is not a name, so nothing matches. The
+ * substance sits in the file and the register holds the sentence that mentions it.
+ *
+ * Where the link names something -- "Enforcement Approach", "P.U. (B) 76/2026" -- it is saying
+ * which document it points at, and a page whose one file is some other document is a page citing
+ * it, not publishing it. Nine media releases about penalties on named banks all link the same
+ * enforcement policy, and adopting it would file nine copies of one document under nine wrong
+ * names. So only a link that names nothing counts, and the caller still has to weigh what the
+ * file says against what the page says.
+ */
+export function pointedDocumentLink(html: string, pageUrl: string): string | null {
+  const $ = cheerio.load(html);
+  const here = new URL(pageUrl).host;
+  const found = new Map<string, string[]>();
+  $('a[href]').each((_, el) => {
+    const href = $(el).attr('href');
+    if (!href || !/\.(?:pdf|docx?|rtf)(?:$|\?)/i.test(href)) return;
+    try {
+      const target = new URL(href, pageUrl);
+      target.hash = '';
+      // The same site under its other name, as `namedDocumentLink` explains.
+      if (target.host !== here && target.host.replace(/^www\./i, '') === here.replace(/^www\./i, '')) {
+        target.host = here;
+      }
+      const url = target.toString();
+      found.set(url, [...(found.get(url) ?? []), $(el).text().replace(/\s+/g, ' ').trim()]);
+    } catch {
+      /* an href that is not a URL points at nothing */
+    }
+  });
+  if (found.size !== 1) return null;
+  const [url, texts] = [...found][0]!;
+  return texts.some(pointsRatherThanNames) ? url : null;
 }

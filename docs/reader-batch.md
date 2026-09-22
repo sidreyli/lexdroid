@@ -12,7 +12,7 @@ the sections they used to overwrite, and 6,211 empty arrangement stubs removed. 
 
 Each rule is one sentence and names no country and no instrument.
 
-**Status, 21 September 2026: all eighteen are implemented**, the first six tested in
+**Status, 22 September 2026: all twenty are implemented**, the first six tested in
 `test/reader-batch.test.ts`, the seventh in `test/publication-not-instrument.test.ts`, the eighth
 in `test/reader-null-sentinel.test.ts`, the ninth in `test/telecom-authority-band.test.ts` and the
 tenth in `test/parse-heading-bodies.test.ts`. The eleventh is tested beside the eighth, and the
@@ -20,10 +20,12 @@ twelfth in `test/quote-flattened-list.test.ts`. The thirteenth and fourteenth ar
 in `test/retrieve.test.ts` and beside the seventh; the fifteenth in
 `test/de-minimis-clearance.test.ts` the sixteenth in `test/restriction-circumstance.test.ts`, the seventeenth in
 `test/outline-is-not-a-provision.test.ts` and the eighteenth in `test/requirement-in-each-voice.test.ts`.
+The nineteenth is in `test/a-decision-is-not-a-rule.test.ts` and the twentieth beside the seventh.
 Replaying the latest Malaysian and Australian runs before and after gives the same cells for every
-row but the ninth, as it should: each acts on what the next run asks the reader, so nothing changes
-until that run. Row 9 is the exception, because the two guards it needs are decision-side and take
-effect at once; what they move is recorded with them below.
+row but the ninth and the twentieth, as it should: each acts on what the next run asks the reader, so nothing changes
+until that run. Rows 9 and 20 are the exceptions, because their guards are decision-side and take
+effect at once; what they move is recorded with them. Row 20 moves nothing in either banked run,
+which is what "free" means here -- it removes a kind of citation, not a score.
 
 | # | Cells | What is wrong | Rule | Where |
 | :-- | :-- | :-- | :-- | :-- |
@@ -45,6 +47,8 @@ effect at once; what they move is recorded with them below.
 | 16 | 4.3 | Two of the rubric's bands scale a restriction by reach and each names two axes -- "affecting all circumstances and sectors" against "affecting to a specific circumstance or sector" -- and only the sector was ever asked, so a restriction that bites only once a condition is established counted as reaching every circumstance because it named no sector. Singapore's patent cell took the rubric's maximum on section 69 of its Patents Act, which withholds damages from a defendant who proves he did not know he was infringing; Australia's section 123 says the same thing in the discretionary voice, was excluded for permitting rather than requiring, and that cell scored no restriction at all. The innocent-infringer defence is in every patent statute of the TRIPS era, so it cannot be the fact that separates two economies. | A restriction that waits on a condition reaches that circumstance, not every circumstance. | `conditionWords` in `src/read/index.ts`, verified in the provision as every other copied element is; `escalatingByReach` in `src/decide/index.ts` asks both halves of the band |
 | 17 | 5.1, 4.2, and 534 of one run's 2,468 Australian reading seats | Drafting manuals put a summary at the head of most Parts and ask for it in the operative voice, because that is what makes a summary readable. So a section called "Simplified outline" reads as a duty that binds everyone and sits nowhere -- and it outranks the duty it announces, being one dense sentence against a Part. Australia's passive-sharing cell read clause 30 of Schedule 1, the outline, and clause 31, the definitions, and never clause 33: "A carrier must, if requested to do so by another carrier, give the second carrier access to a telecommunications transmission tower." 1,430 sections of the corpus announce themselves this way and 35 findings in 16 of Australia's 28 cells rest on one. | A provision that says of itself that it summarises others states no requirement of its own. | `outlineSections` in `src/retrieve/index.ts` stops spending seats on them; `announcesItselfAsAnOutline` in `src/decide/index.ts` holds one a past run already banked, held rather than ruled out because the duty is real and stated elsewhere. Tested in `test/outline-is-not-a-provision.test.ts` |
 | 18 | 12.4.4, 5.1 | Row 15 again, found twice more by asking of every unreached provision what word its statute uses. The rubric names a measure with the policy word for it and a legislature writes the duty in its own drafting convention, and where the two share no word the question never reaches the provision. Payment licensing: one convention licenses the provider, the other forbids anyone but an authorised institution to hold the value and never says "licence" -- section 22 of Australia's Payment Systems (Regulation) Act 1998, an offence of 200 penalty units, was not in the top 600 on any question the cell asked, although its own instrument was already named as governing and section 23 beside it, the power to grant the authority, was read. The cell answered "no payment licensing requirement found" with twenty findings before it. Passive sharing: sharing is the policy word and access on request is the drafting one, and four of that cell's five questions carry "infrastructure", which three Acts carry in their titles -- so an offshore-energy Act governed a telecommunications question and clause 33 of Schedule 1 was never retrieved. Neither gate was the obstacle; `LICENCE` already accepts a word meaning authorisation. | A requirement is asked for in each voice a statute writes it in, not only in the voice the rubric names it with. | `alsoAsked` on `payment-licence` and on `passive-sharing-duty` in `src/rubric/measures.ts`. Section 22 goes from absent to 5th of the depth and the Corporations Act replaces the Online Safety Act as a governor of the payments cell; the Telecommunications Act becomes a governor of the sharing cell and Schedule 1 enters the depth |
+| 19 | 1.4, and 248 of Malaysia's 3,356 reading seats | An agency that adjudicates publishes its adjudications, and where the gazette is the statute book they are filed with the law: "Notice of Affirmative Final Determination of an Anti-Dumping Duty Investigation with regard to Imports of ..." is numbered like an instrument, written in the Act's own words because it is applying the Act, and so answers the questions the Act answers and outranks it -- short and dense where a statute is long and general. Its sections are tariff codes and the margins found against named exporters. The trade-defence cell read twenty-eight of them and never the Countervailing and Anti-Dumping Duties Act 1993 they are made under, and that cell counts measures, so four notices about one consignment are four measures. Australia spent none of its 12,865 seats this way. | A document that announces a step in a named proceeding about a particular thing decides a case and does not state a rule. | `determinesAParticularCase` in `src/discover/titles.ts`; `caseSections` in `src/retrieve/index.ts` stops spending seats on them, `decidesAParticularCase` in `src/decide/index.ts` holds one a past run already banked. 752 sections of the Malaysian corpus, 0.6%, and none of the other two. Tested in `test/a-decision-is-not-a-rule.test.ts` |
+| 20 | 12 rows of one export, and 21 zero rows | A document published about the law was already refused a governing seat by `mayGovern` and refused the role of witness by `absenceFor`, and neither covers the third thing it can be made to do, which is to be quoted as the requirement itself. Twelve rows cite "Privacy policy \| ACMA", a consultation paper and a commencement announcement as the law, each with a verbatim snippet lifted out of it. | A document published about the law does not state the law. | `instrumentKind` carried onto the evidence in `src/cell/index.ts` and `src/decide/record.ts`, and `isPublishedAboutTheLaw` in `src/decide/index.ts`, which holds rather than rules out: a page describing a requirement is evidence the requirement exists somewhere nobody has cited yet. Decision-side, so it takes effect at once; it moves no cell in either banked run. Tested beside the other two guards in `test/publication-not-instrument.test.ts` |
 
 ## Also fixed, decision-side
 
@@ -93,3 +97,20 @@ effect at once; what they move is recorded with them below.
   outline share. The definitions are left, because `definesATerm` already holds them in Zone 3 and a
   section headed "Definitions" can carry a deeming provision that is substantive -- so dropping them
   structurally would cost real law to save seats.
+- Measured and deliberately not changed: which instruments govern a cell. `shortlistInstruments`
+  reserves half the list for Acts, and the governing call asks for `GOVERNING_INSTRUMENTS * 5`, so
+  the first seven entries are Acts and the three governing slots can never hold a rule, regulation,
+  notice, order or guideline. The suspicion was that this is the ordering half of the defect that
+  let regulator pages govern -- Australia's domain-name cell seats six auDA provisions, including
+  the rule the published index cites, and is governed by the Business Names Registration Act. Two
+  measurements say leave it alone. Ordering by fused score instead puts the cited instrument in the
+  top three for 16 of 50 cells against 27 as built, and in the list of 25 for 35 against 39; of the
+  thirteen cells that change, twelve get worse, and the score-ordered choices are not near misses
+  but three *Higher Education Support (Maximum Payments)* regulations governing electronic
+  transactions. Adding a fourth slot reserved for the best subsidiary instrument rescues nothing at
+  all -- 27 before, 27 after -- and on the domain-name cell would seat a code of practice at rank 8
+  ahead of the rules at rank 10. The reservation is carrying the quality signal that fused score
+  does not have. It also gates less than it appears to: governing seats are added to the depth
+  rather than taken from it, and `absenceFor` picks its witness from every instrument that bore a
+  finding, using the governing list only to break ties among those. An instrument outside the top
+  three is still read, still citeable, and still eligible to witness a zero.

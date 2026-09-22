@@ -13,7 +13,7 @@ import { citationUrl } from '../export/index.js';
 import { loadRubric } from '../rubric/index.js';
 import { decide, sameFinding, type Decision, type Evidence, type FrameworkEvidence, type SurfacedInstrument } from './index.js';
 import type { FxRates } from './currency.js';
-import { amendsAnotherAct, citesADefinition, inheritsAPower } from '../parse/identity.js';
+import { amendsAnotherAct, citesADefinition, inheritsAPower, insertsTheQuotedWords } from '../parse/identity.js';
 import { loadProfile } from '../profile/index.js';
 import type { InstrumentType } from '../profile/types.js';
 import { confirmationsForRun, noConfirmations, confirmedFlag, type ConfirmationSet } from '../read/confirmations.js';
@@ -173,9 +173,11 @@ export function recordedDecider(
             instrumentTitle: r.title,
             headingPath: r.heading_path,
             amendsAnotherAct: amendsAnotherAct(r.text),
+            insertsTheQuotedWords: insertsTheQuotedWords(r.text, finding.quote),
             definesATerm: citesADefinition(r.text, finding.definingWords ?? finding.quote),
             inheritsAPower: inheritsAPower(r.text, finding.quote),
             sectionLanguage: r.language,
+            instrumentKind: r.instrument_kind,
             ...(r.repealed ? { sectionRepealed: true } : {}),
             citation: citationUrl(r.doc_url, r.anchor, { page: r.page, mediaType: r.media_type }),
             // What this economy says an instrument of that kind can do. The live run reads it from

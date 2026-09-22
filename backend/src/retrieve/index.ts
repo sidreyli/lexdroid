@@ -21,6 +21,7 @@ import type { Db } from '../db/index.js';
 import type { Indicator } from '../rubric/types.js';
 import { MEASURES } from '../rubric/measures.js';
 import { shortlistInstruments } from '../shortlist/index.js';
+import { determinesAParticularCase } from '../discover/titles.js';
 import {
   fuse,
   loadVectors,
@@ -274,7 +275,10 @@ export async function retrieveForIndicator(
 
   const second = otherLanguageCopies(db, opts.economy);
   const outlines = outlineSections(db, opts.economy);
-  const skip = (id: number): boolean => second.has(id) || outlines.has(id);
+  const copies = duplicateRegistrations(db, opts.economy);
+  const decided = caseSections(db, opts.economy);
+  const skip = (id: number): boolean =>
+    second.has(id) || outlines.has(id) || copies.has(id) || decided.has(id);
   const runs: SearchHit[][] = [];
   for (const query of queries) {
     const lex = searchLexical(db, query, { limit: perQueryDepth, economy: opts.economy }).filter((h) => !skip(h.sectionId));
@@ -473,6 +477,69 @@ export function outlineSections(db: Db, economy: string): Set<number> {
   const out = new Set<number>();
   for (const r of rows) {
     if (OUTLINE_HEADING.test(r.label ?? '') || OUTLINE_HEADING.test(r.heading_path ?? '')) out.add(r.id);
+  }
+  return out;
+}
+
+/**
+ * Sections of a registration that is a second copy of one already in the corpus.
+ *
+ * Twenty-eight Malaysian documents are registered under two and three instrument ids each --
+ * byte-identical, same content hash -- for 3,896 sections, 3.2% of that register. They arise where
+ * the statute book and a regulator both publish the same gazette PDF, and where one portal serves
+ * the same file from two paths. `otherLanguageCopies` cannot see them: it keys on instrument and
+ * label, so two copies under two instrument ids are two different keys and never pair.
+ *
+ * What it costs is not wasted reading but wrong counting. Several bands turn on how many measures
+ * an economy has, and a cell handed the same provision twice under two names can make two of one.
+ *
+ * Which copy survives follows the rule the register already uses for what a source will support: a
+ * source that states an identifier or a standing said something about what it published, and one
+ * that states neither did not. Where neither copy states anything the first registered is kept,
+ * which is arbitrary between equals and is the only part of this that is.
+ */
+export function duplicateRegistrations(db: Db, economy: string): Set<number> {
+  const rows = db
+    .prepare(
+      `SELECT d.content_hash AS hash, i.id AS instrument,
+              i.official_number AS number, i.status AS status
+         FROM document d
+         JOIN instrument i ON i.id = d.instrument_id
+        WHERE i.economy_code = ?
+        GROUP BY d.content_hash, i.id
+        ORDER BY d.content_hash, i.id`,
+    )
+    .all(economy) as { hash: string; instrument: number; number: string | null; status: string }[];
+
+  const groups = new Map<string, typeof rows>();
+  for (const r of rows) {
+    const list = groups.get(r.hash) ?? [];
+    list.push(r);
+    groups.set(r.hash, list);
+  }
+
+  const stands = (r: { number: string | null; status: string }): boolean =>
+    (r.number ?? '').trim() !== '' || (r.status !== 'unknown' && (r.status ?? '').trim() !== '');
+
+  const retired: number[] = [];
+  for (const list of groups.values()) {
+    if (list.length < 2) continue;
+    const keep = list.find(stands) ?? list[0]!;
+    for (const r of list) if (r.instrument !== keep.instrument) retired.push(r.instrument);
+  }
+  if (!retired.length) return new Set();
+
+  const out = new Set<number>();
+  // Chunked, because a register can retire more copies than SQLite will bind in one statement.
+  for (let i = 0; i < retired.length; i += 500) {
+    const chunk = retired.slice(i, i + 500);
+    const sections = db
+      .prepare(
+        `SELECT s.id FROM section s JOIN document d ON d.id = s.document_id
+          WHERE d.instrument_id IN (${chunk.map(() => '?').join(',')})`,
+      )
+      .all(...chunk) as { id: number }[];
+    for (const r of sections) out.add(r.id);
   }
   return out;
 }
@@ -696,6 +763,48 @@ function instrumentOf(db: Db, sectionIds: number[]): Map<number, number> {
       )
       .all(...slice) as { id: number; instrument_id: number }[];
     for (const r of rows) out.set(r.id, r.instrument_id);
+  }
+  return out;
+}
+
+/**
+ * Sections of a document that decides a case rather than states a rule.
+ *
+ * A determination made in a named proceeding is written in the statute's own words -- it is
+ * applying the statute -- so it answers the same queries the statute does and, being short and
+ * dense where an Act is long and general, it outranks it. In the run of 19 September 2026 these
+ * took 248 of Malaysia's 3,356 reading seats and none of Australia's 12,865, and the cell on
+ * trade remedies read twenty-eight of them and never the Act they are made under.
+ *
+ * Read off the title, because the title is the only place the document says which it is: its
+ * text is the statute's language and its sections are tariff codes and margins found against
+ * named exporters. See `determinesAParticularCase` for the three things a title has to say
+ * before this fires, and why none of them is about any particular subject matter.
+ */
+export function caseSections(db: Db, economy: string): Set<number> {
+  // Asked of the register first and the sections second: it is a fact about the document, so it
+  // is decided once per instrument rather than once per provision.
+  const decided = (
+    db.prepare('SELECT id, title FROM instrument WHERE economy_code = ?').all(economy) as {
+      id: number;
+      title: string | null;
+    }[]
+  )
+    .filter((i) => determinesAParticularCase(i.title ?? ''))
+    .map((i) => i.id);
+  if (!decided.length) return new Set();
+
+  const out = new Set<number>();
+  // Chunked, because a register can hold more decisions than SQLite will bind in one statement.
+  for (let i = 0; i < decided.length; i += 500) {
+    const chunk = decided.slice(i, i + 500);
+    const sections = db
+      .prepare(
+        `SELECT s.id FROM section s JOIN document d ON d.id = s.document_id
+          WHERE d.instrument_id IN (${chunk.map(() => '?').join(',')})`,
+      )
+      .all(...chunk) as { id: number }[];
+    for (const r of sections) out.add(r.id);
   }
   return out;
 }

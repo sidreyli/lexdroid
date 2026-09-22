@@ -10,11 +10,13 @@
  */
 import { detectLanguage } from './language.js';
 import { SectionBuilder, type ParsedDocument } from './types.js';
+import { readsAsAClause } from './identity.js';
 import { ocrPdfPages, type OcrEngine } from './ocr.js';
 import { amendmentHistory } from './lom.js';
 
 /** Below this many characters per page, the page is an image of text rather than text. */
 const MIN_CHARS_PER_PAGE = 80;
+
 
 const PROVISION_LINE = /^\s*(\d+[A-Z]{0,2})\.\s*(?:—|-|–)?\s*(?:\(1\))?\s*(?=\S)/;
 /** India notifications sometimes number a paragraph "12.5 Definitions" without a second dot. */
@@ -169,7 +171,12 @@ export function runningHeader(pages: PageText[]): string | null {
   }
   const enough = (v: { where: Map<number, number> }): boolean =>
     v.where.size >= 3 && v.where.size >= pages.length * 0.15;
-  const repeated = [...at.values()].filter(enough);
+  // A repeated line is only a header if it is a name. A registry's policy lists its domain
+  // categories in a table and "pursuant to the Universities and University Colleges Act 1971;"
+  // runs down three pages of it, which was enough to be taken for the document's own name and to
+  // rename the instrument after somebody else's Act. Where every repeat is a clause the document
+  // has no running header, and saying so lets its citation provision be asked instead.
+  const repeated = [...at.values()].filter((v) => enough(v) && !readsAsAClause(v.text));
   if (repeated.length === 0) return null;
   repeated.sort((a, b) => b.where.size - a.where.size || b.text.length - a.text.length);
 
@@ -477,14 +484,51 @@ export function sectionise(pages: PageText[]): SectionBuilder {
     (it, n) => 'lines' in it && it.label !== null && it.lines.length > 1 && lastAt.get(key(it)) === n && !listed(it, n),
   );
   const builder = new SectionBuilder();
+  /**
+   * What accumulated under an entry that is about to be dropped.
+   *
+   * It is kept as a section and not as prose, because prose reaches no search: the Criminal
+   * Procedure Code lost a quarter of its text that way, which is why a Schedule opens a section
+   * of its own. It carries no label, because the label belonged to the entry being dropped and
+   * that entry's real copy is elsewhere in the document -- so this text is citable by offset and
+   * findable by its words, without claiming to be a provision it is not.
+   */
+  const keep = (it: Candidate): void => {
+    if (it.lines.length < 2) return;
+    const text = it.lines.slice(1).join('\n').trim();
+    if (!text) return;
+    builder.add({
+      headingPath: it.part,
+      label: null,
+      text,
+      page: it.page,
+      language: it.language ?? null,
+      repealed: false,
+      anchor: null,
+    });
+  };
   for (const [n, it] of items.entries()) {
     if (!('lines' in it)) {
       builder.addProse(it.prose);
       continue;
     }
-    if (it.label && (lastAt.get(key(it)) !== n || listed(it, n))) continue;
+    // A duplicate entry is dropped, but what accumulated underneath it is not a duplicate of
+    // anything. Lines that match no provision are filed onto whichever entry was open, so an
+    // arrangement of sections collects the front matter printed after it, and a numbered list
+    // that is not an arrangement at all -- the committee of contributors an agency prints on its
+    // second page -- collects the body of the guideline that follows. Dropping the entry dropped
+    // those lines with it, unsearchable and uncited: Malaysia's Data Protection Officer
+    // Competency Guideline kept 1,414 characters of the 15,783 its pages carry, and the thirteen
+    // it kept were the contributors' names. The entry's own line is the duplicate; the rest is
+    // the document, and it is kept as prose because it is text without being a citable provision.
+    if (it.label && (lastAt.get(key(it)) !== n || listed(it, n))) {
+      keep(it);
+      continue;
+    }
     // The arrangement closes by listing the Schedules, before any provision has a body. That copy
     // collects the cover pages that follow it, and it is not the Schedule.
+    // Nothing is kept from this one: what it collected is the cover pages printed after the
+    // arrangement, which the Schedule's real copy carries again further down.
     if (it.schedule && !(firstBodied < n)) continue;
     const text = it.lines.join('\n').trim();
     if (!text) continue;
@@ -538,6 +582,7 @@ export async function parsePdf(bytes: Buffer, url: string, opts: ParsePdfOptions
     };
   }
 
+  const original = new Map(pages.map((page) => [page.page, page.lines.join(' ').length]));
   const sparse = pages
     .filter((page) => page.lines.join(' ').length < MIN_CHARS_PER_PAGE)
     .map((page) => page.page);
@@ -553,7 +598,9 @@ export async function parsePdf(bytes: Buffer, url: string, opts: ParsePdfOptions
         if (!sparse.includes(page.page)) return page;
         const ocr = byPage.get(page.page);
         const text = ocr?.lines.join(' ') ?? '';
-        if (!ocr || text.length < MIN_CHARS_PER_PAGE) {
+        // Better than what the page already had, and enough to be a page at all. The second test
+        // alone would let OCR overwrite a short but accurate page with a longer misreading.
+        if (!ocr || text.length < MIN_CHARS_PER_PAGE || text.length <= (original.get(page.page) ?? 0)) {
           ocrFailed.push(page.page);
           return page;
         }

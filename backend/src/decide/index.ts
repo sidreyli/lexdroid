@@ -21,6 +21,7 @@ import type { Finding } from '../read/index.js';
 import { MEASURES, MEASURE_DOMAIN, MEASURE_NAMES, SUBJECTS, SUBJECT_DOMAIN } from '../rubric/measures.js';
 import { tallyConfirmations, type ConfirmationTally } from '../read/confirmations.js';
 import { inUsd, moneyIn, type FxRates } from './currency.js';
+import { determinesAParticularCase } from '../discover/titles.js';
 
 /** One finding, with enough of its origin to cite it. */
 export interface Evidence {
@@ -35,6 +36,23 @@ export interface Evidence {
   citation: string;
   /** Whether the provision only instructs an amendment to some other Act. */
   amendsAnotherAct: boolean;
+  /**
+   * Whether the quoted words are words the amending provision sets out for insertion.
+   *
+   * An amending section holds an instruction and the text that instruction enacts, and only the
+   * first imposes nothing. Read off the drafting once, beside amendsAnotherAct, because it is a
+   * fact about the document. Absent for evidence recorded before this was carried, which reads
+   * as false -- the behaviour every earlier run had.
+   */
+  insertsTheQuotedWords?: boolean;
+  /**
+   * The name this finding must be cited under, where the words belong to another instrument.
+   *
+   * Set only for words an amendment sets out for insertion, and only where the register knows
+   * which Act they were inserted into. `instrumentTitle` stays what it was, because it is what
+   * groups evidence by instrument and the words really were read in the amending document.
+   */
+  citedAs?: string;
   /**
    * What the economy's own instrument hierarchy says this kind of instrument can do.
    *
@@ -68,6 +86,16 @@ export interface Evidence {
    * instrument may one day prohibit comes back reading as a prohibition.
    */
   inheritsAPower?: boolean;
+  /**
+   * What the register calls this instrument.
+   *
+   * Carried so Zone 3 can draw the line it already draws twice -- a document published about the
+   * law does not govern a question about it, and cannot witness its silence -- at the third place
+   * the same line belongs, which is whether the words may be quoted as the law. Absent for a
+   * corpus registered before this was carried, which reads as an instrument: the behaviour every
+   * earlier run had.
+   */
+  instrumentKind?: string | null;
   /** The language the provision is written in. Absent where the corpus predates the field. */
   sectionLanguage?: string | null;
   /** The parser read the provision itself as repealed or deleted, whatever the instrument's status. */
@@ -252,6 +280,28 @@ const OUTLINE_HEADING =
   /\b(simplified outline|outline of this (?:part|division|chapter|act|schedule)|guide to this (?:part|division|chapter|act)|overview of this (?:part|division|chapter|act))/i;
 
 const announcesItselfAsAnOutline = (e: Evidence): boolean => OUTLINE_HEADING.test(e.headingPath ?? '');
+
+/**
+ * Whether the document the words were read in decides a case rather than states a rule.
+ *
+ * Asked of the instrument's title rather than of the provision, because the provision cannot
+ * answer it: a determination applying an Act is written in the Act's own words, and the sentence
+ * that imposes the duty and the sentence that applies it to one importer read alike. The title is
+ * where the document says which it is. Retrieval already declines to spend a seat on one; this is
+ * the same rule at the place a run that predates it is scored.
+ */
+const decidesAParticularCase = (e: Evidence): boolean => determinesAParticularCase(e.instrumentTitle ?? '');
+
+/**
+ * Whether the register says the document is published about the law rather than being law.
+ *
+ * `mayGovern` already refuses one a governing seat and `absenceFor` already refuses one the role
+ * of witness to a silence. Neither covers the third thing a publication can be made to do, which
+ * is to be quoted as the requirement itself: twelve rows of the 20 September export cite a
+ * privacy page, a consultation paper or a commencement announcement as the law, with a verbatim
+ * snippet taken out of it. The line is one line and belongs everywhere the same.
+ */
+const isPublishedAboutTheLaw = (e: Evidence): boolean => e.instrumentKind === 'publication';
 
 /** A power that may be used is not a requirement that must be met. Read from the verb the finding
  *  quotes, not the mandatory flag beside it -- that flag called "may appoint" mandatory. */
@@ -1404,6 +1454,32 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
       });
       continue;
     }
+    // A determination made in a named proceeding applies the law to one set of facts. It is
+    // written in the statute's own words, so it answers the questions the statute answers and
+    // outranks it -- short and dense where an Act is long and general. What it states is what one
+    // importer owes on one consignment, which is not what the economy requires of anybody.
+    // Held for the reason an outline is held: the requirement is real and is in the Act the
+    // determination was made under.
+    if (decidesAParticularCase(e)) {
+      held.push({
+        evidence: e,
+        reason:
+          'the words cited decide a particular proceeding rather than state a rule, so the requirement is in the instrument the decision was made under',
+      });
+      continue;
+    }
+    // A document published about the law is not the law, and quoting it as the law puts a
+    // regulator's web page in the row where a reviewer expects a provision. Held rather than
+    // ruled out, and for the strongest form of the same reason: a page that describes a
+    // requirement is evidence the requirement exists, in some instrument nobody has cited yet.
+    if (isPublishedAboutTheLaw(e)) {
+      held.push({
+        evidence: e,
+        reason:
+          'the document cited is published about the law rather than being law, so the requirement is in the instrument it describes',
+      });
+      continue;
+    }
     // A definition says what a term means and requires nothing of anybody. It comes before the
     // confirmation below because that pass rightly answers no -- and the reason it answers no is
     // that the duty is elsewhere in the Act, which is evidence the requirement exists, not evidence
@@ -1697,12 +1773,18 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
       });
       continue;
     }
-    // The words inserted by an amendment are law, but they are the principal Act's law. Cited
-    // here they would name the vehicle instead of the statute that carries the duty.
-    if (e.amendsAnotherAct) {
+    // An amending section holds an instruction and, where it inserts rather than deletes, the text
+    // that instruction enacts. The instruction imposes nothing and is ruled out here as before. The
+    // text it sets out is the duty, in the words the legislature passed, and until the next
+    // consolidation is printed it exists nowhere else -- so a finding built on those words is a
+    // finding about law in force. ESCAP's own extraction method allows both places an amendment can
+    // be read, "insert in main law, or a single file", and its guide scores a safe-harbour provision
+    // straight out of an Amendment Act. What such a finding must not do is cite the vehicle as
+    // though it were the statute; the words belong to the principal Act and the citation says so.
+    if (e.amendsAnotherAct && !e.insertsTheQuotedWords) {
       ruledOut.push({
         evidence: e,
-        reason: 'the provision amends another Act rather than imposing the duty itself, so the duty belongs to the principal Act',
+        reason: 'the provision directs an amendment to another Act without setting out the words it inserts, so it imposes nothing itself',
       });
       continue;
     }
@@ -2551,7 +2633,7 @@ function rationaleFor(
 
   if (basis.length > 0) {
     const lead = basis[0]!;
-    parts.push(`"${lead.finding.quote}" (${lead.instrumentTitle}, ${lead.headingPath}).`);
+    parts.push(`"${lead.finding.quote}" (${lead.citedAs ?? lead.instrumentTitle}, ${lead.headingPath}).`);
     parts.push(`Scored ${chosen.score} -- "${chosen.criterion}": ${reason}.`);
   } else {
     // A zero names the instrument it was read against and says what that instrument does not do,

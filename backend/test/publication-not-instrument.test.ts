@@ -61,6 +61,7 @@ describe('what a listing will support calling an instrument', () => {
 });
 
 const indicator62 = loadRubric().indicators.find((i) => i.id === '6.2')!;
+const indicator64 = loadRubric().indicators.find((i) => i.id === '6.4')!;
 const coverage = { sectionsRead: 24, sectionsIndexed: 6143, instrumentsConsidered: 6 };
 
 describe('a publication asked to witness an absence', () => {
@@ -188,5 +189,107 @@ describe('a publication offered a governing seat', () => {
     // The older guard, unchanged: an unread instrument has no provisions, and letting one hold a
     // seat is how Australia's government-access cell lost the interception Act a second time.
     expect(mayGovern({ read: false, kind: 'act' })).toBe(false);
+  });
+});
+
+describe('a publication quoted as the law itself', () => {
+  // The third place the same line belongs, and the one nothing drew. Registration stops a
+  // publication being called an Act and `mayGovern` stops it taking a governing seat, but neither
+  // covers a finding read out of one: twelve rows of the 20 September export cite "Privacy policy
+  // | ACMA", a consultation paper and a commencement announcement as the law, each with a
+  // verbatim snippet lifted out of it, and a further twenty-one zero rows name one as the
+  // instrument the absence was found in.
+  const quoted = (kind: string | null): Evidence => ({
+    finding: {
+      indicatorId: '6.4',
+      measure: 'transfer-condition',
+      dutyBearer: 'an organisation',
+      dutyAct: 'must not transfer',
+      dutyForce: 'forbids',
+      roleWords: null,
+      definingWords: 'outside Singapore',
+      subjectWords: null,
+      borderWords: 'outside Singapore',
+      imposingWords: 'must not transfer',
+      prescribingWords: null,
+      dutyBearerKind: 'organisation',
+      scopeUnstated: false,
+      placeWords: 'outside Singapore',
+      exceptionWords: null,
+      locatedData: 'personal data',
+      informationWords: 'personal data',
+      keepingWords: 'must not transfer any personal data to a country outside Singapore',
+      authorisingWords: null,
+      quote: 'an organisation must not transfer any personal data to a country outside Singapore',
+      requirement: 'Transfers abroad are conditional.',
+      sectorScope: 'all',
+      sector: null,
+      dataScope: 'personal',
+      dataDescription: null,
+      appliesOnlyToGovernmentData: false,
+      mandatory: true,
+      countriesNamed: [],
+      statedPeriod: null,
+      authorisation: 'unstated',
+    } as Finding,
+    sectionId: 900,
+    instrumentId: 9,
+    instrumentTitle: 'Cybersecurity Act | Cyber Security Agency of Singapore',
+    headingPath: 'Overview',
+    citation: 'https://example.test/overview',
+    amendsAnotherAct: false,
+    ...(kind === null ? {} : { instrumentKind: kind }),
+  });
+
+  const surfaced: SurfacedInstrument[] = [
+    { instrumentId: 9, instrumentTitle: 'Personal Data Protection Act 2012', rank: 1, kind: 'act' },
+  ];
+
+  it('does not become the provision the row cites', () => {
+    const d = decide({
+      indicator: indicator64,
+      economy: 'SGP',
+      evidence: [quoted('publication')],
+      surfaced,
+      coverage,
+    });
+    expect(d.basis).toEqual([]);
+    expect(d.held.map((h) => h.reason).join(' ')).toContain('published about the law');
+  });
+
+  it('is held rather than ruled out, because a page describing a duty is evidence it exists', () => {
+    const d = decide({
+      indicator: indicator64,
+      economy: 'SGP',
+      evidence: [quoted('publication')],
+      surfaced,
+      coverage,
+    });
+    expect(d.excluded).toEqual([]);
+    expect(d.held).toHaveLength(1);
+  });
+
+  // The control: the guard fires on the kind and on nothing else, so a finding read in an
+  // instrument of the law reaches the merits and is judged there. This one is ruled out on the
+  // merits -- words naming where data goes are not a condition on sending it -- which is the
+  // point: it was ruled on, rather than set aside for being in the wrong kind of document.
+  const reachedTheMerits = (kind: string | null): void => {
+    const d = decide({
+      indicator: indicator64,
+      economy: 'SGP',
+      evidence: [quoted(kind)],
+      surfaced,
+      coverage,
+    });
+    expect(d.held.map((h) => h.reason).join(' '), String(kind)).not.toContain('published about the law');
+    expect(d.excluded.length, String(kind)).toBeGreaterThan(0);
+  };
+
+  it('leaves a finding read in an instrument of the law where it was', () => {
+    for (const kind of ['act', 'regulation', 'notice', 'guideline', 'order', 'rule']) reachedTheMerits(kind);
+  });
+
+  it('leaves a corpus read before the kind was carried exactly as it was', () => {
+    reachedTheMerits(null);
   });
 });
