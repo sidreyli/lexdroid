@@ -25,10 +25,74 @@ const MAIN_CANDIDATES = ['main', 'article', '[role=main]', '#content', '#main', 
 const PROVISION_LINE = /^\s*(?:(?:Section|Sec\.|Article|Art\.|Regulation|Reg\.|Rule|Clause|Paragraph)\s+)?(\d+[A-Z]{0,2}(?:\(\d+\))?)[.)—-]\s+(?=\S)/;
 
 const MIN_DOCUMENT_CHARS = 600;
+/** Joining flight rows with this keeps them separate blocks to cheerio, as the page had them. */
+const NEWLINE = '\n';
 /** Above this share of text sitting inside anchors, the page is a list of links, not a document. */
 const MAX_LINK_TEXT_RATIO = 0.5;
 
+/**
+ * A page whose body the browser assembles, and the markup it was served instead.
+ *
+ * A React server-rendered page ships its content as a payload rather than as the page's own
+ * markup: a run of `self.__next_f.push([1, "<escaped>"])` calls holding the flight stream, whose
+ * text rows carry the HTML the browser is meant to build. Served as-is the page is 71% script and
+ * 50 characters of text, so it was recorded unread and empty -- and 24 of Singapore's IMDA pages
+ * went that way, the Telecom Competition Code and the Telecommunications Act tables among them,
+ * each one the table of instruments the pillar needed.
+ *
+ * So a page that reads empty is given a second reading from its payload. Only a page that reads
+ * empty: a page whose own markup parses stays exactly as it was, because the payload duplicates
+ * the markup on a site that renders both and we would rather read the site's own HTML. And only
+ * where the payload parses to more: a rehydration that is also empty leaves the first answer
+ * standing, so the detail still names the page's own character count rather than the payload's.
+ */
 export function parseHtml(html: string, url: string): ParsedDocument {
+  const direct = parseHtmlAsServed(html, url);
+  if (direct.unread?.reason !== 'empty') return direct;
+
+  const payload = flightMarkup(html);
+  if (payload === null) return direct;
+
+  const second = parseHtmlAsServed(payload, url);
+  if (second.unread?.reason === 'empty') return direct;
+  // The payload has no <head>, so the title stays the one the page itself gave.
+  return { ...second, title: second.title ?? direct.title };
+}
+
+/**
+ * Every text row of the flight stream a React server-rendered page pushes, as one document.
+ *
+ * The stream is a run of pushed string chunks that concatenate into rows, each `<id>:T<hex>,`
+ * followed by exactly that many characters. The T rows are the text ones -- the markup; the rest
+ * are element trees and module references. Null where the page pushes no chunks or no T row holds
+ * a tag, which is every page that is not built this way.
+ */
+function flightMarkup(html: string): string | null {
+  const chunks: string[] = [];
+  const pushed = /self\.__next_f\.push\(\[1,\s*("(?:[^"\\]|\\.)*")\s*\]\)/g;
+  for (let m = pushed.exec(html); m !== null; m = pushed.exec(html)) {
+    try {
+      chunks.push(JSON.parse(m[1]!) as string);
+    } catch {
+      // A chunk that will not decode is a chunk of a stream we cannot trust the offsets in.
+      return null;
+    }
+  }
+  if (chunks.length === 0) return null;
+
+  const flight = chunks.join('');
+  const rows: string[] = [];
+  const marker = /(?:^|\n)[0-9a-f]+:T([0-9a-f]+),/g;
+  for (let m = marker.exec(flight); m !== null; m = marker.exec(flight)) {
+    const at = m.index + m[0].length;
+    rows.push(flight.slice(at, at + parseInt(m[1]!, 16)));
+  }
+  const markup = rows.filter((r) => r.includes('<')).join(NEWLINE);
+  return markup.length > 0 ? markup : null;
+}
+
+/** One reading of the page as the server sent it -- the whole of `parseHtml` before payloads. */
+function parseHtmlAsServed(html: string, url: string): ParsedDocument {
   const $ = cheerio.load(html);
   const title = ($('title').first().text() || $('h1').first().text() || '').replace(/\s+/g, ' ').trim() || null;
 
