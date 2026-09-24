@@ -547,9 +547,24 @@ export function statedKind(
  */
 const SETS_OUT_TEXT = /\b(?:inserting|substituting|adding|inserted|substituted)\b[^:"“]{0,160}[:,]?\s*["“]/gi;
 
-export function insertsTheQuotedWords(text: string, words: string | null): boolean {
-  const quote = words?.trim();
-  if (!quote || quote.length < 3) return false;
+/**
+ * Compared with the line breaks taken out of both sides.
+ *
+ * A quote is a span of words; where the lines break in it is the PDF's decision, not the
+ * legislature's. Section 6 of Malaysia's Personal Data Protection (Amendment) Act 2024 sets out
+ * the whole of the new Division 1A -- "A data controller shall appoint one or more data protection
+ * officers" among it -- and the text layer puts a newline between "more" and "data". `indexOf`
+ * missed the span by that one character, so the gate above read a section that sets out four
+ * subsections of new duties as an instruction setting out nothing, and indicator 7.4 scored zero
+ * on a duty printed inside its own evidence. Every other quote check in the system normalises
+ * first; this was the one place comparing raw.
+ */
+const flattenForQuote = (s: string): string => s.replace(/\s+/g, ' ');
+
+export function insertsTheQuotedWords(raw: string, words: string | null): boolean {
+  const quote = flattenForQuote(words?.trim() ?? '');
+  if (quote.length < 3) return false;
+  const text = flattenForQuote(raw);
   const at = text.indexOf(quote);
   if (at < 0) return false;
 

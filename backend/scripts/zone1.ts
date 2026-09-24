@@ -39,6 +39,14 @@ interface Args {
   reparse: boolean;
   /** Only instruments with a document this parser produced: the scope of a parser fix. */
   parser: string | null;
+  /**
+   * Exactly these instruments, by id. The scope of a parser fix measured rather than guessed.
+   *
+   * `--reparse` on its own re-parses the economy, and re-parsing a document deletes the sections it
+   * rebuilds -- so every embedding of every one of them goes too, and Malaysia's 126,000 sections
+   * cost hours of GPU time to put back. A fix that changes 58 documents should re-parse 58.
+   */
+  instruments: number[] | null;
   /** Re-read only the documents nothing could be read out of. */
   unread: boolean;
   status: boolean;
@@ -62,16 +70,19 @@ function parseArgs(argv: string[]): Args {
   const readArg = get('read');
   const anyStage =
     has('register') || readArg !== null || has('embed') || has('status') || has('reparse') || has('unread')
-    || get('about') !== null || get('pillars') !== null;
+    || get('about') !== null || get('pillars') !== null || get('instruments') !== null;
 
   return {
     economy: (get('economy') ?? 'SGP').toUpperCase(),
     register: has('register') || !anyStage,
     portal: get('portal'),
     read: readArg !== null ? (readArg === 'all' ? 0 : Number(readArg))
-      : (get('about') !== null || get('pillars') !== null || has('reparse') || has('unread')) ? 0 : anyStage ? null : 0,
+      : (get('about') !== null || get('pillars') !== null || has('reparse') || has('unread') || get('instruments') !== null) ? 0 : anyStage ? null : 0,
     title: get('title'),
     parser: get('parser'),
+    instruments: get('instruments') !== null
+      ? get('instruments')!.split(',').map((n) => Number(n.trim())).filter((n) => Number.isInteger(n) && n > 0)
+      : null,
     kind: get('kind'),
     embed: has('embed') || !anyStage,
     refresh: has('refresh'),
@@ -246,6 +257,9 @@ Shortlist -- ranking the register against ${asked.length} question(s), ${args.to
       ...(args.title ? { titleLike: args.title } : {}),
       ...(args.kind ? { kind: args.kind } : {}),
       ...(shortlisted ? { instrumentIds: shortlisted } : {}),
+      // Named outright, this wins over the shortlist: it is the answer to "which documents does
+      // this fix change", and a shortlist would only narrow it to the ones a question happens to ask.
+      ...(args.instruments ? { instrumentIds: args.instruments } : {}),
       ...(args.parser
         ? {
             instrumentIds: (db

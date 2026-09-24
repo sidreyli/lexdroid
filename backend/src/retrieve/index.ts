@@ -125,8 +125,15 @@ const PER_RUN_SEATS = 2;
  * first few are seated. This adds nothing to the corpus and removes nothing from the ranking; it
  * decides only what a fixed depth spends itself on. Where the register has no opinion the seats go
  * unused and the fused order stands.
+ *
+ * Six seats rather than three. Three was chosen against the depth alone, on the assumption that
+ * naming more instruments would start pushing better-ranked ones out. Measured across all 61
+ * Australian indicators it does not: widening to six seats seated 193 instruments that had not
+ * been seated before and displaced 10, and surfaced 22% more provisions -- more in every one of
+ * the 61, fewer in none. The register adds where it has an opinion and stands aside where it has
+ * none, so the cost of a seat is bounded by what that seat surfaces.
  */
-const GOVERNING_INSTRUMENTS = 3;
+const GOVERNING_INSTRUMENTS = 6;
 /** The same share PER_INSTRUMENT allows anyone else, added to the depth rather than taken from it. */
 const SEATS_PER_GOVERNING = PER_INSTRUMENT;
 
@@ -277,8 +284,11 @@ export async function retrieveForIndicator(
   const outlines = outlineSections(db, opts.economy);
   const copies = duplicateRegistrations(db, opts.economy);
   const decided = caseSections(db, opts.economy);
-  const skip = (id: number): boolean =>
-    second.has(id) || outlines.has(id) || copies.has(id) || decided.has(id);
+  // Last, and told what the others took: a provision is a second copy only where the copy it
+  // repeats is still readable after they have had their say.
+  const suppressed = new Set<number>([...second, ...outlines, ...copies, ...decided]);
+  const repeats = duplicateProvisions(db, opts.economy, suppressed);
+  const skip = (id: number): boolean => suppressed.has(id) || repeats.has(id);
   const runs: SearchHit[][] = [];
   for (const query of queries) {
     const lex = searchLexical(db, query, { limit: perQueryDepth, economy: opts.economy }).filter((h) => !skip(h.sectionId));
@@ -540,6 +550,107 @@ export function duplicateRegistrations(db: Db, economy: string): Set<number> {
       )
       .all(...chunk) as { id: number }[];
     for (const r of sections) out.add(r.id);
+  }
+  return out;
+}
+
+/**
+ * Provisions a bare registration repeats from one the register can actually identify.
+ *
+ * `duplicateRegistrations` pairs on the content hash, so it sees a second copy only where the two
+ * files are byte-identical. The same law reaches the register twice more often than that: the
+ * gazette walk takes the numbered PDF, a regulator's portal serves its own rendering of the same
+ * order, and the two differ in a timestamp or a font and hash apart. Malaysia's customs import
+ * prohibition is registered as "P.U. (A) 117/2023" and again as "Perintah Kastam (Larangan
+ * Mengenai Import) 2023" with no number at all; the Currency Act 2020 is there as "Act 827" and
+ * as a portal page; one entry is the caption of a link. Their provisions are the same words, and
+ * a cell retrieving them is handed the same provision twice under two names.
+ *
+ * What that costs is counting. Several bands turn on how many measures an economy has, and two
+ * names for one order can make two of one -- the reason this is worth suppressing at all, ahead of
+ * the reading it also wastes.
+ *
+ * The test is the one the register already applies to a second copy: a source that states an
+ * identifier or a standing said something about what it published, and one that states neither did
+ * not. Where both state one they are two instruments that happen to share words, not one
+ * instrument twice -- the sales tax exemption orders of 2018, 2022 and 2025 repeat whole
+ * schedules, and the Islamic and conventional electronic money exemptions are drafted in parallel.
+ * Suppressing either of those would lose a measure that is really there, so neither is touched.
+ *
+ * A copy is only ever suppressed where the provision it copies is still going to be read. The
+ * other suppressions compose with this one, and 180 Malaysian provisions had the identified copy
+ * retired by one of them -- as a heading, as a second-language copy -- so suppressing the bare one
+ * as well would have left the words in the corpus and out of every cell's reach. `alreadySkipped`
+ * is what those rules have taken already, and a group all of whose identified copies are in it
+ * keeps its bare copy, which is then the only place the provision is still readable.
+ *
+ * Suppression is per provision rather than per instrument, because a bare registration is not
+ * always only a copy. Matching one boilerplate commencement line against a numbered order should
+ * retire that line and nothing else; a provision the numbered copy does not hold matches nothing
+ * and survives. An instrument can lose every provision this way, but only by holding none of its
+ * own.
+ */
+export function duplicateProvisions(db: Db, economy: string, alreadySkipped?: ReadonlySet<number>): Set<number> {
+  const rows = db
+    .prepare(
+      `SELECT s.id, d.instrument_id AS instrument, LENGTH(s.text) AS len,
+              SUBSTR(s.text, 1, 180) AS head,
+              (CASE WHEN IFNULL(TRIM(i.official_number), '') <> ''
+                      OR (i.status IS NOT NULL AND i.status <> 'unknown' AND TRIM(i.status) <> '')
+                    THEN 1 ELSE 0 END) AS stands
+         FROM section s
+         JOIN document d ON d.id = s.document_id
+         JOIN instrument i ON i.id = d.instrument_id
+        WHERE i.economy_code = ? AND s.text IS NOT NULL AND LENGTH(s.text) > 0
+        ORDER BY s.id`,
+    )
+    .all(economy) as { id: number; instrument: number; len: number; head: string; stands: number }[];
+
+  // Grouped on the length and opening of the text rather than the whole of it, so a register the
+  // size of Malaysia's fits in memory. It decides only which provisions are worth comparing; every
+  // group that survives is read in full and compared exactly before anything is suppressed.
+  const groups = new Map<string, typeof rows>();
+  for (const r of rows) {
+    const key = `${r.len}|${r.head}`;
+    const list = groups.get(key) ?? [];
+    list.push(r);
+    groups.set(key, list);
+  }
+
+  const suspect: (typeof rows)[] = [];
+  for (const list of groups.values()) {
+    if (list.length < 2) continue;
+    if (new Set(list.map((r) => r.instrument)).size < 2) continue;
+    if (!list.some((r) => r.stands === 1) || !list.some((r) => r.stands === 0)) continue;
+    suspect.push(list);
+  }
+  if (!suspect.length) return new Set();
+
+  const wanted = suspect.flat().map((r) => r.id);
+  const text = new Map<number, string>();
+  for (let i = 0; i < wanted.length; i += 500) {
+    const chunk = wanted.slice(i, i + 500);
+    const got = db
+      .prepare(`SELECT id, text FROM section WHERE id IN (${chunk.map(() => '?').join(',')})`)
+      .all(...chunk) as { id: number; text: string }[];
+    for (const r of got) text.set(r.id, r.text);
+  }
+
+  const out = new Set<number>();
+  for (const list of suspect) {
+    const exact = new Map<string, typeof list>();
+    for (const r of list) {
+      const t = text.get(r.id);
+      if (t === undefined) continue;
+      const same = exact.get(t) ?? [];
+      same.push(r);
+      exact.set(t, same);
+    }
+    for (const same of exact.values()) {
+      const kept = same.filter((r) => r.stands === 1 && !alreadySkipped?.has(r.id));
+      if (!kept.length) continue;
+      for (const r of same) if (r.stands === 0) out.add(r.id);
+    }
   }
   return out;
 }

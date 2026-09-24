@@ -18,7 +18,7 @@
  */
 import type { Indicator, ScoreBand } from '../rubric/types.js';
 import type { Finding } from '../read/index.js';
-import { MEASURES, MEASURE_DOMAIN, MEASURE_NAMES, SUBJECTS, SUBJECT_DOMAIN } from '../rubric/measures.js';
+import { MEASURES, MEASURE_DOMAIN, MEASURE_NAMES, SECTOR_DOMAINS, SUBJECTS, SUBJECT_DOMAIN } from '../rubric/measures.js';
 import { tallyConfirmations, type ConfirmationTally } from '../read/confirmations.js';
 import { inUsd, moneyIn, type FxRates } from './currency.js';
 import { determinesAParticularCase } from '../discover/titles.js';
@@ -1549,7 +1549,7 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
       subject &&
       e.finding.subjectWords !== null &&
       e.finding.subjectWords !== undefined &&
-      restates(e.finding.subjectWords, e.finding.dutyBearer)
+      sameAnswer(e.finding.subjectWords, e.finding.dutyBearer)
     ) {
       ruledOut.push({
         evidence: e,
@@ -1567,17 +1567,33 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     // tried and is wrong: "licence to sell online" carries the domain into every subject beside it,
     // so a licence whose subject is a bank passed the test the words "sell online" had answered.
     const domain = inDomain(indicatorId, e.finding.measure);
-    if (domain && e.finding.subjectWords && !domain.test(e.finding.subjectWords) && otherLanguage(e)) {
+    // A sector is named by the document, not by every sentence in it -- see SECTOR_DOMAINS. The
+    // instrument's title answers the domain for those, and the words answer it for the rest.
+    const namesDomain =
+      domain !== null &&
+      SECTOR_DOMAINS.has(indicatorId) &&
+      (domain.test(e.instrumentTitle) || domain.test(e.finding.subjectWords ?? ''));
+    if (domain && !namesDomain && e.finding.subjectWords && !domain.test(e.finding.subjectWords) && otherLanguage(e)) {
       held.push({
         evidence: e,
         reason: `the subject "${e.finding.subjectWords}" is in ${otherLanguage(e)}, and this indicator's subject is stated only in English`,
       });
       continue;
     }
-    if (domain && e.finding.subjectWords && !domain.test(e.finding.subjectWords)) {
+    if (domain && !namesDomain && e.finding.subjectWords && !domain.test(e.finding.subjectWords)) {
       ruledOut.push({
         evidence: e,
         reason: `"${e.finding.subjectWords}" is not ${subject ?? "this indicator's subject"}`,
+      });
+      continue;
+    }
+    // And the other way round for a sector: the words name no sector and neither does the Act they
+    // were read in, so the provision is about some other trade. Ruled out for the reason the
+    // subject test is -- the provision was read and what it is about belongs elsewhere.
+    if (domain && SECTOR_DOMAINS.has(indicatorId) && !namesDomain) {
+      ruledOut.push({
+        evidence: e,
+        reason: `neither "${e.finding.subjectWords ?? e.instrumentTitle}" nor the instrument it is in names ${subject ?? "this indicator's subject"}`,
       });
       continue;
     }
@@ -1607,11 +1623,47 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
       });
       continue;
     }
+    // The same question of every other measure that restricts a foreign party and no one else.
+    // See Measure.restrictsForeigners: a joint venture entered for tax consolidation, and a branch
+    // a domestic provider must open, are the act the measure describes done by nobody foreign.
+    if (restrictsForeigners(indicatorId, e.finding.measure) && !namesNationality(e.finding)) {
+      ruledOut.push({
+        evidence: e,
+        reason: `the provision names no foreign party, and this measure is borne by ${actorOf(indicatorId, e.finding.measure) ?? 'a foreign one'}`,
+      });
+      continue;
+    }
     // And the direction of it: the foreign party has to be the one holding, not the one held.
     if (proportional(indicatorId, e.finding.measure) && foreignIsTheHeld(e.finding)) {
       ruledOut.push({
         evidence: e,
         reason: `"${e.finding.subjectWords}" is what is held, so the proportion limits holding in a foreign company rather than foreign holding here`,
+      });
+      continue;
+    }
+    // And a floor that bars nobody. The gate two above admits a floor on local holding because
+    // the restriction is genuinely written that way: a licensee whose shares must stay majority
+    // local may not sell the majority abroad. But the same sentence appears in provisions that
+    // restrict nothing -- a tax deduction available to a company "at least sixty per cent" owned
+    // by citizens, a tariff preference for goods from a company "owned to an extent of at least
+    // 60 per cent by nationals". Both state a proportion and both name a nationality, so both
+    // passed, and between them they decided an economy's foreign equity cell off the revenue code.
+    //
+    // What separates them is not the words but the force. A real floor binds the company; these
+    // declare what is the case and command nobody, which is why they impose nothing and are not
+    // mandatory. A proportion that only decides whether a benefit is available is a condition of
+    // qualifying for it, not a limit on what may be held. Ceilings are untouched, and so is every
+    // floor a provision actually imposes on somebody.
+    if (
+      proportional(indicatorId, e.finding.measure) &&
+      e.finding.dutyForce === 'declares' &&
+      !e.finding.mandatory &&
+      !e.finding.imposingWords &&
+      statesAFloor(e.finding.definingWords)
+    ) {
+      ruledOut.push({
+        evidence: e,
+        reason: `"${e.finding.definingWords}" is a proportion the holder must reach to qualify, not one a foreign holder may not exceed`,
       });
       continue;
     }
@@ -1736,6 +1788,23 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
       ruledOut.push({
         evidence: e,
         reason: `the provision calls the thing "${e.finding.informationWords}", which is not information`,
+      });
+      continue;
+    }
+    // And a place that is not a place. These measures ask for the words naming the country,
+    // territory or jurisdiction the data must be kept in, and a reader that answers "the place
+    // or location" has handed the question back; so has one that answers with a registered
+    // office. Both passed every test above, because those ask whether the field was filled and
+    // a filled field is not the same claim. One of them was the whole of an economy's data
+    // localisation answer: a code of practice requiring that "the place or location where
+    // Personal Data is stored shall not be exposed to physical and natural threats" -- a rule
+    // about flood and fire, naming nowhere -- decided the cell and named its controlling
+    // instrument. Ruled out rather than held, for the reason the test above it is: the provision
+    // was read, and the words it gave are not words about where anything has to be.
+    if (locational(indicatorId, e.finding.measure) && !namesAPlace(e.finding.placeWords)) {
+      ruledOut.push({
+        evidence: e,
+        reason: `the provision puts the data "${e.finding.placeWords}", which names no country, territory or jurisdiction`,
       });
       continue;
     }
@@ -2019,6 +2088,48 @@ function foreignIsTheHeld(f: Finding): boolean {
 const INFORMATION =
   /\b(information|data|dataset\w*|records?|recorded|documents?|particulars?|details?|registers?|books?|accounts?|files?|communications?|messages?|contents?|statements?|reports?|copies|copy|logs?|databases?|credentials?|personal\w*)\b/i;
 
+/**
+ * The words by which a legal system names somewhere in the world.
+ *
+ * Kept for the reason INFORMATION above is kept: a system may say a country, a territory or a
+ * jurisdiction, or it may simply use the place's name, and a place in the world is a category
+ * every one of them has. A name is a proper noun in every drafting tradition in the corpus, which
+ * is the second test; the first is the common nouns a statute reaches for when it means somewhere
+ * rather than here. It is not a list of the places we want to find, and it names no country.
+ */
+const PLACE_KIND =
+  /\b(countr(y|ies)|territor\w+|jurisdiction\w*|abroad|overseas|offshore\w*|foreign\w*|cross.?border|cross.?boundary|republic|federation|kingdom|commonwealth|province\w*|region\w*)\b/i;
+
+/** A place has a name, and a name is capitalised. */
+const PLACE_NAME = /\p{Lu}\p{L}{2,}/u;
+
+function namesAPlace(words: string | null): boolean {
+  return !!words && (PLACE_KIND.test(words) || PLACE_NAME.test(words));
+}
+
+/**
+ * Does this proportion say how much must be held, rather than how much may be?
+ *
+ * A ceiling and a floor are both proportions, and every band of these indicators is written for
+ * the ceiling, so the two have to be told apart before either is scored. Read from the words the
+ * reader copied out, which are the provision's own: a floor drafted as a ceiling on the rest --
+ * "no more than forty per cent may be held by others" -- says "more than" and counts as a ceiling
+ * here, which is what it is.
+ */
+const A_FLOOR = /\b(at least|not less than|no less than|a minimum of|minimum)\b/gi;
+const A_CEILING =
+  /\b(more than|exceed\w*|greater than|up to|maximum|ceiling|limit\w*|less than)\b/i;
+
+function statesAFloor(words: string | null): boolean {
+  if (!words) return false;
+  A_FLOOR.lastIndex = 0;
+  if (!A_FLOOR.test(words)) return false;
+  // The floor phrase is taken out before the ceiling is looked for, because one of the ways a
+  // floor is drafted contains a ceiling: "not less than 12%" is a minimum, and asking the whole
+  // phrase for "less than" reads it as a maximum. A band with both ends -- "at least 5%, but
+  // less than 12%" -- still shows a ceiling once the floor is removed, which is what it has.
+  return !A_CEILING.test(words.replace(A_FLOOR, ' '));
+}
 /** Is every band of this indicator a proportion, so a provision stating none cannot be placed? */
 function proportional(indicatorId: string, measure: string | null): boolean {
   if (!measure) return false;
@@ -2027,6 +2138,18 @@ function proportional(indicatorId: string, measure: string | null): boolean {
 
 /** The three indicators whose bands are rungs on one ladder of foreign shareholding. */
 const EQUITY_INDICATORS: ReadonlySet<string> = new Set(['3.1', '5.2', '12.01']);
+
+/** Is this measure one that restricts a foreign party and no one else? */
+function restrictsForeigners(indicatorId: string, measure: string | null): boolean {
+  if (!measure) return false;
+  return (MEASURES[indicatorId] ?? []).some((m) => m.token === measure && m.restrictsForeigners === true);
+}
+
+/** Who the catalogue says bears this measure, for the reason given when it is not borne. */
+function actorOf(indicatorId: string, measure: string | null): string | null {
+  if (!measure) return null;
+  return (MEASURES[indicatorId] ?? []).find((m) => m.token === measure)?.actor ?? null;
+}
 
 /** Is this measure one only a command makes out, so that a prohibition of the act does not? */
 function commanded(indicatorId: string, measure: string | null): boolean {
@@ -2053,6 +2176,27 @@ function actorKindOf(indicatorId: string, measure: string | null): 'private' | '
 }
 
 /** Two answers that are the same words, one inside the other, whatever the spacing and case. */
+/**
+ * Two answers that are the same answer, not merely one worded inside the other.
+ *
+ * `restates` asks whether one string contains the other, which is the right question for words
+ * that should not be reused. It is the wrong one for a subject and the party bound, because naming
+ * the subject inside the actor is how a statute says who it binds: "the owner of a copyright",
+ * "network facilities provider", "Approved issuer of electronic money", "the owner of goods". On
+ * containment the gate refused 411 findings of that shape and kept 64 where the reader really had
+ * answered both questions with one set of words -- so it was firing six times out of seven on the
+ * ordinary drafting it exists to tolerate.
+ *
+ * Identity, for the reason `beyondPlace` uses identity: the fault is answering the second question
+ * by copying the first answer, and that shows as the same words, not as overlapping ones.
+ */
+function sameAnswer(a: string | null, b: string | null): boolean {
+  const n = (t: string) => t.toLowerCase().replace(/\s+/g, ' ').trim();
+  if (!a || !b) return false;
+  const [x, y] = [n(a), n(b)];
+  return x.length > 0 && x === y;
+}
+
 function restates(a: string | null, b: string | null): boolean {
   if (!a || !b) return false;
   const n = (t: string) => t.toLowerCase().replace(/\s+/g, ' ').trim();

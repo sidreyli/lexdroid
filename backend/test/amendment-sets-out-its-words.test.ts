@@ -33,6 +33,18 @@ describe('an amending provision that sets out the words it inserts', () => {
     expect(insertsTheQuotedWords(DELETING, 'Paragraph 48(e) of the principal Act is deleted')).toBe(false);
   });
 
+  it('admits a span the page happened to break a line in the middle of', () => {
+    // The defect this is for: the check was a raw `indexOf`, and the reader quotes a span of words
+    // rather than a span of a PDF. Every quote in the fixture above stops short of a line break,
+    // so the test passed while the store did not -- Malaysia's 7.4 scored zero because the one
+    // finding that answered it quoted "A data controller shall appoint one or more data protection
+    // officers" and the page puts a newline between "more" and "data". Missing by that one
+    // character, the gate in `decide` read a section setting out four subsections of new duties as
+    // an instruction setting out nothing.
+    expect(insertsTheQuotedWords(INSERTING, 'A data controller shall appoint one or more data protection officers')).toBe(true);
+    expect(insertsTheQuotedWords(INSERTING, 'a personal data breach has occurred, the data controller shall, as soon as practicable')).toBe(true);
+  });
+
   it('admits words taken from inside the passage it enacts', () => {
     expect(insertsTheQuotedWords(INSERTING, 'shall appoint one or more')).toBe(true);
     expect(insertsTheQuotedWords(INSERTING, 'notify the Commissioner')).toBe(true);

@@ -85,6 +85,20 @@ export interface Measure {
   /** Whether this measure is defined by something crossing the economy's border. */
   crossesBorder?: boolean;
   /**
+   * Whether this measure restricts a foreign party and no one else.
+   *
+   * Three indicators descend a ladder of foreign shareholding, and a gate already asks their
+   * findings to name a nationality: a cap on every shareholder alike is not a cap on foreigners.
+   * The same is true of any measure whose actor is a foreign party, and nothing was asking it.
+   * Every joint venture the reader filed in two economies was a tax or competition-law one --
+   * consolidation for GST, an exemption for joint control of an asset -- and not one of them
+   * named a foreign investor or a local partner, which is the whole of what this measure is.
+   *
+   * Declared on the measure, beside crossesBorder and for its reason: the gloss has said so all
+   * along and nothing enforced it.
+   */
+  restrictsForeigners?: boolean;
+  /**
    * Whether only a command makes this measure out, so that a prohibition does not.
    * A duty not to disclose a trade secret was making out 4.9's duty to disclose one.
    */
@@ -480,6 +494,7 @@ export const MEASURES: Record<string, Measure[]> = {
     {
       token: 'joint-venture',
       defines: 'the words requiring the local partner or the joint venture',
+      restrictsForeigners: true,
       gloss: 'a requirement that a foreign investor operate through a joint venture or in partnership with a local company',
       actor: 'the foreign investor',
     },
@@ -499,6 +514,7 @@ export const MEASURES: Record<string, Measure[]> = {
     {
       token: 'commercial-presence',
       defines: 'the words requiring the branch, subsidiary or presence in the economy',
+      restrictsForeigners: true,
       gloss:
         'a requirement to establish a branch, subsidiary or other commercial presence in the economy before supplying a service to customers here',
       actor: 'the foreign supplier of the service',
@@ -1026,8 +1042,21 @@ export const MEASURES: Record<string, Measure[]> = {
       // one of them decided this cell on a wine tax credit the Commissioner "is not required to
       // consider" -- a real figure, in a real revenue statute, with nothing crossing a border.
       crossesBorder: true,
+      // Stated from either side, and whatever the charge is called.
+      //
+      // The gloss named three charges -- customs duty, import duty, import tax -- and a threshold
+      // is not always written as a relief from one of them. Malaysia's is written the other way
+      // round and under a fourth name: an order determining that goods "sold at a price not
+      // exceeding five hundred ringgit and brought into Malaysia" are low value goods, which is
+      // what sales tax is then charged on. Same figure, same border, same consignment; the only
+      // difference is that the provision says where the charge starts instead of where it stops.
+      //
+      // The reader found those words. With no de minimis measure that fitted them it reached for
+      // the neighbouring indicator's transmission-duty instead, and the quote check refused it
+      // for words the provision does not contain -- so the threshold was lost twice over, and
+      // this indicator recorded no refusal at all because nothing was ever offered to it.
       gloss:
-        'a value of imported goods below which no customs duty, import duty or import tax is charged, however the provision names it -- a de minimis, a relief, an exemption by value, a threshold for informal clearance',
+        'a value of imported goods at which a charge on their import is turned off or turned on -- a customs duty, an import duty, an import tax, a sales or consumption tax levied on arrival -- however the provision names it and from whichever side it states the figure: a de minimis, a relief, an exemption by value, a threshold for informal clearance, or the ceiling that defines the low-value consignments a charge applies to',
       alsoAsked: [
         'goods of a value not exceeding a stated amount are exempt from import duty or sales tax',
         // The same threshold said the other way a statute says it, because the two drafting
@@ -1256,7 +1285,20 @@ const AMOUNT = /(\d|\bquota\b|\bceiling\b|\blimit\b|\bmaximum\b|\bexceed\b|\bnot
 const STANDARD = /\b(standard\w*|specification\w*|technical regulation\w*|conform\w*|compliance)\b/i;
 const TESTING = /\b(test\w*|assess\w*|certif\w*|verif\w*|examin\w*|inspect\w*|accredit\w*|conformity)\b/i;
 const ENCRYPTION = /\b(encrypt\w*|cryptograph\w*|cipher\w*|key length|AES|DES|RSA|ECC|FIPS)\b/i;
-const NATIONALITY = /\b(citizen\w*|national(ity|s)?\b|resident\w*|domicil\w*|permanent resident)\b/i;
+/**
+ * Nationality and residence, in the forms a statute writes them.
+ *
+ * `resident\w*` asks for the adjective and the noun and catches neither verb, and a residency
+ * requirement is most often drafted as one: "must ordinarily reside in Australia" is the whole of
+ * the rule on it. The stem stops at the t, so "residency requirements" and "satisfies the residency
+ * test" fall outside it as well. Of 125 findings on this measure, 19 answered with a word for
+ * residing that this did not ask for, and the cell they decide reported no requirement at all.
+ *
+ * The stem rather than its endings, for the reason every other term of art here is a stem:
+ * citizen\w*, domicil\w*, encrypt\w*. "permanent resident" goes with it, having been matched by
+ * the entry before it and still matched by this one.
+ */
+const NATIONALITY = /\b(citizen\w*|national(ity|s)?\b|resid\w*|domicil\w*)\b/i;
 const TRADE_DEFENCE = /\b(dump\w*|countervail\w*|safeguard\w*|subsid\w*|injur\w*)\b/i;
 const SEPARATION = /\b(separat\w*|divest\w*|structural\w*|unbundl\w*|account\w*|divid\w*)\b/i;
 const JOINT_VENTURE = /\b(joint venture\w*|partner\w*|local equity|incorporat\w*|jointly)\b/i;
@@ -1386,7 +1428,13 @@ export const MEASURE_NAMES: Readonly<Record<string, RegExp>> = {
   'product-testing': TESTING,
   'third-party-testing-accepted': TESTING,
   'sdoc-allowed': /\b(self[- ]declar\w*|declaration of conformity|supplier'?s? declaration)\b/i,
-  'mra-certification-accepted': /\b(mutual recognition|foreign\w*|overseas|another (country|economy|jurisdiction)|recognis\w*|recogniz\w*)\b/i,
+  // A body in another country is named by where it is not as often as by what it is: a statute
+  // writes "outside" this economy where the list above expects "foreign" or "another country".
+  // The one provision in the corpus recognising certification authorities "authorized by
+  // governmental entities outside Malaysia" was turned away by this test for saying so, and the
+  // cell it would have decided reported that nobody had read anything of the kind.
+  'mra-certification-accepted':
+    /\b(mutual recognition|foreign\w*|overseas|abroad|outside|another (country|economy|jurisdiction)|recognis\w*|recogniz\w*)\b/i,
   'foreign-exclusion-from-standards': /\b(foreign\w*|non-?resident\w*|overseas|nationa\w*)\b/i,
   'national-payment-standard': STANDARD,
   // 4.1's two measures differ by one thing, and the rubric says which: the stronger is "the words
@@ -1558,13 +1606,26 @@ export const MEASURE_DOMAIN: Readonly<Record<string, RegExp>> = {
  * "communication" as well as "telecom": the two are not the same word, and the authority this
  * indicator is about is called the Australian Communications and Media Authority. A list matching
  * only "telecom" recognises the phrase one drafter chose and turns away another's.
+ *
+ * And the facilities-and-services vocabulary beside them, for the same reason a third time. One
+ * family of these statutes does not license a telecommunications operator at all: it licenses a
+ * network facilities provider, a network service provider and an applications service provider,
+ * and its licensing instrument says so in its title and nowhere else. A list without those three
+ * phrases reads that regime's own class-licence guidelines as being about something else.
  */
-const COMMUNICATIONS = /\b(telecom\w*|communication\w*|broadcast\w*|carriage service\w*|carrier\w*|spectrum|radiocommunication\w*|postal|media)\b/i;
+const COMMUNICATIONS =
+  /\b(telecom\w*|communication\w*|broadcast\w*|carriage service\w*|carrier\w*|spectrum|radiocommunication\w*|postal|media|network facilit\w*|network service\w*|applications service\w*)\b/i;
 
 export const SUBJECT_DOMAIN: Readonly<Record<string, RegExp>> = {
   ...PILLAR_12_DOMAINS,
   // See COMMUNICATIONS above: the measure asks for a regulator, so the subject has to say which.
   '5.7': COMMUNICATIONS,
+  // And the same of 5.5, for the same reason one step along: the measure asks for a licence, and
+  // every one of these systems licenses a hundred trades. Without it the cell was decided by a
+  // copyright licence scheme's application form, while a gene technology licence, an Australian
+  // market licence, an atomic energy licence, an abattoir's and a chit fund's all answered it.
+  // Read with SECTOR_DOMAINS below, which is what makes it safe to ask.
+  '5.5': COMMUNICATIONS,
   // Terms of art: a patent is a patent, a copyright a copyright, a trade secret a trade secret and
   // an encryption standard an encryption standard, in every one of these legal systems. The sector
   // domains that were here with them are gone -- see the note above.
@@ -1587,3 +1648,27 @@ export const SUBJECT_DOMAIN: Readonly<Record<string, RegExp>> = {
   '11.1': TECHNICAL_STANDARD,
   '11.4': /\b(encrypt\w*|cryptograph\w*|cipher\w*|key length|algorithm\w*|AES|DES|RSA|ECC|FIPS|ISO|IEC|ITU)\b/i,
 };
+
+/**
+ * The domains that are a sector rather than a term of art, and may be named by the document.
+ *
+ * A term of art is in the sentence: a provision about a patent says patent, a provision about a
+ * trade secret says trade secret, and that is why those domains are asked of the words. A sector
+ * is not. It is named once, in the title of the instrument, and the provisions inside it then say
+ * \"the licensee\", \"the conditions\", \"a class licence\" and never name the sector again. Asked of
+ * the subject alone a sector domain turns away the real findings -- a cabling licence, an
+ * apparatus licence, a network facilities provider class licence, a telecommunications Act's own
+ * \"licence\" -- which is the measured reason the sector domains were taken out altogether.
+ *
+ * So a sector domain is satisfied by either: the words the reader copied out, or the title of the
+ * instrument they were copied from. The document carries the topic; the sentence need not repeat
+ * it. MEASURE_DOMAIN's note on user-identity says the same thing of a determination that names
+ * mobile in its title and then never again.
+ *
+ * Not 5.7, which was tried here and does not belong. Its measure asks which body was established,
+ * and a body is named in the sentence that establishes it, never by the Act it is named in: with
+ * the title admitted, an interception declaration's reference to a State anti-corruption
+ * commission answered the telecom-regulator question. The rule is for a domain the provisions
+ * inside a document stop repeating, not for one they were never going to state.
+ */
+export const SECTOR_DOMAINS: ReadonlySet<string> = new Set(['5.5', '4.01', '4.2', '4.3']);

@@ -26,7 +26,7 @@ import {
 import { loadRubric } from '../src/rubric/index.js';
 import { loadProfile } from '../src/profile/index.js';
 import { citationUrl } from '../src/export/index.js';
-import { amendsAnotherAct, citesADefinition } from '../src/parse/identity.js';
+import { amendsAnotherAct, citesADefinition, insertsTheQuotedWords } from '../src/parse/identity.js';
 import { scorecard, tally, verdictFor, pillarOf, type CellResult } from '../src/eval/scorecard.js';
 import type { Finding } from '../src/read/index.js';
 import { confirmationsForRun, noConfirmations } from '../src/read/confirmations.js';
@@ -255,6 +255,12 @@ for (const cell of cells) {
         headingPath: row['heading_path'],
         citation: citationUrl(row['source_url'], row['anchor']),
         amendsAnotherAct: amendsAnotherAct(row['text']),
+        // Read off the drafting here for the same reason the live pipeline reads it in `cell`:
+        // an amending section that sets out the words it inserts carries a provision, and one
+        // that does not carries an instruction. Left unset, every amending section replayed as
+        // an instruction -- which happened to reproduce this run's scores, because the check it
+        // stands in for was failing on a line break and ruling them all out anyway.
+        insertsTheQuotedWords: insertsTheQuotedWords(row['text'], finding.quote),
         definesATerm: citesADefinition(row['text'], finding.definingWords ?? finding.quote),
         ...(kind ? { bindingness: kind } : {}),
         ...(confirmed === undefined ? {} : { confirmed }),

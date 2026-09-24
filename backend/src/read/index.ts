@@ -19,7 +19,7 @@
 import type { Db } from '../db/index.js';
 import type { Indicator } from '../rubric/types.js';
 import { generate, EngineFailure, READING_MODEL } from '../engines/ollama.js';
-import { MEASURES, INDICATOR_OF_MEASURE, SUBJECTS } from '../rubric/measures.js';
+import { MEASURES, INDICATOR_OF_MEASURE, MEASURE_NAMES, SUBJECTS } from '../rubric/measures.js';
 import { findFragment } from '../util/locate.js';
 
 /**
@@ -835,6 +835,18 @@ function echoesTheCatalogue(answer: string, indicatorId: string, measure: string
 }
 
 /**
+ * Whether the quote itself carries the word the measure is named by.
+ *
+ * `MEASURE_NAMES` holds a word only for the measures named by a legal term of art -- a licensing
+ * measure by a word meaning licence, a retention period by a word meaning time. A measure whose
+ * name is a description has none, and nothing here can stand in for its defining words.
+ */
+function quoteCarriesTheMeasure(f: Finding): boolean {
+  const name = f.measure ? MEASURE_NAMES[f.measure] : undefined;
+  return !!name && name.test(f.quote);
+}
+
+/**
  * Why a finding cannot stand, or null if it can.
  *
  * Every one of these is a question about the provision, answerable by looking at it: is the quote
@@ -911,8 +923,25 @@ export function rejectionFor(f: Finding, sectionText: string, allowed: Set<strin
     return `the position said to be created, "${f.roleWords}", is not in the provision`;
   }
   // The words that make the measure out are a claim about the provision like every other quote.
+  //
+  // Except that rejecting the finding for it throws away the quote too, and the quote is the claim.
+  // Section 196 of Malaysia's Companies Act came back under `director-nationality` quoting "shall
+  // ordinarily reside in Malaysia by having a principal place of residence in Malaysia" -- the
+  // words the indicator is about, verbatim, from the right provision -- and was discarded because
+  // the second field repeated our own description of a residency requirement back at us. The
+  // reader was asked twice for one span and failed the second ask.
+  //
+  // So where the quote carries the word the measure is named by, the quote becomes the defining
+  // words and the finding stands. Nothing is waved through by it: every test downstream then runs
+  // on the provision's words instead of ours -- `decide`'s own `MEASURE_NAMES` check, the
+  // definition gate, the subject gate. Where the quote does not carry that word, or the measure is
+  // a description with no word of its own, nothing has been shown and this stays a rejection.
+  // Over this run that is 23 findings of the 105 echoed, across nine cells.
   if (f.definingWords && f.measure && echoesTheCatalogue(f.definingWords, f.indicatorId, f.measure)) {
-    return `the words said to make out ${f.measure} are this catalogue's description of it, not the provision's own words`;
+    if (!quoteCarriesTheMeasure(f)) {
+      return `the words said to make out ${f.measure} are this catalogue's description of it, not the provision's own words`;
+    }
+    f.definingWords = f.quote;
   }
   if (f.definingWords && !inProvision(f.definingWords)) {
     return `the words said to make out ${f.measure}, "${f.definingWords}", are not in the provision`;
