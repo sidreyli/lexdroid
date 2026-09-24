@@ -13,7 +13,7 @@
  * Act; the decision stops one being reported as the Act that governs a subject.
  */
 import { describe, expect, it } from 'vitest';
-import { registeredKind } from '../src/discover/titles.js';
+import { opensAsPublishedAbout, registeredKind } from '../src/discover/titles.js';
 import { mayGovern } from '../src/retrieve/index.js';
 import { decide, type Evidence, type SurfacedInstrument } from '../src/decide/index.js';
 import type { Finding } from '../src/read/index.js';
@@ -291,5 +291,41 @@ describe('a publication quoted as the law itself', () => {
 
   it('leaves a corpus read before the kind was carried exactly as it was', () => {
     reachedTheMerits(null);
+  });
+});
+
+/**
+ * And the instrument that describes its own parts, which is not published about anything.
+ *
+ * The guard above reads a document's opening words as well as its title, and "overview of" is in
+ * the set because "Overview of the Personal Data Protection Act 2010" is a page about a law. The
+ * .au Registrar Rules open every Part with "The following is an overview of this Part", so auDA's
+ * own rules were fetched, parsed into 84 sections, and then thrown out as a publication -- and
+ * AUS 12.7, which ESCAP scores from those rules, was answered from an absence sitting in the cache.
+ * Measured over every document the corpus has rejected this way: these two flip and the other 25
+ * stand.
+ */
+describe('a document that gives an overview of itself', () => {
+  const AUDA = 'Part 1 - INTRODUCTION The following is an overview of this Part: Registrars must comply with';
+
+  it('is not published about an instrument, it is the instrument', () => {
+    expect(opensAsPublishedAbout(AUDA)).toBe(false);
+  });
+
+  it('is still the instrument where a Commonwealth Act says it in the drafting style Acts use', () => {
+    expect(opensAsPublishedAbout('Simplified outline of this Division The following is a simplified outline of this Division:')).toBe(false);
+    expect(opensAsPublishedAbout('2.1 This clause gives an overview of these Rules and how they apply.')).toBe(false);
+    expect(opensAsPublishedAbout('An outline of the Part appears below, and does not limit the Part.')).toBe(false);
+  });
+
+  it('still names the page that gives an overview of something else', () => {
+    expect(opensAsPublishedAbout('An overview of the Personal Data Protection Act 2010 for organisations')).toBe(true);
+    expect(opensAsPublishedAbout('Introduction to the Telecommunications Act 1997 and what it requires')).toBe(true);
+  });
+
+  it('still names a publication that describes itself and is one', () => {
+    // Striking out the self-description must not strike out the words that answer the question.
+    expect(opensAsPublishedAbout('This consultation paper gives an overview of this Part of the proposal.')).toBe(true);
+    expect(opensAsPublishedAbout('PUBLIC CONSULTATION PAPER NO. 01/2020 REVIEW OF PERSONAL DATA PROTECTION ACT 2010')).toBe(true);
   });
 });

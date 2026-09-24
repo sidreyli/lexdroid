@@ -93,12 +93,34 @@ export function publishedAbout(name: string): boolean {
 }
 
 /**
+ * An instrument that describes its own structure is still an instrument.
+ *
+ * "Overview of the Personal Data Protection Act 2010" is a page published about a law, and the
+ * word earns its place in ABOUT for that. "The following is an overview of this Part" is drafting
+ * furniture, and auDA's .au Registrar Rules open every Part with it -- so the rules of the .au
+ * registry were parsed, found to say "overview of", and thrown out as something published about an
+ * instrument. Australia's 12.7 was then answered from an absence of law that was sitting in the
+ * cache, unread. Commonwealth Acts do the same thing under the heading "Simplified outline".
+ *
+ * So an overview of the document's own parts is struck out before the question is asked: either it
+ * points at itself with "this" or "these", or it names a structural part rather than an instrument.
+ * An overview of something that has a name of its own still answers yes.
+ */
+const SELF_DESCRIBING = new RegExp(
+  [
+    String.raw`\b(?:overview|introduction|outline|summary) of `,
+    String.raw`(?:(?:this|these|the following)\b|the \b(?:part|division|subdivision|chapter|schedule|clause|paragraph)\b)`,
+  ].join(''),
+  'gi',
+);
+
+/**
  * The same question of a document's own opening words, which are prose and not a name: only the
  * phrases that say outright what the thing is -- "consultation paper", "press release". A web
  * page opens with its site's navigation, and "Explore", "Find" and "Updates" there are menu items.
  */
 export function opensAsPublishedAbout(opening: string): boolean {
-  return ABOUT.test(opening.replace(/\s+/g, ' ').trim());
+  return ABOUT.test(opening.replace(/\s+/g, ' ').replace(SELF_DESCRIBING, ' ').trim());
 }
 
 export type InstrumentKind =
