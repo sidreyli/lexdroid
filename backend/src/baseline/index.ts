@@ -86,6 +86,43 @@ function stems(title: string): string[] {
 }
 
 /**
+ * A word the writer's finger repeated, not a word of the name.
+ *
+ * Malaysia's sheet cites the Copyright Act as "Copyright Right Act (Act 332) 1987" on three
+ * cells. "right" is the tail of the word before it, and it is the only word of the citation the
+ * register cannot account for, so those cells reported the Act as never discovered while we held
+ * it with 122 sections. A misspelling is handled below by `near`; this is not one -- "right" is a
+ * word, spelled correctly, that the citation already contains.
+ *
+ * Only a proper suffix of the word immediately before it, of four letters or more, so "Act (Act
+ * 332)" keeps both of its Acts and a title is never shortened by a word it really carries.
+ */
+function withoutStutters(tokens: string[]): string[] {
+  return tokens.filter((t, i) => {
+    const before = i > 0 ? tokens[i - 1] : undefined;
+    return !(before !== undefined && t.length >= 4 && t.length < before.length && before.endsWith(t));
+  });
+}
+
+/**
+ * Whether the year in this title is the day an edition was compiled rather than part of the name.
+ *
+ * A rolling instrument is republished as one text and the portal titles it by the date it is
+ * current to: we hold "Commonwealth Procurement Rules 17 November 2025", which is the instrument
+ * ESCAP cites as "Commonwealth Procurement Rules 2024", and the register keeps no other edition.
+ * The year guard below is what stops the 1997 Act matching the 2014 Regulations, and it was also
+ * stopping this; a year sitting after a month is not the kind of year it guards.
+ */
+const MONTHS = [
+  'january', 'february', 'march', 'april', 'may', 'june',
+  'july', 'august', 'september', 'october', 'november', 'december',
+];
+function datesAnEdition(tokens: string[]): boolean {
+  const i = tokens.findIndex((t) => /^(19|20)\d\d$/.test(t));
+  return i > 0 && MONTHS.includes(tokens[i - 1] ?? "");
+}
+
+/**
  * Is this instrument the one ESCAP named?
  *
  * Substring containment was the first test and it read as generous, but it is the opposite: one
@@ -127,8 +164,8 @@ export function sameInstrument(candidate: string, cited: string): boolean {
   if (a.length < 12 || b.length < 12) return false;
   if (contains(a, b) || contains(b, a)) return true;
 
-  const at = stems(a);
-  const bt = stems(b);
+  const at = withoutStutters(stems(a));
+  const bt = withoutStutters(stems(b));
   if (bt.length < 2) return false;
 
   // A year in both has to be the same year, which is what keeps the 1997 Act off the 2014
@@ -136,7 +173,7 @@ export function sameInstrument(candidate: string, cited: string): boolean {
   const year = (t: string[]): string | null => t.find((x) => /^(19|20)\d\d$/.test(x)) ?? null;
   const ya = year(at);
   const yb = year(bt);
-  if (ya && yb && ya !== yb) return false;
+  if (ya && yb && ya !== yb && !datesAnEdition(at) && !datesAnEdition(bt)) return false;
 
   const ka = kindWord(at);
   const kb = kindWord(bt);
@@ -148,8 +185,14 @@ export function sameInstrument(candidate: string, cited: string): boolean {
   // matched the Australian Education Act 2013. Identity is in what is left when both are removed.
   // Numbers other than the year are the statutory number -- "(Act 708)", "No.88", "P.U.(A) 123" --
   // and words of two letters are joins. Neither names the instrument; Malaysia's sheet cites both.
+  // A month is part of a date and a date stamps an edition, so it names the instrument no more
+  // than the day of the month beside it does. Without this the containment runs one way only:
+  // the citation's words are all in "Commonwealth Procurement Rules 17 November 2025" and its
+  // own "november" is in no citation, so the title we hold looked like a different instrument.
   const identifying = (t: string[]) =>
-    t.filter((x) => !KIND_WORDS.includes(x) && !/^\d+$/.test(x) && x.length > 2);
+    t.filter(
+      (x) => !KIND_WORDS.includes(x) && !MONTHS.includes(x) && !/^\d+$/.test(x) && x.length > 2,
+    );
   const want = identifying(bt);
   const held = identifying(at);
   if (want.length === 0) return false;

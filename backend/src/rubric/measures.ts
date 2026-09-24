@@ -912,9 +912,18 @@ export const MEASURES: Record<string, Measure[]> = {
     {
       token: 'local-domain-or-presence',
       defines: 'the words requiring the local domain name or the presence in the economy',
+      // Who has to be here is the domain applicant, not only the retailer. The indicator is
+      // titled "Domain name requirements", and a registry imposes its presence rule on whoever
+      // applies for the name -- the eligibility clause never mentions selling. Written the other
+      // way, this gloss asked for a seller: auDA's rule 2.4.1, "A Person applying for a Licence
+      // must: have an Australian Presence", was put to the reader fifteen times over pillar 12
+      // and came back as a measure only under 12.8, whose actor is any provider of an online
+      // service. Twice, in two runs. The reader was right about the words each time; 12.7 asked
+      // it about a party the clause does not name, so the one clause the band describes could
+      // not answer the cell, and Australia was reported to require no presence at all.
       gloss:
-        'a requirement to register a domain name under the top-level domain of this economy, or to be physically present here, in order to sell online',
-      actor: 'the business selling goods or services online',
+        'a requirement to register a domain name under the top-level domain of this economy in order to trade online, or to be present in the economy in order to apply for or hold such a domain name',
+      actor: 'the person applying for or holding the domain name, or the business trading online',
     },
     {
       token: 'local-representative',

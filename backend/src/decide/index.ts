@@ -1495,7 +1495,24 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     // the provision. Ruled out rather than held: the provision was read, twice, and does not carry
     // the measure. Absent confirmation is not a refusal, so a reading taken before the pass existed
     // stands exactly as it did.
-    if (e.confirmed === false) {
+    // Except where the band does not turn on the measure the reader filed it under. The second
+    // question is asked about one measure by name, so its "no" is a no to that name. 4.5 is the one
+    // indicator whose rule says the name is not what decides it: the top band quotes the statutory
+    // term, and `namesTheModel` below reads the term out of the provision's own defining words,
+    // "whichever measure the reader filed the provision under".
+    //
+    // Malaysia's Copyright Act s.13(2) -- "the doing of any of the acts referred to in subsection
+    // (1) by way of fair dealing including for purposes of research, private study, criticism,
+    // review or the reporting of news" -- was filed as the open model, with its defining words
+    // reading, in full, "fair dealing". Asked whether that provision lets any use be weighed
+    // against stated factors, the second reader rightly said no: fair dealing is a closed list. The
+    // finding died on the label, and the cell reported that Malaysia has no copyright exception at
+    // all -- the one thing the top band of 4.5 names out loud, in a statute that spells it.
+    //
+    // So a refusal of the label is not a refusal of the provision where the provision states the
+    // model itself. This reaches two findings in that cell and leaves the other twelve ruled out,
+    // because a refusal is still a refusal of everything that does not say the words.
+    if (e.confirmed === false && !namesTheModel(e)) {
       ruledOut.push({
         evidence: e,
         reason: `asked about ${e.finding.measure} alone, the reader found no words in the provision stating it`,
@@ -1580,7 +1597,13 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
       });
       continue;
     }
-    if (domain && !namesDomain && e.finding.subjectWords && !domain.test(e.finding.subjectWords)) {
+    if (
+      domain &&
+      !namesDomain &&
+      e.finding.subjectWords &&
+      !domain.test(e.finding.subjectWords) &&
+      statesASubject(e.finding.subjectWords)
+    ) {
       ruledOut.push({
         evidence: e,
         reason: `"${e.finding.subjectWords}" is not ${subject ?? "this indicator's subject"}`,
@@ -2233,6 +2256,35 @@ function mustSayMoreThanPlace(indicatorId: string, measure: string | null): bool
 const FAIR_USE_MODEL = /\bfair(?:ly)?[ -](?:us(?:e|ed|ing)|deal(?:ing|t|s)?)\b/i;
 function namesTheModel(e: Evidence): boolean {
   return FAIR_USE_MODEL.test(e.finding.definingWords ?? '');
+}
+
+/**
+ * Whether the words copied as the subject name one, or only point at another provision.
+ *
+ * The subject test rules a finding out because what it is about belongs to another world -- a bank
+ * for the e-commerce licensing cell, "note, coin" for online payments. A drafter who writes "any of
+ * the acts referred to in subsection (1)" has named no world at all: the subject is in the
+ * provision pointed at, in the same instrument, and a word list asked of the pointer can only
+ * report the subject missing. Malaysia's fair dealing exception is drafted that way, and the cell
+ * reported that Malaysia has no copyright exception.
+ *
+ * So a bare cross-reference is treated as a subject not stated rather than a subject from
+ * elsewhere, which is what it is. It is not a way in for findings whose subject is merely vague:
+ * the words have to defer to a numbered provision and say nothing else. 39 of the 17,699 findings
+ * that carry a subject are written this way.
+ */
+const POINTS_AT_A_PROVISION =
+  /\b(?:referred\s+to|mentioned|specified|described|set\s+out|prescribed|provided\s+for)\s+(?:in|under|by)\s+(?:(?:this|that|the)\s+)?(?:sub)?(?:section|paragraph|clause|regulation|rule|article|schedule|part|division|item)\b/i;
+/** Words that carry no subject of their own, so a phrase of nothing else has named none. */
+const CARRIES_NO_SUBJECT =
+  /^(?:the|a|an|any|all|each|every|such|other|those|these|same|following|of|doing|and|or|acts?|matters?|things?|provisions?|requirements?|purposes?|types?|kinds?|classes?|cases?)$/i;
+function statesASubject(subjectWords: string): boolean {
+  const at = subjectWords.search(POINTS_AT_A_PROVISION);
+  if (at < 0) return true;
+  return subjectWords
+    .slice(0, at)
+    .split(/\s+/)
+    .some((w) => w && !CARRIES_NO_SUBJECT.test(w.replace(/[^a-z]/gi, '')));
 }
 
 /** Is this measure one the rubric describes as a permission or a limit rather than a command? */
