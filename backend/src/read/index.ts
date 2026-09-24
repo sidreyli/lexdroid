@@ -18,7 +18,7 @@
  */
 import type { Db } from '../db/index.js';
 import type { Indicator } from '../rubric/types.js';
-import { generate, EngineFailure, READING_MODEL } from '../engines/ollama.js';
+import { generate, EngineAborted, EngineFailure, EngineOverran, READING_MODEL } from '../engines/ollama.js';
 import { MEASURES, INDICATOR_OF_MEASURE, MEASURE_NAMES, SUBJECTS } from '../rubric/measures.js';
 import { findFragment } from '../util/locate.js';
 
@@ -315,6 +315,19 @@ export interface SectionReading {
    * in full -- and a reading made of nothing else failed.
    */
   unreadable?: number;
+  /**
+   * The indicators this reading could not answer for, when it answered for some but not all.
+   * An indicator listed here has no findings in this reading and no absence either: it is a gap
+   * of its own, and nothing downstream may read the reading's silence about it as the provision
+   * having nothing in it.
+   */
+  unanswered?: readonly string[];
+  /**
+   * The engine looped rather than answered: it either repeated itself until Ollama aborted the
+   * generation, or ran to the output limit still writing. Set on the reading that lost, so a loop
+   * can be told apart from a link that dropped or a prompt that stalled.
+   */
+  runaway?: true;
   /**
    * Engine calls this reading took: one per part of a provision too long to read in one pass.
    * Absent is one. The run's cost is counted in calls made, not in provisions read.
@@ -991,7 +1004,9 @@ export async function readSection(
   opts: ReadOptions = {},
 ): Promise<SectionReading> {
   const parts = windowsOf(section.text);
-  if (parts.length === 1) return readPart(section, parts[0]!, null, pillarId, pillarName, indicators, opts);
+  if (parts.length === 1) {
+    return readPartSplitting(section, parts[0]!, null, pillarId, pillarName, indicators, opts);
+  }
 
   // A long provision, read part by part. Its findings are pooled, one per indicator, measure and
   // quote, since the overlap shows a clause twice. A part that could not be read leaves text
@@ -999,9 +1014,12 @@ export async function readSection(
   // reading fails and is read again, rather than being banked as though it were complete.
   const readings: SectionReading[] = [];
   for (const [n, shown] of parts.entries()) {
-    readings.push(await readPart(section, shown, { index: n + 1, of: parts.length }, pillarId, pillarName, indicators, opts));
+    readings.push(
+      await readPartSplitting(section, shown, { index: n + 1, of: parts.length }, pillarId, pillarName, indicators, opts),
+    );
   }
   const failed = readings.map((r, n) => (r.failure ? `part ${n + 1} of ${parts.length}: ${r.failure}` : null)).filter(Boolean);
+  const unanswered = new Set(readings.flatMap((r) => r.unanswered ?? []));
   const seen = new Set<string>();
   const findings = readings.flatMap((r) => r.findings).filter((f) => {
     const key = `${f.indicatorId}|${f.measure}|${f.quote}`;
@@ -1010,7 +1028,14 @@ export async function readSection(
   return {
     sectionId: section.sectionId,
     pillarId,
-    findings: failed.length ? [] : findings,
+    // Said of an indicator at a time. A part nobody could read leaves text nobody saw, so an
+    // indicator whose ask failed on any part keeps no findings from the parts that did answer:
+    // "nothing applies" cannot be said of a provision partly unseen. The indicators answered on
+    // every part are not in doubt, and one looping indicator no longer empties the provision for
+    // the other eleven.
+    findings: findings.filter((f) => !unanswered.has(f.indicatorId)),
+    ...(unanswered.size ? { unanswered: [...unanswered] } : {}),
+    ...(readings.some((r) => r.runaway) ? { runaway: true as const } : {}),
     rejected: readings.flatMap((r) => r.rejected),
     ...(readings.some((r) => r.unreadable) ? { unreadable: readings.reduce((n, r) => n + (r.unreadable ?? 0), 0) } : {}),
     calls: parts.length,
@@ -1021,6 +1046,63 @@ export async function readSection(
     durationMs: readings.reduce((a, r) => a + r.durationMs, 0),
     fromCache: readings.every((r) => r.fromCache),
     fromResume: readings.every((r) => r.fromResume),
+  };
+}
+
+/**
+ * A runaway costs the indicators it was asked about, not the provision.
+ *
+ * An answer that repeats itself until Ollama aborts it, or that runs to the output limit still
+ * writing, took the whole provision down with it: every indicator in the pillar lost the
+ * provision, including the ones the engine had already answered for before it began looping.
+ * Measured on the reruns, that was 32 provisions on Malaysia and 27 on Australia.
+ *
+ * Re-asking is not the remedy. The loop is deterministic at temperature zero, so the same ask
+ * loops the same way. A smaller ask is a different generation rather than a retry: the answer is
+ * one object per indicator asked, so halving the indicators halves what the engine has to write
+ * and gives the repetition less to run in. Halved down to one, what is left at the bottom is the
+ * indicator that actually loops, and it is the only one that loses the provision.
+ *
+ * The failed ask is still paid for and still counted. A loop costing three calls instead of one
+ * is the price of not throwing away the other eleven indicators.
+ */
+async function readPartSplitting(
+  section: SectionInput,
+  shown: string,
+  part: { index: number; of: number } | null,
+  pillarId: number,
+  pillarName: string,
+  indicators: readonly Indicator[],
+  opts: ReadOptions,
+): Promise<SectionReading> {
+  const whole = await readPart(section, shown, part, pillarId, pillarName, indicators, opts);
+  if (!whole.runaway || indicators.length < 2) return whole;
+
+  const cut = Math.ceil(indicators.length / 2);
+  const halves: SectionReading[] = [];
+  for (const some of [indicators.slice(0, cut), indicators.slice(cut)]) {
+    halves.push(await readPartSplitting(section, shown, part, pillarId, pillarName, some, opts));
+  }
+
+  const failed = halves.map((r) => r.failure).filter((f): f is string => f !== null);
+  const unanswered = halves.flatMap((r) => r.unanswered ?? []);
+  const sum = (f: (r: SectionReading) => number) => halves.reduce((n, r) => n + f(r), 0);
+  return {
+    sectionId: section.sectionId,
+    pillarId,
+    findings: halves.flatMap((r) => r.findings),
+    rejected: halves.flatMap((r) => r.rejected),
+    ...(halves.some((r) => r.unreadable) ? { unreadable: sum((r) => r.unreadable ?? 0) } : {}),
+    ...(unanswered.length ? { unanswered } : {}),
+    ...(halves.some((r) => r.runaway) ? { runaway: true as const } : {}),
+    calls: 1 + sum((r) => r.calls ?? 1),
+    failure: failed.length ? failed.join('; ') : null,
+    model: whole.model,
+    promptTokens: whole.promptTokens + sum((r) => r.promptTokens),
+    completionTokens: whole.completionTokens + sum((r) => r.completionTokens),
+    durationMs: whole.durationMs + sum((r) => r.durationMs),
+    fromCache: halves.every((r) => r.fromCache),
+    fromResume: halves.every((r) => r.fromResume),
   };
 }
 
@@ -1054,6 +1136,8 @@ async function readPart(
       pillarId,
       findings: [],
       rejected: [],
+      unanswered: indicators.map((i) => i.id),
+      ...(err instanceof EngineOverran || err instanceof EngineAborted ? { runaway: true as const } : {}),
       failure: err.message,
       model: opts.model ?? READING_MODEL,
       promptTokens: err.promptTokens,

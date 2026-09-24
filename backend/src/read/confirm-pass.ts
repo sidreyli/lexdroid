@@ -44,6 +44,10 @@ export interface ConfirmPassResult {
   ruledOut: number;
   /** Nobody read it. Not a provision found wanting, and counted apart from one. */
   failed: number;
+  /** Rule-outs put a second time, because a rule-out deletes a finding and nothing re-opens it. */
+  reasked: number;
+  /** Of those, the ones the second ask answered with the provisions words after all. */
+  overturned: number;
   seconds: number;
 }
 
@@ -120,6 +124,8 @@ export async function confirmPass(db: Db, opts: ConfirmPassOptions): Promise<Con
     confirmed: 0,
     ruledOut: 0,
     failed: 0,
+    reasked: 0,
+    overturned: 0,
     seconds: 0,
   };
 
@@ -139,11 +145,43 @@ export async function confirmPass(db: Db, opts: ConfirmPassOptions): Promise<Con
       const q = todo[next++];
       if (!q) return;
       const measure = measureOf(q.indicatorId, q.measure)!;
-      const c = await confirmMeasure(
-        { instrumentTitle: q.instrumentTitle, headingPath: q.headingPath, text: q.text },
-        measure,
-        { model },
-      );
+      const provision = { instrumentTitle: q.instrumentTitle, headingPath: q.headingPath, text: q.text };
+
+      // A rule-out is put a second time before it is banked.
+      //
+      // The reader has already quoted this provision for this measure. The confirm ask is the
+      // second opinion on that quote, and a no here deletes the finding for good: nothing
+      // downstream re-opens a banked rule-out, and a cell can lose a band to one. So it has to be
+      // right, and measured it is not always. Malaysia 4.5 banked a no against section 13 of the
+      // Copyright Act 1987 -- the provision that states fair dealing and lists the four factors to
+      // weigh it by, which is the measure almost verbatim -- and re-asking the identical question
+      // returned the words, on all four engines. Same prompt, same model, temperature zero. Prefix
+      // reuse in the KV cache is the likeliest cause and not one this code can see.
+      //
+      // This is not the reader runaway, where re-asking is useless because the loop is
+      // deterministic. Here the answer measurably varies, which is the one case a second ask is
+      // worth making.
+      //
+      // A yes is taken first time: a confirmation shows the words, and words that are in the
+      // provision are in it. Only a no is doubted, and it stands unless the second ask produces
+      // the words -- a second ask that fails says nothing about the provision, so the no holds.
+      // At 1.1s an ask, with about a fifth of asks ruling out, the second opinion costs some
+      // twenty minutes of a nine-hour run.
+      const first = await confirmMeasure(provision, measure, { model });
+      let c = first;
+      let calls = 1;
+      if (first.words === null && first.failure === null) {
+        const again = await confirmMeasure(provision, measure, { model });
+        calls = 2;
+        result.reasked += 1;
+        if (again.words !== null) result.overturned += 1;
+        c = {
+          ...(again.words !== null ? again : first),
+          promptTokens: first.promptTokens + again.promptTokens,
+          completionTokens: first.completionTokens + again.completionTokens,
+          durationMs: first.durationMs + again.durationMs,
+        };
+      }
       insert.run(
         q.sectionId,
         q.indicatorId,
@@ -160,7 +198,7 @@ export async function confirmPass(db: Db, opts: ConfirmPassOptions): Promise<Con
         new Date().toISOString(),
       );
       result.asked += 1;
-      spent.calls += 1;
+      spent.calls += calls;
       spent.promptTokens += c.promptTokens;
       spent.outputTokens += c.completionTokens;
       spent.seconds += c.durationMs / 1000;
@@ -173,7 +211,8 @@ export async function confirmPass(db: Db, opts: ConfirmPassOptions): Promise<Con
         const left = ((todo.length - result.asked) * per) / 60;
         const line =
           `  ${result.asked}/${todo.length}  confirmed ${result.confirmed}  ruled out ${result.ruledOut}` +
-          `  failed ${result.failed}  ${per.toFixed(1)}s each, ~${left.toFixed(0)} min left`;
+          `  failed ${result.failed}  re-asked ${result.reasked}, ${result.overturned} overturned` +
+          `  ${per.toFixed(1)}s each, ~${left.toFixed(0)} min left`;
         log(line);
         emit({ stage: 'confirm', kind: 'finished', done: result.asked, total: todo.length, detail: line.trim() });
       }
@@ -190,7 +229,9 @@ export async function confirmPass(db: Db, opts: ConfirmPassOptions): Promise<Con
     done: result.asked,
     total: todo.length,
     seconds: result.seconds,
-    detail: `${result.confirmed} confirmed, ${result.ruledOut} ruled out, ${result.failed} failed`,
+    detail:
+      `${result.confirmed} confirmed, ${result.ruledOut} ruled out, ${result.failed} failed, ` +
+      `${result.reasked} rule-out(s) put twice and ${result.overturned} overturned`,
   });
   return result;
 }
