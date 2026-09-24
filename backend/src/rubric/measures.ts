@@ -1468,8 +1468,14 @@ export const MEASURE_NAMES: Readonly<Record<string, RegExp>> = {
   // and none of them counts as a localisation rule, and the words never say where the bank is.
   'local-bank-account': LOCALITY,
   'local-representative': /\b(represent\w*|agent\w*|office\w*|establish\w*|resident\w*)\b/i,
-  'local-presence': /\b(present\w*|establish\w*|office\w*|branch\w*|subsidiar\w*|incorporat\w*|resident\w*)\b/i,
-  'local-domain-or-presence': /\b(domain\w*|present\w*|establish\w*|office\w*|branch\w*|subsidiar\w*|incorporat\w*)\b/i,
+  // "Presence" is the noun these rules use, and a stem ending in the verb cannot reach it:
+  // present|presently|presented all match present\w*, and presence does not. auDA's licensing rule
+  // 2.4.1 -- "A Person applying for a Licence must: have an Australian Presence" -- was read for
+  // Australia's 12.7 and scored nothing, and 485 provisions across the three economies say
+  // "presence" without saying establish, office, branch, subsidiary, incorporate or resident.
+  // So the stem stops at the shared five letters.
+  'local-presence': /\b(presen\w*|establish\w*|office\w*|branch\w*|subsidiar\w*|incorporat\w*|resident\w*)\b/i,
+  'local-domain-or-presence': /\b(domain\w*|presen\w*|establish\w*|office\w*|branch\w*|subsidiar\w*|incorporat\w*)\b/i,
   // The band is "Independent telecom authority is established", so the word is established. With
   // the measure widened to match that band, nothing else asked whether the provision creates
   // anything: the cell then scored on "ACMA means the Australian Communications and Media

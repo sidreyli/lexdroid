@@ -45,6 +45,7 @@
     "engine-check": "tsx scripts/engine-check.ts",
     "calibration": "tsx scripts/calibration.ts",
     "zone1-audit": "tsx scripts/zone1-audit.ts",
+    "zone1-reach": "tsx scripts/zone1-reach.ts",
     "recache-composed": "tsx scripts/recache-composed.ts",
     "lexical-ab": "tsx scripts/lexical-ab.ts",
     "cell-audit": "tsx scripts/cell-audit.ts"
