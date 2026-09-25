@@ -281,9 +281,9 @@ as for the language model.
 | Singapore | `sso.agc.gov.sg` (+ 8) | en | **Yes** — 61/61 indicators | 6,857 registered |
 | India | `indiacode.gov.in` (+ 10) | en, hi | **No** — profile and adapter only | Portal adapter written and tested; no cells produced |
 | Thailand | `searchlaw.ocs.go.th` (+ 7) | th | **No** — profile only | Six of eight portals confirmed blocked or client-rendered; `docs/thailand-integration-plan.md` |
-| Mongolia | `legalinfo.mn` (+ 4) | mn | **No** — register built, no cells | **11,962 instruments registered** from 607 requests, zero refused; 11,960 with a commencement date |
-| Russian Federation | `publication.pravo.gov.ru` (+ 4) | ru | **No** — profile, adapter ready | Permissive and enumerable; walked by `crawl`, no register run yet |
-| Lao PDR | `laoofficialgazette.gov.la` (+ 4) | lo | **No** — profile, adapter ready | Walked by `crawl`; gazette is scan-only and read by the Lao OCR pack at 77% confidence |
+| Mongolia | `legalinfo.mn` (+ 4) | mn | **No** — corpus parsed, no cells | 11,962 registered; parser and annex fetching proven by 45 gold tests on 11 real pages |
+| Russian Federation | `pravo.gov.ru/proxy/ips` (+ 4) | ru | **No** — corpus parsed, no cells | 421 federal instruments from the State legal information system (windows-1251); whole Codes read; 36 gold tests on 5 documents |
+| Lao PDR | `laoofficialgazette.gov.la` (+ 4) | lo | **No** — corpus parsed, no cells | 1,115 registered from the gazette grid; scans read by local OCR (59–89 confidence) and sectioned by article; 21 gold tests on 4 scans |
 
 **Stated honestly:** eight economies are profiled; **three have been run end to end**, and they are
 the three mandatory ones. Of the nine sealed live-test economies, LexDroid has produced cells for
@@ -293,10 +293,15 @@ is unread rather than quietly dropped. ESCAP's own guidance is that depth beats 
 that is the trade we made — but the finals brief also sets a floor of six economies processed
 autonomously, at least three of them non-English, and that floor is not yet met.
 
-What stands between the three new non-English economies and their first cells is named and small:
-a listing adapter for Mongolia, title recognition that is not written in English for Russia, and a
-Lao OCR language pack for Lao PDR. The full live trace behind each is
-`docs/lao-mongolia-russia-recon.md`.
+For the three new non-English economies, registration, fetching and parsing now run end to end
+and are proven against real sources (`docs/handoff-three-economies.md`). What still stands between
+them and their first cells:
+- a table of the rubric's queries in each language, since 5 of 300 English queries find anything
+  in these corpora (`npm run -w backend translate-queries`);
+- embeddings on a GPU host;
+- a run.
+
+The portal trace behind each is `docs/lao-mongolia-russia-recon.md`.
 
 ---
 

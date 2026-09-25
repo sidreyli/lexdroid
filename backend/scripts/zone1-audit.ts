@@ -462,7 +462,8 @@ const containerOf = (path: string): string => path.split(' > ').slice(0, -1).joi
   // A document whose text names a chapter, where no section is filed under one. Chapter detection
   // failed silently once already: `/\bБҮЛЭГ/` never matches beside Cyrillic, and every heading path
   // of the Anti-Corruption Law simply looked like a law with no chapters.
-  const CHAPTER_WORD = /(?:^|\n)(?:\S+\s+)?\S*(?:дугаар|дүгээр)\s+бүлэг|(?:^|\n)(?:Глава|ГЛАВА)\s+\d|(?:^|\n)(?:ໝວດທີ|ຫມວດທີ)\s*[\d໐-໙]/iu;
+  // Lao in every spelling OCR has been measured producing for ໝ -- the same list parse/lao.ts reads.
+  const CHAPTER_WORD = /(?:^|\n)(?:\S+\s+)?\S*(?:дугаар|дүгээр)\s+бүлэг|(?:^|\n)(?:Глава|ГЛАВА)\s+\d|(?:^|\n)(?:ໝ|ຫມ|ບນ|ຫນ|ບຫ|ຫພ|ຫ)ວດ\s*ທີ\s*[\d໐-໙]/iu;
   const out: string[] = [];
   let bad = false;
   for (const e of withCorpus) {
