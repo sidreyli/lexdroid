@@ -42,13 +42,31 @@ export interface OcrPage {
 }
 
 /**
- * Put both packaged languages in one local directory because Tesseract accepts one langPath.
+ * The scripts OCR can read besides English, by the language code a profile states: the Tesseract
+ * pack, and the characters that show a page really is in that script. A page is only taken as one
+ * of these if the pack finds its script on it -- the English pack reads Thai as Latin gibberish,
+ * and before Thailand had a pack the Hindi one read a Thai notification as Devanagari.
+ */
+const SCRIPTS: Record<string, { pack: 'hin' | 'tha'; chars: RegExp }> = {
+  hi: { pack: 'hin', chars: /[\u0900-\u097f]/g },
+  th: { pack: 'tha', chars: /[\u0e00-\u0e7f]/g },
+};
+
+/** The packs to consult for an economy's languages. With none stated, Hindi, as before Thailand. */
+function secondaryPacks(languages?: readonly string[]): { pack: 'hin' | 'tha'; chars: RegExp }[] {
+  const wanted = (languages ?? ['hi']).map((l) => SCRIPTS[l.toLowerCase().slice(0, 2)]).filter((s) => s !== undefined);
+  return wanted.length ? wanted : [SCRIPTS['hi']!];
+}
+
+/**
+ * Put the packaged languages in one local directory because Tesseract accepts one langPath.
  * This is runtime data under backend/data, not a download and not a modification of node_modules.
  */
 function localLanguageData(): string {
   const packs = [
     localRequire('@tesseract.js-data/eng') as LanguagePackage,
     localRequire('@tesseract.js-data/hin') as LanguagePackage,
+    localRequire('@tesseract.js-data/tha') as LanguagePackage,
   ];
   mkdirSync(TESSDATA_DIR, { recursive: true });
   mkdirSync(TESSERACT_CACHE, { recursive: true });
@@ -61,15 +79,17 @@ function localLanguageData(): string {
   return TESSDATA_DIR;
 }
 
-export async function createTesseractEngine(): Promise<OcrEngine> {
-  const worker = await Tesseract.createWorker(['eng', 'hin'], Tesseract.OEM.LSTM_ONLY, {
+export async function createTesseractEngine(languages?: readonly string[]): Promise<OcrEngine> {
+  const secondary = secondaryPacks(languages);
+  const worker = await Tesseract.createWorker(['eng', ...secondary.map((s) => s.pack)], Tesseract.OEM.LSTM_ONLY, {
     langPath: localLanguageData(),
     cachePath: TESSERACT_CACHE,
     gzip: true,
   });
   // Loading both packs makes switching local and deterministic, but asking them to recognize the
   // same English page together changed "17." into "E" in the supplied procurement order. Start
-  // with English and consult Hindi only when the English pass does not look like English prose.
+  // with English and consult the economy's other scripts only when the English pass does not
+  // look like English prose.
   const parameters = {
     // Gazette and legislation scans are single-column pages. AUTO split the narrow paragraph-
     // number column from its headings ("11." through "20." arrived as a block of bare numbers),
@@ -78,7 +98,7 @@ export async function createTesseractEngine(): Promise<OcrEngine> {
     preserve_interword_spaces: '1',
     user_defined_dpi: '300',
   };
-  const useLanguage = async (language: 'eng' | 'hin'): Promise<void> => {
+  const useLanguage = async (language: 'eng' | 'hin' | 'tha'): Promise<void> => {
     await worker.reinitialize(language);
     // reinitialize resets Tesseract's variables, so keep the document-layout assumptions stable
     // after every English/Hindi switch.
@@ -95,15 +115,19 @@ export async function createTesseractEngine(): Promise<OcrEngine> {
       const legalEnglish = (english.text.match(/\b(?:the|and|shall|act|rules?|order|government|section)\b/gi) ?? []).length;
       if (english.confidence >= 70 && legalEnglish >= 2) return english;
 
-      await useLanguage('hin');
-      let hindi: OcrRecognition;
-      try {
-        hindi = await recognize(image);
-      } finally {
-        await useLanguage('eng');
+      let best = english;
+      for (const script of secondary) {
+        await useLanguage(script.pack);
+        let other: OcrRecognition;
+        try {
+          other = await recognize(image);
+        } finally {
+          await useLanguage('eng');
+        }
+        const found = (other.text.match(script.chars) ?? []).length;
+        if (found >= 20 && other.confidence >= best.confidence - 10) best = other;
       }
-      const devanagari = (hindi.text.match(/[\u0900-\u097f]/g) ?? []).length;
-      return devanagari >= 20 && hindi.confidence >= english.confidence - 10 ? hindi : english;
+      return best;
     },
     async close() {
       await worker.terminate();
@@ -122,6 +146,7 @@ export async function ocrPdfPages(
   bytes: Buffer,
   pageNumbers: number[],
   suppliedEngine?: OcrEngine,
+  languages?: readonly string[],
 ): Promise<OcrPage[]> {
   if (pageNumbers.length === 0) return [];
   const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
@@ -131,7 +156,7 @@ export async function ocrPdfPages(
     isEvalSupported: false,
     disableFontFace: true,
   }).promise;
-  const engine = suppliedEngine ?? (await createTesseractEngine());
+  const engine = suppliedEngine ?? (await createTesseractEngine(languages));
   const ownsEngine = suppliedEngine === undefined;
   const pages: OcrPage[] = [];
 
