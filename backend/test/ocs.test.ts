@@ -55,6 +55,11 @@ describe('parsing a Council of State law', () => {
     expect(doc.sections[3]!.headingPath.startsWith('พระราชบัญญัติเงินตรา (ฉบับที่ ๒) พ.ศ. ๒๕๑๐')).toBe(true);
   });
 
+  it('heads a provision with the Thai name only, so the English title is not a keyword match for every section', () => {
+    for (const s of doc.sections) expect(s.headingPath).not.toContain('CURRENCY ACT');
+    expect(doc.sections[0]!.headingPath.startsWith('พระราชบัญญัติเงินตรา พ.ศ. 2501 >')).toBe(true);
+  });
+
   it('marks a section that is only the note of its repeal', () => {
     expect(doc.sections.map((s) => s.repealed)).toEqual([false, true, false, false]);
   });

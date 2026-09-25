@@ -113,7 +113,11 @@ export function parseOcs(raw: string, url: string): ParsedDocument {
       continue;
     }
 
-    const owner = amending ?? title;
+    // The Thai name alone. The heading is indexed with the provision, and an English title on
+    // every section of a Thai Act makes every one of them a keyword match for any English word in
+    // the title -- "country" put the Cleanliness Act's 200 sections first for a question about
+    // sending data abroad. The English name stays on the document, where it names the instrument.
+    const owner = amending ?? thai ?? title;
     if (type === PROVISION) {
       const number = /^มาตรา\s*(.+)$/.exec(label)?.[1]?.trim() ?? (label || null);
       const cited = number ? (amending ? `${number} [${amending}]` : number) : null;
