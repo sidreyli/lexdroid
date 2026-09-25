@@ -45,6 +45,7 @@
     "engine-check": "tsx scripts/engine-check.ts",
     "calibration": "tsx scripts/calibration.ts",
     "zone1-audit": "tsx scripts/zone1-audit.ts",
+    "parsing-report": "tsx scripts/parsing-report.ts",
     "zone1-reach": "tsx scripts/zone1-reach.ts",
     "repair-heading-paths": "tsx scripts/repair-heading-paths.ts",
     "recache-composed": "tsx scripts/recache-composed.ts",

@@ -63,7 +63,32 @@ change from it.
 
 ---
 
-## Where it actually stands
+## Update, 26 September: parsing for all three
+
+Superseding the table below for parsing. Each economy now has a parser proven on real sources
+by a gold test whose expectations were read off the source. The report, with each portal's
+design and real documents set beside their parse, is at
+https://claude.ai/artifact/M9tgogEoCkjQuTYVofNqpa. Regenerate its data with
+`npm run -w backend parsing-report -- --out report.json`.
+
+| | Mongolia | Russia | Lao PDR |
+|---|---|---|---|
+| Source | legalinfo.mn, annexes fetched | IPS (pravo.gov.ru/proxy/ips), windows-1251 | Official Gazette grid, OCR |
+| Registered | 11,962 | 421 from IPS (+85 gazette, unreadable) | 1,115 (1,479 rows of 1,479) |
+| Read | 24 docs → 398 provisions | 7 docs → 1,355 (whole Administrative Offences Code) | 4 scans → 241, OCR 79–84 |
+| Gold tests | 45 on 11 pages | 36 on 5 documents | 21 on 4 scans |
+
+Found and fixed along the way, and silent until measured:
+- superscript insertions (2¹, 10²⁻¹) read as wrong articles;
+- text outside `<p>` dropped;
+- whole articles marked repealed when only a clause was;
+- annexes never read;
+- no charset handling;
+- IPS truncating Codes at 747,740 bytes;
+- Lao laws demoted to publications;
+- OCR misreading article numbers, now repaired only where the sequence confirms it, and recorded.
+
+## Where it stood on 25 September
 
 | | Mongolia | Russia | Lao PDR |
 |---|---|---|---|
