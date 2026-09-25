@@ -1,7 +1,35 @@
 # Lao PDR, Mongolia and the Russian Federation — handoff
 
-*Written 25 September 2026, on branch `russia-mongolia-laopdr`, 13 commits ahead of
-`origin/master` and merged up to it. Freeze is 30 September.*
+*Written 25 September 2026, on branch `russia-mongolia-laopdr`. Freeze is 30 September.*
+
+## Before you do anything: check master
+
+This work lives on `russia-mongolia-laopdr`, not on master, and **master moves**. It gained nine
+commits and roughly ten thousand lines between 21 and 25 September while this branch was being
+built. Merging them cost five conflicts, and the longer the branch sits the worse that gets.
+
+```bash
+git fetch origin
+git rev-list --left-right --count origin/master...HEAD   # left = behind, right = ahead
+```
+
+If it reports anything behind, merge before starting — resolving a conflict is much easier than
+un-resolving a wrong one later. What the 25 September merge turned out to need, as a guide:
+
+- **`titles.ts`** — both sides had added a second parameter to `instrumentTitle` and they are
+  complementary, so it now takes both: `alsoNamedBy` (extra English nouns a portal declares) and
+  `vocabulary` (what the economy calls its instruments). Anything added there should expect to
+  keep both.
+- **`crawl.ts`** — master had restructured the walk around a shared page budget and explicit
+  seeds. Taken whole from master, then this branch's three changes re-applied on top. Do that
+  again rather than resolving hunk by hunk.
+- **`fetch/index.ts`** — master split `sendOne` into a TLS chain-chasing wrapper plus `sendOnce`;
+  the POST body threads through both.
+- Master also added a seventh instrument kind, `publication`, and `bindingness.test.ts` iterates
+  every profile, so a new kind means every profile in `data/profiles/` must declare it.
+
+**Worth raising with Sid:** this branch is well ahead of master and he is pushing to master
+steadily. Merging it in sooner would make each of these cheaper than one large merge at the end.
 
 Read this first if you are picking the work up cold. Everything it asserts was measured; the
 command or the file that measured it is named. The full investigative trace is
