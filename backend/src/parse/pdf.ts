@@ -672,7 +672,7 @@ export async function parsePdf(bytes: Buffer, url: string, opts: ParsePdfOptions
   let ocrError: string | null = null;
   if (reread.length > 0) {
     try {
-      const recovered = await ocrPdfPages(bytes, reread, opts.ocrEngine);
+      const recovered = await ocrPdfPages(bytes, reread, opts.ocrEngine, opts.languages);
       const byPage = new Map(recovered.map((page) => [page.page, page]));
       pages = pages.map((page) => {
         if (!reread.includes(page.page)) return page;

@@ -603,6 +603,13 @@ function equityLadder(
   };
 }
 
+/** The party a licence is granted to, and the party a patent is granted to. */
+const LICENSEE = /\b(licensee\w*|beneficiar\w* of the (?:compulsory )?licen[cs]e|holder of (?:a|the) (?:compulsory )?licen[cs]e)\b/i;
+const PATENTEE = /\b(patentee\w*|proprietor\w*|owner of the patent|patent (?:holder|owner)\w*)\b/i;
+
+/** Measures that are a body being established, whose defining words are the body's own name. */
+const BODY_CREATED = new Set(['independent-telecom-authority']);
+
 const RULES: Record<string, Rule> = {
   /**
    * 6.1 "Ban and/or local processing requirement for all sectors or personal data, OR more than
@@ -1535,7 +1542,22 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
       });
       continue;
     }
-    if (name && e.finding.definingWords && !name.test(e.finding.definingWords)) {
+    // Except where the measure is a body coming into being. Asked for the words that make it out,
+    // the reader copies the body's name -- "Authority", "Commission" -- because the body is the
+    // thing the provision is about, and a name never says it is established. The provision does:
+    // "The Australian Communications and Media Authority is established by this section." was
+    // ruled out for its defining words reading "Authority", and so was Malaysia's section creating
+    // its Communications and Multimedia Commission, and both cells then reported that nothing
+    // establishing a regulator had been read. So for such a measure the quote is asked instead.
+    // Only for such a measure: elsewhere the quote is a sentence about something, and asking it
+    // for the term lets a duty to comply with an Act pass as a strict licence condition.
+    const createsABody = e.finding.measure !== undefined && e.finding.measure !== null && BODY_CREATED.has(e.finding.measure);
+    if (
+      name &&
+      e.finding.definingWords &&
+      !name.test(e.finding.definingWords) &&
+      !(createsABody && name.test(e.finding.quote ?? ''))
+    ) {
       ruledOut.push({
         evidence: e,
         reason: `"${e.finding.definingWords}" does not say ${definedBy(indicatorId, e.finding.measure) ?? `what makes a provision ${e.finding.measure}`}`,
@@ -1550,6 +1572,23 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     //
     // Undefined, rather than null, means the reading predates the question -- held then would hold
     // every finding in an earlier run rather than report anything about it.
+    // A restriction on enforcing a patent falls on the patentee: it is the holder whose injunction
+    // is limited, whose damages are capped or whose patent is licensed without consent. A duty on
+    // the licensee runs the other way. Australia's "the licensee must not exploit a patented
+    // pharmaceutical invention under a PPI compulsory licence" and Malaysia's limit on a compulsory
+    // licence to supply "predominantly in Malaysia" both confine the person using the patent
+    // without consent -- they are the patentee's protection, and each scored as a restriction on it.
+    if (
+      e.finding.measure === 'patent-enforcement-restriction' &&
+      LICENSEE.test(e.finding.dutyBearer ?? '') &&
+      !PATENTEE.test(e.finding.dutyBearer ?? '')
+    ) {
+      ruledOut.push({
+        evidence: e,
+        reason: `the provision binds ${e.finding.dutyBearer}, and a restriction on enforcing a patent falls on the patentee`,
+      });
+      continue;
+    }
     const subject = aboutness(indicatorId, e.finding.measure);
     if (subject && e.finding.subjectWords === null) {
       ruledOut.push({

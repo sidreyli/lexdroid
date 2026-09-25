@@ -42,13 +42,36 @@ export interface OcrPage {
 }
 
 /**
- * Put every packaged language in one local directory because Tesseract accepts one langPath.
+ * The scripts OCR can read besides English, by the language code a profile states: the Tesseract
+ * pack, and the characters that show a page really is in that script. A page is only taken as one
+ * of these if the pack finds its script on it -- the English pack reads Thai as Latin gibberish,
+ * and before Thailand had a pack the Hindi one read a Thai notification as Devanagari.
+ */
+type Pack = 'hin' | 'tha' | 'lao';
+
+const SCRIPTS: Record<string, { pack: Pack; chars: RegExp }> = {
+  hi: { pack: 'hin', chars: /[\u0900-\u097f]/g },
+  th: { pack: 'tha', chars: /[\u0e00-\u0e7f]/g },
+  // The Lao Official Gazette publishes image-only scans -- one sampled at 1.09 MB carried zero
+  // /Font and zero /ToUnicode -- so every Lao document reaches the pipeline through this pack.
+  lo: { pack: 'lao', chars: /[\u0e80-\u0eff]/g },
+};
+
+/** The packs to consult for an economy's languages. With none stated, Hindi, as before Thailand. */
+function secondaryPacks(languages?: readonly string[]): { pack: Pack; chars: RegExp }[] {
+  const wanted = (languages ?? ['hi']).map((l) => SCRIPTS[l.toLowerCase().slice(0, 2)]).filter((s) => s !== undefined);
+  return wanted.length ? wanted : [SCRIPTS['hi']!];
+}
+
+/**
+ * Put the packaged languages in one local directory because Tesseract accepts one langPath.
  * This is runtime data under backend/data, not a download and not a modification of node_modules.
  */
 function localLanguageData(): string {
   const packs = [
     localRequire('@tesseract.js-data/eng') as LanguagePackage,
     localRequire('@tesseract.js-data/hin') as LanguagePackage,
+    localRequire('@tesseract.js-data/tha') as LanguagePackage,
     localRequire('@tesseract.js-data/lao') as LanguagePackage,
   ];
   mkdirSync(TESSDATA_DIR, { recursive: true });
@@ -62,31 +85,17 @@ function localLanguageData(): string {
   return TESSDATA_DIR;
 }
 
-/**
- * The non-English packs, and what it takes to prefer one over the English pass.
- *
- * Tried in order and only while the one before it has not answered, so a page that reads as
- * Hindi never costs a Lao pass. An English page costs neither: it is answered by the first pass
- * and returns before any of this.
- *
- * Lao is here because the Lao Official Gazette publishes image-only scans -- one sampled at
- * 1.09 MB carried zero /Font and zero /ToUnicode -- so every Lao document reaches the pipeline
- * through this stage or not at all.
- */
-const FALLBACK_LANGUAGES: { code: 'hin' | 'lao'; script: RegExp; minCharacters: number }[] = [
-  { code: 'hin', script: /[ऀ-ॿ]/g, minCharacters: 20 },
-  { code: 'lao', script: /[຀-໿]/g, minCharacters: 20 },
-];
-
-export async function createTesseractEngine(): Promise<OcrEngine> {
-  const worker = await Tesseract.createWorker(['eng', 'hin', 'lao'], Tesseract.OEM.LSTM_ONLY, {
+export async function createTesseractEngine(languages?: readonly string[]): Promise<OcrEngine> {
+  const secondary = secondaryPacks(languages);
+  const worker = await Tesseract.createWorker(['eng', ...secondary.map((s) => s.pack)], Tesseract.OEM.LSTM_ONLY, {
     langPath: localLanguageData(),
     cachePath: TESSERACT_CACHE,
     gzip: true,
   });
   // Loading both packs makes switching local and deterministic, but asking them to recognize the
   // same English page together changed "17." into "E" in the supplied procurement order. Start
-  // with English and consult Hindi only when the English pass does not look like English prose.
+  // with English and consult the economy's other scripts only when the English pass does not
+  // look like English prose.
   const parameters = {
     // Gazette and legislation scans are single-column pages. AUTO split the narrow paragraph-
     // number column from its headings ("11." through "20." arrived as a block of bare numbers),
@@ -95,7 +104,7 @@ export async function createTesseractEngine(): Promise<OcrEngine> {
     preserve_interword_spaces: '1',
     user_defined_dpi: '300',
   };
-  const useLanguage = async (language: 'eng' | 'hin' | 'lao'): Promise<void> => {
+  const useLanguage = async (language: 'eng' | Pack): Promise<void> => {
     await worker.reinitialize(language);
     // reinitialize resets Tesseract's variables, so keep the document-layout assumptions stable
     // after every language switch.
@@ -112,23 +121,19 @@ export async function createTesseractEngine(): Promise<OcrEngine> {
       const legalEnglish = (english.text.match(/\b(?:the|and|shall|act|rules?|order|government|section)\b/gi) ?? []).length;
       if (english.confidence >= 70 && legalEnglish >= 2) return english;
 
-      // Not English, so ask the other packs in turn and stop at the first that answers in its own
-      // script. A page that reads as Hindi never costs a Lao pass, and an English page reached
-      // none of this.
-      for (const { code, script, minCharacters } of FALLBACK_LANGUAGES) {
-        await useLanguage(code);
-        let attempt: OcrRecognition;
+      let best = english;
+      for (const script of secondary) {
+        await useLanguage(script.pack);
+        let other: OcrRecognition;
         try {
-          attempt = await recognize(image);
+          other = await recognize(image);
         } finally {
           await useLanguage('eng');
         }
-        const inScript = (attempt.text.match(script) ?? []).length;
-        // The script has to actually be there, and the pass must not be markedly worse than the
-        // English one -- a wrong pack on an English page produces confident nonsense.
-        if (inScript >= minCharacters && attempt.confidence >= english.confidence - 10) return attempt;
+        const found = (other.text.match(script.chars) ?? []).length;
+        if (found >= 20 && other.confidence >= best.confidence - 10) best = other;
       }
-      return english;
+      return best;
     },
     async close() {
       await worker.terminate();
@@ -147,6 +152,7 @@ export async function ocrPdfPages(
   bytes: Buffer,
   pageNumbers: number[],
   suppliedEngine?: OcrEngine,
+  languages?: readonly string[],
 ): Promise<OcrPage[]> {
   if (pageNumbers.length === 0) return [];
   const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
@@ -156,7 +162,7 @@ export async function ocrPdfPages(
     isEvalSupported: false,
     disableFontFace: true,
   }).promise;
-  const engine = suppliedEngine ?? (await createTesseractEngine());
+  const engine = suppliedEngine ?? (await createTesseractEngine(languages));
   const ownsEngine = suppliedEngine === undefined;
   const pages: OcrPage[] = [];
 

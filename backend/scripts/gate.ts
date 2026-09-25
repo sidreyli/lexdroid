@@ -34,6 +34,7 @@ interface Args {
   pillars: number[];
   depth: number | null;
   carryFrom: string | null;
+  reread: Set<number>;
   model: string | null;
   compare: boolean;
   verbose: boolean;
@@ -57,6 +58,7 @@ function parseArgs(argv: string[]): Args {
     pillars,
     depth: get('depth') !== null ? Number(get('depth')) : null,
     carryFrom: get('carry'),
+    reread: new Set((get('reread') ?? '').split(',').filter(Boolean).map(Number)),
     model: get('model'),
     compare: !argv.includes('--no-compare'),
     verbose: argv.includes('--verbose'),
@@ -254,6 +256,7 @@ async function main(): Promise<void> {
     const answer = await answerPillar(db, pillarId, args.economy, {
       ...(args.depth ? { depth: args.depth } : {}),
       ...(carryFrom ? { carryFrom } : {}),
+      ...(args.reread.size ? { reread: args.reread } : {}),
       model,
       log: (l) => console.log(l),
       emit,

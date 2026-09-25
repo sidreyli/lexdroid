@@ -59,7 +59,7 @@ const MARKERS: readonly (readonly [RegExp, string])[] = [
   [/\bS\s?\$|\bSGD\b|\bSingapore dollars?\b/i, 'SGD'],
   [/\bRM(?=\s?\d)|\bMYR\b|\bringgit\b/i, 'MYR'],
   [/₹(?=\s?\d)|\bINR\b|\bIndian rupees?\b|\brupees?\b/i, 'INR'],
-  [/\bTHB\b|\bbaht\b/i, 'THB'],
+  [/\bTHB\b|\bbaht\b|บาท/i, 'THB'],
   [/\bIDR\b|\bRp(?=\s?\d)|\brupiah\b/i, 'IDR'],
   [/\bCNY\b|\bRMB\b|\byuan\b|\brenminbi\b/i, 'CNY'],
 ];
@@ -83,6 +83,25 @@ const BEFORE = /(US\s?\$|A\s?\$|S\s?\$|RM|₹|Rp|\$|\b(?:USD|AUD|SGD|MYR|INR|THB
 /** A currency written immediately after one: "400 SGD", "5,000 rupees", "20 Singapore dollars". */
 const AFTER = /^\s?((?:US|Australian|Singapore|Indian)\s+)?(dollars?|ringgit|rupees?|baht|rupiah|yuan|renminbi|USD|AUD|SGD|MYR|INR|THB|IDR|CNY|RMB)\b/i;
 
+/**
+ * The same, for a currency named by a word in a script without word boundaries. `\b` never
+ * matches beside a Thai letter, so "๑,๕๐๐ บาท" has to be looked for on its own terms.
+ */
+const AFTER_UNSPACED = /^\s?()(บาท)/;
+
+/**
+ * Digits in any script, as the ASCII digits they are. A statute written in Thai states its sums in
+ * Thai digits; one character for one, so every index into the words is still an index into them.
+ */
+function asciiDigits(words: string): string {
+  return words.replace(/\p{Nd}/gu, (d) => {
+    const cp = d.codePointAt(0)!;
+    let zero = cp;
+    while (zero > cp - 9 && /\p{Nd}/u.test(String.fromCodePoint(zero - 1))) zero -= 1;
+    return String(cp - zero);
+  });
+}
+
 /** The number a citation carries: "section 3", "s. 12", "regulation 4", "item 2". */
 const CITED = /\b(?:sections?|ss?|articles?|art|regulations?|regs?|rules?|paragraphs?|paras?|items?|clauses?|parts?|chapters?|schedules?|subsections?|divisions?|forms?|no)\.?\s*$/i;
 
@@ -103,8 +122,9 @@ const NOT_MONEY_AFTER = /^\s?(?:%|per\s?cent|percent|days?|weeks?|months?|years?
  * different sums in one quote is a question this cannot answer, so it answers null and the
  * finding is held rather than guessed.
  */
-export function moneyIn(words: string | null, economy: string): Money | null {
-  if (!words) return null;
+export function moneyIn(written: string | null, economy: string): Money | null {
+  if (!written) return null;
+  const words = asciiDigits(written);
   const fallback = CURRENCY_OF[economy.toUpperCase()];
   const currencyOf = (marker: string): string | undefined =>
     MARKERS.find(([re]) => re.test(marker))?.[1] ??
@@ -123,7 +143,7 @@ export function moneyIn(words: string | null, economy: string): Money | null {
     if (/[A-Za-z]$/.test(before) && !BEFORE.test(before)) continue;
 
     const pre = BEFORE.exec(before);
-    const post = AFTER.exec(after);
+    const post = AFTER.exec(after) ?? AFTER_UNSPACED.exec(after);
     const marker = pre?.[1] ?? (post ? `${post[1] ?? ''}${post[2]}` : null);
     if (marker) {
       // Tested as written, figure included: "RM" and "₹" are currencies only in front of one.

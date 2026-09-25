@@ -251,6 +251,12 @@ describe('money read out of a provision', () => {
     expect(moneyIn('goods valued at 5,000 rupees', 'IND')).toEqual({ amount: 5000, currency: 'INR', assumedCurrency: false });
   });
 
+  it('reads a sum a Thai provision states in Thai digits and the Thai word for baht', () => {
+    expect(moneyIn('ราคาไม่เกิน ๑,๕๐๐ บาท', 'THA')).toEqual({ amount: 1500, currency: 'THB', assumedCurrency: false });
+    expect(moneyIn('มูลค่าไม่เกิน 1,500บาท', 'THA')).toEqual({ amount: 1500, currency: 'THB', assumedCurrency: false });
+    expect(moneyIn('ภายใน ๓๐ วัน ตามมาตรา ๕', 'THA')).toBeNull();
+  });
+
   it('falls back to the economy’s own currency for a bare symbol, and says it did', () => {
     expect(moneyIn('not exceeding $1,000', 'AUS')).toEqual({ amount: 1000, currency: 'AUD', assumedCurrency: true });
     expect(moneyIn('not exceeding 5,000', 'IND')).toEqual({ amount: 5000, currency: 'INR', assumedCurrency: true });

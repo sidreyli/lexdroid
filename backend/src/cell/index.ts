@@ -145,6 +145,12 @@ export interface AnswerOptions {
    */
   carryFrom?: string;
   /**
+   * Provisions read afresh although the earlier run read them. For a change to the checks a reading
+   * passes on its way in: a finding refused there is gone from the stored reading, and carrying it
+   * would carry the refusal.
+   */
+  reread?: ReadonlySet<number>;
+  /**
    * The banked second-reading verdicts to score against. Loaded from the store when not given;
    * a caller passes one to hold the set steady across a pillar, or an empty one to score without.
    */
@@ -308,6 +314,7 @@ export async function answerPillar(
   const carried = opts.carryFrom
     ? carriedReadings(db, opts.carryFrom, pillarId, indicators.map((i) => i.id), opts.model ?? READING_MODEL)
     : new Map<number, SectionReading>();
+  for (const id of opts.reread ?? []) carried.delete(id);
   const toRead = inputs.filter((i) => !carried.has(i.sectionId));
   if (opts.carryFrom) {
     log(`  ${inputs.length - toRead.length} carried from ${opts.carryFrom.slice(0, 8)}, ${toRead.length} to read`);

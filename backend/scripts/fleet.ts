@@ -52,6 +52,8 @@ interface Args {
   model: string;
   depth: number | null;
   carryFrom: string | null;
+  /** Provisions read afresh although carried; see answerPillar's reread. */
+  reread: string | null;
   joinRunId: string | null;
   compare: boolean;
   probe: boolean;
@@ -98,6 +100,7 @@ function parseArgs(argv: string[]): Args {
     model: engine?.hosted ? engine.model : (get('model') ?? engine?.model ?? READING_MODEL),
     depth: get('depth') !== null ? Number(get('depth')) : null,
     carryFrom: get('carry'),
+    reread: get('reread'),
     joinRunId: get('run'),
     compare: !argv.includes('--no-compare'),
     probe: !argv.includes('--no-probe'),
@@ -135,6 +138,7 @@ function runUnit(unit: Unit, hosts: string[], runId: string, logDir: string, arg
   ];
   if (args.depth) argv.push('--depth', String(args.depth));
   if (args.carryFrom) argv.push('--carry', args.carryFrom);
+  if (args.reread) argv.push('--reread', args.reread);
   if (!args.compare) argv.push('--no-compare');
 
   return new Promise((resolve) => {

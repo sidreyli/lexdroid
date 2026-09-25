@@ -46,6 +46,7 @@ describe('the OCR language packs', () => {
     const needsOwnPack: Record<string, string> = {
       hi: 'hin',
       lo: 'lao',
+      th: 'tha',
     };
     for (const [language, pack] of Object.entries(needsOwnPack)) {
       expect(() => localRequire(`@tesseract.js-data/${pack}`), `${language} has no OCR pack`).not.toThrow();
@@ -68,6 +69,7 @@ describe('the OCR language packs', () => {
       '@tesseract.js-data/eng',
       '@tesseract.js-data/hin',
       '@tesseract.js-data/lao',
+      '@tesseract.js-data/tha',
     ]);
   });
 });

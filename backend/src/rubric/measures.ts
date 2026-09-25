@@ -516,7 +516,7 @@ export const MEASURES: Record<string, Measure[]> = {
       defines: 'the words requiring the branch, subsidiary or presence in the economy',
       restrictsForeigners: true,
       gloss:
-        'a requirement to establish a branch, subsidiary or other commercial presence in the economy before supplying a service to customers here',
+        'a requirement to establish a branch, subsidiary or other commercial presence in the economy before supplying a service to customers here, including a requirement that a foreign company register locally, or keep a local office or agent, before it may carry on business here',
       actor: 'the foreign supplier of the service',
     },
   ],
@@ -1633,6 +1633,12 @@ const COMMUNICATIONS =
 
 export const SUBJECT_DOMAIN: Readonly<Record<string, RegExp>> = {
   ...PILLAR_12_DOMAINS,
+  // 1.4 counts duties charged on ICT goods, and a duty is charged on goods it names: a notice
+  // imposing anti-dumping duty names newsprint or handsets, and the Act that sets up the regime
+  // names only "the subject goods". Pillar 10 does not get this, for a measured reason: an export
+  // control over "strategic items" or "listed goods" covers computers and cryptography through a
+  // schedule and never says so in the sentence, and the domain turned away exactly those.
+  '1.4': ICT_GOODS,
   // See COMMUNICATIONS above: the measure asks for a regulator, so the subject has to say which.
   '5.7': COMMUNICATIONS,
   // And the same of 5.5, for the same reason one step along: the measure asks for a licence, and

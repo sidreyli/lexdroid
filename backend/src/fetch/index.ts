@@ -394,6 +394,43 @@ export interface FetchResult {
   fetchedAt: string;
 }
 
+/** A request body, for the portals whose public pages read their documents with a POST. */
+export interface PostBody {
+  body: string;
+  contentType: string;
+  referer?: string;
+  /** Sent as the page's own script sends it: `X-Requested-With` and an Origin. */
+  xhr?: boolean;
+}
+
+/** The cache key of a POST: the address and the body together, since either changes the answer. */
+export function postKey(url: string, post: PostBody): string {
+  return `${url}#post:${createHash('sha256').update(post.body).digest('hex')}`;
+}
+
+/** A form body, its fields in a fixed order so the cache key does not depend on how a caller wrote the object. */
+export function encodeForm(form: Record<string, string>): string {
+  return Object.keys(form)
+    .sort()
+    .map((k) => `${encodeURIComponent(k)}=${encodeURIComponent(form[k] ?? '')}`)
+    .join('&');
+}
+
+/**
+ * A form-encoded POST as a listing page's own script sends it -- `legalinfo.mn` answers a GET with
+ * page one of an unfiltered listing whatever it is asked, so its register can only be walked this way.
+ *
+ * Its cache key is the one these requests were first cached under (`POST <url>\n<sha256(body)>`),
+ * kept so the Mongolian register's 607 cached listing pages are still found.
+ */
+function formRequest(url: string, form: Record<string, string>): { post: PostBody; key: string } {
+  const body = encodeForm(form);
+  return {
+    post: { body, contentType: 'application/x-www-form-urlencoded; charset=UTF-8', referer: `${new URL(url).origin}/`, xhr: true },
+    key: `POST ${url}\n${sha256(body)}`,
+  };
+}
+
 export class RobotsDisallowed extends Error {
   constructor(readonly url: string) {
     super(`robots.txt disallows ${url}`);
@@ -499,34 +536,8 @@ interface CacheRecord {
 
 const sha256 = (v: Buffer | string): string => createHash('sha256').update(v).digest('hex');
 
-/**
- * A form-encoded POST body, with its fields in a fixed order.
- *
- * Sorted because the order decides the cache key, and an object's property order is an accident
- * of how a caller wrote it. Two adapters asking the same question in a different order must hit
- * the same cache entry or the second one pays for a request the first already made.
- */
-export function encodeForm(form: Record<string, string>): string {
-  return Object.keys(form)
-    .sort()
-    .map((k) => `${encodeURIComponent(k)}=${encodeURIComponent(form[k] ?? '')}`)
-    .join('&');
-}
-
-/**
- * What identifies a request in the cache.
- *
- * The URL alone, for every GET -- which is every request this pipeline made until Mongolia. A
- * POST needs its body too: legalinfo.mn's register lives behind one path and the parameters are
- * the whole question, so keying on the URL would serve the first category's answer for all
- * seventeen of them. Silently, and with the shape of a working crawl.
- */
-function cacheKey(url: string, body: string | null): string {
-  return body === null ? url : `POST ${url}\n${sha256(body)}`;
-}
-
-function recordPath(key: string): string {
-  const h = sha256(key);
+function recordPath(url: string): string {
+  const h = sha256(url);
   return join(CACHE_DIR, 'url', h.slice(0, 2), `${h}.json`);
 }
 
@@ -683,6 +694,13 @@ export interface FetcherOptions {
 
 export class Fetcher {
   private readonly hosts = new Map<string, HostState>();
+  /**
+   * Cookies, kept only for a host a caller has asked to hold a session with, and only in memory.
+   * An ASP.NET form pages its results through server-side session state: without the session
+   * cookie, the second page of a search is answered as a fresh visit with no results. No other
+   * host is sent a cookie, and none is ever written to disk.
+   */
+  private readonly sessions = new Map<string, Map<string, string>>();
   private readonly db: Db;
   private readonly sourceMode: SourceMode;
   private readonly runId: string | null;
@@ -736,8 +754,8 @@ export class Fetcher {
       .run(this.runId, new URL(url).host, url, new Date().toISOString(), status, bytes, waitMs, outcome, method);
   }
 
-  private readCache(key: string): FetchResult | null {
-    const rp = recordPath(key);
+  private readCache(url: string): FetchResult | null {
+    const rp = recordPath(url);
     if (!existsSync(rp)) return null;
     const rec = JSON.parse(readFileSync(rp, 'utf8')) as CacheRecord;
 
@@ -807,15 +825,12 @@ export class Fetcher {
   }
 
   /** Raw request. Callers go through fetch(), which adds the cache, robots and the log. */
-  private async send(url: string, opts: { robotsFile?: boolean; body?: string | null } = {}): Promise<SendResult> {
+  private async send(url: string, opts: { robotsFile?: boolean; post?: PostBody } = {}): Promise<SendResult> {
     let at = url;
-    // Only the first hop carries the body. A 301, 302 or 303 answering a POST is followed as a
-    // GET -- which is what every browser does and what RFC 9110 requires of 303 -- so a redirect
-    // never re-submits the form somewhere the caller did not name.
-    let body = opts.body ?? null;
     for (let hop = 0; ; hop += 1) {
-      const res = await this.sendOne(at, body);
-      body = null;
+      // Only the first request carries the body: a redirect answered to a POST is followed with a
+      // GET, which is what browsers do with a 302 or 303 and what the destination expects.
+      const res = await this.sendOne(at, hop === 0 ? opts.post : undefined);
       const location = res.location;
       if (res.status < 300 || res.status >= 400 || !location || hop >= MAX_REDIRECTS) {
         return { status: res.status, mediaType: res.mediaType, body: res.body, finalUrl: at };
@@ -845,17 +860,10 @@ export class Fetcher {
     }
   }
 
-  private async sendOne(
-    url: string,
-    requestBody: string | null = null,
-  ): Promise<SendResult & { location: string | null }> {
+  private async sendOne(url: string, post?: PostBody): Promise<SendResult & { location: string | null }> {
     const host = new URL(url).host;
     try {
-      return await this.sendOnce(
-        url,
-        chasedFor.get(host) ? (chasingDispatcher ?? dispatcher) : dispatcher,
-        requestBody,
-      );
+      return await this.sendOnce(url, chasedFor.get(host) ? (chasingDispatcher ?? dispatcher) : dispatcher, post);
     } catch (err) {
       // A server that omitted its intermediate certificate, asked once per host. Retried over a
       // connection that is still fully verified -- with the intermediate the server should have
@@ -863,50 +871,57 @@ export class Fetcher {
       if (!isIncompleteChain(err) || chasedFor.has(host)) throw err;
       if (!(await chaseIssuer(host))) throw err;
       this.onLog(`  ${host}: serves an incomplete certificate chain; fetched the issuer it names and verified it against the root store.`);
-      return await this.sendOnce(url, chasingDispatcher ?? dispatcher, requestBody);
+      return await this.sendOnce(url, chasingDispatcher ?? dispatcher, post);
     }
   }
 
-  private async sendOnce(
-    url: string,
-    agent: Agent,
-    requestBody: string | null = null,
-  ): Promise<SendResult & { location: string | null }> {
-    // A form post is what a browser sends when a page's own script asks its own site a question,
-    // so the headers say that rather than contradicting the user agent we already present.
-    const posting = requestBody !== null;
+  private async sendOnce(url: string, agent: Agent, post?: PostBody): Promise<SendResult & { location: string | null }> {
+    const jar = this.sessions.get(new URL(url).host);
+    const cookie = jar && jar.size > 0 ? { cookie: [...jar].map(([k, v]) => `${k}=${v}`).join('; ') } : {};
     const res = await request(url, {
-      method: posting ? 'POST' : 'GET',
-      ...(posting ? { body: requestBody } : {}),
+      method: post ? 'POST' : 'GET',
       dispatcher: agent,
       headersTimeout: TIMEOUT_MS,
       bodyTimeout: TIMEOUT_MS,
-      headers: {
+      ...(post ? { body: post.body } : {}),
+      headers: post ? {
+        // The request the portal's own page sends when a reader opens a law: the same body, the
+        // same content type, from the page that sends it.
         'user-agent': USER_AGENT,
-        accept: posting
-          ? 'application/json, text/javascript, */*; q=0.01'
-          : 'text/html,application/xhtml+xml,application/pdf,application/xml;q=0.9,*/*;q=0.8',
+        accept: 'application/json, text/plain, */*',
         'accept-language': 'en-GB,en;q=0.9',
         'accept-encoding': 'gzip, deflate, br',
-        ...(posting
-          ? {
-              'content-type': 'application/x-www-form-urlencoded; charset=UTF-8',
-              'x-requested-with': 'XMLHttpRequest',
-              origin: new URL(url).origin,
-              referer: new URL(url).origin + '/',
-            }
-          : {}),
+        'content-type': post.contentType,
+        ...(post.referer ? { referer: post.referer } : {}),
+        ...(post.xhr ? { 'x-requested-with': 'XMLHttpRequest', origin: new URL(url).origin } : {}),
+        'sec-fetch-dest': 'empty',
+        'sec-fetch-mode': 'cors',
+        'sec-fetch-site': 'same-origin',
+        ...cookie,
+      } : {
+        ...cookie,
+        'user-agent': USER_AGENT,
+        accept: 'text/html,application/xhtml+xml,application/pdf,application/xml;q=0.9,*/*;q=0.8',
+        'accept-language': 'en-GB,en;q=0.9',
+        'accept-encoding': 'gzip, deflate, br',
         // A request whose user agent claims to be Chrome while its other headers say otherwise is
         // the exact inconsistency bot detection scores on, and ours claims Chrome because the CDN
         // requires it. If we present as a browser, we ask like one.
-        'sec-fetch-dest': posting ? 'empty' : 'document',
-        'sec-fetch-mode': posting ? 'cors' : 'navigate',
-        'sec-fetch-site': posting ? 'same-origin' : 'none',
-        ...(posting ? {} : { 'upgrade-insecure-requests': '1' }),
+        'sec-fetch-dest': 'document',
+        'sec-fetch-mode': 'navigate',
+        'sec-fetch-site': 'none',
+        'upgrade-insecure-requests': '1',
       },
     });
     const wire = Buffer.from(await res.body.arrayBuffer());
     this.stats.wireBytes += wire.length;
+    if (jar) {
+      const set = res.headers['set-cookie'];
+      for (const line of Array.isArray(set) ? set : set ? [set] : []) {
+        const pair = /^\s*([^=;\s]+)=([^;]*)/.exec(line);
+        if (pair) jar.set(pair[1]!, pair[2]!);
+      }
+    }
     const body = decompress(wire, res.headers['content-encoding']);
     const ct = res.headers['content-type'];
     const ctValue = (Array.isArray(ct) ? ct[0] : ct) ?? 'application/octet-stream';
@@ -1035,20 +1050,19 @@ export class Fetcher {
    * have not seen this URL before. Neither is swallowed: a caller that wants to continue past one
    * must say so.
    */
-  /**
-   * `form` turns this into a form-encoded POST.
-   *
-   * Everything else about the request is unchanged: robots is consulted on the same path, the
-   * host's queue and its crawl delay apply identically, and every attempt is logged. A POST is a
-   * request to a government server like any other and is paced like one. What it changes is the
-   * cache key, which has to include the body -- see `cacheKey`.
-   */
-  async fetch(url: string, opts: { refresh?: boolean; form?: Record<string, string> } = {}): Promise<FetchResult> {
+  async fetch(
+    url: string,
+    opts: { refresh?: boolean; post?: PostBody; form?: Record<string, string>; session?: boolean } = {},
+  ): Promise<FetchResult> {
     const parsed = new URL(url);
     const host = parsed.host;
-    const body = opts.form ? encodeForm(opts.form) : null;
-    const method = body === null ? 'GET' : 'POST';
-    const key = cacheKey(url, body);
+    if (opts.session) this.sessions.set(host, this.sessions.get(host) ?? new Map());
+    // A POST is a different question from a GET of the same address, and two POSTs with different
+    // bodies are different questions too, so the body is part of what the cache is keyed on.
+    const form = opts.form ? formRequest(url, opts.form) : null;
+    const post = opts.post ?? form?.post;
+    const key = form ? form.key : post ? postKey(url, post) : url;
+    const method = post ? 'POST' : 'GET';
 
     if (!opts.refresh && this.sourceMode !== 'refresh') {
       const cached = this.readCache(key);
@@ -1088,7 +1102,7 @@ export class Fetcher {
         // of the logic below treats it as a refusal. The walk that prompted this lost a register
         // of 847 Acts to one reset on the fourth page: the three pages already gathered were
         // discarded, and the same page served 1.3MB on the next attempt.
-        let res = await this.sendThroughDrops(url, host, body);
+        let res = await this.sendThroughDrops(url, host, post);
         // Every attempt is logged, retries included. fetch_log is the run record that makes
         // "we crawled politely" checkable rather than claimed, and a record that counts three
         // requests as one understates what actually left this machine.
@@ -1111,7 +1125,7 @@ export class Fetcher {
           );
           await new Promise((r) => setTimeout(r, pause));
           waitMs += pause;
-          res = await this.sendThroughDrops(url, host, body);
+          res = await this.sendThroughDrops(url, host, post);
           this.log(res.finalUrl, isSoftBlock(res) ? 'soft-blocked' : 'ok', res.status, res.body.length, pause, method);
         }
         if (isSoftBlock(res)) {
@@ -1179,14 +1193,14 @@ export class Fetcher {
    * -- robots, a cooldown, a suspension -- is never retried, and every attempt is logged, so a
    * quiet host still shows up in fetch_log as the several requests it really cost.
    */
-  private async sendThroughDrops(url: string, host: string, body: string | null = null): Promise<SendResult> {
+  private async sendThroughDrops(url: string, host: string, post?: PostBody): Promise<SendResult> {
     for (let attempt = 0; ; attempt += 1) {
       try {
-        return await this.send(url, { body });
+        return await this.send(url, post ? { post } : {});
       } catch (err) {
         if (isNamedRefusal(err) || attempt >= this.transportRetryMs.length) throw err;
         const pause = this.transportRetryMs[attempt]!;
-        this.log(url, 'error', null, 0, 0, body === null ? 'GET' : 'POST');
+        this.log(url, 'error', null, 0, 0, post ? 'POST' : 'GET');
         this.onLog(
           `  ${host}: ${err instanceof Error ? err.message : String(err)} -- no answer. ` +
             `Asking again in ${pause / 1000}s.`,

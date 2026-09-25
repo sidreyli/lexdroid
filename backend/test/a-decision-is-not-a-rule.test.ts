@@ -143,7 +143,7 @@ function dutyEvidence(instrumentTitle: string): Evidence {
     dutyForce: 'requires',
     roleWords: null,
     definingWords: 'an anti-dumping duty of 26.39% is imposed',
-    subjectWords: 'anti-dumping duty',
+    subjectWords: 'mobile handsets',
     borderWords: 'subject merchandise',
     imposingWords: 'is imposed',
     prescribingWords: null,
