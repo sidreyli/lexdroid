@@ -42,6 +42,8 @@ matters, which for the spreadsheets it does.
 
 Two things were changed on the way across, and nothing else:
 
+-  — where Lao PDR, Mongolia and the Russian Federation stand, what was
+  built, the three findings that matter and the worklist. Start here before picking that work up.
 - **Workshop video is not here.** Four recordings totalling 1.9 GB, plus a 1.9 GB archive, were left
   behind. The slide decks that accompany them are here in full.
 - **Paths were shortened.** The source tree reached 226 characters, past what git handles on
