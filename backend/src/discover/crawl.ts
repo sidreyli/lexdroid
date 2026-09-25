@@ -13,7 +13,21 @@ import * as cheerio from 'cheerio';
 import type { Adapter, DiscoveredInstrument, DiscoverContext } from './types.js';
 import { instrumentTitle } from './titles.js';
 
-/** The budget. A regulator's legislation section is tens of pages, not thousands. */
+/**
+ * The budget. A regulator's legislation section is tens of pages, not thousands.
+ *
+ * Sixty is also, measured, about where this adapter stops paying for itself. On Russia's official
+ * publication venue -- a national gazette rather than a regulator's legislation section, and the
+ * largest thing this adapter has been pointed at -- sixty pages registered 85 federal instruments,
+ * four hundred registered 96, and three hundred seeded from the portal's own 960 declared sitemap
+ * listings registered 48. Both widenings were tried and neither is here: the second bought eleven
+ * instruments for 340 requests against a government server, and the third was worse than doing
+ * nothing because those declared listings are mostly empty date stubs.
+ *
+ * The conclusion is about the tool, not the budget. A portal whose register a sixty-page walk
+ * cannot reach wants an adapter that knows its shape, the way `frl`, `sso`, `indiacode` and
+ * `legalinfo` do -- see docs/lao-mongolia-russia-recon.md.
+ */
 const MAX_PAGES = 60;
 const MAX_DEPTH = 3;
 
@@ -97,6 +111,25 @@ export const crawlAdapter: Adapter = {
     const found = new Map<string, DiscoveredInstrument>();
     let queue: { url: string; depth: number }[] = [{ url: portal.url, depth: 0 }];
 
+    /**
+     * A URL an instrument of the tier this profile holds actually sits at.
+     *
+     * Opt-in, and absent for every portal that publishes one tier -- which is most of them, and
+     * why this is not a new rule. Refused at load rather than at the first link, so a pattern
+     * that does not compile is a profile error and not a silently empty register.
+     */
+    const pattern = (portal.adapterConfig as { urlMustMatch?: unknown }).urlMustMatch;
+    let mustMatch: RegExp | null = null;
+    if (typeof pattern === 'string') {
+      try {
+        mustMatch = new RegExp(pattern);
+      } catch {
+        throw new Error(
+          `${portal.name}'s adapterConfig.urlMustMatch is not a valid regular expression: ${pattern}`,
+        );
+      }
+    }
+
     while (queue.length && seen.size < MAX_PAGES) {
       const { url, depth } = queue.shift()!;
       if (seen.has(url)) continue;
@@ -143,6 +176,22 @@ export const crawlAdapter: Adapter = {
 
         const named = instrumentTitle(text, ctx.vocabulary);
         if (named && !found.has(at)) {
+          // A portal that publishes more than one tier of law needs the tier decided here rather
+          // than downstream, because a register is what every later stage believes the corpus to
+          // be. publication.pravo.gov.ru publishes federal law beside the law of every constituent
+          // entity, and the tier is in the document's own id: 0001 is federal, 0300 Buryatia,
+          // 7000 Tomsk. Without this, 27 of 114 instruments registered for Russia were subjects'
+          // law that RUS.json declares not held -- the error India's Central-only filter exists to
+          // prevent. It also refuses the listing pages, which carry an instrument-shaped heading
+          // and are not instruments.
+          if (mustMatch && !mustMatch.test(at)) {
+            ctx.setAside({
+              subject: named.title.slice(0, 120),
+              reason: 'outside-the-tier-this-profile-holds',
+              detail: at,
+            });
+            return;
+          }
           found.set(at, {
             title: named.title,
             url: at,

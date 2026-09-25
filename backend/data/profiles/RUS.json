@@ -12,7 +12,7 @@
   "languageNote": "Russian, in Cyrillic script. Cyrillic spaces its words, so the trigram index needs no spaceless-script handling as Thai and Lao do, and backend/src/parse/language.ts already classifies the Cyrillic block as 'ru' correctly for this economy -- Russia is the one Cyrillic economy that file gets right by default. No Russian text is translated anywhere in the pipeline: provisions are quoted in Russian and language_of_source records it, per docs/architecture.md's rule against full-document translation. What does need translating is the question rather than the law -- queriesFor() in src/retrieve/index.ts builds its queries from English rubric text, and the lexical channel of retrieval is a trigram index, so an English query cannot match Cyrillic text at all and the fused retrieval silently degrades to the dense channel alone.",
   "jurisdictionScope": {
     "held": "federal",
-    "note": "The Russian Federation legislates at two levels. This corpus holds federal law -- what publication.pravo.gov.ru publishes for the President, the Government, the Federal Assembly and the federal executive bodies. The constituent entities (субъекты Российской Федерации -- republics, krais, oblasts, federal cities and autonomous okrugs) legislate on the matters the Constitution leaves to them and publish their own registers, which this corpus does not hold. A federal instrument commonly borrows a term or a regime from a subject's law, which is how one is cited here without being held; the patterns below are how that citation is written.",
+    "note": "The Russian Federation legislates at two levels. This corpus holds federal law -- what publication.pravo.gov.ru publishes for the President, the Government, the Federal Assembly and the federal executive bodies. The constituent entities (субъекты Российской Федерации -- republics, krais, oblasts, federal cities and autonomous okrugs) legislate on the matters the Constitution leaves to them, and this portal publishes their instruments alongside the federal ones. The tier is in the document id: 0001 is federal, and a subject has its own prefix. The register is held to 0001 by the portal adapterConfig, measured -- an unfiltered walk registered 27 subjects instruments in its first 114. A federal instrument also cites a subject law without holding it, and the patterns below are how that citation is written.",
     "notHeld": [
       {
         "tier": "Law of a constituent entity of the Russian Federation",
@@ -90,8 +90,10 @@
         12
       ],
       "adapter": "crawl",
-      "adapterConfig": {},
-      "notes": "The official publication venue and therefore the commencement evidence for federal law; Consultant+ and Garant are commercial aggregators and are NOT the official source. Permissive robots apart from assets, /Search and /File; declares a sitemap; server-rendered; documents enumerable by date at /document/<20-digit-id>, 60 to a listing page. Walked by the crawl adapter, which reaches it now that title recognition reads Russian and LEADS_TO_LAW admits /documents. Disallow: /File must be checked before any document fetch. Full trace: docs/lao-mongolia-russia-recon.md."
+      "adapterConfig": {
+        "urlMustMatch": "/document/0001\\d+"
+      },
+      "notes": "The official publication venue and therefore the commencement evidence for federal law; Consultant+ and Garant are commercial aggregators, not the official source. Permissive robots apart from assets, /Search and /File; server-rendered; documents at /document/<20-digit-id>, whose first four digits encode the issuer -- 0001 federal, 0300 Buryatia, 7000 Tomsk. adapterConfig.urlMustMatch holds the register to the federal tier this profile declares; without it 27 of the first 114 were subjects law. Walked by crawl, which reaches 85 recent instruments and no more. Full trace: docs/lao-mongolia-russia-recon.md."
     },
     {
       "name": "State System of Legal Information (pravo.gov.ru)",

@@ -471,3 +471,194 @@ conventional `/sitemap.xml` exists and contains no URLs, the `Sitemap:` line in 
 being commented out. Recorded as a hole rather than counted as covered. The Communications
 Regulatory Commission, the State Great Khural and Mongolian Customs have no adapter and are
 recorded the same way.
+
+---
+
+## Russia's register, and why it is small — 21 September 2026
+
+`npm run -w backend zone1 -- --economy RUS --register` → **85 federal instruments**, 60 requests,
+zero refused, zero failed.
+
+Real federal law, correctly typed: `Федеральный закон от 04.08.2026 № 294-ФЗ` as `act`,
+`Указ Президента Российской Федерации от 15.08.2026 № 584` as `order`,
+`Постановление Правительства` as `regulation`. 112 of the first 114 pointed at real
+`/document/<id>` URLs.
+
+### The correctness bug the first walk exposed
+
+The unfiltered walk registered **114 instruments, of which 27 were not federal law** —
+`Указ Главы Республики Бурятия`, `Постановление Правительства Томской области`,
+`Указ Главы Луганской Народной Республики`. `RUS.json` declares `held: federal` with the
+constituent entities' law explicitly *not* held, so those 27 were outside the corpus this profile
+says it holds. Two listing pages were also registered as instruments, their headings being
+instrument-shaped.
+
+Invisible downstream, which is what makes it serious: a cell answered on a Buryatia decree reads
+exactly like a federal finding. It is the error `docs/india-integration.md` deferred State and
+Union Territory law to avoid.
+
+**The portal answers it itself.** The 20-digit document id encodes the issuing jurisdiction:
+
+| Prefix | Issuer | In the first 114 |
+|---|---|---:|
+| `0001` | Federal | 85 |
+| `0300` | Republic of Buryatia | 11 |
+| `2100` | Chuvash Republic | 4 |
+| `7000` | Tomsk Oblast | 4 |
+| `0800` | Republic of Kalmykia | 3 |
+| `1200`, `1300`, `8100` | Mari El, Mordovia, Luhansk | 5 |
+
+So `crawl` learned `adapterConfig.urlMustMatch`, and `RUS.json` sets it to `/document/0001\d+`.
+Opt-in, refused at load if it does not compile, and every rejection recorded through `setAside`
+rather than dropped. 114 → exactly 85, with the two listing pages going too.
+
+### Two widenings tried, measured, and not kept
+
+85 instruments is a thin register for a federal statute book, and the obvious response is to let
+the crawl walk further. It does not work:
+
+| Configuration | Pages | Instruments | Per page |
+|---|---:|---:|---:|
+| Default, walking out from the homepage | 60 | **85** | 1.42 |
+| Homepage, budget raised to 400 | 400 | 96 | 0.24 |
+| Seeded from the portal's 960 declared sitemap listings | 300 | 48 | 0.16 |
+
+The budget is not the constraint — the link graph reachable from the front page at depth 3 is
+simply small, and 340 extra requests against a government server bought eleven documents. Seeding
+from the sitemap was worse than doing nothing, because those 960 declared URLs are mostly
+`/calendar/...` and `/documents/*/daily` date stubs rather than populated listings; the homepage
+walk reaches the `block` listings that actually hold documents.
+
+**Both widenings were removed rather than shipped.** Keeping configuration that was measured as
+harmful for the one portal it was written for is the speculative building
+`docs/thailand-integration-plan.md` warns against. What survives is the jurisdiction filter, which
+is a correctness fix and is in use.
+
+### What Russia actually needs
+
+An adapter that knows the portal's shape, the way `frl`, `sso`, `indiacode` and `legalinfo` do.
+The documents are enumerable — `/document/0001YYYYMMDDNNNN` is a date plus a sequence — and the
+`documents/block/<body>` listings are server-rendered with 60 documents each. That is a tractable
+adapter and it is not written.
+
+Until it is, **Russia's register is 85 recent federal instruments and that is what it is.** Stated
+here and in the profile rather than left for someone to discover from a thin corpus.
+
+---
+
+## Parsing, measured — 22 September 2026
+
+The registers are catalogues. This is what happened when documents were actually fetched and put
+through the parser.
+
+### Mongolia: fixed, and the fix needed a parser of its own
+
+Three documents, before any change:
+
+| Document | Sections | What that was |
+|---|---:|---|
+| Anti-Corruption Law | **1** | 112,095 characters, beginning `+(976)-11-323317 info@legalinstitute.mn` |
+| its transitional law | **1** | 287 characters, same phone number first |
+| the Constitution | **199** | split on sub-clause numbers; one section 85 KB, several in the English translation the page also carries |
+
+Both failures are silent. A section is the unit retrieval ranks and the reader reads, so a document
+that arrives as one blob is one the cell searched and could not see into — and the cell then
+reports no restriction found. Nothing throws and no count is short.
+
+Two causes, neither a vocabulary problem alone. The generic path never scoped to the page's
+`.law_content` block, so it took the site furniture with it; and `PROVISION_LINE` in
+`parse/html.ts` wants a leading number, a delimiter and a space, where a Mongolian article reads
+`1 дүгээр зүйл.Хуулийн зорилт` — number, two words, full stop, no space.
+
+`backend/src/parse/legalinfo.ts` now reads the structure the drafter used. After:
+**70, 37 and 1 sections** — the article counts those three instruments have. Offset invariant holds
+on every one, no section contains page furniture, and a Mongolian phrase search returns
+article-level provisions with their instrument and chapter path.
+
+Three things the documents taught that desk work would have got wrong:
+
+- **An ordinary Law numbers its articles; the Constitution spells the ordinal out.** `1 дүгээр
+  зүйл` against `Нэгдүгээр зүйл.`
+- **Compound ordinals are two words.** `Арван нэгдүгээр зүйл` is ten-one-th, article 11. A pattern
+  anchored on a single token found 16 of the Constitution's 70 articles.
+- **JavaScript's `\b` is ASCII-only, so it never matches beside Cyrillic.** `/\bБҮЛЭГ/` is false on
+  `НЭГДҮГЭЭР БҮЛЭГ`. Chapter detection silently found none at all on the real Law, and the heading
+  paths simply looked like a document without chapters. Worth checking wherever else this codebase
+  matches non-Latin script.
+
+### Russia: the documents are PDFs, behind a path robots names
+
+Four documents fetched, **0 parsed, 4 unread** — each recorded `empty`, *"yielded 300 characters of
+text, below the 600 needed for a document."*
+
+21 KB of HTML producing 300 characters is a shell. Decoding its numeric character references gives
+651 characters, and all of it is metadata: the title
+(`Указ Президента Российской Федерации от 21.09.2026 № 672`), the publication number, the
+publication date, and `Страница № 1 из 11` — page 1 of 11 of a viewer. **The text is not in the
+page.** It is a PDF at `/file/pdf?eoNumber=<id>`, linked from the document page.
+
+And `robots.txt` says `Disallow: /File`.
+
+**This is a judgment call and it is not ours to make quietly.** RFC 9309 compares paths
+octet-by-octet, so `/file/` does not match `Disallow: /File`, and this repository's own
+`robotsPermits` returns allowed — verified. But the disallow list reads like ASP.NET controller
+names (`/Error`, `/Rss`, `/Svg`, `/HtmlConstructor`, `/Search`, `/File` capitalised beside `/app`,
+`/js`, `/css` lowercase), routing in that stack is case-insensitive, and on that reading the
+publisher meant to disallow the file endpoint and we would be fetching it on a technicality.
+
+Nothing has been fetched from `/file/`. Until the team decides, **Russia has 85 registered
+instruments and no readable documents.**
+
+**The lead that may make it moot:** `pravo.gov.ru` — the parent portal, `User-Agent: * / Disallow:`
+with nothing disallowed at all — carries `/ips/` and `/proxy/ips` paths. IPS is the
+Информационно-правовая система, the legal information system, and it may serve the text on a
+path nobody has asked us to avoid. Not yet investigated.
+
+### Russia has a permitted full-text source after all: pravo.gov.ru/proxy/ips
+
+*22 September 2026.* The robots question above does not have to be answered, because the same law
+is published where nothing is disallowed at all.
+
+`pravo.gov.ru` serves `User-Agent: * / Disallow:` — an empty disallow, permitting everything — and
+proxies the Информационно-правовая система, the State System of Legal Information, at
+`/proxy/ips/`. Two endpoints matter, both reached from links on the portal's own front page:
+
+| Endpoint | What it returns |
+|---|---|
+| `?docbody=&nd=<id>` | the document's card: title, and every amendment edition with its date and number |
+| `?doc_itself=&nd=<id>&page=all` | **the full text** |
+
+Measured on `nd=102041458`, the decree on publication and entry into force of federal acts:
+**10,647 characters of visible text, 8,264 of them Cyrillic, 113 lines, 19 numbered points**, and
+the amendment history stated in the document's own words — *"(В редакции указов Президента
+Российской Федерации от 16.05.1997 № 490 …)"*. That is a readable instrument, not a viewer shell.
+
+**So Russia should be read here, not from the publication portal's PDFs.** `publication.pravo.gov.ru`
+stays as the gazette — it is the commencement evidence, and its register is already built — and
+`/proxy/ips/` becomes the source of text. Nothing is fetched from `/file/`, and the
+`Disallow: /File` reading never has to be litigated.
+
+#### The shared-code gap this turned up: the pipeline assumes UTF-8
+
+IPS declares `charset=windows-1251`, and the pipeline never looks. `parse/index.ts` does
+`res.body.toString('utf8')` at three call sites, `discover/crawl.ts` at a fourth, and nothing in
+`parse/` or `fetch/` consults a declared charset anywhere.
+
+Read as UTF-8 that page yields **zero** Cyrillic characters — not degraded, lost. And it fails in
+the shape that hides: a document with no readable text is recorded `empty`, which looks exactly
+like a portal that served a stub. Any economy whose portal predates UTF-8 hits this, and legacy
+encodings are common on Russian and older Asian government sites.
+
+#### What Russia now needs
+
+1. **Charset-aware decoding** in the fetch or parse boundary — read the `Content-Type` header, fall
+   back to the `<meta charset>` the document declares, and decode accordingly. Shared code, and
+   the one change here that is not Russia-specific.
+2. **An IPS discovery adapter.** The document ids are IPS's own (`nd=102041458`), not the gazette's
+   (`0001202609210002`), so the register built from `publication.pravo.gov.ru` does not address
+   them and discovery has to run against IPS itself.
+3. A parser, or possibly none: the body is plain HTML with numbered points, and the generic path
+   may carry it once the text is decoded — worth measuring before writing anything.
+
+Note the body carries Word-export artefacts ("Complex", "Print", "false",
+"MicrosoftInternetExplorer4") ahead of the instrument, which a parser will need to drop.

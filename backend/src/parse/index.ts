@@ -12,6 +12,7 @@ import type { FetchResult } from '../fetch/index.js';
 import { parseFrl } from './frl.js';
 import { parseHtml } from './html.js';
 import { parseIndiaCode } from './indiacode.js';
+import { parseLegalinfo } from './legalinfo.js';
 import { parsePdf } from './pdf.js';
 import { parseSso } from './sso.js';
 import { identityMismatch } from './identity.js';
@@ -25,6 +26,7 @@ export { provisionIds } from './sso.js';
 const BY_HOST: Record<string, (html: string, url: string) => ParsedDocument> = {
   'sso.agc.gov.sg': parseSso,
   'www.legislation.gov.au': parseFrl,
+  'legalinfo.mn': parseLegalinfo,
 };
 
 /** `languages`: the economy's official languages, among which a PDF's language is guessed. */
