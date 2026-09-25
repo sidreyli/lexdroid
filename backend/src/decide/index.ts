@@ -620,10 +620,10 @@ function definedOnlyInAPointer(quote: string, definingWords: string | null): boo
 /** Goods named by a schedule or a list rather than one by one. */
 const BANS_A_LIST =
   /\b(?:set\s+out|specified|listed|described|mentioned|enumerated)\s+in\s+(?:the\s+)?(?:\w+\s+)?(?:Schedule|list|table)\b|\bany\s+of\s+the\s+following\b/i;
-/** Words that put a duty on someone, in the languages of the law read here. */
-const MANDATES = /\b(?:shall|must|is required to|are required to|hendaklah|mesti)\b/i;
+/** Words that put a duty on someone, in the languages of the law read here. Thai is written without spaces between words, so its words stand outside the word boundaries. */
+const MANDATES = /\b(?:shall|must|is required to|are required to|hendaklah|mesti)\b|ต้อง|ห้าม/i;
 /** Words that leave the content of a duty to something specified, prescribed or imposed elsewhere. */
-const DEFERS = /\b(?:in accordance with|specified|prescribed|determined|imposed|issued|conditions of (?:the|a|its) licen[cs]e)\b/i;
+const DEFERS = /\b(?:in accordance with|specified|prescribed|determined|imposed|issued|conditions of (?:the|a|its) licen[cs]e)\b|กำหนด|ตามหลักเกณฑ์/i;
 /** A figure stated as the default a regulation may replace: "$250 or such other amount as is prescribed". */
 const REPLACEABLE_FIGURE = /\bor\s+(?:such\s+)?(?:other|another|a\s+different)\s+(?:amount|sum|value|figure)\s+(?:as\s+)?(?:is|may\s+be|that\s+is)\s+(?:prescribed|specified|determined)\b/i;
 
