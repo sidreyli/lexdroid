@@ -338,3 +338,132 @@ describe('structured India Code provisions', () => {
     }
   });
 });
+
+/** A one-page PDF with a text layer, so the fallback is exercised through the real PDF parser. */
+function textPdf(lines: string[]): Buffer {
+  // Only text with no PDF string delimiters in it is laid out, so nothing needs escaping.
+  const stream = ['BT /F1 11 Tf 14 TL 72 760 Td', ...lines.map((l) => `(${l}) Tj T*`), 'ET'].join('\n');
+  const objects = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>',
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+    `<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`,
+  ];
+  let pdf = '%PDF-1.7\n';
+  const offsets: number[] = [];
+  objects.forEach((body, n) => {
+    offsets.push(pdf.length);
+    pdf += `${n + 1} 0 obj\n${body}\nendobj\n`;
+  });
+  const start = pdf.length;
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  for (const o of offsets) pdf += `${String(o).padStart(10, '0')} 00000 n \n`;
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${start}\n%%EOF\n`;
+  return Buffer.from(pdf, 'latin1');
+}
+
+describe('an instrument India Code publishes only as its PDF', () => {
+  const rules = item({
+    uuid: 'rule-1',
+    title: 'The Example (Share Capital) Rules, 2014',
+    collection: 'RULE',
+    extra: { 'dc.identifier.rule_id': 'RU_CEN_EXAMPLE' },
+  });
+  const pdf = textPdf([
+    '1. Short title and commencement.- These rules may be called the Example Share Capital Rules, 2014.',
+    '2. Definitions.- In these rules, unless the context otherwise requires, "Act" means the Example Act.',
+    '3. Issue of shares.- A company shall not issue shares except in accordance with these rules.',
+  ]);
+
+  /** Answers the item, an empty section search, and whichever bundle layout the case gives it. */
+  function fetcherWith(opts: { bundles: unknown; bitstreams?: unknown; content?: Buffer }) {
+    const asked: string[] = [];
+    const fetcher = {
+      async fetch(url: string): Promise<FetchResult> {
+        asked.push(url);
+        if (url === `${API}core/items/rule-1`) return response(url, rules);
+        if (url.startsWith(`${API}discover/search/objects`)) return response(url, search([]));
+        if (url === `${API}core/items/rule-1/bundles`) return response(url, opts.bundles);
+        if (url === `${API}core/bundles/orig-1/bitstreams`) return response(url, opts.bitstreams);
+        if (url === `${API}core/bitstreams/pdf-1/content`) {
+          const body = opts.content ?? pdf;
+          return { ...response(url, null, 'application/pdf'), body, contentHash: 'pdf-hash' };
+        }
+        throw new Error(`unexpected fetch ${url}`);
+      },
+    } as unknown as Fetcher;
+    return { fetcher, asked };
+  }
+
+  const bundles = {
+    _embedded: {
+      bundles: [
+        { uuid: 'text-1', name: 'TEXT' },
+        { uuid: 'orig-1', name: 'ORIGINAL' },
+        { uuid: 'thumb-1', name: 'THUMBNAIL' },
+      ],
+    },
+  };
+  const bitstreams = { _embedded: { bitstreams: [{ uuid: 'pdf-1', name: '1492085873402.pdf', sizeBytes: 457254 }] } };
+
+  it('reads the PDF in the ORIGINAL bundle and keeps the citation on the item page', async () => {
+    const { fetcher } = fetcherWith({ bundles, bitstreams });
+    const resolved = await indiaCodeAdapter.resolveDocument!(`${ORIGIN}/items/rule-1`, fetcher);
+
+    expect(resolved.mediaType).toBe('application/pdf');
+    expect(resolved.url).toBe(`${ORIGIN}/items/rule-1`);
+    expect(resolved.finalUrl).toBe(`${API}core/bitstreams/pdf-1/content`);
+    expect(resolved.contentHash).toBe('pdf-hash');
+
+    const parsed = await parseDocument(resolved);
+    expect(parsed.unread).toBeNull();
+    expect(parsed.text).toContain('A company shall not issue shares except in accordance with these rules.');
+    for (const section of parsed.sections) {
+      expect(parsed.text.slice(section.charStart, section.charEnd)).toBe(section.text);
+    }
+  });
+
+  it("never reads DSpace's own text extraction or thumbnail as the instrument", async () => {
+    const { fetcher, asked } = fetcherWith({
+      bundles: { _embedded: { bundles: [{ uuid: 'text-1', name: 'TEXT' }, { uuid: 'thumb-1', name: 'THUMBNAIL' }] } },
+    });
+    const resolved = await indiaCodeAdapter.resolveDocument!(`${ORIGIN}/items/rule-1`, fetcher);
+    expect(resolved.mediaType).toBe(INDIA_CODE_MEDIA_TYPE);
+    expect(asked.some((u) => u.includes('text-1') || u.includes('thumb-1'))).toBe(false);
+    const parsed = await parseDocument(resolved);
+    expect(parsed.unread?.detail).toContain('nor an official PDF');
+  });
+
+  it('does not take an error page named .pdf for the instrument', async () => {
+    const { fetcher } = fetcherWith({ bundles, bitstreams, content: Buffer.from('<html>Service unavailable</html>') });
+    const resolved = await indiaCodeAdapter.resolveDocument!(`${ORIGIN}/items/rule-1`, fetcher);
+    expect(resolved.mediaType).toBe(INDIA_CODE_MEDIA_TYPE);
+    expect((await parseDocument(resolved)).unread).not.toBeNull();
+  });
+
+  it('does not look for a PDF where the section records already carry the text', async () => {
+    const act = item({ uuid: 'act-2', title: 'The Other Act, 2020', collection: 'ACT', extra: { 'dc.identifier.act_id': 'AC_CEN_OTHER' } });
+    const section = item({
+      uuid: 'section-9',
+      title: 'Short title.',
+      collection: 'SECTION',
+      extra: {
+        'dc.identifier.section_number': '1',
+        'dc.identifier.act_id': 'AC_CEN_OTHER',
+        'dc.identifier.section_page_note': 'This Act may be called the Other Act, 2020.',
+      },
+    });
+    const asked: string[] = [];
+    const fetcher = {
+      async fetch(url: string) {
+        asked.push(url);
+        if (url === `${API}core/items/act-2`) return response(url, act);
+        return response(url, search([section]));
+      },
+    } as unknown as Fetcher;
+    const resolved = await indiaCodeAdapter.resolveDocument!(`${ORIGIN}/items/act-2`, fetcher);
+    expect(resolved.mediaType).toBe(INDIA_CODE_MEDIA_TYPE);
+    expect(asked.some((u) => u.includes('/bundles'))).toBe(false);
+  });
+});
