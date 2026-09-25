@@ -606,9 +606,9 @@ export const MEASURES: Record<string, Measure[]> = {
       // services only, so a quota of Australian programs had no measure to be filed under, and
       // the cell read regional radio's "local significance" rules instead -- locality, not origin.
       gloss:
-        'a requirement to use locally made goods, locally supplied services or content produced in the economy -- a quota or minimum spend on programs made in the economy, for a broadcaster or an online streaming service -- stated for a whole sector or a broad class of goods such as telecommunications equipment. Content about a particular local area, such as local news for a region, is not local content: the requirement is about where the content is made',
+        'a requirement to use locally made goods, locally supplied services or content produced in the economy -- a quota or minimum spend on programs made in the economy, for a broadcaster or an online streaming service -- stated for a whole sector or a broad class of goods such as telecommunications equipment. Content about a particular local area, such as local news for a region, is not local content: the requirement is about where the content is made. Nor is a duty to carry programmes supplied by the government or a public service broadcaster, which names who supplies them and not where they are made',
       alsoAsked: [
-        'a broadcaster or subscription video on demand service must transmit a minimum proportion of Australian or locally produced programs, or spend a minimum amount on new local content',
+        'a broadcaster or subscription video on demand service must transmit a minimum proportion of programs produced in the economy, or spend a minimum amount on new local content',
       ],
       actor: 'the producer or supplier subject to the requirement',
     },
@@ -889,6 +889,11 @@ export const MEASURES: Record<string, Measure[]> = {
         // not, and the cell answered "no payment licensing requirement found" on 20 findings. With
         // this line the provision is first.
         'a requirement to be authorised, or to hold an authority or exemption, in order to hold stored value or issue a payment facility',
+        // The gloss as it read before it named authorisation. Widening the gloss for the confirm
+        // pass moved its embedding, and Singapore's Payment Services Act s5 -- "must not carry on a
+        // business of providing any type of payment service ... unless the person has in force a
+        // licence" -- fell out of the cut the cell reads. The plain licensing sentence stays asked.
+        'a requirement to hold a licence to provide payment services, and the conditions that must be met to keep it',
       ],
       actor: 'the payment service provider',
     },
