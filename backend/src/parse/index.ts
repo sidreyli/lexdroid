@@ -12,6 +12,7 @@ import type { FetchResult } from '../fetch/index.js';
 import { parseFrl } from './frl.js';
 import { parseHtml } from './html.js';
 import { parseIndiaCode } from './indiacode.js';
+import { parseOcs } from './ocs.js';
 import { parsePdf } from './pdf.js';
 import { parseSso } from './sso.js';
 import { identityMismatch } from './identity.js';
@@ -33,6 +34,10 @@ export async function parseDocument(res: FetchResult, opts: { languages?: readon
 
   if (res.mediaType.includes('vnd.lexdroid.indiacode+json')) {
     return parseIndiaCode(res.body.toString('utf8'), res.url);
+  }
+
+  if (res.mediaType.includes('vnd.lexdroid.ocs+json')) {
+    return parseOcs(res.body.toString('utf8'), res.url);
   }
 
   if (res.mediaType.includes('pdf')) return parsePdf(res.body, res.url, opts.languages ? { languages: opts.languages } : {});

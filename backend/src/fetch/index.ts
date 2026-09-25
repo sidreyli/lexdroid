@@ -394,6 +394,18 @@ export interface FetchResult {
   fetchedAt: string;
 }
 
+/** A request body, for the portals whose public pages read their documents with a POST. */
+export interface PostBody {
+  body: string;
+  contentType: string;
+  referer?: string;
+}
+
+/** The cache key of a POST: the address and the body together, since either changes the answer. */
+export function postKey(url: string, post: PostBody): string {
+  return `${url}#post:${createHash('sha256').update(post.body).digest('hex')}`;
+}
+
 export class RobotsDisallowed extends Error {
   constructor(readonly url: string) {
     super(`robots.txt disallows ${url}`);
@@ -774,10 +786,12 @@ export class Fetcher {
   }
 
   /** Raw request. Callers go through fetch(), which adds the cache, robots and the log. */
-  private async send(url: string, opts: { robotsFile?: boolean } = {}): Promise<SendResult> {
+  private async send(url: string, opts: { robotsFile?: boolean; post?: PostBody } = {}): Promise<SendResult> {
     let at = url;
     for (let hop = 0; ; hop += 1) {
-      const res = await this.sendOne(at);
+      // Only the first request carries the body: a redirect answered to a POST is followed with a
+      // GET, which is what browsers do with a 302 or 303 and what the destination expects.
+      const res = await this.sendOne(at, hop === 0 ? opts.post : undefined);
       const location = res.location;
       if (res.status < 300 || res.status >= 400 || !location || hop >= MAX_REDIRECTS) {
         return { status: res.status, mediaType: res.mediaType, body: res.body, finalUrl: at };
@@ -807,10 +821,10 @@ export class Fetcher {
     }
   }
 
-  private async sendOne(url: string): Promise<SendResult & { location: string | null }> {
+  private async sendOne(url: string, post?: PostBody): Promise<SendResult & { location: string | null }> {
     const host = new URL(url).host;
     try {
-      return await this.sendOnce(url, chasedFor.get(host) ? (chasingDispatcher ?? dispatcher) : dispatcher);
+      return await this.sendOnce(url, chasedFor.get(host) ? (chasingDispatcher ?? dispatcher) : dispatcher, post);
     } catch (err) {
       // A server that omitted its intermediate certificate, asked once per host. Retried over a
       // connection that is still fully verified -- with the intermediate the server should have
@@ -818,17 +832,30 @@ export class Fetcher {
       if (!isIncompleteChain(err) || chasedFor.has(host)) throw err;
       if (!(await chaseIssuer(host))) throw err;
       this.onLog(`  ${host}: serves an incomplete certificate chain; fetched the issuer it names and verified it against the root store.`);
-      return await this.sendOnce(url, chasingDispatcher ?? dispatcher);
+      return await this.sendOnce(url, chasingDispatcher ?? dispatcher, post);
     }
   }
 
-  private async sendOnce(url: string, agent: Agent): Promise<SendResult & { location: string | null }> {
+  private async sendOnce(url: string, agent: Agent, post?: PostBody): Promise<SendResult & { location: string | null }> {
     const res = await request(url, {
-      method: 'GET',
+      method: post ? 'POST' : 'GET',
       dispatcher: agent,
       headersTimeout: TIMEOUT_MS,
       bodyTimeout: TIMEOUT_MS,
-      headers: {
+      ...(post ? { body: post.body } : {}),
+      headers: post ? {
+        // The request the portal's own page sends when a reader opens a law: the same body, the
+        // same content type, from the page that sends it.
+        'user-agent': USER_AGENT,
+        accept: 'application/json, text/plain, */*',
+        'accept-language': 'en-GB,en;q=0.9',
+        'accept-encoding': 'gzip, deflate, br',
+        'content-type': post.contentType,
+        ...(post.referer ? { referer: post.referer } : {}),
+        'sec-fetch-dest': 'empty',
+        'sec-fetch-mode': 'cors',
+        'sec-fetch-site': 'same-origin',
+      } : {
         'user-agent': USER_AGENT,
         accept: 'text/html,application/xhtml+xml,application/pdf,application/xml;q=0.9,*/*;q=0.8',
         'accept-language': 'en-GB,en;q=0.9',
@@ -972,12 +999,15 @@ export class Fetcher {
    * have not seen this URL before. Neither is swallowed: a caller that wants to continue past one
    * must say so.
    */
-  async fetch(url: string, opts: { refresh?: boolean } = {}): Promise<FetchResult> {
+  async fetch(url: string, opts: { refresh?: boolean; post?: PostBody } = {}): Promise<FetchResult> {
     const parsed = new URL(url);
     const host = parsed.host;
+    // A POST is a different question from a GET of the same address, and two POSTs with different
+    // bodies are different questions too, so the body is part of what the cache is keyed on.
+    const key = opts.post ? postKey(url, opts.post) : url;
 
     if (!opts.refresh && this.sourceMode !== 'refresh') {
-      const cached = this.readCache(url);
+      const cached = this.readCache(key);
       if (cached) {
         this.stats.cached += 1;
         this.log(url, 'cached', cached.status, cached.body.length, 0);
@@ -1014,7 +1044,7 @@ export class Fetcher {
         // of the logic below treats it as a refusal. The walk that prompted this lost a register
         // of 847 Acts to one reset on the fourth page: the three pages already gathered were
         // discarded, and the same page served 1.3MB on the next attempt.
-        let res = await this.sendThroughDrops(url, host);
+        let res = await this.sendThroughDrops(url, host, opts.post);
         // Every attempt is logged, retries included. fetch_log is the run record that makes
         // "we crawled politely" checkable rather than claimed, and a record that counts three
         // requests as one understates what actually left this machine.
@@ -1037,7 +1067,7 @@ export class Fetcher {
           );
           await new Promise((r) => setTimeout(r, pause));
           waitMs += pause;
-          res = await this.sendThroughDrops(url, host);
+          res = await this.sendThroughDrops(url, host, opts.post);
           this.log(res.finalUrl, isSoftBlock(res) ? 'soft-blocked' : 'ok', res.status, res.body.length, pause);
         }
         if (isSoftBlock(res)) {
@@ -1068,7 +1098,7 @@ export class Fetcher {
 
         writeFileMkdir(blobPath(contentHash), res.body);
         writeFileMkdir(
-          recordPath(url),
+          recordPath(key),
           JSON.stringify(
             { url, finalUrl: res.finalUrl, status: res.status, mediaType: res.mediaType, contentHash, bytes: res.body.length, fetchedAt } satisfies CacheRecord,
             null, 2,
@@ -1105,10 +1135,10 @@ export class Fetcher {
    * -- robots, a cooldown, a suspension -- is never retried, and every attempt is logged, so a
    * quiet host still shows up in fetch_log as the several requests it really cost.
    */
-  private async sendThroughDrops(url: string, host: string): Promise<SendResult> {
+  private async sendThroughDrops(url: string, host: string, post?: PostBody): Promise<SendResult> {
     for (let attempt = 0; ; attempt += 1) {
       try {
-        return await this.send(url);
+        return await this.send(url, post ? { post } : {});
       } catch (err) {
         if (isNamedRefusal(err) || attempt >= this.transportRetryMs.length) throw err;
         const pause = this.transportRetryMs[attempt]!;

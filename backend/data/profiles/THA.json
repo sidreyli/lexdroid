@@ -67,9 +67,9 @@
       "kind": "legislation-database",
       "authority": "Office of the Council of State (สำนักงานคณะกรรมการกฤษฎีกา)",
       "pillars": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
-      "adapter": null,
+      "adapter": "ocs",
       "adapterConfig": {},
-      "notes": "Primary legislation database (the sso/India-Code equivalent). API-backed Angular SPA, not crawlable static HTML; adapter unverified pending an unresolved request-wrapper shape. Full reconstructed spec with per-item confidence ratings: docs/thailand-ocs-adapter-spec.md. No live requests were made to produce it."
+      "notes": "Primary legislation database (the SSO/India Code equivalent). Read through the requests the portal's own public pages send, captured from a browser on 26 September 2026 and replayed unchanged: the in-force listing is a paged form POST to www.ocs.go.th/searchlaw/indexs/list_table_search (each principal law row carries the Royal Decrees, Ministerial Regulations and Notifications made under it), and a law's consolidated text is a JSON POST to searchlaw.ocs.go.th/ocs-api/public/doc/getLawDoc, returned already divided into sections with Royal Gazette references as footnotes. No credential is sent or needed; robots.txt is absent on both hosts. See src/discover/ocs.ts."
     },
     {
       "name": "Central Legal System (ระบบกลางทางกฎหมาย)",
