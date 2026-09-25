@@ -151,7 +151,7 @@ export function parseIndiaCode(raw: string, url: string): ParsedDocument {
       sections: [],
       unread: {
         reason: 'empty',
-        detail: `${url} exposed no structured provision text; its official bitstream still needs to be read.`,
+        detail: `${url} exposed neither structured provision text nor an official PDF to read.`,
       },
       title,
       meta: {},

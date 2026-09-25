@@ -12,7 +12,7 @@
  * count shortfall; it never leaks one State's law into a claim about India.
  */
 import { cacheComposed } from '../fetch/index.js';
-import type { FetchResult } from '../fetch/index.js';
+import type { Fetcher, FetchResult } from '../fetch/index.js';
 import type { Adapter, DiscoveredInstrument } from './types.js';
 
 const DEFAULT_API = 'https://indiacode.gov.in/server/api/';
@@ -298,6 +298,63 @@ function sectionOrder(item: IndiaCodeItem): number {
   return Number.isFinite(n) ? n : Number.MAX_SAFE_INTEGER;
 }
 
+interface Bundle {
+  uuid?: string;
+  name?: string;
+}
+
+interface Bitstream {
+  uuid?: string;
+  name?: string;
+  sizeBytes?: number;
+}
+
+/**
+ * The official PDF an item publishes, or null where it publishes none.
+ *
+ * DSpace keeps an item's files in named bundles. ORIGINAL holds what the publisher uploaded; TEXT
+ * holds DSpace's own full-text extraction of it and THUMBNAIL a preview, so neither is the
+ * instrument and neither is read. Where ORIGINAL holds more than one PDF the first is taken, in the
+ * order the repository lists them. Links are built on the item's own API base rather than followed
+ * from the payload, so an answer cannot send the fetcher to another host.
+ */
+async function originalPdf(
+  base: string,
+  uuid: string,
+  fetcher: Fetcher,
+  responses: FetchResult[],
+): Promise<FetchResult | null> {
+  const listed = await fetcher.fetch(`${base}core/items/${uuid}/bundles`);
+  responses.push(listed);
+  if (listed.status !== 200) return null;
+  const bundles = embedded<Bundle>(listed.body, 'bundles');
+  const original = bundles.find((b) => b.name?.toUpperCase() === 'ORIGINAL' && b.uuid);
+  if (!original) return null;
+
+  const files = await fetcher.fetch(`${base}core/bundles/${original.uuid}/bitstreams`);
+  responses.push(files);
+  if (files.status !== 200) return null;
+  const pdf = embedded<Bitstream>(files.body, 'bitstreams').find((b) => b.uuid && (b.name ?? '').toLowerCase().endsWith('.pdf'));
+  if (!pdf) return null;
+
+  const content = await fetcher.fetch(`${base}core/bitstreams/${pdf.uuid}/content`);
+  responses.push(content);
+  if (content.status !== 200) return null;
+  // A file named .pdf that is not one -- an error page served 200 -- is not the instrument either.
+  if (!content.body.subarray(0, 1024).includes('%PDF-')) return null;
+  return content;
+}
+
+function embedded<T>(body: Buffer, key: string): T[] {
+  try {
+    const parsed = JSON.parse(body.toString('utf8')) as { _embedded?: Record<string, T[]> };
+    const list = parsed._embedded?.[key];
+    return Array.isArray(list) ? list : [];
+  } catch {
+    return [];
+  }
+}
+
 export const indiaCodeAdapter: Adapter = {
   name: 'indiacode',
 
@@ -407,6 +464,28 @@ export const indiaCodeAdapter: Adapter = {
         );
         if (result.items.length === 0) break;
         if (result.totalPages !== null && page + 1 >= result.totalPages) break;
+      }
+    }
+
+    // Rules, regulations, notifications and orders mostly have no section records at all: India Code
+    // publishes them as the official PDF and nothing else. Measured on the first 109 instruments a
+    // twelve-pillar shortlist fetched, 64 were like that, and every one of a dozen sampled carried
+    // exactly one PDF in its ORIGINAL bundle. The PDF is the instrument, so it is what gets read --
+    // through the same parser, OCR included, that reads a scanned Gazette -- while the citation stays
+    // on the item page a reader can open.
+    if (sections.length === 0) {
+      const pdf = await originalPdf(base, uuid, fetcher, responses);
+      if (pdf) {
+        return {
+          url,
+          finalUrl: pdf.finalUrl,
+          status: 200,
+          mediaType: 'application/pdf',
+          body: pdf.body,
+          contentHash: pdf.contentHash,
+          fromCache: responses.every((r) => r.fromCache),
+          fetchedAt: pdf.fetchedAt,
+        };
       }
     }
 
