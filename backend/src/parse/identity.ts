@@ -523,6 +523,37 @@ export function statedKind(
 }
 
 /**
+ * Whether a document registered as guidance says, in its own opening, that it binds.
+ *
+ * A regulator publishes its binding instruments beside its guidance, under one word. Bank Negara
+ * calls both "policy documents", and a register that files them all as guidance rules every one of
+ * them out of every cell as advisory -- though each says which of its paragraphs bind: '"S" denotes
+ * a standard, an obligation, a requirement ... which must be complied with. Non-compliance may
+ * result in enforcement action.' The Commission's prepaid registration guidelines say it another
+ * way: "condition 10.2 requires that licensee shall comply with any guidelines issued by the
+ * Commission". Either binds the persons the document is addressed to, which is what the register's
+ * notice tier means.
+ *
+ * Naming the power a document is issued under is not the test: "The guidance in this policy
+ * document is issued pursuant to section 266" and "These Guidelines are issued pursuant to section
+ * 321 of the SFA" name the power to give guidance, and say of it exactly that it is guidance. And a
+ * document that says it does not bind is taken at its word, whatever else it says.
+ */
+const BINDS = [
+  /\bdenotes\s+a\s+standard,\s+an\s+obligation,\s+a\s+requirement\b/i,
+  /\bnon-?compliance\s+(?:with\s+[^.]{0,60}?)?may\s+result\s+in\s+enforcement\s+action\b/i,
+  /\blicensees?\s+(?:shall|must)\s+comply\s+with\s+(?:any|all|the)\s+guidelines\s+issued\b/i,
+];
+const DOES_NOT_BIND =
+  /\b(?:not\s+legally\s+binding|do(?:es)?\s+not\s+have\s+the\s+force\s+of\s+law|will\s+not\s+(?:of\s+itself\s+)?attract\s+(?:criminal\s+)?(?:liability|penalt))/i;
+
+export function statesItsForce(sections: Pick<ParsedSection, 'text'>[], within = 40): boolean {
+  const head = sections.slice(0, within).map((s) => s.text.replace(/\s+/g, ' '));
+  if (head.some((t) => DOES_NOT_BIND.test(t))) return false;
+  return head.some((t) => BINDS.some((re) => re.test(t)));
+}
+
+/**
  * Whether the words a finding rests on are words the amending provision sets out for insertion.
  *
  * `amendsAnotherAct` rules out a provision that only instructs a change to another Act, on the

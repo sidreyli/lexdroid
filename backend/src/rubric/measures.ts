@@ -254,6 +254,13 @@ export const MEASURES: Record<string, Measure[]> = {
       defines: 'the words requiring the subscriber identity to be established -- recorded, verified or confirmed -- before service',
       gloss:
         'a requirement to record, verify or confirm the identity of the person a SIM card or mobile subscription is issued to, before the service is provided',
+      alsoAsked: [
+        // The duty said the way a regulator's registration rules say it: the operator must
+        // register its subscribers, and may not serve one who has not registered. Malaysia's
+        // prepaid registration guidelines say exactly that in paragraphs 2.1 and 2.2, and the cell
+        // read only their paragraph 5.4 -- when registration "takes effect" -- which states no duty.
+        'a service provider is required to register its end-users and shall not provide a prepaid mobile service to an end-user who fails to register',
+      ],
       actor: 'the telecommunications operator or its dealer',
     },
   ],
@@ -487,6 +494,13 @@ export const MEASURES: Record<string, Measure[]> = {
       defines: 'the words stating the condition every bidder must meet',
       gloss:
         'a condition on every bidder for a government contract, such as a local content share, a local employment target or another performance undertaking',
+      alsoAsked: [
+        // The performance undertaking as an industry-participation statute writes it: a plan the
+        // proponent must have approved, saying how local suppliers will get to bid. ESCAP scores
+        // Australia's AIP plans here, and the cell read only the section promising not to
+        // discriminate against local entities, which the confirm pass rightly refused.
+        'a project proponent or tenderer must prepare and comply with an approved industry participation plan giving local suppliers full, fair and reasonable opportunity to supply',
+      ],
       actor: 'the supplier bidding for the contract',
     },
   ],
@@ -513,7 +527,7 @@ export const MEASURES: Record<string, Measure[]> = {
   '3.5': [
     {
       token: 'commercial-presence',
-      defines: 'the words requiring the branch, subsidiary or presence in the economy',
+      defines: 'the words requiring the branch, subsidiary, local registration, office or agent in the economy',
       restrictsForeigners: true,
       gloss:
         'a requirement to establish a branch, subsidiary or other commercial presence in the economy before supplying a service to customers here, including a requirement that a foreign company register locally, or keep a local office or agent, before it may carry on business here',
@@ -586,9 +600,16 @@ export const MEASURES: Record<string, Measure[]> = {
   '10.3': [
     {
       token: 'local-content-category',
-      defines: 'the words requiring locally made goods or locally supplied services',
+      defines: 'the words requiring locally made goods, locally supplied services or content produced in the economy',
+      // Content is the local input a broadcaster or a streaming service is held to, and ESCAP
+      // scores Australia's broadcasting and streaming quotas here. The gloss named goods and
+      // services only, so a quota of Australian programs had no measure to be filed under, and
+      // the cell read regional radio's "local significance" rules instead -- locality, not origin.
       gloss:
-        'a requirement to use locally made goods or locally supplied services, stated for a whole sector or a broad class of goods such as telecommunications equipment',
+        'a requirement to use locally made goods, locally supplied services or content produced in the economy -- a quota or minimum spend on programs made in the economy, for a broadcaster or an online streaming service -- stated for a whole sector or a broad class of goods such as telecommunications equipment. Content about a particular local area, such as local news for a region, is not local content: the requirement is about where the content is made',
+      alsoAsked: [
+        'a broadcaster or subscription video on demand service must transmit a minimum proportion of Australian or locally produced programs, or spend a minimum amount on new local content',
+      ],
       actor: 'the producer or supplier subject to the requirement',
     },
     {
@@ -824,6 +845,10 @@ export const MEASURES: Record<string, Measure[]> = {
     {
       token: 'payment-currency',
       defines: 'the words naming the currency the payment must be made in',
+      // The indicator is the currency of international payments, and the gloss has said "to or
+      // from another country" all along. "An EMI shall ensure all e-money transactions in Malaysia
+      // are in ringgit" names a currency and nothing that crosses a border.
+      crossesBorder: true,
       gloss: 'a requirement about which currency a payment to or from another country must be made in',
       actor: 'the party making or receiving the payment',
     },
@@ -840,9 +865,15 @@ export const MEASURES: Record<string, Measure[]> = {
   '12.4.4': [
     {
       token: 'payment-licence',
-      defines: 'the words requiring the payment services licence',
+      defines: 'the words requiring the licence or authority',
+      // The second question is put with the gloss alone, and the gloss named only a licence. A
+      // statute drafted the other way -- "Holder of stored value must be an ADI or be authorised or
+      // exempted under this Part" (Payment Systems (Regulation) Act 1998 s22) -- was read, filed as
+      // this measure, and then refused by the confirm pass, which was never told that an authority
+      // is how this Act says licence. The alsoAsked line below found the provision; nothing let the
+      // confirm pass recognise it.
       gloss:
-        'a requirement to hold a licence to provide payment services, and the conditions that must be met to keep it',
+        'a requirement to hold a licence, or to be authorised, in order to provide payment services -- to carry on a banking or payment business, hold stored value or issue a payment instrument -- and the conditions that must be met to keep it',
       alsoAsked: [
         // The same permission said the other way a statute says it. One convention licenses the
         // provider and the gloss above finds it; the other forbids anyone but an authorised

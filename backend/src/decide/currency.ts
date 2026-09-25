@@ -71,8 +71,23 @@ export interface Money {
   assumedCurrency: boolean;
 }
 
-/** A figure, with its thousands separators, and never the comma that ends a clause. */
-const NUMBER = /\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?/g;
+/**
+ * A figure, with its thousands separators, and never the comma that ends a clause. Thousands are
+ * grouped three ways in the law read here: "1,000"; "1 000", which Commonwealth drafting uses, and
+ * which was read as one dollar ("For subparagraph 68(1)(f)(iii) of the Act, the amount is $1 000");
+ * and the Indian "1,00,000".
+ */
+const GROUP_SPACE = '[ \\u00a0\\u2009\\u202f]';
+const NUMBER = new RegExp(
+  [
+    String.raw`\d{1,2}(?:,\d{2})+,\d{3}(?:\.\d+)?(?!\d)`,
+    String.raw`\d{1,3}(?:,\d{3})+(?:\.\d+)?`,
+    String.raw`\d{1,3}(?:${GROUP_SPACE}\d{3})+(?![\d,])(?:\.\d+)?`,
+    String.raw`\d+(?:\.\d+)?`,
+  ].join('|'),
+  'g',
+);
+const SEPARATORS = new RegExp(`[,]|${GROUP_SPACE}`, 'g');
 
 /**
  * A currency written immediately before a figure: "S$400", "RM 500", "USD 20", "$1,000".
@@ -135,7 +150,7 @@ export function moneyIn(written: string | null, economy: string): Money | null {
   const bare = new Set<number>();
   for (const m of words.matchAll(NUMBER)) {
     const at = m.index ?? 0;
-    const amount = Number(m[0].replace(/,/g, ''));
+    const amount = Number(m[0].replace(SEPARATORS, ''));
     if (!Number.isFinite(amount)) continue;
     const before = words.slice(Math.max(0, at - 24), at);
     const after = words.slice(at + m[0].length, at + m[0].length + 32);

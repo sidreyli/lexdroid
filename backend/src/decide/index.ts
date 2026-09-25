@@ -606,6 +606,26 @@ function equityLadder(
 /** The party a licence is granted to, and the party a patent is granted to. */
 const LICENSEE = /\b(licensee\w*|beneficiar\w* of the (?:compulsory )?licen[cs]e|holder of (?:a|the) (?:compulsory )?licen[cs]e)\b/i;
 const PATENTEE = /\b(patentee\w*|proprietor\w*|owner of the patent|patent (?:holder|owner)\w*)\b/i;
+/** A duty to comply with rules, laws or requirements made somewhere other than this provision. */
+const COMPLY_WITH_RULES =
+  /\bcomply\s+with\s+(?:the\s+|any\s+|all\s+)?(?:prevailing\s+|applicable\s+|relevant\s+|existing\s+)?[\w\s-]{0,50}?\b(?:rules|regulations|laws|requirements|policies|guidelines|directions|notices|standards)\b[^.;]*/i;
+function definedOnlyInAPointer(quote: string, definingWords: string | null): boolean {
+  if (!definingWords) return false;
+  const m = COMPLY_WITH_RULES.exec(quote);
+  if (!m) return false;
+  const pointer = m[0].toLowerCase();
+  const words = definingWords.toLowerCase().trim();
+  return pointer.includes(words) && !quote.toLowerCase().replace(pointer, '').includes(words);
+}
+/** Goods named by a schedule or a list rather than one by one. */
+const BANS_A_LIST =
+  /\b(?:set\s+out|specified|listed|described|mentioned|enumerated)\s+in\s+(?:the\s+)?(?:\w+\s+)?(?:Schedule|list|table)\b|\bany\s+of\s+the\s+following\b/i;
+/** Words that put a duty on someone, in the languages of the law read here. */
+const MANDATES = /\b(?:shall|must|is required to|are required to|hendaklah|mesti)\b/i;
+/** Words that leave the content of a duty to something specified, prescribed or imposed elsewhere. */
+const DEFERS = /\b(?:in accordance with|specified|prescribed|determined|imposed|issued|conditions of (?:the|a|its) licen[cs]e)\b/i;
+/** A figure stated as the default a regulation may replace: "$250 or such other amount as is prescribed". */
+const REPLACEABLE_FIGURE = /\bor\s+(?:such\s+)?(?:other|another|a\s+different)\s+(?:amount|sum|value|figure)\s+(?:as\s+)?(?:is|may\s+be|that\s+is)\s+(?:prescribed|specified|determined)\b/i;
 
 /** Measures that are a body being established, whose defining words are the body's own name. */
 const BODY_CREATED = new Set(['independent-telecom-authority']);
@@ -792,6 +812,11 @@ const RULES: Record<string, Rule> = {
     const ict = qualifying.filter((e) => e.finding.measure === 'ict-import-ban');
     if (ict.length > 1) {
       return { ordinal: 1, reason: `${ict.length} ICT import bans`, counted: ict };
+    }
+    // A ban on the goods a schedule or list sets out bans every good on it, which is more than one:
+    // "No person shall import any telecommunication equipment set out in the Third Schedule".
+    if (ict.length === 1 && BANS_A_LIST.test(ict[0]!.finding.quote)) {
+      return { ordinal: 1, reason: 'an ICT import ban on the goods a schedule or list sets out', counted: ict };
     }
     if (ict.length === 1) {
       return { ordinal: 2, reason: 'a ban on one product or service', counted: ict };
@@ -1133,7 +1158,13 @@ const RULES: Record<string, Rule> = {
     });
     if (thresholds.length === 0) return { ordinal: 1, reason: 'no de minimis threshold found' };
 
-    const lowest = thresholds.reduce((a, b) => (b.usd < a.usd ? b : a));
+    // A figure the statute states "or such other amount as is prescribed" is a default a regulation
+    // may replace, so it leads only where no figure without that allowance was read. The Customs
+    // Act's "$250 or such other amount as is prescribed" is the law only until a regulation says
+    // otherwise, and the Customs Regulation does: "For subparagraph 68(1)(f)(iii) of the Act, the
+    // amount is $1 000". The lowest of the two would have scored a threshold no goods clear under.
+    const firm = thresholds.filter((t) => !REPLACEABLE_FIGURE.test(`${t.evidence.finding.definingWords ?? ''} ${t.evidence.finding.quote}`));
+    const lowest = (firm.length > 0 ? firm : thresholds).reduce((a, b) => (b.usd < a.usd ? b : a));
     const assumed = lowest.money.assumedCurrency ? ', the provision using a bare symbol' : '';
     const on = ctx?.rates ? ` on the ${ctx.rates.asOf} reference rate` : '';
     const reason =
@@ -1758,7 +1789,24 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     }
     // A power to require is not a requirement -- unless the measure the rubric names is itself a
     // power, where nothing is imposed and this hold would swallow every genuine finding.
-    if (!e.finding.imposingWords && !permits(indicatorId, e.finding.measure)) {
+    //
+    // Only where something else is left to impose it, though. A provision that itself requires or
+    // forbids, and names no instrument to do the imposing, empowers nothing: "shall nominate for
+    // the purposes of this Act a representative established in Malaysia" came back with the verb
+    // "requires", mandatory, no prescribing instrument and no imposingWords, and was ruled out as a
+    // power on the empty field alone.
+    // The reader's own fields are not enough to say so -- it also labels "An application for the
+    // registration ... of a registered corporate service provider" as mandatory -- so the quoted
+    // words must carry the duty themselves and must not hand its content to something imposed
+    // elsewhere ("shall ... comply with the standards specified by the Bank", "except in accordance
+    // with the conditions of the licence").
+    const imposesItself =
+      e.finding.mandatory &&
+      (e.finding.dutyForce === 'requires' || e.finding.dutyForce === 'forbids') &&
+      !e.finding.prescribingWords &&
+      MANDATES.test(e.finding.quote) &&
+      !DEFERS.test(e.finding.quote);
+    if (!e.finding.imposingWords && !imposesItself && !permits(indicatorId, e.finding.measure)) {
       ruledOut.push({
         evidence: e,
         reason: `the provision does not impose the requirement itself; it empowers another instrument to impose one`,
@@ -1867,6 +1915,19 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
       ruledOut.push({
         evidence: e,
         reason: `the provision puts the data "${e.finding.placeWords}", which names no country, territory or jurisdiction`,
+      });
+      continue;
+    }
+    // A duty to comply with rules made elsewhere is not the requirement those rules make. "An EMI
+    // shall ensure e-money transactions comply with the prevailing foreign exchange rules,
+    // including ... payment in foreign currency between residents" names a currency only inside
+    // its pointer to the rules, and scored a requirement on the currency of international
+    // payments that the provision never states. Where the defining words sit in the pointer, the
+    // measure, if there is one, is in the rules pointed at.
+    if (definedOnlyInAPointer(e.finding.quote, e.finding.definingWords)) {
+      ruledOut.push({
+        evidence: e,
+        reason: 'the provision requires compliance with rules made elsewhere, and the words said to state the measure are only its pointer to them',
       });
       continue;
     }
