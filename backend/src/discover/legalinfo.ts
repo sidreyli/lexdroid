@@ -19,6 +19,8 @@
  * their listings' own headings rather than inferring standing from a name.
  */
 import * as cheerio from 'cheerio';
+import { CacheMiss, cacheComposed, type Fetcher, type FetchResult } from '../fetch/index.js';
+import { ANNEX } from '../parse/legalinfo.js';
 import type { Adapter, DiscoveredInstrument, DiscoverContext } from './types.js';
 import type { InstrumentKind } from './titles.js';
 
@@ -117,8 +119,107 @@ export function rowsFrom(html: string, kind: InstrumentKind): DiscoveredInstrume
   return out;
 }
 
+/**
+ * The page's annex tab, if it has one: `showActiveTab('3', this, '<dvid>', '')` on the tab that
+ * reads "Хавсралт", and the instrument's own id. Tab 3 is the annexes; the page script posts these
+ * to `lawConnectedTypeData` when a reader opens it (assets/custom/legal/js/pages/detail.js).
+ */
+export function annexTab(html: string): { dvid: string; lawId: string } | null {
+  const tab = /showActiveTab\('3',\s*this,\s*'(\d+)',\s*'[^']*'\)/.exec(html);
+  const law = /lawId\s*=\s*'(\d+)'/.exec(html) ?? /data-lawid="(\d+)"/.exec(html);
+  return tab && law ? { dvid: tab[1]!, lawId: law[1]! } : null;
+}
+
+export interface Annex {
+  id: string;
+  title: string;
+  /** What the portal lists it as: "Хүчинтэй" (in force) or "Хүчингүй" (repealed). */
+  status: string;
+}
+
+/** The annexes the tab lists: each one's id, its name, and the standing the portal gives it. */
+export function annexesFrom(html: string): Annex[] {
+  const $ = cheerio.load(html);
+  return $('[data-id]')
+    .toArray()
+    .map((row) => {
+      const r = $(row);
+      const cells = r.children().toArray().map((c) => $(c).text().replace(/\s+/g, ' ').trim());
+      return {
+        id: r.attr('data-id') ?? '',
+        title: r.find('h6').first().text().replace(/\s+/g, ' ').trim(),
+        status: cells.at(-1) ?? '',
+      };
+    })
+    .filter((a) => /^\d+$/.test(a.id) && a.title);
+}
+
+/** The instrument's page with each annex's content block appended as a section the parser reads under the annex's name. */
+export function withAnnexes(page: string, annexes: { annex: Annex; url: string; html: string }[]): string {
+  const blocks = annexes.map(({ annex, url, html }) => {
+    const $ = cheerio.load(html);
+    const content = $('.law_content').first();
+    const attr = (s: string) => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+    return (
+      `<section class="${ANNEX.split('.')[1]}" data-title="${attr(annex.title)}" ` +
+      `data-status="${attr(annex.status)}" data-url="${attr(url)}">${content.length ? $.html(content) : ''}</section>`
+    );
+  });
+  const at = page.lastIndexOf('</body>');
+  return at < 0 ? page + blocks.join('\n') : `${page.slice(0, at)}${blocks.join('\n')}\n${page.slice(at)}`;
+}
+
 export const legalinfoAdapter: Adapter = {
   name: 'legalinfo',
+
+  /**
+   * The instrument's page, with the annexes it approves.
+   *
+   * A resolution that approves a procedure says "журмыг хавсралт ёсоор баталсугай" -- approve the
+   * procedure per the annex -- and its page stops there: of 24 pages read, every one that approved
+   * something held two or three operative points and none of what was approved. The "Word" file
+   * the page offers is the same text again. The annex is served on its own page,
+   * `detail?lawId=<annex id>`, listed by the tab the page loads on click; without it the corpus
+   * holds the instruction to follow a procedure and not the procedure.
+   *
+   * Only the first page of the tab's listing is read; no page sampled lists more than one annex.
+   */
+  async resolveDocument(url: string, fetcher: Fetcher): Promise<FetchResult> {
+    const page = await fetcher.fetch(url);
+    if (page.status !== 200) return page;
+    const html = page.body.toString('utf8');
+    const tab = annexTab(html);
+    if (!tab) return page;
+
+    const origin = new URL(url).origin;
+    let annexes: Annex[];
+    try {
+      const listing = await fetcher.fetch(`${origin}/mn/lawConnectedTypeData`, {
+        form: { dvid: tab.dvid, type: '3', lawId: tab.lawId, annexId: '' },
+      });
+      annexes = annexesFrom((JSON.parse(listing.body.toString('utf8')) as { Html?: string }).Html ?? '');
+    } catch (err) {
+      // A re-parse from the cache of a page read before annexes were fetched: the page is still
+      // what it was. Anything else -- a refusal, a dropped connection -- is not swallowed.
+      if (err instanceof CacheMiss || err instanceof SyntaxError) return page;
+      throw err;
+    }
+    if (annexes.length === 0) return page;
+
+    const read: { annex: Annex; url: string; html: string }[] = [];
+    for (const annex of annexes) {
+      const at = `${origin}/mn/detail?lawId=${annex.id}`;
+      try {
+        const res = await fetcher.fetch(at);
+        if (res.status === 200) read.push({ annex, url: at, html: res.body.toString('utf8') });
+      } catch (err) {
+        if (!(err instanceof CacheMiss)) throw err;
+      }
+    }
+
+    const body = Buffer.from(withAnnexes(html, read), 'utf8');
+    return { ...page, body, contentHash: cacheComposed(body), mediaType: 'text/html' };
+  },
 
   async discover(ctx: DiscoverContext): Promise<DiscoveredInstrument[]> {
     const { portal, fetcher, log, setAside } = ctx;

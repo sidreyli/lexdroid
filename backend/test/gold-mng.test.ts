@@ -44,7 +44,18 @@ const ALL = [
   'tariff-resolution-table',
   'parliament-resolution-07',
   'citizens-council-procedure-annex',
+  'military-ranks-decree-with-annex',
+  'heating-tariff-with-table-annex',
 ];
+
+/**
+ * Labels the source itself repeats. The military ranks procedure numbers two points 3.6 and two
+ * 3.7 -- a drafting slip on the page, reproduced rather than renumbered, since a citation has to
+ * match what the document says.
+ */
+const SOURCE_DUPLICATES: Record<string, string[]> = {
+  'military-ranks-decree-with-annex': ['3.6', '3.7'],
+};
 
 describe('every Mongolian fixture', () => {
   it.each(ALL)('%s holds the offset invariant, has unique labels, and carries no page furniture', (name) => {
@@ -52,8 +63,17 @@ describe('every Mongolian fixture', () => {
     expect(doc.unread).toBeNull();
     expect(doc.sections.length).toBeGreaterThan(0);
     for (const s of doc.sections) expect(doc.text.slice(s.charStart, s.charEnd)).toBe(s.text);
-    const labels = doc.sections.map((s) => s.label);
-    expect(new Set(labels).size).toBe(labels.length);
+    // Unique within each container: an annex numbers its own points from 1 again.
+    const seen = new Map<string, string[]>();
+    const dups: string[] = [];
+    for (const s of doc.sections) {
+      if (s.label === null) continue;
+      const container = s.headingPath.startsWith('Хавсралт:') ? s.headingPath.split(' > ')[0]! : '';
+      const list = seen.get(container) ?? [];
+      if (list.includes(s.label)) dups.push(s.label);
+      seen.set(container, [...list, s.label]);
+    }
+    expect(dups).toEqual(SOURCE_DUPLICATES[name] ?? []);
     for (const junk of ['976)-11-323317', 'legalinstitute.mn', 'Сонсох', 'Хуваалцах', 'Нэвтрэх', '​']) {
       expect(doc.text).not.toContain(junk);
     }
@@ -210,5 +230,58 @@ describe('a procedure (журам) published as an annex', () => {
   it('files each point under its part, named with a cardinal word', () => {
     expect(section(doc, '1.1').headingPath).toMatch(/^Нэг\.Нийтлэг үндэслэл > 1\.1\./);
     expect(section(doc, '6.9').headingPath).toMatch(/^Зургаа\.Зөвлөлийн үйл ажиллагааны зохион байгуулалт > 6\.9\./);
+  });
+});
+
+describe('a decree read with the procedure it approves', () => {
+  // As the adapter composes it: the decree's page, then the annex page the portal serves apart.
+  const doc = read('military-ranks-decree-with-annex');
+  const annex = doc.sections.filter((s) => s.headingPath.startsWith('Хавсралт: ЦЭРГИЙН ЦОЛ ОЛГОХ ЖУРАМ'));
+
+  it('keeps the decree\'s own three points, and files the procedure under the annex\'s name', () => {
+    expect(doc.sections.slice(0, 3).map((s) => s.label)).toEqual(['1', '2', '3']);
+    expect(annex.length).toBe(doc.sections.length - 3);
+    expect(annex.length).toBeGreaterThan(20);
+  });
+
+  it('reads a point whose number lost its final stop, instead of collapsing to point 2', () => {
+    // The page writes "2.4 Цэргийн" between "2.3." and "3.1.".
+    expect(annex.map((s) => s.label)).toContain('2.4');
+    expect(section(doc, '2.4').text.startsWith('2.4 Цэргийн бэлтгэл үүрэгтэнд')).toBe(true);
+    expect(section(doc, '2.3').text).toContain('2.3.6. Зэвсэгт хүчний Жанжин штабын дарга');
+  });
+
+  it('makes the unnumbered opening of a part a provision, not unsearchable prose', () => {
+    const opening = annex[0]!;
+    expect(opening.label).toBeNull();
+    expect(opening.headingPath).toMatch(/^Хавсралт: ЦЭРГИЙН ЦОЛ ОЛГОХ ЖУРАМ > Нэг\. Нийтлэг үндэслэл > /);
+    expect(opening.text).toContain('Цэргийн цол олгох журмын зорилго нь');
+  });
+});
+
+describe('a resolution whose annex is a table', () => {
+  const doc = read('heating-tariff-with-table-annex');
+
+  it('keeps the tariff as one provision, each row on one line with its cells apart', () => {
+    const tariff = doc.sections.find((s) => s.headingPath.startsWith('Хавсралт:'))!;
+    expect(tariff.label).toBeNull();
+    expect(tariff.text).toContain('1. | Төсөвт байгууллагуудын халаалт | Төг/м3 | 2830');
+    expect(tariff.text).toContain('Тогтмол | Төг/м3 | 1850,64');
+  });
+
+  it('does not read the table\'s row number as point 1 of the resolution', () => {
+    expect(doc.sections.filter((s) => s.label === '1')).toHaveLength(1);
+  });
+});
+
+describe('the Constitution\'s parts within a chapter', () => {
+  it('files an article under its chapter and then its part', () => {
+    const doc = read('constitution');
+    expect(section(doc, 'Хорин нэгдүгээр').headingPath).toBe(
+      'ГУРАВДУГААР БҮЛЭГ МОНГОЛ УЛСЫН ТӨРИЙН БАЙГУУЛАЛ > НЭГ. Монгол Улсын Их Хурал > Хорин нэгдүгээр зүйл.',
+    );
+    expect(section(doc, 'Тавьдугаар').headingPath).toMatch(/ > ДӨРӨВ\. Шүүх эрх мэдэл > Тавьдугаар зүйл\.$/);
+    // The part closes with its chapter.
+    expect(section(doc, 'Тавин долдугаар').headingPath).not.toContain('ДӨРӨВ.');
   });
 });

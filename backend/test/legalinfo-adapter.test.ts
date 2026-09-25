@@ -16,7 +16,10 @@
  * returns them silently is how a corpus ends up smaller than anyone believes.
  */
 import { describe, expect, it } from 'vitest';
-import { CATEGORIES, rowsFrom } from '../src/discover/legalinfo.js';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { CATEGORIES, annexesFrom, annexTab, rowsFrom, withAnnexes } from '../src/discover/legalinfo.js';
+import { parseLegalinfo } from '../src/parse/legalinfo.js';
 
 /** One row, marked up the way the live endpoint marks its own fields. */
 const row = (id: string, title: string, enacted: string, effective: string) => `
@@ -115,5 +118,40 @@ describe('the category table', () => {
     const national = CATEGORIES.filter((c) => !c.court && !c.local).reduce((n, c) => n + c.stated, 0);
     expect(national).toBe(12192);
     expect(Math.ceil(national / 20)).toBe(610);
+  });
+});
+
+/**
+ * The annexes a resolution approves. The page itself says "approved per the annex" and holds none
+ * of it; the page script lists the annexes through tab 3 and each is served on its own page. The
+ * listing fixture is the portal's real answer for Khural resolution 07 of 2022.
+ */
+describe('the annexes an instrument approves', () => {
+  const listing = readFileSync(join(__dirname, 'fixtures', 'mng', 'annex-listing-parliament-resolution-07.html'), 'utf8');
+
+  it('finds the annex tab the page offers, and the instrument it belongs to', () => {
+    const page = `<script>var lawId = '16390150734701';</script>
+      <a href="#active-tab-3" onclick="showActiveTab('3', this, '1594091809248', '')">Хавсралт</a>`;
+    expect(annexTab(page)).toEqual({ dvid: '1594091809248', lawId: '16390150734701' });
+    expect(annexTab('<a onclick="showActiveTab(\'2\', this, \'1\', \'\')">Холбоотой</a>')).toBeNull();
+  });
+
+  it('reads each annex the tab lists: its id, its name and the standing the portal gives it', () => {
+    expect(annexesFrom(listing)).toEqual([
+      { id: '16390150746231', title: 'ИРГЭДИЙН ТӨЛӨӨЛӨГЧДИЙН ХУРЛЫН ЗӨВЛӨЛИЙН АЖИЛЛАХ ЖУРАМ', status: 'Хүчинтэй' },
+    ]);
+  });
+
+  it('appends an annex so the parser reads it under its own name, and a repealed one as repealed', () => {
+    const page = '<html><body><div class="law_content"><p>1.Журмыг хавсралтаар баталсугай.</p></div></body></html>';
+    const annexPage = '<html><body><div class="law_content"><p>Нэг.Нийтлэг үндэслэл</p><p>1.1.Энэ журмын зорилго.</p></div></body></html>';
+    const composed = withAnnexes(page, [
+      { annex: { id: '1', title: 'ЖУРАМ "А"', status: 'Хүчингүй' }, url: 'https://legalinfo.mn/mn/detail?lawId=1', html: annexPage },
+    ]);
+    const doc = parseLegalinfo(composed, 'u');
+    expect(doc.sections.map((s) => [s.label, s.headingPath, s.repealed])).toEqual([
+      ['1', '1.Журмыг хавсралтаар баталсугай.', false],
+      ['1.1', 'Хавсралт: ЖУРАМ "А" > Нэг.Нийтлэг үндэслэл > 1.1.Энэ журмын зорилго.', true],
+    ]);
   });
 });

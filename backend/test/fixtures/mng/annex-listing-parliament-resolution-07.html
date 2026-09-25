@@ -1,0 +1,178 @@
+<!-- POST https://legalinfo.mn/mn/lawConnectedTypeData {dvid:1594091809248,type:3,lawId:16390150734701}: the Html field of the response, verbatim. -->
+
+<div class="shine-huuli-header">
+    <div data-uk-grid>
+        <div class="uk-width-7-9">
+            <h6 class="ner">Нэр</h6>
+        </div>
+        <div class="uk-width-1-9">
+            <h6 class="right-ner">батлагдсан огноо</h6>
+        </div>
+    </div>
+</div>
+<div class="shine-huuli-filter" style="margin-top: 15px; margin-bottom: 15px;">
+    <div data-uk-grid>
+        <div class="uk-width-7-9">
+            <div class="uk-position-relative uk-width-1-1">
+                <input type="text" name="title" class="header-filter" data-type="3" value="" placeholder="A">
+                <img class="uk-preserve" src="assets/custom/legal/image/search-huuli-icon.svg" data-uk-svg>
+            </div>
+        </div>
+        <div class="uk-width-1-9">
+            <div class="uk-position-relative uk-width-1-1">
+                <input type="text" name="enacteddate" class="header-filter"  data-type="3"value="">
+                <img class="uk-preserve" src="assets/custom/legal/image/search-huuli-icon.svg" data-uk-svg>
+            </div>
+        </div>
+    </div>
+</div>
+<div class="shine-huuli-body additional-data-tag">
+                <div class="shine-huuli-content">
+                <div class="uk-flex-middle uk-grid-collapse"  data-id="16390150746231"  data-uk-grid>
+                                            <div class="uk-width-1-9 line-height uk-flex">
+                            <span class="number">1</span>
+                            <a href="javascript:;" class=" ">1</a>
+                        </div>
+                        <div class="uk-width-5-9 line-height uk-flex ">
+                            <h6 class="line-left pl-2" style="border-color: #333;"><a href="javascript:;" onclick="getViewLaw(this, '16390150746231')"  class="text-black ">ИРГЭДИЙН ТӨЛӨӨЛӨГЧДИЙН ХУРЛЫН ЗӨВЛӨЛИЙН АЖИЛЛАХ ЖУРАМ</a></h6>
+                        </div>
+                                        <div class="uk-width-1-9 line-height">
+                        <div class="uk-text-center line-left"><span> 2022-01-18</span></div>
+                    </div>
+                    <div class="uk-width-1-9 line-height">
+                        <div class="uk-text-center line-left"><span> <a href="javascript:;" onclick="downloadAnnexFile(this, 'storage/uploads/process/202202/file_1644199233646501_15941724180424050.docx', '16390150746231')" ><i class="fa fa-file-word-o"></i> Татах</a></span></div>
+                    </div>
+                                        <div class="uk-width-1-9 line-height">
+                        <div class="uk-text-center line-left"><span> Хүчинтэй</span></div>
+                    </div>
+                                    </div>
+            </div>
+            <div class="lawcontent_16390150746231 lawadditional" style="display: none;">
+                <div class="content_16390150746231" style="background: #FFF !important;padding: 20mm 15mm 30mm 30mm;margin: 15px;margin: 20px auto;border: 1px solid #e5e5e5;    display: grid;"></div>
+            </div>
+            <div class="shine-huuli-footer mr-1">
+        <ul class="uk-pagination uk-flex-right uk-margin-medium-top ml-0" uk-margin="">
+            <li class="uk-first-column"><a href="javascript:;" ><span uk-pagination-previous="" class="uk-icon uk-pagination-previous"><svg width="7" height="12" viewBox="0 0 7 12" xmlns="http://www.w3.org/2000/svg" data-svg="pagination-previous"><polyline fill="none" stroke="#000" stroke-width="1.2" points="6 1 1 6 6 11"></polyline></svg></span></a></li>
+            <li class="number uk-disabled"><span>1/1</span></li>
+            <li class="active"><a href="javascript:;" onclick="ajaxPageAddi(this,1)">1</a></li>            <li class="number uk-disabled"><span>Нийт 1</span></li>
+            <li>
+                <a href="javascript:;" ><span uk-pagination-next="" class="uk-icon uk-pagination-next"><svg width="7" height="12" viewBox="0 0 7 12" xmlns="http://www.w3.org/2000/svg" data-svg="pagination-next"><polyline fill="none" stroke="#000" stroke-width="1.2" points="1 1 6 6 1 11"></polyline></svg></span></a>
+            </li>
+        </ul>
+    </div>
+</div>
+
+<script type="text/javascript">
+
+    jQuery(document).ready(function () {
+
+        $('.date-picker').datepicker({
+            autoclose: true,
+            format: 'yyyy-mm-dd'
+        });
+
+            });
+
+    function getViewLaw(element, lawId) {
+		
+        var $this = $(element);
+        var $__mainContent = $this.closest('.shine-huuli-body').find('.lawcontent_' + lawId);
+        var $mainContent = $this.closest('.shine-huuli-body').find('.content_' + lawId);
+        
+        if (typeof $this.attr('data-status') !== 'undefined' && $this.attr('data-status') === 'open') {
+            $this.attr('data-status', 'close');
+            $__mainContent.hide();
+            return;
+        }
+        
+        if ($mainContent.children().length > 0) {
+            $this.attr('data-status', 'open');
+            $__mainContent.show();
+            return;
+        }
+
+
+		window.open('https://legalinfo.mn/mn/detail?lawId=' + lawId + '&showType=1', '_blank');
+		return;
+		
+		location.href= 'https://legalinfo.mn/mn/detail?lawId=' + lawId + '&showType=1';
+        
+        $.ajax({
+            type: 'post',
+            dataType: 'json',
+            url: "https://legalinfo.mn/mn/additionalLaw",
+            data: {
+                lawId: lawId,
+                type: '1',
+            },
+            beforeSend: function() {
+                $('.lawadditional').hide();
+                Core.blockUI();
+            },
+            success: function(response) {
+                $mainContent.empty().append(response.Html).promise().done(function () {
+                    $__mainContent.show();
+                    if (typeof response.isvalid !== 'undefined' && response.isvalid !== '1') {
+                        $mainContent.addClass('huchingui-huuli');
+                    }
+                    $this.attr('data-status', 'open');
+                    scroll2top();
+                    if (typeof response.ed !== 'undefined' && response.ed === '3') {
+                        $mainContent.addClass('p-0');
+                    }
+                });
+                Core.unblockUI();
+
+            },
+            error: function (jqXHR, exception) {
+                Core.unblockUI();
+                Core.showErrorMessage(jqXHR, exception);
+            }
+        });
+    }
+
+    function ajaxPageAddi (element, pageCount) {
+    var $this = $(element),
+        $parent = $this.closest('.tab-col'),
+        $parentContent = $this.closest('.shine-huuli-inner-container');
+        $.ajax({
+            type: 'post',
+            dataType: 'json',
+            url: URL_APP + URL_LANG + "/lawConnectedTypeData",
+            data: {
+                dvid: '1594091809248',
+                type: '3',
+                lawId: '16390150734701',
+                annexId: '',
+                pageCount: pageCount,
+                title: $parentContent.find('input[name="title"]').val(),
+                enacteddate: $parentContent.find('input[name="enacteddate"]').val(),
+            },
+            beforeSend: function () {
+                Core.blockUI('section.tw-shine-huuli');
+            },
+            success: function (response) {
+                $parentContent.find('#active-tab-3').empty().append(response.Html);
+                Core.unblockUI();
+            },
+            error: function (jqXHR, exception) {
+                Core.unblockUI();
+                Core.showErrorMessage(jqXHR, exception);
+            }
+        });
+    }
+
+</script>
+
+<style type="text/css">
+
+    .lawadditional .nom-header-top span {
+        font-weight: 400;
+        font-size: 13px !important;
+        font-family: Arial, Helvetica, sans-serif !important;
+    }
+
+    .lawadditional .law_content {
+        overflow: auto;
+    }
+</style>
