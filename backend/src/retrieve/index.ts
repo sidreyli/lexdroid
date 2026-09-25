@@ -21,6 +21,7 @@ import type { Db } from '../db/index.js';
 import type { Indicator } from '../rubric/types.js';
 import { MEASURES } from '../rubric/measures.js';
 import { shortlistInstruments } from '../shortlist/index.js';
+import { translatedQueries } from './translations.js';
 import { determinesAParticularCase } from '../discover/titles.js';
 import {
   fuse,
@@ -198,7 +199,15 @@ function named(text: string, economyName?: string): string {
  * embeds to the average of everything it mentions, which is close to nothing; the band wordings
  * are the distinctions that decide the score and each deserves its own retrieval.
  */
-export function queriesFor(indicator: Indicator, economyName?: string): string[] {
+export function queriesFor(indicator: Indicator, economyName?: string, economy?: string): string[] {
+  const english = englishQueriesFor(indicator, economyName);
+  // Where the economy's law is not in English, the same questions in its own language as well --
+  // see translations.ts. English stays first: a bilingual corpus answers both.
+  return economy ? [...english, ...translatedQueries(economy, english)] : english;
+}
+
+/** The queries in the rubric's own language, English. What the translation table is keyed on. */
+export function englishQueriesFor(indicator: Indicator, economyName?: string): string[] {
   const out: string[] = [];
   const push = (s: string | null | undefined): void => {
     const t = named((s ?? '').replace(/\s+/g, ' ').trim(), economyName);
@@ -277,7 +286,7 @@ export async function retrieveForIndicator(
   const economyRow = db
     .prepare('SELECT name FROM economy WHERE code = ?')
     .get(opts.economy) as { name: string } | undefined;
-  const queries = queriesFor(indicator, economyRow?.name);
+  const queries = queriesFor(indicator, economyRow?.name, opts.economy);
   const vectors = opts.vectors ?? loadVectors(db, { economy: opts.economy, ...(opts.model ? { model: opts.model } : {}) });
 
   const second = otherLanguageCopies(db, opts.economy);

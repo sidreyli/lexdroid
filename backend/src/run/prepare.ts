@@ -143,7 +143,9 @@ export async function prepareCorpus(db: Db, opts: PrepareOptions): Promise<Prepa
   const rubric = loadRubric();
   const asked: string[][] = [];
   for (const p of opts.pillars) {
-    for (const ind of indicatorsOfPillar(p, rubric)) asked.push(queriesFor(ind));
+    // In the economy's own language as well: this ranks the register's titles, and an English
+    // question ranks Cyrillic or Lao titles on nothing.
+    for (const ind of indicatorsOfPillar(p, rubric)) asked.push(queriesFor(ind, undefined, economy));
   }
 
   const top = opts.top ?? 15;
