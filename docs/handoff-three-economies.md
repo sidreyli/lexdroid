@@ -110,6 +110,87 @@ Eleven commits before the merge. In dependency order:
 10. **The `legalinfo` adapter** — walks per category so the instrument kind comes from the register
     rather than the title.
 11. **The `legalinfo` parser** — the biggest single fix; see below.
+12. **A guard against `\b` beside non-Latin script** — `test/word-boundary-scripts.test.ts`. It
+    fails the build if anyone writes a word boundary next to a Cyrillic, Thai, Lao, Devanagari or
+    Han letter, because JavaScript defines `\b` against ASCII `\w` and such a pattern never
+    matches anything. There are no live instances; this stops it returning. Note the first draft
+    of the guard reported the source clean while failing to detect the bug it was written for, so
+    it now asserts against the original broken pattern too.
+
+---
+
+## Verify this document before you trust it
+
+Every claim here was measured, but it was measured on 25 September and the branch has moved since.
+Re-run these before building on any of it — they take about two minutes together and each one
+either confirms a claim or tells you it has rotted.
+
+```bash
+npx vitest run --root backend          # expect 1,398 passing, 146 files
+npx tsc -p backend/tsconfig.json --noEmit
+npx vitest run --root backend test/word-boundary-scripts.test.ts   # is the \b bug back?
+npm run -w backend zone1 -- --economy MNG --status
+npm run -w backend search -- --economy MNG "авлигатай тэмцэх"
+```
+
+The third one is the specific check asked for: **the `\b` guard should pass, and if it fails it is
+naming a file where someone has written a word boundary beside non-Latin script.** That pattern
+never matches, so whatever it was meant to find is being silently missed. Fix the pattern —
+`(?:^|\s)` or an anchor — rather than the test.
+
+The last one is the whole chain in a line. It should return Mongolian provisions with their
+instrument and chapter path. If it returns nothing, the corpus page says which stage lost it.
+
+---
+
+## Parsing has to be right, and here is what "right" means
+
+This is the part that decides whether any of the rest matters, and it is the part most likely to
+look finished when it is not. A document that parses badly does not error — it produces one giant
+section, retrieval has nothing to rank inside it, the reader has nothing to read, and the cell
+reports **no restriction found**. That is indistinguishable, downstream and in the export, from an
+economy that genuinely has no such law.
+
+So "accurate" is not a feeling. It is four things, each measurable per document:
+
+| Property | How to check | What failure looks like |
+|---|---|---|
+| **Sections match the instrument's real structure** | count them against the document's own article count | 1 section = a blob; 199 where there are 70 = splitting on sub-clauses |
+| **The offset invariant holds** | `text.slice(charStart, charEnd) === section.text` for every section | a citation that cannot be relocated, which `verify` refuses at 0.50 |
+| **No page furniture** | no section contains the site's phone number, nav or login links | the parser took the page, not the document |
+| **Heading path carries the real hierarchy** | chapter > article, in the document's own words | a flat path, which is what the `\b` bug produced |
+
+Run this against any economy to see all four at once:
+
+```sql
+-- sections per document, and the extremes that betray a bad parse
+SELECT i.title, d.section_count,
+       MIN(LENGTH(s.text)) AS shortest, MAX(LENGTH(s.text)) AS longest
+FROM document d JOIN instrument i ON i.id = d.instrument_id
+JOIN section s ON s.document_id = d.id
+WHERE i.economy_code = 'MNG' GROUP BY d.id ORDER BY d.section_count DESC;
+
+-- the invariant, which should return zero rows
+SELECT COUNT(*) FROM section WHERE (char_end - char_start) != LENGTH(text);
+```
+
+### Where each economy stands against that
+
+**Mongolia — verified on three documents, not on eleven thousand.** 70, 37 and 1 sections, which
+are the article counts those instruments have; invariant holds on all 108; no furniture. That is
+real, but it is a sample of three across two instrument kinds. **The honest next step is to parse
+a wider sample — one of each of the five registered kinds at least — and check the same four
+properties.** A Government resolution with an annexed журам, which is 5,755 of the 11,962
+instruments, has not been parsed even once.
+
+**Russia — not started.** Its documents are PDFs behind a robots question; the route is IPS (see
+below), and nothing there has been parsed at all.
+
+**Lao — not started, and it cannot reach 100%.** Every Lao document is a scan, so the text arrives
+through OCR at 77–88% confidence with real recognition errors in it — the ligature problem below
+is one. The target for Lao is *honest*, not perfect: sections found where the structure allows,
+the 0.65 confidence rung applied, and what could not be read flagged rather than guessed. Saying
+so plainly is what the README template asks for and what the rubric rewards.
 
 ---
 
@@ -176,6 +257,14 @@ this, and legacy encodings are common on Russian and older Asian government site
 
 ## The worklist, in the order I would do it
 
+**The brief is that parsing has to be right, not merely present.** So 1 and 2 below are about
+proving Mongolia's parser on more than three documents before trusting it, and everything after is
+getting the other two economies to the point where the same four properties can be asked of them.
+
+0. **Widen Mongolia's parse sample.** `zone1 --economy MNG --read 3 --kind regulation`, then
+   `--kind order`, `--kind notice`, `--kind guideline`. Check the four properties above on each.
+   Government resolutions are 5,755 of the 11,962 instruments and not one has been parsed; they
+   commonly carry an annexed журам, which is a structure the parser has never seen.
 1. **Lao's register.** Never run. `npm run -w backend zone1 -- --economy LAO --register`.
    ~15 minutes. It is the one economy with no register at all.
 2. **Charset-aware decoding** — read `Content-Type`, fall back to `<meta charset>`, decode
