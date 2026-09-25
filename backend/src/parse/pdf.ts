@@ -10,15 +10,90 @@
  */
 import { detectLanguage } from './language.js';
 import { SectionBuilder, type ParsedDocument } from './types.js';
+import { readsAsAClause } from './identity.js';
 import { ocrPdfPages, type OcrEngine } from './ocr.js';
 import { amendmentHistory } from './lom.js';
 
 /** Below this many characters per page, the page is an image of text rather than text. */
 const MIN_CHARS_PER_PAGE = 80;
 
+/**
+ * A text layer that is reporting something other than the page's characters.
+ *
+ * A C0 control character is not text and no statute contains one. Where pdf.js emits one it is
+ * saying what the font's ToUnicode map told it, and that map is wrong: in Malaysia's AGC reprints
+ * one embedded font maps the "1" glyph *and* the "2" glyph to U+0018, so the Malaysian
+ * Communications and Multimedia Commission Act's own contents page reads "10, 11, 11, 13, 14, 15"
+ * where the Act prints 10 to 15, and its section 4 opens "4. ( )". The damage is not repairable by
+ * substitution -- two digits arrive as one codepoint, and which one is gone -- and it is not
+ * cosmetic: `PROVISION_LINE` cannot see a section number that starts with a control byte, so those
+ * sections are stored with no label at all, and no quote of them can be matched.
+ *
+ * 403 pages across 23 Malaysian PDFs are affected, including 49 of the Communications and
+ * Multimedia Act 1998 and 32 of the Commission Act -- the two instruments four of Malaysia's cells
+ * are decided on. The glyphs are drawn correctly; only the map from glyph to character is wrong.
+ * So the page is rendered and read, exactly as a page with no text layer at all is, and OCR
+ * recovers "23 September 1998" where the text layer offers "*3 September *998".
+ */
+const CORRUPT_TEXT_LAYER = /[\u0000-\u0008\u000B\u000C\u000E-\u001F]/;
+
+/** What a reading of a page is worth, counted in the characters that carry meaning. */
+const legibleChars = (s: string): number => s.replace(/[^\p{L}\p{N}]/gu, '').length;
+
+/** Whether a page's text layer is reporting characters the page does not have. */
+export function hasCorruptTextLayer(lines: readonly string[]): boolean {
+  return CORRUPT_TEXT_LAYER.test(lines.join(''));
+}
+
+/**
+ * Whether what OCR read replaces what the text layer gave, for the two reasons a page is re-read.
+ *
+ * A sparse page had almost nothing, so OCR has to beat it and be a page at all. The length test
+ * alone would let OCR overwrite a short but accurate page with a longer misreading.
+ *
+ * A damaged page had plenty, and what it had was wrong, so length is the wrong question: OCR drops
+ * the dot leaders and the decorative rules that the text layer counts, and asking it to be longer
+ * would hold every recovery. What it must do instead is read the page -- carrying at least as many
+ * letters and digits as the corrupt layer claimed -- and come back clean, because a reading that
+ * still holds control characters has not read the page either. Over Malaysia's 403 damaged pages
+ * that takes 363 and holds 40, and the 40 are cover pages whose OCR is the logo: the Commission
+ * Act's front page reads "LEE) B / £1:1 0.4%".
+ */
+export function ocrReplacesThePage(why: 'sparse' | 'damaged', before: string, after: string): boolean {
+  if (why === 'damaged') {
+    return !CORRUPT_TEXT_LAYER.test(after) && legibleChars(after) >= legibleChars(before) && legibleChars(after) > 0;
+  }
+  return after.length >= MIN_CHARS_PER_PAGE && after.length > before.length;
+}
+
+
 const PROVISION_LINE = /^\s*(\d+[A-Z]{0,2})\.\s*(?:—|-|–)?\s*(?:\(1\))?\s*(?=\S)/;
 /** India notifications sometimes number a paragraph "12.5 Definitions" without a second dot. */
 const DECIMAL_PROVISION_LINE = /^\s*[‘'"]?(\d+\.\d+[A-Z]{0,2})(?:\s+(?=\S)|\s*$)/;
+/**
+ * A clause numbered through more than two levels carries its whole number, not its first one.
+ *
+ * `PROVISION_LINE` asks for digits, a dot, and a non-space after it, and "8.2.1.1 A company
+ * incorporated under..." answers that with the label "8". So does 8.1.1, and 8.2.1, and every
+ * other clause of a chapter numbered this way -- they all become section 8, they all share one
+ * key, and the rule that collapses an arrangement of sections against the provisions it lists
+ * then keeps the last of them and drops the rest. What it drops is each clause's own first line,
+ * which is the line carrying the subject: MYNIC's Registrant Policy kept "Companies Act 2016, as
+ * the case may be;" and lost "8.2.1.1 A company incorporated under the Companies Act 1965 or
+ * the", so the eligibility criteria that decide who may hold a .my domain read as a list of
+ * statute names with no rule attached. Indicator 12.7 found nothing to cite and scored zero.
+ *
+ * Tried before `DECIMAL_PROVISION_LINE` because that one stops at two levels and would take "8.2"
+ * out of "8.2.1" if it matched at all -- it does not, since it wants a space after the number and
+ * finds a dot, which is exactly how these lines fell through to the rule that mislabels them.
+ *
+ * No component runs past three digits, because a dotted number ending in a year is a date. The
+ * schedule of entities designated under Malaysia's anti-terrorism financing order gives each
+ * person's date of birth a column of its own, and "13.2.1975" read as a clause number opened a
+ * provision in the middle of the table and pushed 4,139 characters of it out. Clause numbering
+ * counts up from one and reaches a thousand at no level; a date always does.
+ */
+const DEEP_PROVISION_LINE = /^\s*[‘'"]?(\d{1,3}(?:\.\d{1,3}){2,}[A-Z]{0,2})\.?(?:\s+(?=\S)|\s*$)/;
 /**
  * A tariff code is not a provision.
  *
@@ -39,7 +114,7 @@ const DECIMAL_PROVISION_LINE = /^\s*[‘'"]?(\d+\.\d+[A-Z]{0,2})(?:\s+(?=\S)|\s*
  */
 const TARIFF_LABEL = /^(?:0|\d{4}\.\d)/;
 const numberedAt = (line: string): RegExpExecArray | null =>
-  DECIMAL_PROVISION_LINE.exec(line) ?? PROVISION_LINE.exec(line);
+  DEEP_PROVISION_LINE.exec(line) ?? DECIMAL_PROVISION_LINE.exec(line) ?? PROVISION_LINE.exec(line);
 const provisionAt = (line: string): RegExpExecArray | null => {
   const found = numberedAt(line);
   return found && TARIFF_LABEL.test(found[1]!) ? null : found;
@@ -169,7 +244,12 @@ export function runningHeader(pages: PageText[]): string | null {
   }
   const enough = (v: { where: Map<number, number> }): boolean =>
     v.where.size >= 3 && v.where.size >= pages.length * 0.15;
-  const repeated = [...at.values()].filter(enough);
+  // A repeated line is only a header if it is a name. A registry's policy lists its domain
+  // categories in a table and "pursuant to the Universities and University Colleges Act 1971;"
+  // runs down three pages of it, which was enough to be taken for the document's own name and to
+  // rename the instrument after somebody else's Act. Where every repeat is a clause the document
+  // has no running header, and saying so lets its citation provision be asked instead.
+  const repeated = [...at.values()].filter((v) => enough(v) && !readsAsAClause(v.text));
   if (repeated.length === 0) return null;
   repeated.sort((a, b) => b.where.size - a.where.size || b.text.length - a.text.length);
 
@@ -477,14 +557,51 @@ export function sectionise(pages: PageText[]): SectionBuilder {
     (it, n) => 'lines' in it && it.label !== null && it.lines.length > 1 && lastAt.get(key(it)) === n && !listed(it, n),
   );
   const builder = new SectionBuilder();
+  /**
+   * What accumulated under an entry that is about to be dropped.
+   *
+   * It is kept as a section and not as prose, because prose reaches no search: the Criminal
+   * Procedure Code lost a quarter of its text that way, which is why a Schedule opens a section
+   * of its own. It carries no label, because the label belonged to the entry being dropped and
+   * that entry's real copy is elsewhere in the document -- so this text is citable by offset and
+   * findable by its words, without claiming to be a provision it is not.
+   */
+  const keep = (it: Candidate): void => {
+    if (it.lines.length < 2) return;
+    const text = it.lines.slice(1).join('\n').trim();
+    if (!text) return;
+    builder.add({
+      headingPath: it.part,
+      label: null,
+      text,
+      page: it.page,
+      language: it.language ?? null,
+      repealed: false,
+      anchor: null,
+    });
+  };
   for (const [n, it] of items.entries()) {
     if (!('lines' in it)) {
       builder.addProse(it.prose);
       continue;
     }
-    if (it.label && (lastAt.get(key(it)) !== n || listed(it, n))) continue;
+    // A duplicate entry is dropped, but what accumulated underneath it is not a duplicate of
+    // anything. Lines that match no provision are filed onto whichever entry was open, so an
+    // arrangement of sections collects the front matter printed after it, and a numbered list
+    // that is not an arrangement at all -- the committee of contributors an agency prints on its
+    // second page -- collects the body of the guideline that follows. Dropping the entry dropped
+    // those lines with it, unsearchable and uncited: Malaysia's Data Protection Officer
+    // Competency Guideline kept 1,414 characters of the 15,783 its pages carry, and the thirteen
+    // it kept were the contributors' names. The entry's own line is the duplicate; the rest is
+    // the document, and it is kept as prose because it is text without being a citable provision.
+    if (it.label && (lastAt.get(key(it)) !== n || listed(it, n))) {
+      keep(it);
+      continue;
+    }
     // The arrangement closes by listing the Schedules, before any provision has a body. That copy
     // collects the cover pages that follow it, and it is not the Schedule.
+    // Nothing is kept from this one: what it collected is the cover pages printed after the
+    // arrangement, which the Schedule's real copy carries again further down.
     if (it.schedule && !(firstBodied < n)) continue;
     const text = it.lines.join('\n').trim();
     if (!text) continue;
@@ -538,22 +655,37 @@ export async function parsePdf(bytes: Buffer, url: string, opts: ParsePdfOptions
     };
   }
 
+  const original = new Map(pages.map((page) => [page.page, page.lines.join(' ').length]));
   const sparse = pages
     .filter((page) => page.lines.join(' ').length < MIN_CHARS_PER_PAGE)
     .map((page) => page.page);
+  // A page whose text layer emits control characters is read again for the same reason a page with
+  // no text layer is: what came back is not what is printed. It is held separately because the two
+  // failures are accepted on different evidence -- see the test below.
+  const damaged = pages
+    .filter((page) => hasCorruptTextLayer(page.lines))
+    .map((page) => page.page);
+  const reread = [...new Set([...sparse, ...damaged])].sort((a, b) => a - b);
   const ocrUsed: number[] = [];
   const ocrFailed: number[] = [];
   const confidences: number[] = [];
   let ocrError: string | null = null;
-  if (sparse.length > 0) {
+  if (reread.length > 0) {
     try {
-      const recovered = await ocrPdfPages(bytes, sparse, opts.ocrEngine);
+      const recovered = await ocrPdfPages(bytes, reread, opts.ocrEngine);
       const byPage = new Map(recovered.map((page) => [page.page, page]));
       pages = pages.map((page) => {
-        if (!sparse.includes(page.page)) return page;
+        if (!reread.includes(page.page)) return page;
         const ocr = byPage.get(page.page);
         const text = ocr?.lines.join(' ') ?? '';
-        if (!ocr || text.length < MIN_CHARS_PER_PAGE) {
+        const accepted =
+          !!ocr &&
+          ocrReplacesThePage(
+            damaged.includes(page.page) ? 'damaged' : 'sparse',
+            page.lines.join(' '),
+            text,
+          );
+        if (!ocr || !accepted) {
           ocrFailed.push(page.page);
           return page;
         }
@@ -620,6 +752,7 @@ export async function parsePdf(bytes: Buffer, url: string, opts: ParsePdfOptions
       pages: String(pages.length),
       ...(amended ? { lastAmendedOn: amended.on, lastAmendedBasis: amended.basis } : {}),
       ...(ocrUsed.length ? { ocrPages: ocrUsed.join(',') } : {}),
+      ...(damaged.length ? { corruptTextLayerPages: damaged.join(',') } : {}),
       ...(confidences.length
         ? { ocrConfidence: String(Math.round(confidences.reduce((sum, n) => sum + n, 0) / confidences.length)) }
         : {}),

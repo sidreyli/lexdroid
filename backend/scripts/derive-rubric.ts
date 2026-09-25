@@ -131,9 +131,53 @@ function cellText(cell: ExcelJS.Cell): string {
   return String(v).trim();
 }
 
-/** Collapse the whitespace a spreadsheet cell carries without touching the words. */
+/**
+ * ESCAP's own spelling, corrected.
+ *
+ * Their criteria prose carries eleven misspelled words, and these are the words the shortlist
+ * searches the text of an Act. "Only functional seperation is mandated" sends indicator 5.4
+ * hunting for a spelling no legislature has ever printed, across 417 queries. Each entry below
+ * was found by taking every word of six letters or more in the derived rubric and keeping the
+ * ones that occur nowhere in the corpus at all: a word no statute anywhere uses is either a
+ * typo, or a spelling the statutes do not share.
+ *
+ * "localization" is the second kind. It is not misspelled, it is American, and the corpus
+ * spells it with an s.
+ *
+ * Corrections are recorded rather than silent. An entry that stops matching is reported, so a
+ * corrected spreadsheet retires its entry instead of leaving it to rot.
+ */
+const SPELLING: ReadonlyArray<readonly [RegExp, string]> = [
+  [/\babesence\b/gi, 'absence'],
+  [/\bfuncation\b/gi, 'functional'],
+  [/\bhoirzontal\b/gi, 'horizontal'],
+  [/\bICTgoods\b/g, 'ICT goods'],
+  [/\bliablity\b/gi, 'liability'],
+  [/\blocalization\b/gi, 'localisation'],
+  [/\bpertiaining\b/gi, 'pertaining'],
+  [/\bregistrater\b/gi, 'register'],
+  [/\brestrctions\b/gi, 'restrictions'],
+  [/\bseperation\b/gi, 'separation'],
+  [/\bservics\b/gi, 'services'],
+];
+
+const corrected = new Map<string, number>();
+
+/** Apply SPELLING, keeping the capital the cell started the word with. */
+function spell(s: string): string {
+  let out = s;
+  for (const [pattern, right] of SPELLING) {
+    out = out.replace(pattern, (wrong) => {
+      corrected.set(pattern.source, (corrected.get(pattern.source) ?? 0) + 1);
+      return wrong[0] === wrong[0]!.toUpperCase() ? right[0]!.toUpperCase() + right.slice(1) : right;
+    });
+  }
+  return out;
+}
+
+/** Collapse the whitespace a spreadsheet cell carries, and correct ESCAP's spelling. */
 function tidy(s: string): string {
-  return s.replace(/\s+/g, ' ').trim();
+  return spell(s.replace(/\s+/g, ' ').trim());
 }
 
 /**
@@ -325,6 +369,15 @@ async function main(): Promise<void> {
     });
     pillarIndicators.get(currentPillar.id)!.push(id);
   });
+
+  for (const [pattern] of SPELLING) {
+    if (!corrected.has(pattern.source)) {
+      defect(
+        `spelling: ${pattern.source} matched nothing. If ESCAP has corrected the sheet, drop the ` +
+          `entry; if not, the cell it was found in has moved and the words are going unread.`,
+      );
+    }
+  }
 
   // --- checks against the other two documents -------------------------------------------------
 

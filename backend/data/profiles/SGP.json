@@ -60,6 +60,13 @@
       "localName": "Advisory Guidelines",
       "bindingness": "advisory",
       "note": "PDPC Advisory Guidelines and MAS Guidelines state how a regulator reads a binding instrument. Evidence of interpretation, never the source of an obligation on their own."
+    },
+    {
+      "rank": 5,
+      "kind": "publication",
+      "localName": "Publication about the law",
+      "bindingness": "advisory",
+      "note": "A document a body published about the law rather than an instrument of it: a consultation paper, a media release, an FAQ, a landing page for an Act held in the statute book. Registered because it is real evidence of how a regulator reads an obligation, and never the source of one. Assigned where the source states neither an identifier nor a standing."
     }
   ],
   "portals": [
@@ -202,6 +209,27 @@
       "adapter": "sitemap",
       "adapterConfig": {},
       "notes": "Competition enforcement and the consumer protection framework."
+    },
+    {
+      "name": "Singapore Network Information Centre",
+      "url": "https://www.sgnic.sg",
+      "kind": "registry",
+      "authority": "SGNIC",
+      "pillars": [
+        12
+      ],
+      "adapter": "crawl",
+      "adapterConfig": {
+        "seeds": [
+          "https://www.sgnic.sg/domain-registration/policies-agreements"
+        ],
+        "namedBy": [
+          "policy",
+          "agreement",
+          "rule"
+        ]
+      },
+      "notes": "The .sg registry, and the one source this profile had no counterpart to in the other two: Australia declares auDA and Malaysia declares MYNIC, and the eligibility requirements for a domain name are in a registry policy in all three. Rules of Registration, the Acceptable Use Policy, the Registration Agreement and the Code of Practice are PDFs on one page, which is where the walk is seeded. Not a government host, so a row citing it has to say what makes it authoritative."
     }
   ],
   "commitments": [

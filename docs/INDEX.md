@@ -9,6 +9,29 @@ LexDroid's implementation notes:
 - `reader-batch.md` — the reader-side fixes held for one re-run, each with its rule.
 - `aus-sgp-disagreements.md` — every cell where Australia or Singapore differs from ESCAP, sorted
   into retrieval failures, over-reads and genuine finds, and why agreement is the wrong target.
+- `malaysia-corpus-readiness.md` — whether Malaysia's corpus can carry its 61 cells, asked of the
+  published index's citations without spending a run, and the three portals that return nothing.
+- `zone1-gaps-closed.md` — the four portals that registered nothing, what each one's silence
+  turned out to be, the 91% of a Malaysian document that the sectioniser was discarding, the
+  regulator pages in all three economies that announce a policy rather than being one, and why the
+  framework indicators refuse an instrument whose standing nobody states.
+- `pre-run-sweep.md` — the sweep taken before booking GPU: what reach says about every cell
+  that differs from ESCAP, and the five pipeline defects the sweep turned up. Its readiness
+  conclusion is superseded by the next entry; its measurements stand.
+- `malaysia-and-the-second-pass.md` — the Malaysian work and a fresh look at Zones 0 to 2: why
+  that run's Malaysian reader saw a tenth of the text the others did, the four fixes, and the two
+  places ESCAP's own key departs from ESCAP's own method.
+- `the-last-three-sources.md` — closing the three open defects and collecting the three documents
+  the reach sweep found missing: the shared page budget that made a new shelf cost the old one,
+  the shared noun list that could not carry the word a registry calls its rules by, and the
+  procurement Act Malaysia passed that ESCAP's 1966 citation predates.
+- `grade-on-a-remnant.md` - the readiness check before booking GPU, and the one number that did not
+  hold: why Malaysia's "40 -> 30" measures a re-parse and not the rules, what a run has to still
+  hold for a rescore to mean anything, and why the pillar is the unit that can say it.
+- `a-pointer-is-not-a-name.md` - the registry policy whose substance sat in a PDF behind its own
+  page, and the three further defects finding it turned up: a page that offers its one file under
+  the word "here", a running header that was a clause about somebody else's Act, and a crawl
+  filing "Click to view the Financial Services Act 2013" as an instrument.
 - `lao-mongolia-russia-recon.md` — the three new economies' portals read live, with what each one
   actually serves, which existing adapter applies, and what blocks the ones that are blocked. The
   full trace behind the `adapter: null` notes in `LAO.json`, `MNG.json` and `RUS.json`.

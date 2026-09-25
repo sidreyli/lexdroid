@@ -114,8 +114,9 @@ secrets" — something was found — and the controlling instrument recorded is 
 1995**, which does not govern trade secrets at all.
 
 Both 12.7 cells fail the same way in both economies, which makes them one problem and not two: the
-restriction lives in domain-registry policy, and registry policy is the kind of document the defect
-above pushes out of the governing slots.
+restriction lives in domain-registry policy rather than in a statute. That was first put down to
+the defect above pushing policy out of the governing slots; it is not the cause, and the last
+section of this document records both what the cause was and how the governing slots were cleared.
 
 ### Probable over-reads — the quote does not meet the band it was scored under
 
@@ -131,7 +132,7 @@ Each of these can be checked without a re-run, by reading the quote against the 
 
 | cell | ours | ESCAP | the difference |
 | :-- | --: | --: | :-- |
-| AUS 5.2 | 1 | 0.8 | Same instrument, same fact: the Telstra Corporation Act's 5% cap on foreign holdings. **0.8 is not a score any band in the rubric produces.** Ours follows the band for a minority stake in more than one measure. We should hold this one. |
+| AUS 5.2 | 1 | 0.8 | Same instrument, same fact: the Telstra Corporation Act's 5% cap on foreign holdings. Ours follows the band for a minority stake in more than one measure, and the cell made out two: a 5% individual cap and a 49% aggregate one. Arguable, and the reason first written here for holding it was wrong -- see below. |
 | AUS 5.1 | 0 | 0.5 | We found three duties to share passive infrastructure, so "passive sharing is mandated" and the score is 0. Defensible, but the controlling instrument recorded is the Offshore Electricity Infrastructure Act 2021, which wants checking before we rely on it. |
 | SGP 4.3 | 1 | 0 | The innocent-infringer defence limiting damages, read as a restriction on enforcement reaching every sector. Genuinely arguable both ways. |
 | SGP 4.2 | 0.5 | 0 | Scored down for finding no provisional measures, while holding the Patents Act 1994. Likely under-retrieval within an instrument we do hold, rather than a judgement difference. |
@@ -229,3 +230,125 @@ indicator; the guard asks whether a document is an instrument, not whether it is
 - ESCAP round-1 is an older pass. Round-2 exists but does not cover these two economies.
 - Reproduce any figure here from run `d82f0348-78f0-4caa-9b0d-5ff0db180c13` in
   `backend/data/lexdroid.db`, against `source = 'round-1'` in `backend/data/baseline.db`.
+
+## The recall audit, 21 September 2026
+
+Before spending a run, the cheap half of every remaining disagreement was asked directly: *does
+retrieval, as it stands now, reach the provision this cell needs?* A reader can only be wrong about
+a provision it was shown, and a day of GPU cannot recover from a provision that never arrives. Each
+target below was verified at source first, against the statute, not against ESCAP's score.
+
+| cell | the provision it needs | before this batch | now |
+| :-- | :-- | :-- | :-- |
+| AUS 4.5 | Copyright Act 1968 s113E, fair dealing factors | unreached | 11th of 66 |
+| AUS 12.5 | Customs Act 1901 s68, entry for home consumption | 160th of 308 | 7th of 60 |
+| SGP 4.2 | Patents Act 1994 ss67, 69, remedies | unreached | 2nd and 3rd of 49 |
+| SGP 4.5 | Copyright Act 2021 Div 2, fair use | unreached | ss191, 192 at 3rd and 5th |
+| AUS 12.4.4 | Payment Systems (Regulation) Act 1998 s22 | not in the top 600 | 5th of 60 |
+| AUS 5.1 | Telecommunications Act 1997 Sch 1 cll 33-35 | unreached, and the Act did not govern | the Act governs; Sch 1 in the depth |
+
+Two of those were still missing when the audit began and are what row 18 of `reader-batch.md`
+fixes. Three things are worth stating about them beyond the fix.
+
+**AUS 12.4.4 was never a corpus gap and never a judgement difference.** ESCAP cites the Banking Act
+1959, which holds no provision about purchased payment facilities at all; the regime is in the
+Payment Systems (Regulation) Act 1998, which the register already named as governing the cell.
+Section 22 of that Act -- "Holder of stored value must be an ADI or be authorised or exempted under
+this Part", an offence of 200 penalty units -- answers the question outright. Section 23 beside it,
+the *power to grant* the authority, was read. The *duty to hold* one was not. The cell reported "no
+payment licensing requirement found" with twenty findings before it, every one of which the second
+reading had passed. So our citation is better than the one ESCAP gives; our answer was wrong for
+the narrowest possible reason.
+
+**SGP 4.5 moved the wrong way and it is honest that it did.** The cell scored 0 and now scores 1 on
+the banked readings, because the findings that produced the 0 were a cross-reference in the
+Copyright Regulations and an IPOS explainer page, and both are now correctly refused. Of 182
+sections read for the cell, four produced a finding and none was section 190 of the Copyright Act
+2021 -- "It is a permitted use of a work to make a fair use of the work", 212 characters, in the
+corpus the whole time. The 0 was right by accident and the 1 is wrong on the evidence available;
+sections 191 and 192 now reach the depth and the run decides it.
+
+**AUS 5.1 is a citation, not a score.** We already answer 0 against ESCAP's 0.5 and we are right:
+clause 33 of Schedule 1 mandates tower access on request. What was wrong is that the cell reached
+that answer without ever seeing clause 33, and named an offshore-energy Act as its controlling
+instrument. The score does not move; the row we can export does.
+
+One measurement that changed nothing is recorded because it rules a suspect out: raising the
+query-best seat budget from two to four moved no provision in any of seven cells. The budget was
+never what held these provisions out of the depth. The question was.
+
+## AUS 12.7 reopens: the document was there and empty, 21 September 2026
+
+The section above closes both 12.7 cells as a shared judgement call -- the restriction lives in
+domain-registry policy rather than a statute.
+That reading was made against a document that could not have been read whatever slot it won.
+
+The re-parse before the batch run shows why. `.au Domain Administration Rules: Licensing` parsed as
+**84 headings and 2,134 characters**: every heading in the instrument, and almost none of the text
+under any of them. The page wraps each heading in its own block, so the old parser's sibling walk
+found `h.next()` empty and recorded the heading alone. The same document now parses to **99,755
+characters**, and rule 2.4.1 is a section of its own:
+
+> 2.4.1 A Person applying for a Licence must: have an Australian Presence; and satisfy any
+> eligibility and allocation criteria for the Namespace being applied for...
+
+That is the provision ESCAP cites, in the instrument ESCAP cites, and it was absent from the corpus
+as text while being present as a title. Whether an auDA rule is an instrument for scoring purposes
+is still a judgement call and still ours to make -- but it is now a call about a provision we can
+quote, not about an empty document, and the run makes it on evidence.
+
+Three more documents were heading-only in the same way and are not now; the duplication the same
+fix removed cut APRA's directors' guide from 662,603 characters to 210,437, where chapters 3 to 5
+had been repeated inside chapter 2. One document in Australia still reads thin -- Consumer
+Protection Notice No. 6 of 2004, 14 sections and 1,284 characters -- and that one is honest: the
+notice is a list of one-line exclusions for bicycles, from 7.4 KB of source.
+
+### The governing slots were suspected next, and cleared
+
+Once rule 2.4.1 was readable, retrieval reached it: AUS 12.7 seats 59 sections, six of them auDA
+provisions, with rule 2.4.3 -- "A Person applying for a Licence in the .au direct Namespace must
+have an Australian Presence" -- fourth. The cell is nonetheless governed by the Business Names
+Registration Act 2011, the Corporations Act 2001 and the Business Names Registration (Fees) Act
+2011. `shortlistInstruments` reserves half the list for Acts, so with `limit = GOVERNING_INSTRUMENTS
+* 5` the first seven entries are Acts and `.slice(0, 3)` cannot leave them. No rule, regulation,
+notice, order or guideline can govern any cell in any economy.
+
+That reads like the same defect one layer down. It is not, on two separate measurements.
+
+The reservation earns its place. Against ESCAP's citations on all 50 benchmark cells, the cited
+instrument is in the top three for **27** cells as the list is built and **16** by fused score
+alone; in the list of 25 at all, 39 against 35. Thirteen cells change verdict and twelve of them
+change for the worse. The by-score top threes are not near misses -- AUS 12.4.5, electronic
+transactions, draws three *Higher Education Support (Maximum Payments)* regulations. Score alone
+cannot separate a governing statute from a fee schedule that shares its vocabulary.
+
+Reserving a fourth slot for the best-ranked subsidiary instrument rescues **nothing**: 27 cells
+before, 27 after, across all 50. On 12.7 itself it would seat the wrong document, the .au Domain
+Name Suppliers' Code of Practice at rank 8, while the Rules sit at rank 10.
+
+And the slots gate nothing to begin with. Governing seats are *added* to the depth rather than
+taken from it, so they displace no provision; and `absenceFor` chooses its witness from every
+instrument that bore a finding, using the governing list only to break ties among those. An
+instrument outside the top three is neither unread nor unciteable. The auDA Rules are seated,
+quotable and eligible to witness. Nothing is changed here.
+
+## The corpus under these numbers has moved, 22 September 2026
+
+Everything above was measured on run `d82f0348`'s corpus. That corpus has since changed for both
+economies, and this section exists so nobody re-reads the numbers above as current.
+
+Twenty-five Australian and fifty-four Singaporean instruments turned out to be landing pages
+announcing a document rather than the document — the same defect found in Bank Negara's corpus and
+described in `zone1-gaps-closed.md`. Re-reading them added **205,094** characters to Australia
+across four instruments and **1,783,787** to Singapore across thirty-nine. Nothing shrank, no
+citation was broken, and both economies are fully embedded again.
+
+Almost all of it is regulator guidance: MAS publishes nearly every guideline this way. The one
+statute among them is Singapore's Strategic Goods (Control) Act, which was 1,068 characters and is
+now 622,876.
+
+Which way this cuts is not yet known and cannot be known without a run. It is more law in reach of
+retrieval, which is what the defect diagnosed above wanted; it is also more regulator guidance
+competing for the same reading window, which is what that defect was *about*. The thing to check
+after the next run is the same thing named at the end of the recall audit: characters read per
+cell, not sections held.

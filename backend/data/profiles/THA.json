@@ -51,6 +51,13 @@
       "localName": "แนวปฏิบัติ / คำแนะนำ (Guideline or advisory)",
       "bindingness": "advisory",
       "note": "Evidence of regulator interpretation or expected practice, not itself the source of a legal obligation unless the guideline and its enabling authority say it binds the relevant entities."
+    },
+    {
+      "rank": 5,
+      "kind": "publication",
+      "localName": "Publication about the law",
+      "bindingness": "advisory",
+      "note": "A document a body published about the law rather than an instrument of it: a consultation paper, a media release, an FAQ, a landing page for an Act held in the statute book. Registered because it is real evidence of how a regulator reads an obligation, and never the source of one. Assigned where the source states neither an identifier nor a standing."
     }
   ],
   "portals": [

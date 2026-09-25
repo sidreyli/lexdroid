@@ -17,8 +17,9 @@ import type { Db } from '../db/index.js';
 import type { Fetcher } from '../fetch/index.js';
 import { RobotsDisallowed, CacheMiss, HostSuspended } from '../fetch/index.js';
 import { parseDocument, storeDocument, verifyOffsets } from '../parse/index.js';
-import { soleDocumentLink } from '../parse/html.js';
-import { namesAnInstrument, ownName } from '../parse/identity.js';
+import { namedDocumentLink, pointedDocumentLink, soleDocumentLink } from '../parse/html.js';
+import { namesAnInstrument, ownName, statedKind } from '../parse/identity.js';
+import { registeredKind } from './titles.js';
 import type { EconomyProfile } from '../profile/types.js';
 import { portalId } from '../profile/index.js';
 import { crawlAdapter } from './crawl.js';
@@ -152,14 +153,20 @@ export async function register(
     }
 
     let added = 0;
+    let publications = 0;
     db.transaction(() => {
       for (const item of found) {
         // A re-walk re-asserts what the listing says: an instrument stays in the register, and
         // its standing is refreshed from the listing it was found on this time.
         const before = db.prepare('SELECT 1 FROM instrument WHERE economy_code = ? AND source_url = ?')
           .get(profile.code, item.url);
+        // What the listing corroborates, not what the title claims. `kindOf` reads the title, and
+        // a paper named after the Act it discusses reads as that Act -- which is how a regulator's
+        // consultation papers came to hold seats in the reserve the shortlist keeps for statutes.
+        const kind = registeredKind(item.kind, item);
+        if (kind !== item.kind) publications += 1;
         insert.run(
-          profile.code, item.title, item.officialNumber ?? null, item.kind,
+          profile.code, item.title, item.officialNumber ?? null, kind,
           item.status ?? null, item.statusBasis ?? null, item.commencedOn ?? null,
           item.lastAmendedOn ?? null, item.currentTo ?? null, item.currentToBasis ?? null,
           item.madeUnder ?? null, item.url, `portal:${id}`, now,
@@ -184,7 +191,10 @@ export async function register(
         }
       })();
     }
-    log(`  ${found.length} instrument(s) listed, ${added} new to the register`);
+    log(
+      `  ${found.length} instrument(s) listed, ${added} new to the register` +
+        (publications > 0 ? `, ${publications} registered as publications about the law` : ''),
+    );
     // A portal that was walked and yielded nothing is the same hole as a portal nothing can walk,
     // and until now only the second was recorded. Seven of the thirty declared Australian,
     // Malaysian and Singaporean sources are in this state -- the e-Gazette and MyIPO answer 403,
@@ -334,6 +344,8 @@ interface InstrumentRow {
   discovered_via: string;
   title_provisional: number;
   also_at: string | null;
+  official_number: string | null;
+  status: string;
 }
 
 export interface MaterialiseOptions {
@@ -400,6 +412,19 @@ export const RETRYABLE = ['empty', 'parse-error'] as const;
 /** Three tries in all: the first, and two more. Past that it is the document, not the moment. */
 export const MAX_ATTEMPTS = 3;
 
+/**
+ * How much more a linked file must say before it is taken for the instrument the page names.
+ *
+ * Three, because a page that is publishing itself as a PDF cannot be under a third of its own
+ * length, and an announcement of a document always is.
+ */
+const WRAPPER_GAIN = 3;
+
+/** What a parse actually yielded to search, which is the only comparable measure of a document. */
+function textLength(parsed: { sections: { text: string }[] }): number {
+  return parsed.sections.reduce((n, s) => n + s.text.length, 0);
+}
+
 export async function materialise(
   db: Db,
   profile: EconomyProfile,
@@ -428,7 +453,8 @@ export async function materialise(
                               AND u.reason IN (${RETRYABLE.map((r) => `'${r}'`).join(', ')})
                               AND u.attempts < ${MAX_ATTEMPTS})))`;
   const params: unknown[] = [profile.code];
-  let sql = `SELECT i.id, i.title, i.source_url, i.discovered_via, i.title_provisional, i.also_at
+  let sql = `SELECT i.id, i.title, i.source_url, i.discovered_via, i.title_provisional, i.also_at,
+                    i.official_number, i.status
                FROM instrument i WHERE ${where}`;
   if (opts.titleLike) {
     sql += ' AND i.title LIKE ?';
@@ -479,6 +505,7 @@ export async function materialise(
 
       // A page of menus that publishes exactly one file is not an index of leads; it is the
       // instrument's own wrapper, and the file is the document to cite.
+      let adopted = false;
       const wrapper = parsed.unread?.reason === 'landing-page' || parsed.unread?.reason === 'empty';
       if (wrapper && /html/i.test(fetched.mediaType)) {
         const only = soleDocumentLink(fetched.body.toString('utf8'), fetched.finalUrl);
@@ -488,7 +515,44 @@ export async function materialise(
           if (reparsed && !reparsed.unread) {
             fetched = inner;
             parsed = reparsed;
+            adopted = true;
             log(`  [${n + 1}/${rows.length}] the page wraps one document: ${only}`);
+          }
+        }
+      }
+
+      // The harder case, and the one a page of menus does not cover: a page that parses perfectly
+      // well and is still not the instrument. A regulator announces a policy document by posting
+      // the announcement, and the announcement has prose in it, so it is never unread and the
+      // block above never runs. Where exactly one linked file calls itself by the instrument's
+      // name and says several times more than the page does, the page was the notice.
+      //
+      // The gain test is the whole of the guard and it is not decoration. Without it the same
+      // rule replaces every ASD cyber-security guideline and a 210,437-character APRA guide for
+      // directors with the PDF each one offers of itself -- pages that ARE the instrument, which
+      // link their own file under their own name exactly as an announcement does. Measured over
+      // all three economies, that is the only thing separating the two: a page publishing itself
+      // as a PDF came back between 0.02 and 1.63 times its own length, and every announcement
+      // between 14 and 582 times. Nothing landed in between.
+      //
+      // A link naming the instrument is one of the two ways a page offers its own file. The other
+      // is a link naming nothing -- "downloaded here" -- which says which file without saying
+      // which document, and is why `pointedDocumentLink` stands beside the named one rather than
+      // inside it. Both answer the same question and both are weighed the same way.
+      if (!adopted && /html/i.test(fetched.mediaType)) {
+        const body = fetched.body.toString('utf8');
+        const named = namedDocumentLink(body, fetched.finalUrl, row.title) ?? pointedDocumentLink(body, fetched.finalUrl);
+        if (named && named !== fetched.finalUrl) {
+          const inner = await fetcher.fetch(named);
+          const reparsed = inner.status === 200 ? await parseDocument(inner, { languages: profile.officialLanguages }) : null;
+          const held = textLength(parsed);
+          const offered = reparsed ? textLength(reparsed) : 0;
+          if (reparsed && !reparsed.unread && offered > 0 && offered >= held * WRAPPER_GAIN) {
+            fetched = inner;
+            parsed = reparsed;
+            log(
+              `  [${n + 1}/${rows.length}] the page announces the document (${held} -> ${offered} chars): ${named}`,
+            );
           }
         }
       }
@@ -524,11 +588,36 @@ export async function materialise(
       // all, takes the name it calls itself by.
       // Its citation provision where the parser found no title: a portal that filed an Order under
       // its own page theme still served a document whose section 1 says what the Order is.
+      //
+      // Asked only of a filed title that names no instrument, and no longer of every title a crawl
+      // marked provisional. `ownName` falls back to the page's own <title> where the document
+      // states no name in its provisions, and a page's <title> is the site's name for the page:
+      // walking the Commission's guidelines library registered twenty guidelines, each correctly
+      // named by the link it was listed under, and renamed every one of them to "Malaysian
+      // Communications And Multimedia Commission (MCMC) | ... - Guidelines", which ends in an
+      // instrument's noun and so passed the guard. A title that already names an instrument is
+      // not improved by a title that names the website. The templates and upload slugs this rule
+      // was built for -- "Compilations-Agency prepared template", "250312-LI-TSY_47_0757-Mergers"
+      // -- name no instrument either way, so all 48 of those renames stand.
       const callsItself = ownName(parsed.sections, parsed.title);
-      if ((row.title_provisional || !namesAnInstrument(row.title)) && callsItself) {
+      if (!namesAnInstrument(row.title) && callsItself) {
         db.prepare('UPDATE instrument SET title = ?, title_provisional = 0 WHERE id = ?')
           .run(callsItself, row.id);
         log(`  [${n + 1}/${rows.length}] names itself "${callsItself}"`);
+      }
+
+      // And where the source said nothing about what the document is, the document's own opening
+      // provision does. Gated on the same silence `registeredKind` tests for, so a listing that
+      // stated an identifier or a standing keeps the kind it stated.
+      const sourceSaysNothing =
+        (row.official_number ?? '').trim() === '' && (row.status === 'unknown' || !row.status);
+      if (sourceSaysNothing) {
+        const callsItselfA = statedKind(parsed.sections, row.title);
+        const filed = (db.prepare('SELECT kind FROM instrument WHERE id = ?').get(row.id) as { kind: string | null }).kind;
+        if (callsItselfA && callsItselfA !== filed) {
+          db.prepare('UPDATE instrument SET kind = ? WHERE id = ?').run(callsItselfA, row.id);
+          log(`  [${n + 1}/${rows.length}] calls itself a ${callsItselfA}, filed as ${filed ?? 'nothing'}`);
+        }
       }
 
       if (parsed.meta['partial']) {

@@ -18,8 +18,8 @@
  */
 import type { Db } from '../db/index.js';
 import type { Indicator } from '../rubric/types.js';
-import { generate, EngineFailure, READING_MODEL } from '../engines/ollama.js';
-import { MEASURES, INDICATOR_OF_MEASURE, SUBJECTS } from '../rubric/measures.js';
+import { generate, EngineAborted, EngineFailure, EngineOverran, READING_MODEL } from '../engines/ollama.js';
+import { MEASURES, INDICATOR_OF_MEASURE, MEASURE_NAMES, SUBJECTS } from '../rubric/measures.js';
 import { findFragment } from '../util/locate.js';
 
 /**
@@ -256,6 +256,18 @@ export interface Finding {
    * names. Applied in Zone 3 only with the words beside it, so it can be checked, not just trusted.
    */
   withinException?: boolean;
+  /**
+   * The condition the measure waits on, copied from the provision, or null where it operates on
+   * everyone it names from the moment it commences.
+   *
+   * Several rubric bands separate a measure that reaches every circumstance from one that reaches
+   * a specific circumstance, and the only reach any field recorded was the sector. So a limit that
+   * bites only once a defendant has proved something, or only on conduct before a dated decision,
+   * counted as reaching every circumstance because it named no sector -- and read as the widest
+   * form of the measure the rubric has.
+   * Optional because readings banked before it was asked do not carry it.
+   */
+  conditionWords?: string | null;
   /** A power that may be exercised is not a requirement that must be met. */
   mandatory: boolean;
   /** 6.1's lowest band includes "transfer is prohibited to one country". */
@@ -303,6 +315,19 @@ export interface SectionReading {
    * in full -- and a reading made of nothing else failed.
    */
   unreadable?: number;
+  /**
+   * The indicators this reading could not answer for, when it answered for some but not all.
+   * An indicator listed here has no findings in this reading and no absence either: it is a gap
+   * of its own, and nothing downstream may read the reading's silence about it as the provision
+   * having nothing in it.
+   */
+  unanswered?: readonly string[];
+  /**
+   * The engine looped rather than answered: it either repeated itself until Ollama aborted the
+   * generation, or ran to the output limit still writing. Set on the reading that lost, so a loop
+   * can be told apart from a link that dropped or a prompt that stalled.
+   */
+  runaway?: true;
   /**
    * Engine calls this reading took: one per part of a provision too long to read in one pass.
    * Absent is one. The run's cost is counted in calls made, not in provisions read.
@@ -588,6 +613,12 @@ function prompt(
     'withinException: true only if the indicator you filed this under states an exception above,',
     'and what targetWords names falls within it. False if the indicator states none, or if it does',
     'not cover what the provision is aimed at.',
+    'conditionWords: if the provision only bites once something is established -- a fact a party',
+    'must prove, a finding the court must reach, a date the conduct must fall before or after --',
+    'copy the words stating it: "who proves that the defendant was not aware", "committed before the',
+    'decision to allow the amendment". Null where it applies to everyone it names as soon as it',
+    'is in force. An exception carving conduct out is exceptionWords; this is the condition the',
+    'measure itself waits on.',
     '',
     'Two further facts are easy to answer carelessly.',
     'statedPeriod: the length of time the provision itself names, such as "5 years". Null if it',
@@ -655,6 +686,7 @@ const schemaFor = (indicators: readonly Indicator[]) => ({
           dataDescription: { type: ['string', 'null'] },
           targetWords: { type: ['string', 'null'] },
           withinException: { type: 'boolean' },
+          conditionWords: { type: ['string', 'null'] },
           appliesOnlyToGovernmentData: { type: 'boolean' },
           mandatory: { type: 'boolean' },
           countriesNamed: { type: 'array', maxItems: 24, items: { type: 'string' } },
@@ -690,6 +722,7 @@ const schemaFor = (indicators: readonly Indicator[]) => ({
           'dataScope',
           'targetWords',
           'withinException',
+          'conditionWords',
           'appliesOnlyToGovernmentData',
           'mandatory',
         ],
@@ -714,6 +747,17 @@ function normaliseForQuoteCheck(s: string): string {
     // set, not words. A reader quoting faithfully drops them, and failing it for that is wrong.
     .replace(/["“”″*]/g, '')
     .replace(/[‐-―−]/g, '-')
+    // The letters and numbers that mark items in a statutory list are the page's scaffolding, not
+    // the provision's words. A reader quoting a multi-part definition flattens it -- which is the
+    // only way to quote one -- and the markers then sit inside the span it is checked against.
+    // Australia's section 113E lists the four fairness factors as (a) to (d); the reader returned
+    // all four in order, joined by the semicolons that are already there, and the finding was
+    // refused as words "not in the provision" in the cell whose top band is the fair dealing model.
+    .replace(/\((?:[a-z]{1,2}|[ivxl]{1,4}|\d{1,3})\)/gi, ' ')
+    // Commas and semicolons for the same reason. What makes a quotation faithful is the
+    // provision's words in the provision's order; where a list is flattened the pointing changes
+    // and the words do not. Nothing here loosens which words must be there, or in what order.
+    .replace(/[,;]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
     .toLowerCase();
@@ -804,6 +848,18 @@ function echoesTheCatalogue(answer: string, indicatorId: string, measure: string
 }
 
 /**
+ * Whether the quote itself carries the word the measure is named by.
+ *
+ * `MEASURE_NAMES` holds a word only for the measures named by a legal term of art -- a licensing
+ * measure by a word meaning licence, a retention period by a word meaning time. A measure whose
+ * name is a description has none, and nothing here can stand in for its defining words.
+ */
+function quoteCarriesTheMeasure(f: Finding): boolean {
+  const name = f.measure ? MEASURE_NAMES[f.measure] : undefined;
+  return !!name && name.test(f.quote);
+}
+
+/**
  * Why a finding cannot stand, or null if it can.
  *
  * Every one of these is a question about the provision, answerable by looking at it: is the quote
@@ -839,7 +895,21 @@ export function rejectionFor(f: Finding, sectionText: string, allowed: Set<strin
   if (f.dutyBearer && !inProvision(f.dutyBearer)) {
     return `the party said to bear the duty, "${f.dutyBearer}", is not in the provision`;
   }
-  if (!inProvision(f.dutyAct)) {
+  // Guarded like every other field, which this one alone was not -- and guarded against the floor
+  // as well as against absence, because below the floor the check cannot run.
+  //
+  // `inProvision` needs MIN_PHRASE_CHARS to match anything at all, so a shorter phrase fails it
+  // whatever the provision says. That turned 890 findings away with "is not in the provision"
+  // about words that are in the provision, 811 of them the copula "is": a provision reading "It
+  // is a permitted use of a work to make a fair use of the work" grants rather than commands, so
+  // there is no act to name and the reader wrote the only verb there. Section 190 of Singapore's
+  // Copyright Act 2021 died exactly that way, in the cell whose top band is fair use.
+  //
+  // So an act too short to be checked is an act not stated, which is the same answer as an absent
+  // one and for the same reason: it makes no claim this stage can test. Whether a measure may go
+  // without an act is Zone 3's question, and nothing there turns on the field -- `dutyForce` and
+  // `permits` carry that, and the quote, the measure and the defining words are still checked here.
+  if (f.dutyAct && f.dutyAct.trim().length >= MIN_PHRASE_CHARS && !inProvision(f.dutyAct)) {
     return `the act said to be imposed, "${f.dutyAct}", is not in the provision`;
   }
   // Where a place is claimed it has to be in the provision, for the same reason the party and the
@@ -866,8 +936,25 @@ export function rejectionFor(f: Finding, sectionText: string, allowed: Set<strin
     return `the position said to be created, "${f.roleWords}", is not in the provision`;
   }
   // The words that make the measure out are a claim about the provision like every other quote.
+  //
+  // Except that rejecting the finding for it throws away the quote too, and the quote is the claim.
+  // Section 196 of Malaysia's Companies Act came back under `director-nationality` quoting "shall
+  // ordinarily reside in Malaysia by having a principal place of residence in Malaysia" -- the
+  // words the indicator is about, verbatim, from the right provision -- and was discarded because
+  // the second field repeated our own description of a residency requirement back at us. The
+  // reader was asked twice for one span and failed the second ask.
+  //
+  // So where the quote carries the word the measure is named by, the quote becomes the defining
+  // words and the finding stands. Nothing is waved through by it: every test downstream then runs
+  // on the provision's words instead of ours -- `decide`'s own `MEASURE_NAMES` check, the
+  // definition gate, the subject gate. Where the quote does not carry that word, or the measure is
+  // a description with no word of its own, nothing has been shown and this stays a rejection.
+  // Over this run that is 23 findings of the 105 echoed, across nine cells.
   if (f.definingWords && f.measure && echoesTheCatalogue(f.definingWords, f.indicatorId, f.measure)) {
-    return `the words said to make out ${f.measure} are this catalogue's description of it, not the provision's own words`;
+    if (!quoteCarriesTheMeasure(f)) {
+      return `the words said to make out ${f.measure} are this catalogue's description of it, not the provision's own words`;
+    }
+    f.definingWords = f.quote;
   }
   if (f.definingWords && !inProvision(f.definingWords)) {
     return `the words said to make out ${f.measure}, "${f.definingWords}", are not in the provision`;
@@ -889,6 +976,9 @@ export function rejectionFor(f: Finding, sectionText: string, allowed: Set<strin
   }
   if (f.targetWords && !inProvision(f.targetWords)) {
     return `the words said to name what the measure is aimed at, "${f.targetWords}", are not in the provision`;
+  }
+  if (f.conditionWords && !inProvision(f.conditionWords)) {
+    return `the words said to state the condition the measure waits on, "${f.conditionWords}", are not in the provision`;
   }
   return null;
 }
@@ -914,7 +1004,9 @@ export async function readSection(
   opts: ReadOptions = {},
 ): Promise<SectionReading> {
   const parts = windowsOf(section.text);
-  if (parts.length === 1) return readPart(section, parts[0]!, null, pillarId, pillarName, indicators, opts);
+  if (parts.length === 1) {
+    return readPartSplitting(section, parts[0]!, null, pillarId, pillarName, indicators, opts);
+  }
 
   // A long provision, read part by part. Its findings are pooled, one per indicator, measure and
   // quote, since the overlap shows a clause twice. A part that could not be read leaves text
@@ -922,9 +1014,12 @@ export async function readSection(
   // reading fails and is read again, rather than being banked as though it were complete.
   const readings: SectionReading[] = [];
   for (const [n, shown] of parts.entries()) {
-    readings.push(await readPart(section, shown, { index: n + 1, of: parts.length }, pillarId, pillarName, indicators, opts));
+    readings.push(
+      await readPartSplitting(section, shown, { index: n + 1, of: parts.length }, pillarId, pillarName, indicators, opts),
+    );
   }
   const failed = readings.map((r, n) => (r.failure ? `part ${n + 1} of ${parts.length}: ${r.failure}` : null)).filter(Boolean);
+  const unanswered = new Set(readings.flatMap((r) => r.unanswered ?? []));
   const seen = new Set<string>();
   const findings = readings.flatMap((r) => r.findings).filter((f) => {
     const key = `${f.indicatorId}|${f.measure}|${f.quote}`;
@@ -933,7 +1028,14 @@ export async function readSection(
   return {
     sectionId: section.sectionId,
     pillarId,
-    findings: failed.length ? [] : findings,
+    // Said of an indicator at a time. A part nobody could read leaves text nobody saw, so an
+    // indicator whose ask failed on any part keeps no findings from the parts that did answer:
+    // "nothing applies" cannot be said of a provision partly unseen. The indicators answered on
+    // every part are not in doubt, and one looping indicator no longer empties the provision for
+    // the other eleven.
+    findings: findings.filter((f) => !unanswered.has(f.indicatorId)),
+    ...(unanswered.size ? { unanswered: [...unanswered] } : {}),
+    ...(readings.some((r) => r.runaway) ? { runaway: true as const } : {}),
     rejected: readings.flatMap((r) => r.rejected),
     ...(readings.some((r) => r.unreadable) ? { unreadable: readings.reduce((n, r) => n + (r.unreadable ?? 0), 0) } : {}),
     calls: parts.length,
@@ -944,6 +1046,63 @@ export async function readSection(
     durationMs: readings.reduce((a, r) => a + r.durationMs, 0),
     fromCache: readings.every((r) => r.fromCache),
     fromResume: readings.every((r) => r.fromResume),
+  };
+}
+
+/**
+ * A runaway costs the indicators it was asked about, not the provision.
+ *
+ * An answer that repeats itself until Ollama aborts it, or that runs to the output limit still
+ * writing, took the whole provision down with it: every indicator in the pillar lost the
+ * provision, including the ones the engine had already answered for before it began looping.
+ * Measured on the reruns, that was 32 provisions on Malaysia and 27 on Australia.
+ *
+ * Re-asking is not the remedy. The loop is deterministic at temperature zero, so the same ask
+ * loops the same way. A smaller ask is a different generation rather than a retry: the answer is
+ * one object per indicator asked, so halving the indicators halves what the engine has to write
+ * and gives the repetition less to run in. Halved down to one, what is left at the bottom is the
+ * indicator that actually loops, and it is the only one that loses the provision.
+ *
+ * The failed ask is still paid for and still counted. A loop costing three calls instead of one
+ * is the price of not throwing away the other eleven indicators.
+ */
+async function readPartSplitting(
+  section: SectionInput,
+  shown: string,
+  part: { index: number; of: number } | null,
+  pillarId: number,
+  pillarName: string,
+  indicators: readonly Indicator[],
+  opts: ReadOptions,
+): Promise<SectionReading> {
+  const whole = await readPart(section, shown, part, pillarId, pillarName, indicators, opts);
+  if (!whole.runaway || indicators.length < 2) return whole;
+
+  const cut = Math.ceil(indicators.length / 2);
+  const halves: SectionReading[] = [];
+  for (const some of [indicators.slice(0, cut), indicators.slice(cut)]) {
+    halves.push(await readPartSplitting(section, shown, part, pillarId, pillarName, some, opts));
+  }
+
+  const failed = halves.map((r) => r.failure).filter((f): f is string => f !== null);
+  const unanswered = halves.flatMap((r) => r.unanswered ?? []);
+  const sum = (f: (r: SectionReading) => number) => halves.reduce((n, r) => n + f(r), 0);
+  return {
+    sectionId: section.sectionId,
+    pillarId,
+    findings: halves.flatMap((r) => r.findings),
+    rejected: halves.flatMap((r) => r.rejected),
+    ...(halves.some((r) => r.unreadable) ? { unreadable: sum((r) => r.unreadable ?? 0) } : {}),
+    ...(unanswered.length ? { unanswered } : {}),
+    ...(halves.some((r) => r.runaway) ? { runaway: true as const } : {}),
+    calls: 1 + sum((r) => r.calls ?? 1),
+    failure: failed.length ? failed.join('; ') : null,
+    model: whole.model,
+    promptTokens: whole.promptTokens + sum((r) => r.promptTokens),
+    completionTokens: whole.completionTokens + sum((r) => r.completionTokens),
+    durationMs: whole.durationMs + sum((r) => r.durationMs),
+    fromCache: halves.every((r) => r.fromCache),
+    fromResume: halves.every((r) => r.fromResume),
   };
 }
 
@@ -977,6 +1136,8 @@ async function readPart(
       pillarId,
       findings: [],
       rejected: [],
+      unanswered: indicators.map((i) => i.id),
+      ...(err instanceof EngineOverran || err instanceof EngineAborted ? { runaway: true as const } : {}),
       failure: err.message,
       model: opts.model ?? READING_MODEL,
       promptTokens: err.promptTokens,
@@ -1090,11 +1251,31 @@ function placeholder(raw: unknown): Finding {
   );
 }
 
+/**
+ * The words a reader writes when it means the field is empty.
+ *
+ * The schema offers null and the reader mostly takes it, but 2,810 findings in the store answered
+ * with the word instead, 2,610 of them for the party bound. A string is truthy, so "Null" was
+ * checked against the provision as though it were a claim about the text, and every one of those
+ * findings was thrown away for not containing it. Singapore's fair use test -- section 191 of the
+ * Copyright Act 2021, retrieved at rank 1 and quoted correctly -- died that way, in the cell whose
+ * top band is fair use. Decide already asks whether a measure is a permission before demanding a
+ * party bound; it never got the chance, because verification ran first.
+ *
+ * Only words that mean "there is none". "X" and the like mean "I do not know", which is a
+ * different answer, and they stay as they are.
+ */
+const MEANS_EMPTY = /^(?:null|none|nil|n\/a|not applicable|not specified|unspecified|unstated|\(none\))$/i;
+
 /** A response object into a Finding, or null if the required fields are not there. */
 function coerce(raw: unknown): Finding | null {
   if (typeof raw !== 'object' || raw === null) return null;
   const r = raw as Record<string, unknown>;
-  const str = (v: unknown): string | null => (typeof v === 'string' && v.trim() ? v.trim() : null);
+  const str = (v: unknown): string | null => {
+    if (typeof v !== 'string') return null;
+    const t = v.trim();
+    return t && !MEANS_EMPTY.test(t) ? t : null;
+  };
 
   const indicatorId = str(r['indicatorId']);
   const quote = str(r['quote']);
@@ -1150,6 +1331,7 @@ function coerce(raw: unknown): Finding | null {
     scopeUnstated: sectorScope === null || dataScope === null,
     appliesOnlyToGovernmentData: r['appliesOnlyToGovernmentData'] === true,
     targetWords: str(r['targetWords']),
+    conditionWords: str(r['conditionWords']),
     withinException: r['withinException'] === true,
     mandatory: r['mandatory'] !== false,
     countriesNamed: Array.isArray(r['countriesNamed'])

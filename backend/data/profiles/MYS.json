@@ -75,6 +75,13 @@
       "localName": "Regulator guidelines",
       "bindingness": "advisory",
       "note": "Personal Data Protection Department guidance and similar. Evidence of how a regulator reads a binding instrument, never the source of an obligation on their own."
+    },
+    {
+      "rank": 5,
+      "kind": "publication",
+      "localName": "Publication about the law",
+      "bindingness": "advisory",
+      "note": "A document a body published about the law rather than an instrument of it: a consultation paper, a media release, an FAQ, a landing page for an Act held in the statute book. Registered because it is real evidence of how a regulator reads an obligation, and never the source of one. Assigned where the source states neither an identifier nor a standing."
     }
   ],
   "portals": [
@@ -175,14 +182,25 @@
       "kind": "regulator",
       "authority": "MCMC",
       "pillars": [
+        3,
+        5,
         7,
         8,
+        9,
         10,
-        11
+        11,
+        12
       ],
       "adapter": "crawl",
-      "adapterConfig": {},
-      "notes": "Determinations, guidelines and the Content Code made under the Communications and Multimedia Act 1998. Binding on licensees through standard licence conditions rather than on their own terms, so a row citing one has to say what makes it binding."
+      "adapterConfig": {
+        "seeds": [
+          "https://www.mcmc.gov.my/en/legal/acts",
+          "https://www.mcmc.gov.my/en/legal/instrument",
+          "https://www.mcmc.gov.my/en/legal/registers",
+          "https://www.mcmc.gov.my/en/resources/guidelines/guidelines"
+        ]
+      },
+      "notes": "Determinations, guidelines and the Content Code made under the Communications and Multimedia Act 1998. Binding on licensees through standard licence conditions rather than on their own terms, so a row citing one has to say what makes it binding. The site renders its listings in the browser, so a walk from the root reaches the footer and little else: three of its pages answer with the same five links because those five are the footer. Its legal section is server-rendered and is where the instruments are, so the walk is seeded there. Measured against the live site, seeding moved the yield from 105 instruments to 113, the Online Safety Act 2025 among them. Its guidelines are not in that legal section: they are a separate library at /en/resources/guidelines/guidelines, paginated six pages deep, and the prepaid end-user registration guidelines, the access-undertaking guidelines and the network-security guidelines are all there and were reached by nothing. Seeded there as well, which with a budget per starting point moved the yield from 113 instruments to 160."
     },
     {
       "name": "National Cyber Security Agency",
@@ -206,9 +224,9 @@
         7,
         8
       ],
-      "adapter": "sitemap",
+      "adapter": "crawl",
       "adapterConfig": {},
-      "notes": "Policy documents, the technology risk management one among them, binding on financial institutions. A policy document is not an Act, and treating it as one is a mistake this profile's instrument ranking exists to prevent."
+      "notes": "Policy documents, the technology risk management one among them, binding on financial institutions. A policy document is not an Act, and treating it as one is a mistake this profile's instrument ranking exists to prevent. Read by crawling rather than by sitemap, which is measured and not a preference: the sitemap the bank declares in its robots.txt is a hand-kept list of 62 navigation pages -- the board, the governors, the exchange rates -- and yields one instrument, while the crawl yields 97 from the same site, among them the Policy Document on Electronic Money that three payment cells are cited against. Every other portal in this profile read by sitemap yields more that way than by crawl, so this is the exception and was switched on its own evidence."
     },
     {
       "name": "Royal Malaysian Customs Department",
@@ -221,8 +239,12 @@
         12
       ],
       "adapter": "crawl",
-      "adapterConfig": {},
-      "notes": "Customs procedure and the electronic declaration systems the trade facilitation pillars turn on. Publishes in Malay by default."
+      "adapterConfig": {
+        "seeds": [
+          "https://www.customs.gov.my/en/home"
+        ]
+      },
+      "notes": "Customs procedure and the electronic declaration systems the trade facilitation pillars turn on. Publishes in Malay by default, and the default is the reason this portal read as empty: the root redirects to a Malay shell whose only on-host links are the two language switchers, so the walk ended after one page. The English index at /en/home carries the navigation, and seeded there the same crawl finds 21 instruments -- the Customs Duties Orders, the Prohibition of Imports and Exports Orders, and the anti-dumping and countervailing duty orders. The site also serves its certificate without the GlobalSign intermediate, so every request to it failed verification until the fetcher learned to fetch the issuer the certificate names."
     },
     {
       "name": "Malaysian Investment Development Authority",
@@ -259,8 +281,36 @@
         12
       ],
       "adapter": "crawl",
-      "adapterConfig": {},
-      "notes": "The .my registry's own eligibility policies, which are the domain name requirements. Not a government host, so a row citing it has to say what makes it authoritative."
+      "adapterConfig": {
+        "seeds": [
+          "https://mynic.my/resources"
+        ],
+        "namedBy": [
+          "policy",
+          "agreement",
+          "rule"
+        ]
+      },
+      "notes": "The .my registry's own eligibility policies, which are the domain name requirements. Not a government host, so a row citing it has to say what makes it authoritative. Its front page links only the dispute-resolution rules; the thirteen policies -- registrant, registrar, registry, transfer, acceptable use, regulated names -- are linked from /resources, so the walk is seeded there. It calls them policies and agreements, which is the word a registry uses for its binding rules and is not a word the shared list can carry: see `namedByDeclared`."
+    },
+    {
+      "name": "Ministry of Finance",
+      "url": "https://www.mof.gov.my/portal/en/",
+      "kind": "regulator",
+      "authority": "MOF",
+      "pillars": [
+        2
+      ],
+      "adapter": "crawl",
+      "adapterConfig": {
+        "seeds": [
+          "https://www.mof.gov.my/portal/en/treasury-instructions"
+        ],
+        "namedBy": [
+          "instruction"
+        ]
+      },
+      "notes": "Malaysia has no procurement Act: what limits bidding is the Treasury Instructions, first issued in 1966 and revised in 1970, 1997, 2008 and 2023, together with the amendment circulars issued under them. Pillar 2 rested on the statute book and the Customs department, neither of which holds them. The Ministry calls them Instructions, so the portal says so. The root is a language splash that links nothing, which is why the walk is seeded at the English page that carries them."
     }
   ],
   "commitments": [

@@ -17,8 +17,9 @@
  * value the document row carries, so a cited snippet can always be re-checked against the exact
  * bytes it was read out of.
  */
-import { createHash } from 'node:crypto';
+import { createHash, X509Certificate } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { connect as tlsConnect, rootCertificates } from 'node:tls';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { brotliDecompressSync, gunzipSync, inflateSync } from 'node:zlib';
@@ -78,6 +79,146 @@ const dispatcher = new Agent({
   connect: { ciphers: BROWSER_CIPHERS, ecdhCurve: 'X25519:prime256v1:secp384r1', minVersion: 'TLSv1.2' },
 });
 const MAX_REDIRECTS = 5;
+
+/**
+ * The intermediate certificate a server forgot to send, fetched from its own certificate.
+ *
+ * A TLS server is supposed to present its leaf *and* every intermediate up to a trusted root.
+ * Royal Malaysian Customs presents the leaf alone, so the chain cannot be built and every
+ * request to it fails with "unable to verify the first certificate" -- which, from the outside,
+ * is indistinguishable from a regulator that publishes nothing. Its certificate is perfectly
+ * valid; the server is simply misconfigured. Browsers paper over this by fetching the issuer
+ * from the CA Issuers URI the leaf itself carries, and that is what this does.
+ *
+ * This does not weaken verification, and the distinction matters enough to be explicit:
+ *
+ *   - The intermediate is accepted only once we have checked that a certificate in Node's own
+ *     root store both issued it and signed it. An intermediate that does not chain to a trusted
+ *     root is discarded, and the original failure stands.
+ *   - It is then supplied *alongside* the full root store, never in place of it.
+ *   - `rejectUnauthorized` is false only on the throwaway handshake used to read the server's
+ *     certificate. Not one byte of document is read over that socket; the request is retried
+ *     over a fully verified connection or it fails.
+ *
+ * So the outcome is the same chain a correctly configured server would have handed us.
+ */
+const chasedFor = new Map<string, string | null>();
+let chasingDispatcher: Agent | null = null;
+
+/** The CA Issuers URI a certificate publishes, if it publishes one. */
+function caIssuersUri(cert: X509Certificate): string | null {
+  const match = /CA Issuers - URI:\s*(\S+)/i.exec(cert.infoAccess ?? '');
+  return match ? match[1]! : null;
+}
+
+/** Whether a certificate in Node's root store issued and signed this one. */
+function chainsToTrustedRoot(cert: X509Certificate): boolean {
+  for (const pem of rootCertificates) {
+    let root: X509Certificate;
+    try {
+      root = new X509Certificate(pem);
+    } catch {
+      continue;
+    }
+    try {
+      if (cert.checkIssued(root) && cert.verify(root.publicKey)) return true;
+    } catch {
+      // A root whose key type cannot verify this signature is simply not the issuer.
+    }
+  }
+  return false;
+}
+
+/**
+ * Read the certificate `host` actually presents, and fetch the issuer it names.
+ *
+ * Returns the intermediate as PEM, or null when the host names no issuer, the issuer cannot be
+ * read, or it does not chain to a root we already trust.
+ */
+async function fetchOmittedIntermediate(host: string): Promise<string | null> {
+  const leaf = await new Promise<X509Certificate | null>((resolve) => {
+    const socket = tlsConnect(
+      { host, port: 443, servername: host, rejectUnauthorized: false, timeout: 15_000 },
+      () => {
+        const cert = socket.getPeerX509Certificate() ?? null;
+        socket.destroy();
+        resolve(cert);
+      },
+    );
+    socket.on('error', () => { socket.destroy(); resolve(null); });
+    socket.on('timeout', () => { socket.destroy(); resolve(null); });
+  });
+  if (!leaf) return null;
+
+  const uri = caIssuersUri(leaf);
+  if (!uri) return null;
+
+  let bytes: Buffer;
+  try {
+    const res = await request(uri, { method: 'GET', headersTimeout: 20_000, bodyTimeout: 20_000 });
+    if (res.statusCode !== 200) return null;
+    bytes = Buffer.from(await res.body.arrayBuffer());
+  } catch {
+    return null;
+  }
+
+  // CA Issuers serves DER far more often than PEM; X509Certificate reads either.
+  let intermediate: X509Certificate;
+  try {
+    intermediate = new X509Certificate(bytes);
+  } catch {
+    return null;
+  }
+  // It has to be the certificate the leaf actually named, and it has to be trusted itself.
+  try {
+    if (!leaf.checkIssued(intermediate)) return null;
+  } catch {
+    return null;
+  }
+  if (!chainsToTrustedRoot(intermediate)) return null;
+  return intermediate.toString();
+}
+
+/**
+ * Try to repair `host`'s chain. True once an intermediate is held for it, so the caller retries.
+ * Asked at most once per host per process: a second failure is a real one.
+ */
+async function chaseIssuer(host: string): Promise<boolean> {
+  if (chasedFor.has(host)) return chasedFor.get(host) !== null;
+  const pem = await fetchOmittedIntermediate(host).catch(() => null);
+  chasedFor.set(host, pem);
+  if (!pem) return false;
+  chasingDispatcher = new Agent({
+    connections: 8,
+    connect: {
+      ciphers: BROWSER_CIPHERS,
+      ecdhCurve: 'X25519:prime256v1:secp384r1',
+      minVersion: 'TLSv1.2',
+      ca: [...rootCertificates, ...[...chasedFor.values()].filter((v): v is string => v !== null)],
+    },
+  });
+  return true;
+}
+
+/** Whether this failure is a server that did not send its intermediates. */
+function isIncompleteChain(err: unknown): boolean {
+  for (let e: unknown = err, depth = 0; e && depth < 5; e = (e as { cause?: unknown }).cause, depth += 1) {
+    const code = (e as { code?: string }).code;
+    if (code === 'UNABLE_TO_VERIFY_LEAF_SIGNATURE' || code === 'SELF_SIGNED_CERT_IN_CHAIN') return true;
+  }
+  return false;
+}
+
+/** For the tests: the two checks that keep the chase from weakening verification. */
+export const __chainsToTrustedRoot = chainsToTrustedRoot;
+export const __isIncompleteChain = isIncompleteChain;
+export const __caIssuersUri = caIssuersUri;
+
+/** For the tests: what has been chased, and a way back to a clean slate. */
+export const __chaseState = {
+  held: (): string[] => [...chasedFor.entries()].filter(([, v]) => v !== null).map(([h]) => h),
+  reset: (): void => { chasedFor.clear(); chasingDispatcher = null; },
+};
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -472,7 +613,12 @@ export function parseRobots(text: string): Robots {
     }
   }
 
-  const named = groups.filter((g) => g.agents.some((a) => a !== '*' && ROBOTS_TOKEN.includes(a.split('/')[0]!)));
+  // Our token names the group, not the other way round. The test used to be
+  // `ROBOTS_TOKEN.includes(agent)`, which asks whether "lexdroid" contains the site's word: true
+  // for any substring of it, and true for the empty string a bare "User-agent:" line produces. A
+  // site that writes that line anywhere above its real rules had its wildcard group discarded in
+  // favour of an empty one, so "Disallow: /" -- everyone, keep out -- read as no rules at all.
+  const named = groups.filter((g) => g.agents.some((a) => a.split('/')[0]!.trim() === ROBOTS_TOKEN));
   const applying = named.length > 0 ? named : groups.filter((g) => g.agents.includes('*'));
   const delays = applying.map((g) => g.crawlDelayMs).filter((d): d is number => d !== null);
   return {
@@ -699,14 +845,40 @@ export class Fetcher {
     }
   }
 
-  private async sendOne(url: string, requestBody: string | null = null): Promise<SendResult & { location: string | null }> {
+  private async sendOne(
+    url: string,
+    requestBody: string | null = null,
+  ): Promise<SendResult & { location: string | null }> {
+    const host = new URL(url).host;
+    try {
+      return await this.sendOnce(
+        url,
+        chasedFor.get(host) ? (chasingDispatcher ?? dispatcher) : dispatcher,
+        requestBody,
+      );
+    } catch (err) {
+      // A server that omitted its intermediate certificate, asked once per host. Retried over a
+      // connection that is still fully verified -- with the intermediate the server should have
+      // sent, checked against the root store before it is used.
+      if (!isIncompleteChain(err) || chasedFor.has(host)) throw err;
+      if (!(await chaseIssuer(host))) throw err;
+      this.onLog(`  ${host}: serves an incomplete certificate chain; fetched the issuer it names and verified it against the root store.`);
+      return await this.sendOnce(url, chasingDispatcher ?? dispatcher, requestBody);
+    }
+  }
+
+  private async sendOnce(
+    url: string,
+    agent: Agent,
+    requestBody: string | null = null,
+  ): Promise<SendResult & { location: string | null }> {
     // A form post is what a browser sends when a page's own script asks its own site a question,
     // so the headers say that rather than contradicting the user agent we already present.
     const posting = requestBody !== null;
     const res = await request(url, {
       method: posting ? 'POST' : 'GET',
       ...(posting ? { body: requestBody } : {}),
-      dispatcher,
+      dispatcher: agent,
       headersTimeout: TIMEOUT_MS,
       bodyTimeout: TIMEOUT_MS,
       headers: {

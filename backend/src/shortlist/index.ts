@@ -70,6 +70,84 @@ function normalise(v: ArrayLike<number>): Float32Array {
 }
 
 /**
+ * How much of an instrument's own table of contents is embedded beside its name.
+ *
+ * The shortlist already reads headings: two of its four channels are built on them, one lexical
+ * over the stored contents list and one dense over their embeddings, and both are fused with the
+ * two title channels. This does not add headings to a ranking that had none. What it adds is the
+ * headings to the *instrument's own vector*, which carries the title, the kind and the number and
+ * nothing else.
+ *
+ * The difference is what each channel is a claim about. A heading channel scores an instrument by
+ * its single best-matching heading, deliberately and for the reason given where it is written: an
+ * Act is relevant because one Part is on point, not because most of it is. But a best-of score
+ * rises with how many headings there are to take a best of, and the instruments these queries
+ * reach are long. Meanwhile the title channels, which do rank the instrument as a whole, see only
+ * the drafter's shorthand -- and where every candidate Act opens with the same sector word, a
+ * title is the one thing that cannot tell them apart.
+ *
+ * Measured on one economy's telecommunications shortlist, where all fifteen contenders begin
+ * with the sector's name: the Act whose second Part is headed for the authority's
+ * establishment, functions and powers came sixth, below an Act with barely half as many headings
+ * as its own eighty-seven. It took none of the three governing seats, so the seats that exist to
+ * rescue a provision one query found and the others did not were never offered to it, and the
+ * section reading "the Authority is established by this section" was surfaced by no cell in any
+ * run -- though it outscored the section of the same Act that was surfaced. Length is part of
+ * that and not the whole of it; a shorter Act outranked it too.
+ *
+ * A capped list of top-level headings folded into the vector gives the instrument a
+ * whole-instrument representation that does not grow with its length, which is the one thing the
+ * other three channels do not have. The cap is what makes it a description rather than a
+ * concatenation. The title still leads, an instrument with no parsed sections is embedded exactly
+ * as before, and the heading channels are untouched: this adds a signal and removes none.
+ *
+ * Validated on the cell it was found in, with the governing seats widened to six because the Act
+ * arrives sixth: the cell went from abstaining to answering, the answer agrees with the reference
+ * scoring, no other cell in the pillar moved, and the sections surfaced were identical run to run.
+ * The cost is in sections read, which rose by a quarter.
+ */
+const HEADINGS_EMBEDDED = 24;
+
+/** What an instrument is called, and -- where we have read it -- what it contains. */
+function instrumentText(
+  r: { title: string; kind: string; official_number: string | null },
+  parts: readonly string[] | undefined,
+): string {
+  const named = `${r.title} (${r.kind}${r.official_number ? `, ${r.official_number}` : ''})`;
+  return parts && parts.length ? `${named}. ${parts.join('. ')}` : named;
+}
+
+/** Each instrument's own top-level headings, in the order it set them out. */
+function topLevelHeadings(db: Db, instrumentIds: readonly number[]): Map<number, string[]> {
+  const out = new Map<number, string[]>();
+  const CHUNK = 500;
+  for (let i = 0; i < instrumentIds.length; i += CHUNK) {
+    const slice = instrumentIds.slice(i, i + CHUNK);
+    if (slice.length === 0) continue;
+    const rows = db
+      .prepare(
+        `SELECT d.instrument_id id, s.heading_path path, MIN(s.ordinal) ord
+           FROM section s JOIN document d ON d.id = s.document_id
+          WHERE d.instrument_id IN (${slice.map(() => '?').join(',')})
+            AND s.heading_path IS NOT NULL AND s.heading_path <> ''
+          GROUP BY d.instrument_id, s.heading_path
+          ORDER BY d.instrument_id, ord`,
+      )
+      .all(...slice) as { id: number; path: string; ord: number }[];
+    for (const row of rows) {
+      const top = (row.path.split(' > ')[0] ?? '').trim();
+      if (!top) continue;
+      const seen = out.get(row.id) ?? [];
+      if (seen.length >= HEADINGS_EMBEDDED || seen.includes(top)) continue;
+      seen.push(top);
+      out.set(row.id, seen);
+    }
+  }
+  return out;
+}
+
+
+/**
  * Embed the title of every registered instrument that does not have one yet.
  *
  * The kind is included in the embedded text because "Act" and "Regulations" carry real meaning in
@@ -113,10 +191,15 @@ export async function buildInstrumentIndex(
                                               vector = excluded.vector`,
   );
 
+  const headings = topLevelHeadings(
+    db,
+    pending.map((r) => r.id),
+  );
+
   let done = 0;
   for (let i = 0; i < pending.length; i += EMBED_BATCH) {
     const batch = pending.slice(i, i + EMBED_BATCH);
-    const inputs = batch.map((r) => `${r.title} (${r.kind}${r.official_number ? `, ${r.official_number}` : ''})`);
+    const inputs = batch.map((r) => instrumentText(r, headings.get(r.id)));
     const vectors = await embed(inputs, model);
     db.transaction(() => {
       vectors.forEach((v, j) => {

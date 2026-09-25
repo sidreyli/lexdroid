@@ -79,7 +79,7 @@ describe('a title in the economy\'s own language', () => {
 
   it('is recognised, and carries the kind its own vocabulary gives it', () => {
     for (const { code, title, kind } of cases) {
-      const named = instrumentTitle(title, wordsFor(code));
+      const named = instrumentTitle(title, [], wordsFor(code));
       expect({ title, kind: named?.kind ?? null }).toEqual({ title, kind });
     }
   });
@@ -95,15 +95,15 @@ describe('a title in the economy\'s own language', () => {
     // The vocabulary is consulted after the filters that reject a headline or a page published
     // *about* an instrument, so a bilingual site's newsroom is refused on the terms it always was.
     const ru = wordsFor('RUS');
-    expect(instrumentTitle('Public consultation on the draft Federal Law on personal data', ru)).toBeNull();
-    expect(instrumentTitle('Roskomnadzor launches a new register of operators', ru)).toBeNull();
+    expect(instrumentTitle('Public consultation on the draft Federal Law on personal data', [], ru)).toBeNull();
+    expect(instrumentTitle('Roskomnadzor launches a new register of operators', [], ru)).toBeNull();
   });
 
   it('does not let one economy read another economy\'s law', () => {
     // A Russian title carries no Lao or Thai word, so a profile's vocabulary never reaches past
     // the economy it belongs to. Discovery is per-portal and per-economy; this keeps it so.
     const laoTitle = 'ກົດໝາຍວ່າດ້ວຍການປົກປ້ອງຂໍ້ມູນສ່ວນບຸກຄົນ';
-    expect(instrumentTitle(laoTitle, wordsFor('RUS'))).toBeNull();
-    expect(instrumentTitle(laoTitle, wordsFor('THA'))).toBeNull();
+    expect(instrumentTitle(laoTitle, [], wordsFor('RUS'))).toBeNull();
+    expect(instrumentTitle(laoTitle, [], wordsFor('THA'))).toBeNull();
   });
 });

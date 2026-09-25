@@ -62,7 +62,7 @@ export const drupalAdapter: Adapter = {
           const title = node.attributes?.title;
           const alias = node.attributes?.path?.alias;
           if (!title || !alias) continue;
-          const named = instrumentTitle(title, ctx.vocabulary);
+          const named = instrumentTitle(title, [], ctx.vocabulary);
           if (!named) continue;
           const url = new URL(alias, portal.url).toString();
           if (!found.has(url)) found.set(url, { title: named.title, url, kind: named.kind });

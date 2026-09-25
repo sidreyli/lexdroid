@@ -9,6 +9,7 @@ backend/data/lexdroid.db-*
 backend/data/lexdroid.db.*
 # Copies taken before a change that rewrites the store, kept until the change is trusted.
 backend/data/lexdroid.*.db
+backend/data/lexdroid.*.db-*
 # Snapshots taken with VACUUM INTO so rules can be graded while a run holds the write lock.
 backend/data/lexdroid.snapshot.db
 backend/data/lexdroid.snapshot.db-*
@@ -50,3 +51,6 @@ backend/data/logs/
 # The fetched exchange rates. A cache, refreshed daily by any run that can reach the publisher.
 backend/data/fx-rates.json
 .playwright-mcp/
+
+# Throwaway diagnostic probes, written to measure one thing and answer one question.
+backend/scripts/zz-*.ts

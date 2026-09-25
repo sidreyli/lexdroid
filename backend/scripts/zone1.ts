@@ -39,6 +39,14 @@ interface Args {
   reparse: boolean;
   /** Only instruments with a document this parser produced: the scope of a parser fix. */
   parser: string | null;
+  /**
+   * Exactly these instruments, by id. The scope of a parser fix measured rather than guessed.
+   *
+   * `--reparse` on its own re-parses the economy, and re-parsing a document deletes the sections it
+   * rebuilds -- so every embedding of every one of them goes too, and Malaysia's 126,000 sections
+   * cost hours of GPU time to put back. A fix that changes 58 documents should re-parse 58.
+   */
+  instruments: number[] | null;
   /** Re-read only the documents nothing could be read out of. */
   unread: boolean;
   status: boolean;
@@ -62,16 +70,19 @@ function parseArgs(argv: string[]): Args {
   const readArg = get('read');
   const anyStage =
     has('register') || readArg !== null || has('embed') || has('status') || has('reparse') || has('unread')
-    || get('about') !== null || get('pillars') !== null;
+    || get('about') !== null || get('pillars') !== null || get('instruments') !== null;
 
   return {
     economy: (get('economy') ?? 'SGP').toUpperCase(),
     register: has('register') || !anyStage,
     portal: get('portal'),
     read: readArg !== null ? (readArg === 'all' ? 0 : Number(readArg))
-      : (get('about') !== null || get('pillars') !== null || has('reparse') || has('unread')) ? 0 : anyStage ? null : 0,
+      : (get('about') !== null || get('pillars') !== null || has('reparse') || has('unread') || get('instruments') !== null) ? 0 : anyStage ? null : 0,
     title: get('title'),
     parser: get('parser'),
+    instruments: get('instruments') !== null
+      ? get('instruments')!.split(',').map((n) => Number(n.trim())).filter((n) => Number.isInteger(n) && n > 0)
+      : null,
     kind: get('kind'),
     embed: has('embed') || !anyStage,
     refresh: has('refresh'),
@@ -129,13 +140,18 @@ function status(db: ReturnType<typeof openDb>, economy: string): void {
   // a gap in the corpus, and counting it as one overstates the damage: three Acts refused by a
   // throttling host on 6 September were all read on the next run, while the summary went on
   // reporting three documents set aside. So the ledger keeps everything and the summary splits it.
+  // Joined, not filtered: the economy has to be in the WHERE clause. Left in the JOIN alone it
+  // selects every economy's discards and reports the other two as this one's, because their
+  // subjects cannot match this register and so come back with a null document -- Australia read as
+  // 6,024 documents set aside when it had three. And the ledger holds one row per attempt, so a
+  // document re-parsed three times was counted three times; the gap is documents, not attempts.
   const discards = db
     .prepare(
       `SELECT d.reason,
-              SUM(CASE WHEN doc.id IS NULL THEN 1 ELSE 0 END) AS still_missing,
-              COUNT(*) AS total
+              COUNT(DISTINCT CASE WHEN doc.id IS NULL THEN d.subject END) AS still_missing,
+              COUNT(DISTINCT d.subject) AS total
          FROM discard d
-         LEFT JOIN instrument i ON i.source_url = d.subject AND i.economy_code = ?
+         JOIN instrument i ON i.source_url = d.subject AND i.economy_code = ?
          LEFT JOIN document doc ON doc.instrument_id = i.id
         WHERE d.stage IN ('fetch', 'parse')
         GROUP BY d.reason
@@ -241,6 +257,9 @@ Shortlist -- ranking the register against ${asked.length} question(s), ${args.to
       ...(args.title ? { titleLike: args.title } : {}),
       ...(args.kind ? { kind: args.kind } : {}),
       ...(shortlisted ? { instrumentIds: shortlisted } : {}),
+      // Named outright, this wins over the shortlist: it is the answer to "which documents does
+      // this fix change", and a shortlist would only narrow it to the ones a question happens to ask.
+      ...(args.instruments ? { instrumentIds: args.instruments } : {}),
       ...(args.parser
         ? {
             instrumentIds: (db

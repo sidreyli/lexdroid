@@ -148,7 +148,7 @@ export const wpAdapter: Adapter = {
         const publisher = item.post ? publishedOn(item.link ?? '', ctx.portal.url) : null;
         if (!publisher) {
           orphans += 1;
-          const named = instrumentTitle(decode(item.title?.rendered ?? '') || titleFromUrl(src), ctx.vocabulary);
+          const named = instrumentTitle(decode(item.title?.rendered ?? '') || titleFromUrl(src), [], ctx.vocabulary);
           if (named) unpublished.push({ title: named.title, url: src, kind: named.kind });
           continue;
         }

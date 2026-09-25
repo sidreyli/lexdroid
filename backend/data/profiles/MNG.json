@@ -67,6 +67,13 @@
       "localName": "Зөвлөл, хороо, бусад байгууллагын шийдвэр, зөвлөмж (Council, committee or other body's decision or recommendation)",
       "bindingness": "advisory",
       "note": "605 instruments from councils, committees and other bodies. Evidence of regulator interpretation or expected practice, not itself the source of a legal obligation unless the instrument and its enabling authority say it binds."
+    },
+    {
+      "rank": 5,
+      "kind": "publication",
+      "localName": "Publication about the law",
+      "bindingness": "advisory",
+      "note": "A document a body published about the law rather than an instrument of it: a consultation paper, a media release, an FAQ, a landing page for an Act held in the statute book. Registered because it is real evidence of how a regulator reads an obligation, and never the source of one. Assigned where the source states neither an identifier nor a standing."
     }
   ],
   "portals": [

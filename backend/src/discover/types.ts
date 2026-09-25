@@ -5,7 +5,7 @@ import type { InstrumentWord } from './titles.js';
 export interface DiscoveredInstrument {
   title: string;
   url: string;
-  kind: 'act' | 'regulation' | 'notice' | 'guideline' | 'order' | 'rule';
+  kind: 'act' | 'regulation' | 'notice' | 'guideline' | 'order' | 'rule' | 'publication';
   officialNumber?: string | null;
   /**
    * What the portal says about the instrument's standing, and the sentence that says it.

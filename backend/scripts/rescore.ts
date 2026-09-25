@@ -9,11 +9,17 @@
  *
  * No engine and no network: the same decision over the same readings, with the verdicts in front
  * of it. What changes is the answer, its basis and the confirmation state recorded beside it.
+ *
+ * It refuses a run whose readings are no longer there. Writing is the difference: `grade` replays
+ * over a remnant and rolls back, while this would overwrite the banked answer with one decided on
+ * evidence a re-parse removed -- and the old answer, which was the record of what the run actually
+ * found, would be gone. `--anyway` says that is wanted; `--dry-run` never needed it.
  */
 import { openDb } from '../src/db/index.js';
 import { rescoreRun } from '../src/run/rescore.js';
 import { confirmationsForRun } from '../src/read/confirmations.js';
 import { scorecard, tally } from '../src/eval/scorecard.js';
+import { evidenceIsLost, evidenceLines, runEvidence } from '../src/run/evidence.js';
 
 function arg(name: string): string | null {
   const i = process.argv.indexOf(`--${name}`);
@@ -23,6 +29,7 @@ function arg(name: string): string | null {
 const db = openDb();
 const wanted = arg('run') ?? 'latest';
 const dryRun = process.argv.includes('--dry-run');
+const anyway = process.argv.includes('--anyway');
 
 const run = (
   wanted === 'latest'
@@ -33,6 +40,15 @@ const run = (
 if (!run) {
   console.log(wanted === 'latest' ? 'No completed runs recorded yet.' : `No run ${wanted}.`);
   process.exit(0);
+}
+
+const evidence = runEvidence(db, run.id);
+if (!dryRun && !anyway && evidenceIsLost(evidence)) {
+  console.log(`\nRefusing to re-score ${run.id}: it no longer holds the readings it was decided on.`);
+  for (const line of evidenceLines(evidence)) console.log(`  ${line}`);
+  console.log('\n  Re-scoring would replace what the run found with what is left of it.');
+  console.log('  Run the cells again, or pass --anyway to overwrite the banked answers.\n');
+  process.exit(1);
 }
 
 const before = tally(scorecard(db, run.id));

@@ -15,7 +15,7 @@ import type { Db } from '../db/index.js';
 import type { Emit } from '../run/events.js';
 import { citationUrl } from '../export/index.js';
 import { enginePool } from '../engines/pool.js';
-import { amendsAnotherAct, citesADefinition, inheritsAPower } from '../parse/identity.js';
+import { amendsAnotherAct, citesADefinition, inheritsAPower, insertsTheQuotedWords } from '../parse/identity.js';
 import { loadProfile } from '../profile/index.js';
 import type { InstrumentType } from '../profile/types.js';
 import type { Indicator } from '../rubric/types.js';
@@ -155,6 +155,8 @@ interface SectionRow {
   id: number;
   instrument_id: number;
   instrument_title: string;
+  /** The Act this instrument amends, where the register knows it. */
+  principal_title?: string | null;
   instrument_kind: InstrumentType['kind'];
   instrument_status: Evidence['instrumentStatus'];
   language: string | null;
@@ -171,6 +173,27 @@ interface SectionRow {
  * The link a reviewer follows. One official URL, and the provision's own anchor on it -- or, in a
  * PDF, the page it is on, so the workbench and the workbook send a reviewer to the same place.
  */
+/**
+ * What a finding built on these words must be cited as, and whether the words are inserted ones.
+ *
+ * Words an amendment sets out for insertion are the principal Act's words. Cited under the
+ * amending instrument they would name the vehicle instead of the statute that carries the duty,
+ * which is the citation defect ESCAP marks directly. Where the register knows the principal, the
+ * citation names it and says which instrument put the words there; where it does not, the finding
+ * still stands on the words and is cited where they were actually read.
+ */
+function citedUnder(
+  row: { instrument_title: string; principal_title?: string | null },
+  inserted: boolean,
+): { insertsTheQuotedWords: boolean; citedAs?: string } {
+  if (!inserted) return { insertsTheQuotedWords: false };
+  if (!row.principal_title) return { insertsTheQuotedWords: true };
+  return {
+    insertsTheQuotedWords: true,
+    citedAs: `${row.principal_title}, as amended by ${row.instrument_title}`,
+  };
+}
+
 function citationFor(row: {
   source_url: string;
   anchor: string | null;
@@ -340,9 +363,11 @@ export async function answerPillar(
         headingPath: row.heading_path,
         citation: citationFor(row),
         amendsAnotherAct: amendsAnotherAct(row.text),
+        ...citedUnder(row, insertsTheQuotedWords(row.text, finding.quote)),
         definesATerm: citesADefinition(row.text, finding.definingWords ?? finding.quote),
         inheritsAPower: inheritsAPower(row.text, finding.quote),
         sectionLanguage: row.language,
+        instrumentKind: row.instrument_kind,
         ...(row.repealed ? { sectionRepealed: true } : {}),
         ...(row.instrument_status ? { instrumentStatus: row.instrument_status } : {}),
         ...(bindingness.get(row.instrument_kind) ? { bindingness: bindingness.get(row.instrument_kind)! } : {}),
@@ -452,12 +477,14 @@ export async function answerPillar(
   // The consolidation's own currency date answers this; the last amendment is the fallback for a
   // register that publishes one and not the other. Reading the amendment date alone said a
   // Malaysian Act was current to its last amendment, which is a different and stronger claim.
-  const currentTo = new Map<number, string | null>(
-    (db.prepare(
-      `SELECT id, COALESCE(current_to, last_amended_on) AS current_to FROM instrument
-        WHERE economy_code = ?`,
-    ).all(economy) as { id: number; current_to: string | null }[]).map((r) => [r.id, r.current_to]),
-  );
+  const registered = db.prepare(
+    `SELECT id, COALESCE(current_to, last_amended_on) AS current_to, kind FROM instrument
+      WHERE economy_code = ?`,
+  ).all(economy) as { id: number; current_to: string | null; kind: string | null }[];
+  const currentTo = new Map<number, string | null>(registered.map((r) => [r.id, r.current_to]));
+  // Carried for the same reason as the date beside it: the decision reports a zero against one of
+  // these, and what the register says the document is decides whether it may be reported at all.
+  const kindOfInstrument = new Map<number, string | null>(registered.map((r) => [r.id, r.kind]));
   const decisions = indicators.map((indicator) => {
     const isFramework = indicator.shape === 'framework';
     const frameworkEvidence = frameworkByIndicator.get(indicator.id) ?? [];
@@ -474,6 +501,7 @@ export async function answerPillar(
         instrumentTitle: section.instrumentTitle,
         rank: section.rank,
         currentTo: currentTo.get(section.instrumentId) ?? null,
+        kind: kindOfInstrument.get(section.instrumentId) ?? null,
       });
     }
 
@@ -575,13 +603,36 @@ async function frameworkCandidates(
   rows: Map<number, SectionRow>,
   embeddingModel?: string,
 ): Promise<FrameworkCandidate[]> {
-  // A framework can only be established by something the record could cite, and 'in-force' is the
-  // only status a row may cite. Without this the register answers a framework question with the
-  // pages of the site it was harvested from: all five instruments examined for Singapore's 8.1 and
-  // 8.2 were Monetary Authority press releases -- "Person charged for false trading under the
-  // Securities and Futures Act" -- registered as Acts with status unknown, and all five for its 7.1
-  // were PDPC advisory-guideline pages sitting in front of the Personal Data Protection Act itself.
-  // The reader was right about every one of them and the cell was wrong anyway.
+  // Without this the register answers a framework question with the pages of the site it was
+  // harvested from: all five instruments examined for Singapore's 8.1 and 8.2 were Monetary
+  // Authority press releases -- "Person charged for false trading under the Securities and Futures
+  // Act" -- registered as Acts with status unknown, and all five for its 7.1 were PDPC
+  // advisory-guideline pages sitting in front of the Personal Data Protection Act itself. The
+  // reader was right about every one of them and the cell was wrong anyway.
+  //
+  // The reason first written here was the wrong one. It said 'in-force' is the only status a row
+  // may cite, and `currentLaw` in decide/ says the opposite in as many words: unknown "means the
+  // register did not tell us, not that it told us no", and evidence under it is kept. Ordinary
+  // retrieval filters on no status at all. So this gate is stricter than citation is, and it needs
+  // a reason of its own.
+  //
+  // It has one, and it is in the band text. All five framework indicators ask for a *legal*
+  // framework -- 7.1 "comprehensive data protection framework", 7.2 "dedicated cybersecurity legal
+  // framework", 8.1 and 8.2 "framework in place that limits liability", 12.9 "consumer protection
+  // law applicable to online commerce". A status is what a legislative register records; a
+  // regulator's website publishes no legislation and so carries none. Gating on status is
+  // therefore gating on provenance, which is what the question is actually about.
+  //
+  // Measured, because that argument would be worth nothing if it cost a statute. Of the
+  // instruments that are read, named like an Act and left at unknown -- 38 Malaysian, 36
+  // Singaporean, 20 Australian -- most are the Act the legislative register already holds in
+  // force, filed again under a regulator's page title. The rest are documents about an Act: FAQs,
+  // guidelines on applying one, charge and penalty announcements, consultations, commencement
+  // notices. Exactly two are Acts, both amending ones, which `currentLaw` excludes from citation
+  // whatever their status. So no principal statute is reachable only at unknown, and the cost of
+  // the gate is that a regulator's policy document can never be named as a framework -- correct
+  // for these five, and wrong for any indicator that asks what an economy does rather than what
+  // its law says.
   const inForce = new Set(
     (
       db
@@ -763,10 +814,12 @@ function sectionRows(db: Db, ids: number[]): SectionRow[] {
       `SELECT s.id, s.heading_path, s.text, s.anchor, s.page, s.language, s.repealed,
               d.instrument_id, i.title AS instrument_title, i.kind AS instrument_kind, i.status AS instrument_status,
               d.url AS source_url,
-              d.media_type
+              d.media_type,
+              p.title AS principal_title
          FROM section s
          JOIN document d ON d.id = s.document_id
          JOIN instrument i ON i.id = d.instrument_id
+         LEFT JOIN instrument p ON p.id = i.amends_instrument_id
         WHERE s.id IN (${placeholders})`,
     )
     .all(...ids) as SectionRow[];
