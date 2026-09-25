@@ -394,6 +394,93 @@ if (unparsed.length > 0) console.log(`  registered but nothing parsed: ${unparse
     [`${checked} section(s) checked, ${broken} whose offsets do not reproduce their text`, ...examples]);
 }
 
+/**
+ * The container a section is filed under, for the checks below: its heading path without its own
+ * last step. An annex numbers its points afresh, so labels are unique per container, not per document.
+ */
+const containerOf = (path: string): string => path.split(' > ').slice(0, -1).join(' > ');
+
+{
+  // Two provisions under one label in one container is how "Статья 101" sat beside article 10¹, and
+  // how the Anti-Corruption Law held two article 21s: a citation of that label resolves to either.
+  // Reported rather than fatal, because sources repeat numbers themselves -- a Mongolian procedure
+  // numbers two points 3.6 -- and a parser that renumbered them would be citing what the page does
+  // not say. The count is the thing to watch: it should be small and every entry explainable.
+  const out: string[] = [];
+  for (const e of withCorpus) {
+    let docs = 0;
+    const examples: string[] = [];
+    for (const d of rows<{ id: number }>(
+      `SELECT d.id FROM document d JOIN instrument i ON i.id = d.instrument_id WHERE i.economy_code = ?`, e)) {
+      const seen = new Set<string>();
+      const dup = new Set<string>();
+      for (const s of rows<{ label: string | null; hp: string }>(
+        'SELECT label, heading_path hp FROM section WHERE document_id = ? AND label IS NOT NULL', d.id)) {
+        const k = `${containerOf(s.hp)}\u0000${s.label}`;
+        if (seen.has(k)) dup.add(s.label!);
+        seen.add(k);
+      }
+      if (dup.size > 0) {
+        docs += 1;
+        if (examples.length < 3) examples.push(`   document ${d.id}: ${[...dup].slice(0, 6).join(', ')}`);
+      }
+    }
+    out.push(`${e}  ${docs} document(s) with a label twice in one container`, ...examples);
+  }
+  check('D4', 'no label names two provisions in one container', false, 'report', out);
+}
+
+{
+  // What a portal prints around a document, found inside its text: the parser read the page rather
+  // than the document. Each pattern is a piece of furniture measured on the portal it comes from.
+  const FURNITURE: { name: string; pattern: RegExp }[] = [
+    { name: 'legalinfo.mn toolbar', pattern: /(?:^|\n)(?:Сонсох \/ Сонгосон утга сонсох|Хуваалцах)(?:\n|$)/u },
+    { name: 'legalinfo.mn contact line', pattern: /976\)-11-323317|info@legalinstitute\.mn/u },
+    { name: 'IPS viewer residue', pattern: /MicrosoftInternetExplorer4|@page\s+vert|mso-page-orientation/u },
+    { name: 'gazette viewer page count', pattern: /Страница № \d+ из \d+/u },
+    { name: 'zero-width characters', pattern: /[​-‍﻿]/u },
+  ];
+  const out: string[] = [];
+  let bad = false;
+  for (const e of withCorpus) {
+    for (const f of FURNITURE) {
+      const n = rows<{ text: string }>(
+        `SELECT dt.text FROM document_text dt JOIN document d ON d.id = dt.document_id
+           JOIN instrument i ON i.id = d.instrument_id WHERE i.economy_code = ?`, e,
+      ).filter((r) => f.pattern.test(r.text)).length;
+      if (n > 0) {
+        bad = true;
+        out.push(`${e}  ${n} document(s) carrying ${f.name}`);
+      }
+    }
+  }
+  if (!bad) out.push('no document carries the furniture of the portal it came from');
+  check('D6', 'no document carries its portal\'s furniture', true, bad ? 'fail' : 'pass', out);
+}
+
+{
+  // A document whose text names a chapter, where no section is filed under one. Chapter detection
+  // failed silently once already: `/\bБҮЛЭГ/` never matches beside Cyrillic, and every heading path
+  // of the Anti-Corruption Law simply looked like a law with no chapters.
+  const CHAPTER_WORD = /(?:^|\n)(?:\S+\s+)?\S*(?:дугаар|дүгээр)\s+бүлэг|(?:^|\n)(?:Глава|ГЛАВА)\s+\d|(?:^|\n)(?:ໝວດທີ|ຫມວດທີ)\s*[\d໐-໙]/iu;
+  const out: string[] = [];
+  let bad = false;
+  for (const e of withCorpus) {
+    const docs = rows<{ id: number; text: string }>(
+      `SELECT d.id, dt.text FROM document_text dt JOIN document d ON d.id = dt.document_id
+         JOIN instrument i ON i.id = d.instrument_id WHERE i.economy_code = ?`, e,
+    ).filter((d) => CHAPTER_WORD.test(d.text));
+    const flat = docs.filter(
+      (d) => !rows<{ hp: string }>('SELECT heading_path hp FROM section WHERE document_id = ?', d.id)
+        .some((s) => containerOf(s.hp) !== ''),
+    );
+    out.push(`${e}  ${docs.length} document(s) naming a chapter, ${flat.length} with no section filed under one`);
+    for (const d of flat.slice(0, 3)) out.push(`   document ${d.id}`);
+    if (flat.length > 0) bad = true;
+  }
+  check('D8', 'a document that names its chapters files its provisions under them', true, bad ? 'fail' : 'pass', out);
+}
+
 /* ------------------------------------------------------------------ E. the index */
 
 {

@@ -13,6 +13,7 @@ import { SectionBuilder, type ParsedDocument } from './types.js';
 import { readsAsAClause } from './identity.js';
 import { ocrPdfPages, type OcrEngine } from './ocr.js';
 import { amendmentHistory } from './lom.js';
+import { isMostlyLao, sectioniseLao } from './lao.js';
 
 /** Below this many characters per page, the page is an image of text rather than text. */
 const MIN_CHARS_PER_PAGE = 80;
@@ -725,7 +726,10 @@ export async function parsePdf(bytes: Buffer, url: string, opts: ParsePdfOptions
 
   // `runningHeader` below still reads the pages as printed: the header is what it is looking for.
   const clean = stripPageFurniture(languageOfPages(pages, opts.languages));
-  const builder = sectionise(clean);
+  // A Lao instrument is sectioned by its own drafting -- ມາດຕາ, ໝວດທີ, ພາກທີ -- as OCR delivers it.
+  // Only where the economy publishes in Lao and the pages are Lao, so no other document's path moves.
+  const lao = opts.languages?.includes('lo') && isMostlyLao(clean) ? sectioniseLao(clean) : null;
+  const builder = lao?.builder ?? sectionise(clean);
 
   if (builder.sections.length === 0) {
     // Text came out but no provision structure did. Keep it as one section rather than discard it:
@@ -763,7 +767,10 @@ export async function parsePdf(bytes: Buffer, url: string, opts: ParsePdfOptions
           }
         : {}),
       ...(ocrError ? { ocrError } : {}),
+      // What the Lao sectioner inferred rather than read, so no label passes for OCR's own reading.
+      ...(lao?.inferred.length ? { labelsInferred: lao.inferred.join('; ') } : {}),
+      ...(lao?.dropped.length ? { debrisDropped: String(lao.dropped.length) } : {}),
     },
-    parser: 'pdf',
+    parser: lao ? 'pdf-lao' : 'pdf',
   };
 }

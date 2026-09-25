@@ -133,18 +133,22 @@ export function storeDocument(
     }
     db.prepare(
       `INSERT INTO document (instrument_id, url, content_hash, media_type, bytes, http_status,
-                             fetched_at, from_cache, extraction, section_count)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                             fetched_at, from_cache, extraction, section_count, ocr_confidence)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(url, content_hash) DO UPDATE SET
          media_type = excluded.media_type, bytes = excluded.bytes, http_status = excluded.http_status,
          fetched_at = excluded.fetched_at, from_cache = excluded.from_cache,
-         extraction = excluded.extraction, section_count = excluded.section_count`,
+         extraction = excluded.extraction, section_count = excluded.section_count,
+         ocr_confidence = excluded.ocr_confidence`,
     ).run(
       instrumentId, fetched.url, fetched.contentHash, fetched.mediaType, fetched.body.length,
       fetched.status, fetched.fetchedAt, fetched.fromCache ? 1 : 0, parsed.extraction,
       // An unread document holds no sections, whatever the parser managed to split. Counting what
       // was never stored made ten Malaysian documents report 348 provisions the corpus has not got.
       parsed.unread ? 0 : parsed.sections.length,
+      // The PDF parser measures this for every OCR'd document and it went nowhere; kept so that a
+      // reader of a Lao answer can see how well the page it rests on was read.
+      parsed.meta.ocrConfidence !== undefined ? Number(parsed.meta.ocrConfidence) : null,
     );
 
     const { id: documentId } = db

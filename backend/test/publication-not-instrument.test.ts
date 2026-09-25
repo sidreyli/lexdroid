@@ -28,6 +28,9 @@ describe('what a listing will support calling an instrument', () => {
     expect(registeredKind('act', { officialNumber: null, status: 'in-force' })).toBe('act');
     // Malaysia states the number and the repeal, which is still the register speaking.
     expect(registeredKind('act', { officialNumber: 'Act 192', status: 'repealed' })).toBe('act');
+    // The Lao Official Gazette states neither, but types every row in a column of its own:
+    // "ກົດໝາຍ" (Law). Without this the Cybersecurity Law registered as a publication.
+    expect(registeredKind('act', { officialNumber: null, kindBasis: 'the Lao Official Gazette types it "ກົດໝາຍ"' })).toBe('act');
   });
 
   it('refuses the claim where the source corroborates neither', () => {

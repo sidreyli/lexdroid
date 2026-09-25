@@ -258,12 +258,16 @@ export function kindOf(title: string): InstrumentKind {
  */
 export function registeredKind(
   claimed: InstrumentKind,
-  entry: { officialNumber?: string | null; status?: string | null },
+  entry: { officialNumber?: string | null; status?: string | null; kindBasis?: string | null },
 ): InstrumentKind {
   if (claimed !== 'act') return claimed;
   const numbered = (entry.officialNumber ?? '').trim() !== '';
   const stood = (entry.status ?? '').trim() !== '' && entry.status !== 'unknown';
-  return numbered || stood ? claimed : 'publication';
+  // A register whose own column says "Law" has said what the listing is, which a news page never
+  // does. The Lao Official Gazette states a type for every row and neither a number nor a standing,
+  // so without this every Lao law -- the Cybersecurity Law among them -- registered as a publication.
+  const typed = (entry.kindBasis ?? '').trim() !== '';
+  return numbered || stood || typed ? claimed : 'publication';
 }
 
 /** The title with the year, gazette number and edition markers taken off the end. */

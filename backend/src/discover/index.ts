@@ -29,6 +29,7 @@ import { frlAdapter } from './frl.js';
 import { indiaCodeAdapter } from './indiacode.js';
 import { legalinfoAdapter } from './legalinfo.js';
 import { ipsAdapter } from './ips.js';
+import { laoGazetteAdapter } from './laogazette.js';
 import { ocsAdapter } from './ocs.js';
 import { fipcsAdapter } from './fipcs.js';
 import { lomAdapter } from './lom.js';
@@ -49,6 +50,7 @@ const ADAPTERS: Record<string, Adapter> = {
   indiacode: indiaCodeAdapter,
   legalinfo: legalinfoAdapter,
   ips: ipsAdapter,
+  laogazette: laoGazetteAdapter,
   lom: lomAdapter,
   'lom-subsid': lomSubsidAdapter,
   ocs: ocsAdapter,
