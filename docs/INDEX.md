@@ -32,6 +32,9 @@ LexDroid's implementation notes:
   page, and the three further defects finding it turned up: a page that offers its one file under
   the word "here", a running header that was a clause about somebody else's Act, and a crawl
   filing "Click to view the Financial Services Act 2013" as an instrument.
+- `handoff-three-economies.md` — **start here** for Lao PDR, Mongolia and the Russian Federation:
+  where each one stands, what was built, the three findings worth not rediscovering, and the
+  worklist. Written to be picked up cold.
 - `lao-mongolia-russia-recon.md` — the three new economies' portals read live, with what each one
   actually serves, which existing adapter applies, and what blocks the ones that are blocked. The
   full trace behind the `adapter: null` notes in `LAO.json`, `MNG.json` and `RUS.json`.
