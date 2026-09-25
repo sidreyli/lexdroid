@@ -28,6 +28,7 @@ import { drupalAdapter } from './drupal.js';
 import { frlAdapter } from './frl.js';
 import { indiaCodeAdapter } from './indiacode.js';
 import { legalinfoAdapter } from './legalinfo.js';
+import { ipsAdapter } from './ips.js';
 import { ocsAdapter } from './ocs.js';
 import { fipcsAdapter } from './fipcs.js';
 import { lomAdapter } from './lom.js';
@@ -47,6 +48,7 @@ const ADAPTERS: Record<string, Adapter> = {
   frl: frlAdapter,
   indiacode: indiaCodeAdapter,
   legalinfo: legalinfoAdapter,
+  ips: ipsAdapter,
   lom: lomAdapter,
   'lom-subsid': lomSubsidAdapter,
   ocs: ocsAdapter,

@@ -49,6 +49,12 @@ describe('decoding a response', () => {
     expect(decodeBody({ body, mediaType: 'text/html' })).toContain(LAW);
   });
 
+  it('reads the declaration of markup served with no Content-Type at all', () => {
+    // IPS's search results come back with no header; the fetcher records application/octet-stream.
+    const body = cp1251(`<html>\n<head><meta http-equiv="Content-Type" content="text/html; charset=windows-1251" /></head><body>${LAW}</body></html>`);
+    expect(decodeBody({ body, mediaType: 'application/octet-stream' })).toContain(LAW);
+  });
+
   it('keeps UTF-8 that a server mislabels as a legacy encoding', () => {
     // Obeying the label would turn every page this pipeline already reads correctly into mojibake.
     const body = Buffer.from(`<html><head><meta charset="iso-8859-1"></head><body>${LAW}</body></html>`, 'utf8');

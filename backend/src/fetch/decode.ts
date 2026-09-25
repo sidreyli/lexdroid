@@ -76,7 +76,11 @@ export function encodingOf(res: Decodable): string {
   if (b[0] === 0xef && b[1] === 0xbb && b[2] === 0xbf) return 'utf-8';
   if (b[0] === 0xff && b[1] === 0xfe) return 'utf-16le';
   if (b[0] === 0xfe && b[1] === 0xff) return 'utf-16be';
-  for (const label of [res.charset, /html|xml/i.test(res.mediaType) ? declaredCharset(b) : null]) {
+  // A page is asked for its own declaration when it is markup, whatever the header called it: IPS
+  // serves its search results with no Content-Type at all, and read as UTF-8 by default every
+  // title in them came back as replacement characters.
+  const markup = /html|xml/i.test(res.mediaType) || /^\s*<(?:!doctype|html|\?xml|head)/i.test(b.subarray(0, 256).toString('latin1'));
+  for (const label of [res.charset, markup ? declaredCharset(b) : null]) {
     const d = decoderFor(label);
     if (!d) continue;
     if (d.encoding !== 'utf-8' && !d.encoding.startsWith('utf-16') && isUtf8(b)) return 'utf-8';

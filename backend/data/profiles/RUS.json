@@ -121,9 +121,25 @@
         11,
         12
       ],
-      "adapter": null,
-      "adapterConfig": {},
-      "notes": "The parent legal-information portal. robots.txt is 'User-Agent: * / Disallow:' -- an empty disallow, fully permissive -- read directly 21 September 2026. Server-rendered (nginx, PHP); page structure not yet inspected, so no adapter is claimed. Recorded over http because the environment used on 21 September could not complete a TLS handshake to it while reaching it normally on port 80; that is a fact about that network rather than about this host, and the scheme should be re-checked from an ordinary connection. Full trace: docs/lao-mongolia-russia-recon.md."
+      "adapter": "ips",
+      "adapterConfig": {
+        "queries": [
+          { "type": "102000486", "kind": "act", "maxPages": 5 },
+          { "type": "102000505", "kind": "act", "title": "персональных данных" },
+          { "type": "102000505", "kind": "act", "title": "об информации" },
+          { "type": "102000505", "kind": "act", "title": "о связи" },
+          { "type": "102000505", "kind": "act", "title": "электронной подписи" },
+          { "type": "102000505", "kind": "act", "title": "о таможенном регулировании" },
+          { "type": "102000505", "kind": "act", "title": "национальной платежной системе" },
+          { "type": "102000505", "kind": "act", "title": "о защите прав потребителей" },
+          { "type": "102000505", "kind": "act", "title": "о техническом регулировании" },
+          { "type": "102000505", "kind": "act", "title": "об иностранных инвестициях" },
+          { "type": "102000496", "kind": "regulation", "title": "персональных данных", "issuer": "Правительства Российской Федерации" },
+          { "type": "102000496", "kind": "regulation", "title": "информационн", "issuer": "Правительства Российской Федерации", "maxPages": 5 },
+          { "type": "102000503", "kind": "order", "title": "информационной безопасности" }
+        ]
+      },
+      "notes": "The parent legal-information portal, walked through its legal information system (IPS, /proxy/ips) by the ips adapter: the consolidated current text of every federal act as HTML, with the standing the system gives it. robots.txt is 'User-Agent: * / Disallow:' -- an empty disallow, fully permissive -- read directly 21 September 2026. Queries are act-type codes from the system's own classifier plus title words, aimed at the digital-trade pillars; all 12,155 federal laws would be mostly amending laws. Pages are windows-1251. Recorded over http because the environment used on 21 September could not complete a TLS handshake to it while reaching it normally on port 80; that is a fact about that network rather than about this host, and the scheme should be re-checked from an ordinary connection. Full trace: docs/lao-mongolia-russia-recon.md."
     },
     {
       "name": "Bank of Russia (Банк России)",

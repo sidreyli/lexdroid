@@ -16,3 +16,6 @@ data/rubric.json text eol=lf
 
 # Shell scripts run on Linux pods; a carriage return there is a bad interpreter error.
 *.sh text eol=lf
+
+# Russian IPS pages kept as the windows-1251 bytes the system served; never re-encoded or re-lined.
+backend/test/fixtures/rus/*.html binary

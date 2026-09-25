@@ -13,6 +13,7 @@ import { decodeBody } from '../fetch/decode.js';
 import { parseFrl } from './frl.js';
 import { parseHtml } from './html.js';
 import { parseIndiaCode } from './indiacode.js';
+import { parseIps } from './ips.js';
 import { parseLegalinfo } from './legalinfo.js';
 import { parseOcs } from './ocs.js';
 import { parsePdf } from './pdf.js';
@@ -29,6 +30,9 @@ const BY_HOST: Record<string, (html: string, url: string) => ParsedDocument> = {
   'sso.agc.gov.sg': parseSso,
   'www.legislation.gov.au': parseFrl,
   'legalinfo.mn': parseLegalinfo,
+  // Russia's legal information system: IPS, proxied on the government's own domain.
+  'pravo.gov.ru': parseIps,
+  'www.pravo.gov.ru': parseIps,
 };
 
 /** `languages`: the economy's official languages, among which a PDF's language is guessed. */
