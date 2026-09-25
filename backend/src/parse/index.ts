@@ -9,6 +9,7 @@
 import type { Db } from '../db/index.js';
 import { indexSections } from '../db/index.js';
 import type { FetchResult } from '../fetch/index.js';
+import { decodeBody } from '../fetch/decode.js';
 import { parseFrl } from './frl.js';
 import { parseHtml } from './html.js';
 import { parseIndiaCode } from './indiacode.js';
@@ -45,13 +46,13 @@ export async function parseDocument(res: FetchResult, opts: { languages?: readon
   if (res.mediaType.includes('pdf')) return parsePdf(res.body, res.url, opts.languages ? { languages: opts.languages } : {});
 
   if (res.mediaType.includes('html') || res.mediaType.includes('xml')) {
-    const html = res.body.toString('utf8');
+    const html = decodeBody(res);
     const site = BY_HOST[host];
     return site ? site(html, res.url) : parseHtml(html, res.url);
   }
 
   if (res.mediaType.startsWith('text/')) {
-    const text = res.body.toString('utf8').trim();
+    const text = decodeBody(res).trim();
     if (!text) {
       return { extraction: 'none', text: '', sections: [], title: null, meta: {}, parser: 'plain', unread: { reason: 'empty', detail: `${res.url} is empty.` } };
     }

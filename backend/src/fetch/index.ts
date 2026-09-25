@@ -25,6 +25,7 @@ import { fileURLToPath } from 'node:url';
 import { brotliDecompressSync, gunzipSync, inflateSync } from 'node:zlib';
 import { Agent, request } from 'undici';
 import type { Db } from '../db/index.js';
+import { charsetOf } from './decode.js';
 
 /**
  * The TLS handshake, and the day it cost us a corpus.
@@ -353,6 +354,8 @@ function decompress(body: Buffer, encoding: string | string[] | undefined): Buff
 interface SendResult {
   status: number;
   mediaType: string;
+  /** The Content-Type header's charset parameter, lower-cased, or null. */
+  charset: string | null;
   body: Buffer;
   finalUrl: string;
 }
@@ -388,6 +391,11 @@ export interface FetchResult {
   finalUrl: string;
   status: number;
   mediaType: string;
+  /**
+   * The charset the server declared, or null. Absent from bytes cached before it was kept, which
+   * decodeBody (fetch/decode.ts) answers from the document's own declaration instead.
+   */
+  charset?: string | null;
   body: Buffer;
   contentHash: string;
   fromCache: boolean;
@@ -529,6 +537,7 @@ interface CacheRecord {
   finalUrl: string;
   status: number;
   mediaType: string;
+  charset?: string | null;
   contentHash: string;
   bytes: number;
   fetchedAt: string;
@@ -774,6 +783,7 @@ export class Fetcher {
       finalUrl: rec.finalUrl,
       status: rec.status,
       mediaType: rec.mediaType,
+      charset: rec.charset ?? null,
       body: readFileSync(bp),
       contentHash: rec.contentHash,
       fromCache: true,
@@ -833,7 +843,7 @@ export class Fetcher {
       const res = await this.sendOne(at, hop === 0 ? opts.post : undefined);
       const location = res.location;
       if (res.status < 300 || res.status >= 400 || !location || hop >= MAX_REDIRECTS) {
-        return { status: res.status, mediaType: res.mediaType, body: res.body, finalUrl: at };
+        return { status: res.status, mediaType: res.mediaType, charset: res.charset, body: res.body, finalUrl: at };
       }
       const next = new URL(location, at);
       this.log(at, 'redirect', res.status, 0, 0);
@@ -926,10 +936,11 @@ export class Fetcher {
     const ct = res.headers['content-type'];
     const ctValue = (Array.isArray(ct) ? ct[0] : ct) ?? 'application/octet-stream';
     const mediaType = (ctValue.split(';')[0] ?? 'application/octet-stream').trim().toLowerCase();
+    const charset = charsetOf(ctValue);
 
     const loc = res.headers['location'];
     const location = (Array.isArray(loc) ? loc[0] : loc) ?? null;
-    return { status: res.statusCode, mediaType, body, finalUrl: url, location };
+    return { status: res.statusCode, mediaType, charset, body, finalUrl: url, location };
   }
 
   /**
@@ -1158,14 +1169,14 @@ export class Fetcher {
         writeFileMkdir(
           recordPath(key),
           JSON.stringify(
-            { url, finalUrl: res.finalUrl, status: res.status, mediaType: res.mediaType, contentHash, bytes: res.body.length, fetchedAt } satisfies CacheRecord,
+            { url, finalUrl: res.finalUrl, status: res.status, mediaType: res.mediaType, charset: res.charset, contentHash, bytes: res.body.length, fetchedAt } satisfies CacheRecord,
             null, 2,
           ),
         );
 
         this.stats.network += 1;
         this.stats.bytes += res.body.length;
-        return { url, finalUrl: res.finalUrl, status: res.status, mediaType: res.mediaType, body: res.body, contentHash, fromCache: false, fetchedAt };
+        return { url, finalUrl: res.finalUrl, status: res.status, mediaType: res.mediaType, charset: res.charset, body: res.body, contentHash, fromCache: false, fetchedAt };
       } catch (err) {
         this.stats.errors += 1;
         this.log(url, 'error', null, 0, waitMs, method);

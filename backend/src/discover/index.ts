@@ -16,6 +16,7 @@
 import type { Db } from '../db/index.js';
 import type { Fetcher } from '../fetch/index.js';
 import { RobotsDisallowed, CacheMiss, HostSuspended } from '../fetch/index.js';
+import { decodeBody } from '../fetch/decode.js';
 import { parseDocument, storeDocument, verifyOffsets } from '../parse/index.js';
 import { namedDocumentLink, pointedDocumentLink, soleDocumentLink } from '../parse/html.js';
 import { namesAnInstrument, ownName, statedKind } from '../parse/identity.js';
@@ -512,7 +513,7 @@ export async function materialise(
       let adopted = false;
       const wrapper = parsed.unread?.reason === 'landing-page' || parsed.unread?.reason === 'empty';
       if (wrapper && /html/i.test(fetched.mediaType)) {
-        const only = soleDocumentLink(fetched.body.toString('utf8'), fetched.finalUrl);
+        const only = soleDocumentLink(decodeBody(fetched), fetched.finalUrl);
         if (only) {
           const inner = await fetcher.fetch(only);
           const reparsed = inner.status === 200 ? await parseDocument(inner, { languages: profile.officialLanguages }) : null;
@@ -544,7 +545,7 @@ export async function materialise(
       // which document, and is why `pointedDocumentLink` stands beside the named one rather than
       // inside it. Both answer the same question and both are weighed the same way.
       if (!adopted && /html/i.test(fetched.mediaType)) {
-        const body = fetched.body.toString('utf8');
+        const body = decodeBody(fetched);
         const named = namedDocumentLink(body, fetched.finalUrl, row.title) ?? pointedDocumentLink(body, fetched.finalUrl);
         if (named && named !== fetched.finalUrl) {
           const inner = await fetcher.fetch(named);

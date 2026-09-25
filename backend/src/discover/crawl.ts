@@ -10,6 +10,7 @@
  * opaque path still writes its name in the anchor, and the anchor is what a citation matches.
  */
 import * as cheerio from 'cheerio';
+import { decodeBody } from '../fetch/decode.js';
 import type { Adapter, DiscoveredInstrument, DiscoverContext } from './types.js';
 import { instrumentTitle } from './titles.js';
 
@@ -171,7 +172,7 @@ export const crawlAdapter: Adapter = {
         try {
           const res = await fetcher.fetch(url);
           if (!/html/i.test(res.mediaType)) continue;
-          html = res.body.toString('utf8');
+          html = decodeBody(res);
         } catch {
           continue;
         }
