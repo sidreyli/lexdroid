@@ -112,6 +112,16 @@
       "notes": "CLOSED despite a misleadingly permissive robots.txt -- the site's actual pages return the same confirmed Cloudflare Managed Challenge (curl + repo Fetcher, both hosts). broadcast.nbtc.go.th has the identical block, same authority, not a separate portal. Full trace: docs/thailand-integration-plan.md, section \"Candidate sources — verified live, 15 September 2026\"."
     },
     {
+      "name": "Bank of Thailand -- circulars and notifications database (FIPCS)",
+      "url": "https://app.bot.or.th/FIPCS",
+      "kind": "regulator",
+      "authority": "Bank of Thailand (ธนาคารแห่งประเทศไทย)",
+      "pillars": [6, 7, 8, 12],
+      "adapter": "fipcs",
+      "adapterConfig": {},
+      "notes": "The bank's own register of its notifications (ประกาศ ธปท.), which the sitemap of www.bot.or.th does not list. Read through the ASP.NET search form exactly as a reader uses it -- document type ประกาศ ธปท., standing ใช้อยู่ (in force) -- paging with the form's own postback. Each row links the notification's PDF on www.bot.or.th, in English as well as Thai for many; the English is read as the document and the Thai beside it. Checked 26 September 2026: 21 pages of about 30."
+    },
+    {
       "name": "Bank of Thailand",
       "url": "https://www.bot.or.th",
       "kind": "regulator",

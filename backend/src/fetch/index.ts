@@ -669,6 +669,13 @@ export interface FetcherOptions {
 
 export class Fetcher {
   private readonly hosts = new Map<string, HostState>();
+  /**
+   * Cookies, kept only for a host a caller has asked to hold a session with, and only in memory.
+   * An ASP.NET form pages its results through server-side session state: without the session
+   * cookie, the second page of a search is answered as a fresh visit with no results. No other
+   * host is sent a cookie, and none is ever written to disk.
+   */
+  private readonly sessions = new Map<string, Map<string, string>>();
   private readonly db: Db;
   private readonly sourceMode: SourceMode;
   private readonly runId: string | null;
@@ -837,6 +844,8 @@ export class Fetcher {
   }
 
   private async sendOnce(url: string, agent: Agent, post?: PostBody): Promise<SendResult & { location: string | null }> {
+    const jar = this.sessions.get(new URL(url).host);
+    const cookie = jar && jar.size > 0 ? { cookie: [...jar].map(([k, v]) => `${k}=${v}`).join('; ') } : {};
     const res = await request(url, {
       method: post ? 'POST' : 'GET',
       dispatcher: agent,
@@ -855,7 +864,9 @@ export class Fetcher {
         'sec-fetch-dest': 'empty',
         'sec-fetch-mode': 'cors',
         'sec-fetch-site': 'same-origin',
+        ...cookie,
       } : {
+        ...cookie,
         'user-agent': USER_AGENT,
         accept: 'text/html,application/xhtml+xml,application/pdf,application/xml;q=0.9,*/*;q=0.8',
         'accept-language': 'en-GB,en;q=0.9',
@@ -871,6 +882,13 @@ export class Fetcher {
     });
     const wire = Buffer.from(await res.body.arrayBuffer());
     this.stats.wireBytes += wire.length;
+    if (jar) {
+      const set = res.headers['set-cookie'];
+      for (const line of Array.isArray(set) ? set : set ? [set] : []) {
+        const pair = /^\s*([^=;\s]+)=([^;]*)/.exec(line);
+        if (pair) jar.set(pair[1]!, pair[2]!);
+      }
+    }
     const body = decompress(wire, res.headers['content-encoding']);
     const ct = res.headers['content-type'];
     const ctValue = (Array.isArray(ct) ? ct[0] : ct) ?? 'application/octet-stream';
@@ -999,9 +1017,10 @@ export class Fetcher {
    * have not seen this URL before. Neither is swallowed: a caller that wants to continue past one
    * must say so.
    */
-  async fetch(url: string, opts: { refresh?: boolean; post?: PostBody } = {}): Promise<FetchResult> {
+  async fetch(url: string, opts: { refresh?: boolean; post?: PostBody; session?: boolean } = {}): Promise<FetchResult> {
     const parsed = new URL(url);
     const host = parsed.host;
+    if (opts.session) this.sessions.set(host, this.sessions.get(host) ?? new Map());
     // A POST is a different question from a GET of the same address, and two POSTs with different
     // bodies are different questions too, so the body is part of what the cache is keyed on.
     const key = opts.post ? postKey(url, opts.post) : url;
