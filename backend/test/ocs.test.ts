@@ -6,7 +6,7 @@ import { createServer, type Server } from 'node:http';
 import { afterAll, describe, expect, it } from 'vitest';
 import { openDb } from '../src/db/index.js';
 import { Fetcher } from '../src/fetch/index.js';
-import { docRequest, ocsKind, timelineIdOf } from '../src/discover/ocs.js';
+import { docRequest, ocsKind, ocsStanding, timelineIdOf } from '../src/discover/ocs.js';
 import { parseOcs } from '../src/parse/ocs.js';
 
 const servers: Server[] = [];
@@ -99,6 +99,12 @@ describe('the Council of State listing', () => {
     expect(ocsKind('กฎกระทรวงกำหนดลักษณะของเหรียญกษาปณ์ พ.ศ. 2569')).toBe('regulation');
     expect(ocsKind('ประกาศกระทรวงพาณิชย์ เรื่อง ...')).toBe('notice');
     expect(ocsKind('ระเบียบกระทรวงการคลังว่าด้วยการจัดซื้อจัดจ้าง พ.ศ. 2560')).toBe('rule');
+  });
+
+  it('reads the repeal the Council marks in a law name, though its listing still says state 01', () => {
+    expect(ocsStanding('พระราชบัญญัติรถลาก รัตนโกสินทรศก 120 (ยกเลิก)', '01', '2026-09-26').status).toBe('repealed');
+    expect(ocsStanding('พระราชบัญญัติคุ้มครองข้อมูลส่วนบุคคล พ.ศ. 2562', '01', '2026-09-26').status).toBe('in-force');
+    expect(ocsStanding('พระราชบัญญัติทดสอบ พ.ศ. 2569', '02', '2026-09-26').status).toBeUndefined();
   });
 
   it('finds the document id in the page address a reader opens', () => {

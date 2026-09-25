@@ -156,7 +156,20 @@ export function timelineIdOf(url: string): string | null {
   return /#\/public\/doc\/([^/?#]+)/.exec(url)?.[1] ?? null;
 }
 
-function standing(state: string | undefined, askedOn: string): Pick<DiscoveredInstrument, 'status' | 'statusBasis'> {
+/**
+ * The Council marks a repealed law by closing its name with "(ยกเลิก)" ("repealed"), and still lists
+ * it as state 01 -- which names the current version of the text, not a law in force. 639 of the
+ * 6,073 instruments listed carry the mark; read as in force, a repealed Act was citable evidence.
+ */
+const REPEALED_MARK = /\(ยกเลิก\)\s*$/;
+
+export function ocsStanding(title: string, state: string | undefined, askedOn: string): Pick<DiscoveredInstrument, 'status' | 'statusBasis'> {
+  if (REPEALED_MARK.test(title)) {
+    return {
+      status: 'repealed',
+      statusBasis: `The Council of State's law search names this "... (ยกเลิก)" (repealed) (asked on ${askedOn})`,
+    };
+  }
   const name = STATE_NAME[state ?? ''];
   const basis = `The Council of State's law search lists this as ${name ?? `state ${state ?? 'unstated'}`} (asked on ${askedOn})`;
   return state === '01' ? { status: 'in-force', statusBasis: basis } : { statusBasis: basis };
@@ -196,7 +209,7 @@ export const ocsAdapter: Adapter = {
           title: english ? `${title} (${english})` : title,
           url: DOC_PAGE + row.encTimelineID,
           kind: ocsKind(title),
-          ...standing(row.state, askedOn),
+          ...ocsStanding(title, row.state, askedOn),
         });
 
         for (const group of row.childrens ?? []) {
@@ -212,7 +225,7 @@ export const ocsAdapter: Adapter = {
               url: DOC_PAGE + child.encTimelineID,
               kind: ocsKind(childTitle),
               madeUnder: title,
-              ...standing(child.state, askedOn),
+              ...ocsStanding(childTitle, child.state, askedOn),
             });
           }
         }
