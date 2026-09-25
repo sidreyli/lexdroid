@@ -97,7 +97,15 @@ export class EngineTimeout extends EngineFailure {
  * no quote and no reasoning, took 169 minutes -- a ninth of all engine time ever spent reading.
  */
 export class EngineOverran extends EngineFailure {
-  constructor(model: string, limit: number, promptTokens: number, completionTokens: number, durationMs: number) {
+  constructor(
+    model: string,
+    limit: number,
+    promptTokens: number,
+    completionTokens: number,
+    durationMs: number,
+    /** What it wrote before it was cut off, for a caller that can tell an answer from the loop. */
+    readonly partial = '',
+  ) {
     super(
       model,
       `${model} wrote ${completionTokens} tokens without finishing and was cut off at the ${limit}-token limit`,
@@ -407,7 +415,7 @@ export async function generate(
   // reading would present the loop's leftovers as what the provision says. Thrown before the
   // cache is written, so a runaway is never replayed as if it were a reading.
   if (overran || completionTokens >= limit) {
-    throw new EngineOverran(model, limit, promptTokens, completionTokens, durationMs);
+    throw new EngineOverran(model, limit, promptTokens, completionTokens, durationMs, text);
   }
   if (!text.trim()) throw new EngineSilent(model, promptTokens, durationMs);
 

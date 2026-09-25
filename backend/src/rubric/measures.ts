@@ -516,7 +516,7 @@ export const MEASURES: Record<string, Measure[]> = {
       defines: 'the words requiring the branch, subsidiary or presence in the economy',
       restrictsForeigners: true,
       gloss:
-        'a requirement to establish a branch, subsidiary or other commercial presence in the economy before supplying a service to customers here',
+        'a requirement to establish a branch, subsidiary or other commercial presence in the economy before supplying a service to customers here, including a requirement that a foreign company register locally, or keep a local office or agent, before it may carry on business here',
       actor: 'the foreign supplier of the service',
     },
   ],

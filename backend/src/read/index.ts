@@ -760,7 +760,12 @@ function normaliseForQuoteCheck(s: string): string {
     .replace(/[,;]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
-    .toLowerCase();
+    .toLowerCase()
+    // Spelling, not wording. Australia's Payment Systems (Regulation) Act says "authorised or
+    // exempted"; the reader wrote "authorized or exempted", and the one provision that answers
+    // 12.4.4 was refused as words not in it. Folded on both sides, so no word is added or lost.
+    .replace(/(\w)y[sz](e|ed|es|ing)\b/g, '$1yz$2')
+    .replace(/(\w\w)i[sz](e|ed|es|er|ers|ing|ation|ations)\b/g, '$1iz$2');
 }
 
 /**
@@ -1631,6 +1636,7 @@ export async function readFramework(
 
   const started = Date.now();
   let res;
+  let failure: unknown;
   try {
     res = await generate(body, SYSTEM, {
       schema: FRAMEWORK_SCHEMA,
@@ -1639,6 +1645,27 @@ export async function readFramework(
       ...(opts.think === undefined ? {} : { think: opts.think }),
     });
   } catch (err) {
+    failure = err;
+    // Every field is answered before the reasoning, and the reasoning is where a loop starts:
+    // Australia's Security of Critical Infrastructure Act answered all eight fields in its first 400
+    // characters, then wrote "The title of the Act is the primary indicator of the purpose of the
+    // instrument." until it was cut off -- at 4,096 tokens and again at 12,288. The answer is kept
+    // and its quotes are checked like any other; only the loop is dropped.
+    const kept = err instanceof EngineOverran ? answeredBeforeReasoning(err.partial) : null;
+    if (kept && err instanceof EngineOverran) {
+      res = {
+        text: kept,
+        model: err.model,
+        promptTokens: err.promptTokens,
+        completionTokens: err.completionTokens,
+        durationMs: err.durationMs || Date.now() - started,
+        fromCache: false,
+        fromResume: false,
+      };
+    }
+  }
+  if (!res) {
+    const err = failure;
     // "The engine did not answer" must not arrive downstream looking like "this is not a
     // framework". A framework indicator scores 0 when the instruments examined establish nothing;
     // an instrument that was never examined is not evidence of that, and is dropped rather than
@@ -1762,6 +1789,23 @@ export async function readFramework(
     fromCache: res.fromCache,
     fromResume: res.fromResume,
   };
+}
+
+/**
+ * The answer a framework reading gave before its reasoning ran away, closed as JSON -- or null when
+ * the loop began earlier, so that some field the decision needs was never written.
+ */
+export function answeredBeforeReasoning(partial: string): string | null {
+  const at = partial.search(/,\s*"reasoning"\s*:/);
+  if (at < 0) return null;
+  const text = `${partial.slice(0, at)}, "reasoning": ""}`;
+  try {
+    const p = JSON.parse(text) as Record<string, unknown>;
+    const answered = FRAMEWORK_SCHEMA.required.every((k) => k === 'reasoning' || k in p);
+    return answered && typeof p['establishesFramework'] === 'boolean' ? text : null;
+  } catch {
+    return null;
+  }
 }
 
 export { READING_MODEL };
