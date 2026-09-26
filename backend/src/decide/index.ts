@@ -1566,7 +1566,14 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     // opposite -- we read the provision and it does not impose this measure -- which is a finding
     // of absence in that provision and evidence for the zero rather than a bar to it.
     const name = e.finding.measure ? MEASURE_NAMES[e.finding.measure] : undefined;
-    if (name && e.finding.definingWords && !name.test(e.finding.definingWords) && otherLanguage(e)) {
+    // Except where the reader, asked about this measure alone, found it in the provision's own
+    // language. Our terms of art are English, so a Thai provision can never say them, and holding
+    // every one of its findings for it left Thailand's Trade Secrets Act, its licence to run a
+    // telecommunications business and its identity checks all reported as unread. The second
+    // question is the one asked in the provision's language, so its yes is the test the English
+    // word cannot be there.
+    const readInItsLanguage = otherLanguage(e) !== null && e.confirmed === true;
+    if (name && e.finding.definingWords && !name.test(e.finding.definingWords) && otherLanguage(e) && !readInItsLanguage) {
       held.push({
         evidence: e,
         reason: `the words "${e.finding.definingWords}" are in ${otherLanguage(e)}, and what makes a provision ${e.finding.measure} is stated only in English`,
@@ -1586,6 +1593,7 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     if (
       name &&
       e.finding.definingWords &&
+      !readInItsLanguage &&
       !name.test(e.finding.definingWords) &&
       !(createsABody && name.test(e.finding.quote ?? ''))
     ) {

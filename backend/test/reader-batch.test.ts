@@ -126,6 +126,47 @@ describe('a subject stated in a language the domain has no words for', () => {
   });
 });
 
+describe('a Thai provision, read in its own language', () => {
+  const thai = {
+    indicatorId: '5.5',
+    measure: 'strict-telecom-licence',
+    dutyBearer: 'ผู้ใดประสงค์จะประกอบกิจการโทรคมนาคม',
+    dutyAct: 'ต้องได้รับใบอนุญาต',
+    dutyForce: 'requires' as const,
+    definingWords: 'ต้องได้รับใบอนุญาตจากคณะกรรมการ',
+    subjectWords: 'กิจการโทรคมนาคม',
+    quote: 'ต้องได้รับใบอนุญาตจากคณะกรรมการ',
+  };
+  const telecomAct = { sectionLanguage: 'th', instrumentTitle: 'พระราชบัญญัติการประกอบกิจการโทรคมนาคม พ.ศ. 2544' };
+
+  it('stands on the reader confirming the measure, since the English term of art cannot be in it', () => {
+    const d = at('5.5', [evidence(thai, { ...telecomAct, confirmed: true })]);
+    expect(d.basis).toHaveLength(1);
+  });
+
+  it('is still held where nobody confirmed it', () => {
+    const d = at('5.5', [evidence(thai, telecomAct)]);
+    expect(d.held.map((x) => x.reason).join(' ')).toContain('are in th');
+  });
+
+  it("names a term of art's domain in Thai", () => {
+    const secret = {
+      indicatorId: '4.1',
+      measure: 'trade-secret-protection',
+      dutyBearer: 'ผู้ควบคุมความลับทางการค้า',
+      dutyForce: 'permits' as const,
+      definingWords: 'สิทธิในความลับทางการค้า',
+      subjectWords: 'ความลับทางการค้า',
+      quote: 'ผู้ควบคุมความลับทางการค้าฟ้องคดีขอให้ศาลสั่ง',
+    };
+    const d = at('4.1', [evidence(secret, { sectionLanguage: 'th', confirmed: true })]);
+    expect(d.basis).toHaveLength(1);
+    // And a Thai subject outside it is still not the domain: "financial services" is no trade secret.
+    const off = at('4.1', [evidence({ ...secret, subjectWords: 'การใช้บริการทางการเงิน' }, { sectionLanguage: 'th', confirmed: true })]);
+    expect(off.basis).toHaveLength(0);
+  });
+});
+
 describe('a provision the corpus holds in two languages', () => {
   function corpus() {
     const db = openDb(':memory:');

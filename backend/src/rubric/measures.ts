@@ -1268,7 +1268,20 @@ export const SUBJECTS: Readonly<Record<string, string>> = {
  * statement of what a subject has to say to be the one asked for, in the words a provision uses to
  * say it. A subject saying none of them has not been shown, whatever it names.
  */
-const ONLINE = /\b(online|on-line|internet|e-?commerce|e-?business|e-?retail|electronic|digital|web|website|cyber|computer|network|platform|marketplace|application|app|software|data|mobile)\b/i;
+/**
+ * The terms of art in these domains, in the Thai of the law read here as well. Thai is written
+ * without spaces between words, so its terms stand outside the word boundaries, as the duty words
+ * in `decide` do. Each renders an English term in the same list one for one, and nothing else: a
+ * domain that only spoke English held every Thai finding as unread, so Thailand's Trade Secrets
+ * Act and the Act establishing its telecommunications regulator never reached their cells.
+ */
+const ONLINE = new RegExp(
+  [
+    /\b(online|on-line|internet|e-?commerce|e-?business|e-?retail|electronic|digital|web|website|cyber|computer|network|platform|marketplace|application|app|software|data|mobile)\b/.source,
+    'ออนไลน์|อินเทอร์เน็ต|อิเล็กทรอนิกส์|ดิจิทัล|เว็บไซต์|ไซเบอร์|คอมพิวเตอร์|เครือข่าย|แพลตฟอร์ม|ซอฟต์แวร์|แอปพลิเคชัน',
+  ].join('|'),
+  'i',
+);
 
 /**
  * 12.4 asks what limits paying for something online, and ESCAP answers it with the payment
@@ -1571,13 +1584,14 @@ const ICT_GOODS = new RegExp(
   ].join('|'),
   'i',
 );
-const PROCUREMENT = /\b(procure\w*|tender\w*|bid\w*|public contract\w*|government contract\w*|supply to the (Government|State)|Commonwealth contract\w*|purchas\w* by (a|the) (public|government)\w*)\b/i;
-const SECRETS = /\b(trade secret\w*|source code\w*|algorithm\w*|confidential (business )?information|proprietary information|encrypt\w*|cryptograph\w*|know-how)\b/i;
-const PATENT = /\b(patent\w*|invention\w*|utility model\w*|patentee\w*)\b/i;
-const COPYRIGHT = /\b(copyright\w*|author\w*|literary|artistic|musical|cinematograph\w*|performer\w*|work\w*|broadcast\w*|infring\w*)\b/i;
+const PROCUREMENT = new RegExp([/\b(procure\w*|tender\w*|bid\w*|public contract\w*|government contract\w*|supply to the (Government|State)|Commonwealth contract\w*|purchas\w* by (a|the) (public|government)\w*)\b/.source, 'จัดซื้อจัดจ้าง|ประกวดราคา|เสนอราคา'].join('|'), 'i');
+const SECRETS = new RegExp([/\b(trade secret\w*|source code\w*|algorithm\w*|confidential (business )?information|proprietary information|encrypt\w*|cryptograph\w*|know-how)\b/.source, 'ความลับทางการค้า|รหัสต้นฉบับ|ซอร์สโค้ด|อัลกอริทึม|เข้ารหัส'].join('|'), 'i');
+const PATENT = new RegExp([/\b(patent\w*|invention\w*|utility model\w*|patentee\w*)\b/.source, 'สิทธิบัตร|การประดิษฐ์'].join('|'), 'i');
+const COPYRIGHT = new RegExp([/\b(copyright\w*|author\w*|literary|artistic|musical|cinematograph\w*|performer\w*|work\w*|broadcast\w*|infring\w*)\b/.source, 'ลิขสิทธิ์|ผู้สร้างสรรค์|นักแสดง|ละเมิด'].join('|'), 'i');
 const TELECOM = new RegExp(
   [
     /\b(telecom\w*|telephon\w*|carrier\w*|carriage service\w*|network service\w*|spectrum|radiocommunication\w*|licensee\w*|operator\w*|subscriber\w*|broadband|mobile)\b/.source,
+    'โทรคมนาคม|โทรศัพท์|คลื่นความถี่|วิทยุคมนาคม|ผู้รับใบอนุญาต',
     ONLINE.source,
   ].join('|'),
   'i',
@@ -1586,7 +1600,7 @@ const INVESTMENT = /\b(invest\w*|acquisi\w*|acquire\w*|takeover\w*|merger\w*|sha
 const DIGITAL_SECTOR = new RegExp([ONLINE.source, TELECOM.source, /\b(sector\w*|industry|business\w*|service\w*)\b/.source].join('|'), 'i');
 const ADVERTISING = new RegExp([/\b(advertis\w*|promotion\w*|marketing|sponsor\w*)\b/.source, ONLINE.source].join('|'), 'i');
 const PRODUCT_CERT = /\b(product\w*|goods|equipment|device\w*|apparatus|appliance\w*|radiocommunication\w*|emission\w*|electromagnetic|safety|conformity|standard\w*)\b/i;
-const TECHNICAL_STANDARD = /\b(standard\w*|specification\w*|technical regulation\w*|code of practice|conformity)\b/i;
+const TECHNICAL_STANDARD = new RegExp([/\b(standard\w*|specification\w*|technical regulation\w*|code of practice|conformity)\b/.source, 'มาตรฐาน|ข้อกำหนดทางเทคนิค'].join('|'), 'i');
 const CUSTOMS = /\b(import\w*|consign\w*|customs|duty|duties|goods|parcel\w*|shipment\w*|value of the goods|declaration\w*)\b/i;
 
 /**
@@ -1664,8 +1678,13 @@ export const MEASURE_DOMAIN: Readonly<Record<string, RegExp>> = {
  * and its licensing instrument says so in its title and nowhere else. A list without those three
  * phrases reads that regime's own class-licence guidelines as being about something else.
  */
-const COMMUNICATIONS =
-  /\b(telecom\w*|communication\w*|broadcast\w*|carriage service\w*|carrier\w*|spectrum|radiocommunication\w*|postal|media|network facilit\w*|network service\w*|applications service\w*)\b/i;
+const COMMUNICATIONS = new RegExp(
+  [
+    /\b(telecom\w*|communication\w*|broadcast\w*|carriage service\w*|carrier\w*|spectrum|radiocommunication\w*|postal|media|network facilit\w*|network service\w*|applications service\w*)\b/.source,
+    'โทรคมนาคม|คมนาคม|กระจายเสียง|คลื่นความถี่|ไปรษณีย์|สื่อ',
+  ].join('|'),
+  'i',
+);
 
 export const SUBJECT_DOMAIN: Readonly<Record<string, RegExp>> = {
   ...PILLAR_12_DOMAINS,
