@@ -8,7 +8,7 @@ import { describe, expect, it } from 'vitest';
 import { openDb } from '../src/db/index.js';
 import { decide, type Evidence, type SurfacedInstrument } from '../src/decide/index.js';
 import { translationNote } from '../src/export/index.js';
-import { rejectionFor, type Finding } from '../src/read/index.js';
+import { dedicatedWordsShown, frameworkWordsShown, rejectionFor, type Finding } from '../src/read/index.js';
 import { otherLanguageCopies } from '../src/retrieve/index.js';
 import { loadRubric } from '../src/rubric/index.js';
 import { MEASURES } from '../src/rubric/measures.js';
@@ -230,5 +230,21 @@ describe('a row quoting a translation', () => {
     expect(translationNote('MYS', 'ms')).toBeNull();
     expect(translationNote('SGP', 'en')).toBeNull();
     expect(translationNote('MYS', null)).toBeNull();
+  });
+});
+
+describe('a framework named in the language of its own statute', () => {
+  const pdpa =
+    'มาตรา ๑ พระราชบัญญัตินี้เรียกว่า “พระราชบัญญัติคุ้มครองข้อมูลส่วนบุคคล พ.ศ. ๒๕๖๒” ' +
+    'มาตรา ๑๙ ผู้ควบคุมข้อมูลส่วนบุคคลจะกระทำการเก็บรวบรวม ใช้ หรือเปิดเผยข้อมูลส่วนบุคคลไม่ได้ หากเจ้าของข้อมูลส่วนบุคคลไม่ได้ให้ความยินยอม';
+
+  it('is shown by a Thai rule that names the subject in Thai', () => {
+    expect(frameworkWordsShown('ผู้ควบคุมข้อมูลส่วนบุคคลจะกระทำการเก็บรวบรวม ใช้ หรือเปิดเผยข้อมูลส่วนบุคคลไม่ได้', 'data-protection', pdpa)).toBe(true);
+    expect(dedicatedWordsShown('พระราชบัญญัติคุ้มครองข้อมูลส่วนบุคคล พ.ศ. ๒๕๖๒', 'data-protection', pdpa)).toBe(true);
+  });
+
+  it('is still not shown by words that are not in the instrument, or that name another subject', () => {
+    expect(frameworkWordsShown('ผู้ควบคุมข้อมูลส่วนบุคคลต้องแต่งตั้งเจ้าหน้าที่คุ้มครองข้อมูลส่วนบุคคลทุกกรณีโดยไม่มีข้อยกเว้น', 'data-protection', pdpa)).toBe(false);
+    expect(frameworkWordsShown('ผู้ควบคุมข้อมูลส่วนบุคคลจะกระทำการเก็บรวบรวม ใช้ หรือเปิดเผยข้อมูลส่วนบุคคลไม่ได้', 'consumer-protection', pdpa)).toBe(false);
   });
 });

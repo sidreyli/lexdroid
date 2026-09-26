@@ -1500,10 +1500,38 @@ const SUBJECT_NAMES: Record<FrameworkSubject, string[]> = {
   'consumer-protection': ['consumer', 'unfair practice', 'fair trading', 'sale of goods'],
 };
 
+/**
+ * The same names in the other languages of the law read here, for the check and not the search.
+ *
+ * A Thai statute names its subject in Thai, so asked for "personal data" or "consumer" its words
+ * never answered: the Personal Data Protection Act, the Cyber Security Act, the Copyright Act's
+ * safe harbour and the Unfair Contract Terms Act were all read as frameworks and all banked as not
+ * shown, which left the cells saying none of the instruments examined establishes one. Each word
+ * here renders a name above one for one. They are kept out of `subjectQueries`, which ranks the
+ * register for every economy and is not where a language gap was.
+ */
+const SUBJECT_NAMES_IN_OTHER_LANGUAGES: Record<FrameworkSubject, string[]> = {
+  'data-protection': ['ข้อมูลส่วนบุคคล', 'ความเป็นส่วนตัว'],
+  cybersecurity: ['ไซเบอร์', 'ความผิดเกี่ยวกับคอมพิวเตอร์', 'ความมั่นคงปลอดภัยสารสนเทศ', 'ความมั่นคงปลอดภัยของระบบสารสนเทศ'],
+  'copyright-safe-harbour': ['ลิขสิทธิ์', 'ผู้ให้บริการ'],
+  'intermediary-liability': ['ตัวกลาง', 'ผู้ให้บริการ'],
+  'consumer-protection': ['ผู้บริโภค'],
+};
+
 /** Whether quoted words name the subject at all, as opposed to merely coming from the instrument. */
 function namesSubject(words: string, subject: FrameworkSubject): boolean {
   const w = words.toLowerCase();
-  return SUBJECT_NAMES[subject].some((n) => w.includes(n));
+  return [...SUBJECT_NAMES[subject], ...SUBJECT_NAMES_IN_OTHER_LANGUAGES[subject]].some((n) => w.includes(n));
+}
+
+/** Whether the words said to make the framework are a rule in the instrument, naming the subject. */
+export function frameworkWordsShown(words: string | null, subject: FrameworkSubject, text: string): boolean {
+  return words !== null && quoteIsInSection(words, text, MIN_RULE_CHARS) && namesSubject(words, subject);
+}
+
+/** Whether the words said to show what the instrument is for are in its opening, naming the subject. */
+export function dedicatedWordsShown(words: string | null, subject: FrameworkSubject, opening: string): boolean {
+  return words !== null && quoteIsInSection(words, opening) && namesSubject(words, subject);
 }
 
 const FRAMEWORK_SCHEMA = {
@@ -1757,10 +1785,11 @@ export async function readFramework(
   // immunity, really in the Act, and about a data provider under the Consumer Data Right rather
   // than an intermediary carrying somebody else's content. Quoting proves the rule exists; only
   // the subject's own words show it is this rule.
-  const frameworkWordsVerified =
-    frameworkWords !== null &&
-    quoteIsInSection(frameworkWords, [input.provisionsText, input.openingText].join('\n\n'), MIN_RULE_CHARS) &&
-    namesSubject(frameworkWords, subject);
+  const frameworkWordsVerified = frameworkWordsShown(
+    frameworkWords,
+    subject,
+    [input.provisionsText, input.openingText].join('\n\n'),
+  );
 
   return {
     instrumentId: input.instrumentId,
@@ -1772,10 +1801,7 @@ export async function readFramework(
     sector: typeof p['sector'] === 'string' && p['sector'].trim() ? p['sector'].trim() : null,
     dedicated: p['dedicated'] === true,
     dedicatedWords: dedicatedWords,
-    dedicatedWordsVerified:
-      dedicatedWords !== null &&
-      quoteIsInSection(dedicatedWords, input.openingText) &&
-      namesSubject(dedicatedWords, subject),
+    dedicatedWordsVerified: dedicatedWordsShown(dedicatedWords, subject, input.openingText),
     sectorWords,
     sectorWordsVerified: sectorWords !== null && quoteIsInSection(sectorWords, input.openingText),
     quote,
