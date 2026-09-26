@@ -175,6 +175,15 @@ provision is usually in the corpus.
 - IND 1.4, 12.01, 12.4.7
 - THA 5.2, 6.1, 8.3, 12.5
 
+IND 12.4.7 is now reached and still missed. On 27 Sep ESCAP's two RBI circulars were registered and
+pillar 12 re-read (run `b358e814`). The CNP notification's rule ("acquisition ... has to be through a
+bank in India", "settle only in Indian currency") was filed under 12.4.1 and 12.4.2, which is
+defensible. For 12.4.7 the reader quoted the paragraph describing the evasion, which states no
+restriction. The OPGSP circular (the page is the 2015 consolidation) parsed as one 6.5k block, and
+the reader found nothing in it. Its USD 2,000 and USD 10,000 per-transaction caps say "not
+exceeding", and the rule does not treat that as restricting, because penalty clauses use the same
+words.
+
 IND 12.01 is the sharpest case: the FDI Circular's "not permitted in inventory based model of
 e-commerce" was read and answered "does not apply".
 
