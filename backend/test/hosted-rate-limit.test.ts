@@ -83,3 +83,18 @@ describe('the schema a hosted engine is sent', () => {
     expect(s.properties.findings.items.required).toEqual(['type']);
   });
 });
+
+describe('a reading refused for a field it left out', () => {
+  it('is kept, because the answer is whole and an absent field reads as null', async () => {
+    const generation = JSON.stringify({ findings: [{ quote: 'хувь хүний мэдээлэл' }] });
+    const refusal = JSON.stringify({ error: { code: 'json_validate_failed', message: 'missing properties', failed_generation: generation } });
+    await host([{ status: 400, body: refusal }]);
+    expect((await hostedGenerate('hi', 'sys')).text).toBe(generation);
+  });
+
+  it('is still an error when what was generated is not JSON', async () => {
+    const refusal = JSON.stringify({ error: { code: 'json_validate_failed', failed_generation: 'max completion tokens reached' } });
+    await host([{ status: 400, body: refusal }]);
+    await expect(hostedGenerate('hi', 'sys')).rejects.toThrow(/400/);
+  });
+});

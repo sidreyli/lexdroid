@@ -100,6 +100,18 @@ function closed(schema: unknown): unknown {
   return out;
 }
 
+/** The JSON a schema refusal carries in `failed_generation`, if it is JSON at all. */
+function failedGeneration(body: string): string | null {
+  try {
+    const g = (JSON.parse(body) as { error?: { failed_generation?: unknown } }).error?.failed_generation;
+    if (typeof g !== 'string') return null;
+    JSON.parse(g);
+    return g;
+  } catch {
+    return null;
+  }
+}
+
 /** A schema that also accepts null. */
 function nullable(schema: unknown): unknown {
   if (!schema || typeof schema !== 'object' || Array.isArray(schema)) return schema;
@@ -196,6 +208,20 @@ async function hostedOnce(
   if (res.statusCode === 429) return { result: null, retryAfterMs: retryAfter(res.headers['retry-after'], text) };
   if (res.statusCode >= 500) {
     throw new OllamaUnavailable(`${config.provider} answered ${res.statusCode}`, config.baseUrl);
+  }
+  // A reading the host checked against the schema after writing it, rather than while, and refused
+  // for a field it left out. The answer is in the refusal, whole, and an absent field is what the
+  // reader's normaliser makes null anyway; so it is kept. gpt-oss on Groq omits optional fields
+  // this way, and each refusal was killing the pillar over a missing `placeWords`. Only JSON that
+  // parses is kept -- a generation cut off mid-document is still an error.
+  if (res.statusCode === 400 && /json_validate_failed/.test(text)) {
+    const kept = failedGeneration(text);
+    if (kept !== null) {
+      return {
+        retryAfterMs: null,
+        result: { text: kept, promptTokens: 0, completionTokens: 0, durationMs: Date.now() - started, model, finishReason: 'stop' },
+      };
+    }
   }
   if (res.statusCode >= 400) {
     // A 4xx is our request, not their availability, and retrying it on another host would just
