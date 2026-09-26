@@ -25,7 +25,7 @@
 import { loadEnv } from '../src/env.js';
 import { loadEngines, type Engine } from '../src/engines/registry.js';
 import { hostedGenerate } from '../src/engines/hosted.js';
-import { generate } from '../src/engines/ollama.js';
+import { generate, MAX_OUTPUT_TOKENS } from '../src/engines/ollama.js';
 import { quoteIsInSection } from '../src/read/index.js';
 
 // Before anything reads process.env: the hosted key lives in .env, never in engines.json.
@@ -178,8 +178,8 @@ async function check(engine: Engine): Promise<boolean> {
       // Through the same entry point the pipeline uses, not a bespoke request: an engine that
       // works only when checked by its own checker has not been checked.
       const answer = engine.hosted
-        ? await hostedGenerate(promptFor(c), SYSTEM, { schema: SCHEMA, maxOutputTokens: 512 })
-        : await generate(promptFor(c), SYSTEM, { schema: SCHEMA, model: engine.model, maxOutputTokens: 512 });
+        ? await hostedGenerate(promptFor(c), SYSTEM, { schema: SCHEMA, maxOutputTokens: MAX_OUTPUT_TOKENS })
+        : await generate(promptFor(c), SYSTEM, { schema: SCHEMA, model: engine.model, maxOutputTokens: MAX_OUTPUT_TOKENS });
       text = answer.text;
       console.log(`  reachable    yes, in ${((Date.now() - started) / 1000).toFixed(1)}s`);
     } catch (err) {

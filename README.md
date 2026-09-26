@@ -135,17 +135,22 @@ Declared in `backend/data/engines.json` and frozen at submission.
 
 | | Engine A | Engine B |
 | :---- | :---- | :---- |
-| Provider and model | Ollama, `gemma4-lex-16k` | Groq, `qwen/qwen3.8-27b` |
-| Version / checkpoint | `gemma4:12b-it-q4_K_M` | `qwen/qwen3.8-27b` |
-| Local or hosted API | Local (or a GPU rented by the hour) | Hosted API |
-| Kind | Open weights | Open weights, commercially hosted |
+| Provider and model | Ollama, `gemma4-lex-16k` | Google, `gemini-3.8-flash` |
+| Version / checkpoint | `gemma4:12b-it-q4_K_M` | `gemini-3.8-flash` (a pinned version, not a `-latest` alias) |
+| Local or hosted API | Local (or a GPU rented by the hour) | Hosted API (Gemini's OpenAI-compatible endpoint) |
+| Kind | Open weights | Commercial hosted |
 | Config value | nothing — it is the default | `LEXDROID_HOSTED_API_KEY` in the environment |
 
-They differ in kind on every axis ESCAP names: different model family (Gemma against Qwen),
-different size (12B against 27B), different quantisation, and someone else's hardware. Engine B is
-commercially hosted *and* open weights at once, which satisfies both the way the orientation slide
-puts it ("at least one must be open weights") and the way checklist item 20 puts it ("one
-commercial hosted, one open weights").
+They differ in kind on every axis ESCAP names: open weights run locally against a commercial hosted
+model, a different model and size, and someone else's hardware. One commercial hosted and one open
+weights is the pairing checklist item 20 asks for, and the orientation slide's "at least one must be
+open weights" is met by Engine A. The Section 3 claim rests on Engine A alone: the whole pipeline
+runs on it with no proprietary API.
+
+Engine B was Qwen on Groq until 26 September 2026. Groq's free tier allows 1,000 output tokens a
+minute, which refused every full-size reading outright, so that engine could not in practice read.
+`gemini-3.8-flash` passed `engine-check` the same day in English, Russian, Mongolian and Lao,
+quoting each untranslated and reading the retention period correctly.
 
 **The API key is never written to a file.** It is read from `LEXDROID_HOSTED_API_KEY` in the
 environment, because a key on disk is a key in a backup. `backend/test/engine-declaration.test.ts`
@@ -360,7 +365,7 @@ arithmetic.
 | OCR | Tesseract, local | $0.00 |
 | Embedding | bge-m3, local | $0.00 |
 | Mapping — Engine A | `gemma4-lex-16k` on 8 rented GPUs | **$19.32** |
-| Mapping — Engine B | `qwen/qwen3.8-27b` on Groq | not yet measured |
+| Mapping — Engine B | `gemini-3.8-flash` on Google | not yet measured |
 | Crawling | — | $0.00 |
 | **Total, Engine A** | | **$19.32 for 183 cells — $0.106 per cell** |
 
@@ -375,7 +380,7 @@ The corpus behind those cells — 4,045 documents, 162,901 sections — was buil
 fetches over several days, at $0.00: bandwidth off government portals is the only resource spent,
 which is exactly why the crawler is careful with it.
 
-**Engine B has not been billed yet.** Groq prices `qwen/qwen3.8-27b` per token; the cost of a
+**Engine B has not been billed yet.** Google prices `gemini-3.8-flash` per token; the cost of a
 comparison pass will be filled in once the engine has been run. It is not estimated here.
 
 ---
@@ -431,10 +436,12 @@ comparison pass will be filled in once the engine has been run. It is not estima
   since was cache-only. A fetching run through the interface is the remaining rehearsal.
 - **Engine B's declaration was wrong until 21 September 2026, and only calling it found that.**
   It was declared as `qwen/qwen3-32b`; the first live `engine-check` returned
-  `model_not_found` — Groq had retired that model. The declaration now names `qwen/qwen3.8-27b`
-  and passes all four checks in both English and Russian. A hosted engine can be withdrawn under
-  a frozen declaration in a way a local one cannot, so Engine B should be re-checked shortly
-  before 30 September rather than assumed to still exist.
+  `model_not_found` — Groq had retired that model. It then named `qwen/qwen3.8-27b`, which answered
+  `engine-check` but, on Groq's free tier, refused every full-size reading (1,000 output tokens a
+  minute). On 26 September 2026 it was re-declared as `gemini-3.8-flash`, which passes all checks
+  in English, Russian, Mongolian and Lao. A hosted engine can be withdrawn under a frozen
+  declaration in a way a local one cannot, so Engine B should be re-checked shortly before
+  30 September rather than assumed to still exist.
 - **Engine B is verified but not yet billed.** `engine-check` proves it answers, quotes and reads
   correctly; no scored run has used it, so the per-token cost in Measured Cost is still blank
   rather than estimated.

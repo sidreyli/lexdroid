@@ -30,7 +30,7 @@ is the Apache License 2.0.
 
 - ☑ The entire codebase is released under Apache License 2.0 (LICENSE file included in the repository).
 - ☑ The core pipeline can be run end to end with no proprietary API or hosted service, on Engine A (Gemma, open weights, local Ollama).
-- ☐ Exception(s): none. Engine B is open weights served by Groq; it is optional, and nothing requires it.
+- ☐ Exception(s): none. Engine B is Google's `gemini-3.8-flash`, a commercial hosted model; it is optional, and nothing in the pipeline requires it.
 
 Tables generated offline and committed with the code were produced by a declared engine:
 `backend/data/query-translations/<CODE>.json` (the rubric's queries in Mongolian, Russian and Lao)
