@@ -69,9 +69,10 @@ export const MIN_ELIDED_TOTAL = 40;
 export function wholeWordAt(text: string, at: number, length: number): boolean {
   const before = at === 0 ? ' ' : text[at - 1]!;
   const after = at + length >= text.length ? ' ' : text[at + length]!;
-  // Any script's letters: "мэдээлэл" must not be found inside "мэдээллийн" either. Except Thai and
-  // Lao, which write no space between words, so a letter beside a fragment is no sign it is cut.
-  const inWord = (c: string) => /[\p{L}\p{N}]/u.test(c) && !/[฀-໿]/u.test(c);
+  // Cyrillic letters too: "мэдээлэл" must not be found inside "мэдээллийн" either. Nothing else is
+  // added, so English is bounded exactly as it was; Lao writes no space between words, so a Lao
+  // letter beside a fragment is no sign it is cut.
+  const inWord = (c: string) => /[a-z0-9Ѐ-ӿ]/.test(c);
   return !inWord(before) && !inWord(after);
 }
 

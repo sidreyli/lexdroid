@@ -650,7 +650,7 @@ async function frameworkCandidates(
 
   const ranked = await shortlistInstruments(db, {
     economy,
-    queries: subjectQueries(subject),
+    queries: subjectQueries(subject, economyLanguages(db, economy)),
     limit: FRAMEWORK_CANDIDATES * 4,
     ...(embeddingModel ? { model: embeddingModel } : {}),
   });
@@ -732,7 +732,7 @@ function subjectSections(
   // and Finance (No. 2) Act 2023 among the five instruments examined for its copyright safe
   // harbour, displacing the Communications and Multimedia Act. Fusion is what the rest of Zone 1
   // uses for the same reason, and it puts that Act first and the Copyright Act 1987 second.
-  const runs = subjectQueries(subject).map((q) => searchLexical(db, q, { economy, limit: SUBJECT_SECTION_DEPTH }));
+  const runs = subjectQueries(subject, economyLanguages(db, economy)).map((q) => searchLexical(db, q, { economy, limit: SUBJECT_SECTION_DEPTH }));
   for (const hit of fuse(runs)) {
     const row = owner.get(hit.sectionId) as { id: number; title: string; source_url: string } | undefined;
     if (!row || !inForce.has(row.id)) continue;
@@ -830,4 +830,15 @@ function sectionRows(db: Db, ids: number[]): SectionRow[] {
         WHERE s.id IN (${placeholders})`,
     )
     .all(...ids) as SectionRow[];
+}
+
+/** The languages the economy publishes in, as its profile declared them. */
+function economyLanguages(db: Db, economy: string): string[] {
+  const row = db.prepare('SELECT official_languages l FROM economy WHERE code = ?').get(economy) as { l: string } | undefined;
+  try {
+    const parsed: unknown = row ? JSON.parse(row.l) : [];
+    return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === 'string') : [];
+  } catch {
+    return [];
+  }
 }

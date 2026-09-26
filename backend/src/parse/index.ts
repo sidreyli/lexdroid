@@ -232,6 +232,9 @@ export function storeDocument(
   })();
 }
 
+/** The languages whose provisions have their language recorded on storing. */
+const DETECTED_HERE = new Set(['mn', 'ru', 'lo']);
+
 /**
  * Each provision with the language it is written in, where its parser left that open.
  *
@@ -255,7 +258,9 @@ function withLanguages(db: Db, instrumentId: number, parsed: ParsedDocument): Pa
   } catch {
     // An economy with no profile -- a test fixture -- leaves languages to the export, as before.
   }
-  if (languages.length === 0) return parsed;
+  // Only for the economies that publish in Mongolian, Russian or Lao. The others were measured and
+  // tuned with their languages left to the export, and their answers are not to move.
+  if (!languages.some((l) => DETECTED_HERE.has(l))) return parsed;
   return {
     ...parsed,
     sections: parsed.sections.map((s) =>

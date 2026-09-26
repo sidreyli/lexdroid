@@ -28,6 +28,7 @@ import { buildDenseIndex } from '../index/index.js';
 import { buildInstrumentIndex, shortlistInstruments } from '../shortlist/index.js';
 import { indicatorsOfPillar, loadRubric } from '../rubric/index.js';
 import { queriesFor } from '../retrieve/index.js';
+import { loadTranslations } from '../retrieve/translations.js';
 import { EMBEDDING_MODEL, haveModel, OllamaUnavailable } from '../engines/ollama.js';
 import type { Emit } from './events.js';
 
@@ -145,9 +146,11 @@ export async function prepareCorpus(db: Db, opts: PrepareOptions): Promise<Prepa
   for (const p of opts.pillars) {
     // In the economy's own language as well: this ranks the register's titles, and an English
     // question ranks Cyrillic or Lao titles on nothing.
-    // Named as retrieval names it ("in Mongolia", not "in the economy"): the translation table is
-    // keyed on the named query, and an unnamed one never found its translation.
-    for (const ind of indicatorsOfPillar(p, rubric)) asked.push(queriesFor(ind, profile.name, economy));
+    // Named as retrieval names it ("in Mongolia", not "in the economy") where the economy has a
+    // translation table: the table is keyed on the named query, and an unnamed one never found its
+    // translation. Elsewhere unnamed, exactly as before, so no English economy's shortlist moves.
+    const named = loadTranslations(economy) ? profile.name : undefined;
+    for (const ind of indicatorsOfPillar(p, rubric)) asked.push(queriesFor(ind, named, economy));
   }
 
   const top = opts.top ?? 15;
