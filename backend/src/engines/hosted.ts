@@ -90,6 +90,38 @@ export async function hostedGenerate(
     stream: false,
   };
 
+  // A rate limit is the host telling us when to ask again, not a host that has gone. Groq's free
+  // tier allows 1,000 output tokens a minute, so a reading run meets it every few provisions; with
+  // no wait the first 429 retired the only engine and ended the pillar. The wait is the host's own
+  // (retry-after, or "try again in 28.9s" in the body), bounded so a daily quota still fails.
+  for (let attempt = 0; ; attempt += 1) {
+    const answer = await hostedOnce(config, body, model, started);
+    if (answer.retryAfterMs === null) return answer.result;
+    if (attempt >= RATE_LIMIT_RETRIES || answer.retryAfterMs > MAX_RATE_LIMIT_WAIT_MS) {
+      throw new OllamaUnavailable(`${config.provider} answered 429 (rate limited)`, config.baseUrl);
+    }
+    await new Promise((r) => setTimeout(r, answer.retryAfterMs! + 500));
+  }
+}
+
+const RATE_LIMIT_RETRIES = 20;
+const MAX_RATE_LIMIT_WAIT_MS = 5 * 60_000;
+
+/** How long a 429 asks us to wait: the header if sent, else the body's "try again in 28.9s". */
+function retryAfter(header: string | string[] | undefined, text: string): number {
+  const h = Array.isArray(header) ? header[0] : header;
+  if (h && Number.isFinite(Number(h))) return Number(h) * 1000;
+  const m = /try again in (?:(\d+)m)?(\d+(?:\.\d+)?)s/i.exec(text);
+  if (m) return (Number(m[1] ?? 0) * 60 + Number(m[2])) * 1000;
+  return 15_000;
+}
+
+async function hostedOnce(
+  config: NonNullable<ReturnType<typeof hostedConfig>>,
+  body: unknown,
+  model: string,
+  started: number,
+): Promise<{ result: HostedAnswer; retryAfterMs: null } | { result: null; retryAfterMs: number }> {
   let res;
   try {
     res = await request(`${config.baseUrl}/chat/completions`, {
@@ -109,7 +141,8 @@ export async function hostedGenerate(
   }
 
   const text = await res.body.text();
-  if (res.statusCode >= 500 || res.statusCode === 429) {
+  if (res.statusCode === 429) return { result: null, retryAfterMs: retryAfter(res.headers['retry-after'], text) };
+  if (res.statusCode >= 500) {
     throw new OllamaUnavailable(`${config.provider} answered ${res.statusCode}`, config.baseUrl);
   }
   if (res.statusCode >= 400) {
@@ -130,12 +163,15 @@ export async function hostedGenerate(
 
   const choice = parsed.choices?.[0];
   return {
-    text: choice?.message?.content ?? '',
-    promptTokens: parsed.usage?.prompt_tokens ?? 0,
-    completionTokens: parsed.usage?.completion_tokens ?? 0,
-    durationMs: Date.now() - started,
-    model,
-    finishReason: choice?.finish_reason ?? null,
+    retryAfterMs: null,
+    result: {
+      text: choice?.message?.content ?? '',
+      promptTokens: parsed.usage?.prompt_tokens ?? 0,
+      completionTokens: parsed.usage?.completion_tokens ?? 0,
+      durationMs: Date.now() - started,
+      model,
+      finishReason: choice?.finish_reason ?? null,
+    },
   };
 }
 
