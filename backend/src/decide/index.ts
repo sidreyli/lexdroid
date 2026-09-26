@@ -18,7 +18,7 @@
  */
 import type { Indicator, ScoreBand } from '../rubric/types.js';
 import type { Finding } from '../read/index.js';
-import { MEASURES, MEASURE_DOMAIN, MEASURE_NAMES, SECTOR_DOMAINS, SUBJECTS, TITLE_CARRIES_DOMAIN, SUBJECT_DOMAIN } from '../rubric/measures.js';
+import { FRAMEWORK_TITLE_DOMAIN, MEASURES, MEASURE_DOMAIN, MEASURE_NAMES, SECTOR_DOMAINS, SUBJECTS, TITLE_CARRIES_DOMAIN, SUBJECT_DOMAIN } from '../rubric/measures.js';
 import { tallyConfirmations, type ConfirmationTally } from '../read/confirmations.js';
 import { inUsd, moneyIn, type FxRates } from './currency.js';
 import { determinesAParticularCase } from '../discover/titles.js';
@@ -1773,6 +1773,16 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
       });
       continue;
     }
+    // And the direction of a presence: it has to be one required here. A bank regulator's approval
+    // for a domestic bank "seeking to establish an overseas branch" names a foreign place, which is
+    // why it passed the gate above, and is the opposite measure -- the local firm going out.
+    if (e.finding.measure === 'commercial-presence' && presenceAbroad(e.finding.subjectWords)) {
+      ruledOut.push({
+        evidence: e,
+        reason: `"${e.finding.subjectWords}" is a presence abroad, and this measure is a presence required in the economy`,
+      });
+      continue;
+    }
     // And the direction of it: the foreign party has to be the one holding, not the one held.
     if (proportional(indicatorId, e.finding.measure) && foreignIsTheHeld(e.finding)) {
       ruledOut.push({
@@ -2334,6 +2344,14 @@ function restrictsForeigners(indicatorId: string, measure: string | null): boole
   return (MEASURES[indicatorId] ?? []).some((m) => m.token === measure && m.restrictsForeigners === true);
 }
 
+/**
+ * Is this establishment one opened outside the economy? "Overseas" alone is not enough: several
+ * systems call a foreign company an "overseas company", and that is exactly who a presence rule binds.
+ */
+export function presenceAbroad(subject: string | null): boolean {
+  return /\b(overseas|offshore) (branch|office|subsidiar)\w*|\b(branch|office|subsidiar\w*)\w* (abroad|overseas|outside)\b|สาขาในต่างประเทศ/i.test(subject ?? '');
+}
+
 /** Who the catalogue says bears this measure, for the reason given when it is not borne. */
 function actorOf(indicatorId: string, measure: string | null): string | null {
   if (!measure) return null;
@@ -2839,9 +2857,16 @@ function decideFramework(input: DecideInput): Decision {
   // cell today, which is luck rather than a rule. Excluded from candidacy altogether rather than
   // demoted to the sectoral band, because an advisory document is not a narrow framework, it is
   // not one at all.
-  const candidates = (input.frameworkEvidence ?? []).filter(
+  const claimed = (input.frameworkEvidence ?? []).filter(
     (f) => f.establishesFramework && f.frameworkShown !== false && f.bindingness !== 'advisory',
   );
+  // And it has to be a framework for this subject -- see FRAMEWORK_TITLE_DOMAIN.
+  const domain = FRAMEWORK_TITLE_DOMAIN[indicator.id];
+  const onSubject = (f: FrameworkEvidence) =>
+    !domain ||
+    ((!domain.must || domain.must.test(f.instrumentTitle)) && (!domain.not || !domain.not.test(f.instrumentTitle)));
+  const candidates = claimed.filter(onSubject);
+  const offSubject = claimed.filter((f) => !onSubject(f));
 
   const unread = coverage.frameworkUnread ?? 0;
   if (coverage.instrumentsConsidered === 0) {
@@ -2903,6 +2928,28 @@ function decideFramework(input: DecideInput): Decision {
       ordinal === lowest
         ? `a framework, which this indicator scores without regard to its reach: ${partial.map((c) => c.instrumentTitle).join(', ')}`
         : `a framework limited in reach or subject: ${partial.map((c) => c.instrumentTitle).join(', ')}`;
+  } else if (offSubject.length > 0) {
+    // The only framework the reading found is a framework for something else. That is not
+    // evidence the economy has none: the instrument that is about the subject was not among those
+    // read, and an absence reported from it would be a claim nobody checked.
+    return {
+      indicatorId: indicator.id,
+      economy,
+      state: 'unresolved',
+      score: null,
+      band: null,
+      basis: [],
+      excluded: [],
+      held: [],
+      frameworkBasis: [],
+      absence: null,
+      coverage,
+      decidingFact: `the only framework found is not about this subject: ${offSubject.map((c) => c.instrumentTitle).join(', ')}`,
+      rationale:
+        `The framework(s) found are named for another subject (${offSubject.map((c) => c.instrumentTitle).join(', ')}), ` +
+        `and none of the ${coverage.instrumentsConsidered} instrument(s) examined is a framework for this one. ` +
+        'Its absence is not reported, because the instrument that would be it was not among those read.',
+    };
   } else if (unread > 0) {
     // The instrument that goes unread is as likely as any to be the framework, and the likelier:
     // the long consolidated Act is the one a reading overruns on.

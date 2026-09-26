@@ -1395,7 +1395,9 @@ describe('a framework indicator, which asks about instruments rather than provis
       indicator: i129,
       economy: 'SGP',
       evidence: [],
-      frameworkEvidence: [instrument({ horizontal: false, sectoralShown: true })],
+      frameworkEvidence: [
+        instrument({ instrumentTitle: 'Consumer Protection (Fair Trading) Act 2003', horizontal: false, sectoralShown: true }),
+      ],
       coverage: examined,
     });
     expect(d.score).toBe(0);

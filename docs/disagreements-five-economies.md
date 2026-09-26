@@ -8,7 +8,8 @@ Written 27 September 2026 over the latest full run of each economy:
 | India | `283f457e` | 26 Sep |
 | Thailand | `f8848a01` | 26 Sep, branch `feat/thailand-run` |
 
-Agreement with ESCAP was 215 of 305 cells as run, and is 231 with today's fixes. This document
+Agreement with ESCAP was 215 of 305 cells as run, rose to 231 with today's fixes, and is 223 after the rules
+that stopped eight agreements resting on the wrong law (below). 217 of those are earned. This document
 sorts the disagreements by **who is right**, because agreement measures the reader, not the law (see `aus-sgp-disagreements.md` for the
 same exercise on an earlier Australia and Singapore run).
 
@@ -24,14 +25,14 @@ plus India's pillar 8 re-read (run `78642831`, which carried the rest of `283f45
 
 | | AUS | MYS | SGP | IND | THA | Total |
 | :-- | --: | --: | --: | --: | --: | --: |
-| Agree | 48 | 48 | 45 | 42 | 48 | **231** |
-| We are wrong | 6 | 11 | 8 | 9 | 9 | **43** |
+| Agree | 47 | 46 | 45 | 41 | 44 | **223** |
+| We are wrong | 7 | 13 | 8 | 10 | 13 | **51** |
 | We are right, ESCAP is not | 3 | 0 | 5 | 3 | 1 | **12** |
 | Contestable | 2 | 1 | 2 | 5 | 2 | **12** |
 | Not answerable from legislation | 2 | 1 | 1 | 2 | 1 | **7** |
 
-So **243 of 305 (80%) are right** (agreement plus our finds), and 262 (86%) are defensible once the contestable and
-unanswerable cells are added. That counts every agreement; 15 of them rest on the wrong law (below), which leaves 228 (75%). 43 cells (14%) are ours to fix.
+Six of the 223 agreements still rest on the wrong law (below), so **217 are earned, and 229 of 305 (75%) are
+right** (earned agreement plus our finds). 51 cells are ours to fix, and six more are agreements to be re-earned.
 
 Where the ten extra agreements came from, against the 215 the runs recorded:
 - **Five from rule fixes already on master since the Australia, Malaysia and Singapore run:**
@@ -51,14 +52,13 @@ they differed.
 | :-- | --: | :-- |
 | Same instrument as ESCAP | 53 | Matched by title. |
 | Both find nothing | 114 | Neither side cites a restriction, or both name the same kind of framework. We cannot prove a shared miss wrong. |
-| Different instrument, but a real answer | 49 | A newer or more specific law, the regulations under ESCAP's Act, or the same law under a Thai or renamed title. For example: the 2025 Payment Aggregator Master Direction, which replaced the 2020 guidelines ESCAP cites; Malaysia's Online Safety Act 2025; Singapore's SGNIC registration rules. |
-| **Wrong law** | **12** | The score matches, but the cited provision does not answer the question. |
+| Different instrument, but a real answer | 50 | A newer or more specific law, the regulations under ESCAP's Act, or the same law under a Thai or renamed title. For example: the 2025 Payment Aggregator Master Direction, which replaced the 2020 guidelines ESCAP cites; Malaysia's Online Safety Act 2025; Singapore's SGNIC registration rules. |
+| **Wrong law** | **11** | The score matches, but the cited provision does not answer the question. |
 | **Score carried by a wrong citation** | **3** | One real measure plus one unrelated one lifts the score into ESCAP's band. |
 
-**Wrong law (12):**
+**Wrong law (11):**
 - AUS 7.1: the Identity Verification Services Rules named as the data protection framework, not the Privacy Act 1988.
 - MYS 11.2: the Digital Signature Act's recognition of foreign certification authorities as EMC product certification.
-- SGP 8.1: the Electronic Transactions Act and Online Safety Act as the copyright safe harbour, not the Copyright Act 2021.
 - IND 6.4: currency export control and customs confidentiality as data transfer conditions. ESCAP cites the IT (Reasonable Security Practices) Rules.
 - IND 12.4.6: a broadcaster's duty to offer subscribers an online payment gateway as a mandated payment intermediary.
 - IND 12.9: the Commercial Courts Act as the online consumer protection framework, not the Consumer Protection Act 2019.
@@ -74,21 +74,33 @@ they differed.
 - MYS 10.2 (1): SIRIM approval of radio equipment is right, but the second measure is a CITES permit. Alone, it gives 0.5.
 - MYS 11.3 (0.5): the testing duty is right (certification of communications modules), but the acceptance of third-party results comes from reference materials under the National Measurement System Act.
 
-Weak but kept: MYS 3.4 (land and bank-transfer approvals as screening), SGP 4.01 (the agent rule is in the UK-patent
+Weak but kept: SGP 8.1 (the Electronic Transactions Act's safe harbour covers liability "under any rule of law",
+and a horizontal safe harbour is the band 8.1 clears on, though the Copyright Act's own is the better citation), MYS 3.4 (land and bank-transfer approvals as screening), SGP 4.01 (the agent rule is in the UK-patent
 registration regulations), AUS 12.7 (the quote does not itself show the presence rule), THA 9.4 (a notification
 scheme counted as licensing), THA 11.3 (general industrial product standards, though they include IT equipment),
 and MYS 12.8 (a PDPA representative as local presence).
 
-**So 216 agreements are earned.** With the 12 finds, **228 of 305 (75%) are right**, down from 243.
+**So 217 agreements are earned.** With the 12 finds, **229 of 305 (75%) are right**, down from 243.
 
 | | AUS | MYS | SGP | IND | THA | Total |
 | :-- | --: | --: | --: | --: | --: | --: |
-| Earned agreements | 47 | 44 | 44 | 39 | 42 | 216 |
-| Right (earned + finds) | 50 | 44 | 49 | 42 | 43 | 228 |
+| Earned agreements | 47 | 44 | 45 | 39 | 42 | 217 |
+| Right (earned + finds) | 50 | 44 | 50 | 42 | 43 | 229 |
 
-Most of the 15 are decision-side subject errors of the kind fixed below (a framework indicator taking a law about
-something else, a measure outside its pillar's domain), so they are free to fix. Fixing them will move some scores
-off ESCAP's, where the right law was never read, and that is the honest outcome.
+**Eight of the fourteen are now ruled out by decision-side rules** (in the fixed table below), and each of those
+cells now disagrees with ESCAP, because the law that answers it was never read: AUS 7.1, IND 12.9, MYS 9.4, MYS
+11.2, THA 3.5, THA 5.4, THA 8.2, THA 11.2. No earned agreement moved. THA 8.2 now rests on a Bank of Thailand
+payment-network rule, which is no safe harbour either; it is a disagreement, so it is counted wrong already.
+
+**Six still agree on the wrong law**, because no rule separates them without being fitted to the case:
+- MYS 10.2 and THA 10.2: an ICT domain on import compliance also removes AUS 10.2, whose general customs
+  compliance duty ESCAP scores the same way we do. A power to ban "the goods" says nothing about ICT; a duty on every
+  importer is a cost ICT imports bear. So the wildlife permit and the transit ban stay counted.
+- MYS 11.3: the acceptance of foreign reference-material certificates. A product domain on 11.3 lost more than it
+  won when tried.
+- IND 6.4: dropping the currency control leaves the customs confidentiality finding, which still scores 1.
+- IND 12.4.6 and THA 3.1: a duty to *offer* subscribers a payment gateway, and a bank's prudential limit on its own
+  equity investments. Both are reading errors, for a re-read.
 
 ## Our finds: we are right and ESCAP is not
 
@@ -146,7 +158,8 @@ is the highest band legislation can reach.
 
 ## We are wrong
 
-The 43, by cause.
+The 43 first sorted, by cause. The other eight are the former agreements listed under "Agreements we did not
+earn", each now missing the law that answers it.
 
 **The answer rests on the wrong statute, and the right one was never reached (16).** A zero is
 witnessed by an instrument unrelated to the question. Examples: India's other payment restrictions
@@ -204,6 +217,11 @@ evaluated": no figure stated, a definition, or a code of practice issued under a
 
 | A licence answers 9.4 only if it licenses online content, applications or platforms, in its words or its instrument's title | AUS, IND, THA 9.4 | +3, nothing lost |
 | An import ban or import quota counts in pillar 10 only on goods it names as ICT | AUS, THA 10.1; AUS, THA 10.2 | +4, −1 (MYS 10.1, above) |
+| A framework for 7.1 or 12.9 is named for its subject in its title, and one named for copyright is not 8.2's. If the only framework read is about something else, the cell is unresolved, not "no framework" | AUS 7.1, IND 12.9, THA 8.2 | −3 unearned agreements |
+| Pillar 5 is the telecommunications sector, which a provision or its instrument's title names | THA 5.4 | −1 unearned |
+| 11.2 is radio and electrical equipment or products generally, not medical devices or signature authorities | MYS 11.2, THA 11.2 | −2 unearned; IND 11.2's general conformity regulations still count |
+| A cyber security service licence is not an online content licence | MYS 9.4 | −1 unearned |
+| A commercial presence opened abroad is not one required here | THA 3.5 | −1 unearned |
 
 Tried and reverted, because each lost more than it won:
 - Scoring a licence-lifted import prohibition as a licence, not a ban: −2. ESCAP counts approval-gated bans on named telecom equipment.

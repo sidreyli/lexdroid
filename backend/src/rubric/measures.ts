@@ -1667,8 +1667,11 @@ const ONLINE_TRADE = new RegExp(`(?=.*${TRADE.source})(?=.*${ONLINE.source})`, '
  * answered it. The indicator asks about providers of online content, applications and platforms,
  * and the law that licenses one names the service, or names it in its title.
  */
+// Without "cyber": a licence to provide cyber security services is a licence for a security trade,
+// and it answered 9.4 beside the applications service licence that does. The platform, the app and
+// the website are what the indicator licenses; the security of them is not.
 const ONLINE_CONTENT = new RegExp(
-  [ONLINE_SERVICE.source, /\b(applications? services?|content applications?|apps?|online games?|news websites?)\b/.source, 'ออนไลน์|อินเทอร์เน็ต|แพลตฟอร์ม|เว็บไซต์|แอปพลิเคชัน'].join('|'),
+  [ONLINE_SERVICE.source.replace('cyber\\w*|', ''), /\b(applications? services?|content applications?|apps?|online games?|news websites?)\b/.source, 'ออนไลน์|อินเทอร์เน็ต|แพลตฟอร์ม|เว็บไซต์|แอปพลิเคชัน'].join('|'),
   'i',
 );
 
@@ -1691,6 +1694,8 @@ export const MEASURE_DOMAIN: Readonly<Record<string, RegExp>> = {
   // computers through a schedule and never says so, and 10.4 still has to see it.
   'ict-import-ban': ICT_GOODS,
   'import-quota': ICT_GOODS,
+  // Not import-compliance. A ban or a quota on "the goods" is a power, and says nothing about
+  // which goods it is used on; a duty on every importer to comply is a cost every ICT import bears.
 };
 
 /**
@@ -1720,6 +1725,29 @@ const COMMUNICATIONS = new RegExp(
   'i',
 );
 
+/**
+ * The equipment 11.2 is about, which its own title names: "radio transmissions, EMC/EMI".
+ *
+ * A declaration of conformity or a recognised foreign certificate is accepted for many products,
+ * and without a subject the cell was answered by medical devices, a certification authority for
+ * digital signatures and a ship's certificate. The regime this indicator asks about is the one for
+ * radio and electrical equipment, and it names that in its title: a radiocommunications labelling
+ * notice, a telecommunications equipment standard.
+ *
+ * Or it is a regime for products in general, which reaches radio equipment without naming it: one
+ * economy's conformity assessment regulations grant registration on self-declaration for "goods or
+ * articles", and that is the answer. What stays out is a certificate that is not a product's, and a
+ * regime named for some other product -- "device" is left out for that reason, since the medical
+ * device rules are the ones that say it.
+ */
+const RADIO_EMC = new RegExp(
+  [
+    /\b(radio|radiocommunication\w*|electromagnetic|EMC|EMI|interference|telecom\w*|communications? (equipment|apparatus|device\w*)|wireless|spectrum|electrical|electronic (equipment|product\w*|appliance\w*)|products?|goods|articles|equipment|apparatus|appliances?)\b/.source,
+    'วิทยุคมนาคม|โทรคมนาคม|คลื่นความถี่|แม่เหล็กไฟฟ้า|เครื่องใช้ไฟฟ้า|อิเล็กทรอนิกส์|ผลิตภัณฑ์อุตสาหกรรม',
+  ].join('|'),
+  'i',
+);
+
 export const SUBJECT_DOMAIN: Readonly<Record<string, RegExp>> = {
   ...PILLAR_12_DOMAINS,
   // 1.4 counts duties charged on ICT goods, and a duty is charged on goods it names: a notice
@@ -1739,6 +1767,13 @@ export const SUBJECT_DOMAIN: Readonly<Record<string, RegExp>> = {
   // And 5.2, which asks what a foreign person may hold in a telecommunications company. India's
   // cell was answered from the Pension Fund Act's 26% cap on foreign holdings in pension funds.
   '5.2': COMMUNICATIONS,
+  // And the rest of the pillar, which is "Telecommunications Market" by name: an energy grid's
+  // access duty answered passive infrastructure sharing, and a bank's accounts for its Shariah
+  // window answered accounting separation.
+  '5.1': COMMUNICATIONS,
+  '5.4': COMMUNICATIONS,
+  // See RADIO_EMC above.
+  '11.2': RADIO_EMC,
   // Terms of art: a patent is a patent, a copyright a copyright, a trade secret a trade secret and
   // an encryption standard an encryption standard, in every one of these legal systems. The sector
   // domains that were here with them are gone -- see the note above.
@@ -1765,6 +1800,29 @@ export const SUBJECT_DOMAIN: Readonly<Record<string, RegExp>> = {
 };
 
 /**
+ * What a framework has to be named for, where a framework indicator asks about one subject.
+ *
+ * The framework path asks whether an instrument establishes *a* framework, and never asked what
+ * the framework was about. So an identity verification scheme's rules, which list the "prescribed
+ * privacy laws", stood as a data protection framework; a commercial courts Act, whose jurisdiction
+ * covers "agreements for sale of goods", stood as a consumer protection one; and a copyright Act's
+ * service-provider exemption stood as the safe harbour for liability *other* than copyright.
+ *
+ * Asked of the title, not the quote. A framework is an instrument, and the laws these indicators
+ * ask about are named for their subject in every one of these systems -- a personal data protection
+ * Act, a consumer protection Act. The quote is where an unrelated instrument mentions the subject
+ * in passing, which is exactly how each of the three got in.
+ *
+ * `not` is for 8.2, whose subject is defined by what it is not: a safe harbour for copyright is
+ * 8.1's, and an instrument named for copyright cannot be the one for everything else.
+ */
+export const FRAMEWORK_TITLE_DOMAIN: Readonly<Record<string, { must?: RegExp; not?: RegExp }>> = {
+  '7.1': { must: /\b(personal (data|information)|data protection|privacy)\b|ข้อมูลส่วนบุคคล/i },
+  '8.2': { not: /\bcopyright\b|ลิขสิทธิ์/i },
+  '12.9': { must: /\bconsumer\w*|ผู้บริโภค/i },
+};
+
+/**
  * The domains that are a sector rather than a term of art, and may be named by the document.
  *
  * A term of art is in the sentence: a provision about a patent says patent, a provision about a
@@ -1786,7 +1844,7 @@ export const SUBJECT_DOMAIN: Readonly<Record<string, RegExp>> = {
  * commission answered the telecom-regulator question. The rule is for a domain the provisions
  * inside a document stop repeating, not for one they were never going to state.
  */
-export const SECTOR_DOMAINS: ReadonlySet<string> = new Set(['5.5', '5.2', '4.01', '4.2', '4.3']);
+export const SECTOR_DOMAINS: ReadonlySet<string> = new Set(['5.5', '5.2', '5.1', '5.4', '11.2', '4.01', '4.2', '4.3']);
 
 /**
  * Measures whose domain the instrument's title may carry, as a sector's is, though the indicator's
