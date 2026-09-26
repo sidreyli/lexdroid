@@ -145,6 +145,11 @@ export async function hostedGenerate(
     temperature: opts.temperature ?? 0,
     ...(opts.maxOutputTokens ? { max_tokens: opts.maxOutputTokens } : {}),
     ...(format ? { response_format: format } : {}),
+    // How hard a thinking model thinks before it answers. Unset, the model's default. Its thinking
+    // is billed and counted against max_tokens without appearing in completion_tokens: Gemini spent
+    // about 390 tokens thinking before a one-line translation, and a batch of ten was cut off
+    // mid-answer. Set per job -- translate-queries asks for "low" -- never silently for readings.
+    ...(process.env['LEXDROID_HOSTED_REASONING_EFFORT'] ? { reasoning_effort: process.env['LEXDROID_HOSTED_REASONING_EFFORT'] } : {}),
     stream: false,
   };
 

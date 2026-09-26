@@ -21,7 +21,7 @@ import { dirname } from 'node:path';
 import { openDb } from '../src/db/index.js';
 import { loadEnv } from '../src/env.js';
 import { findEngine } from '../src/engines/registry.js';
-import { generate } from '../src/engines/ollama.js';
+import { EngineFailure, generate } from '../src/engines/ollama.js';
 import { searchLexical } from '../src/index/index.js';
 import { loadProfile } from '../src/profile/index.js';
 import { englishQueriesFor } from '../src/retrieve/index.js';
@@ -88,6 +88,8 @@ if (!reportOnly) {
     process.env['LEXDROID_HOSTED_BASE_URL'] = engine.hosts[0] ?? '';
     process.env['LEXDROID_HOSTED_MODEL'] = engine.model;
     process.env['LEXDROID_HOSTED_PROVIDER'] = engine.provider;
+    // Translation needs no deliberation, and a thinking model's thinking fills the output limit.
+    process.env['LEXDROID_HOSTED_REASONING_EFFORT'] ??= 'low';
   } else {
     delete process.env['LEXDROID_HOSTED_BASE_URL'];
     delete process.env['LEXDROID_HOSTED_MODEL'];
@@ -177,7 +179,8 @@ ${JSON.stringify(batch, null, 1)}`;
       const parsed = JSON.parse(answer.text) as { translations?: string[] };
       out = Array.isArray(parsed.translations) && parsed.translations.length === batch.length ? parsed.translations : null;
     } catch (err) {
-      if (!(err instanceof SyntaxError) && !(err instanceof Error && /json_validate_failed|400/.test(err.message))) throw err;
+      // A batch cut off mid-answer is too long for one response, like a 400: split it.
+      if (!(err instanceof SyntaxError) && !(err instanceof EngineFailure) && !(err instanceof Error && /json_validate_failed|400/.test(err.message))) throw err;
     }
     if (!out) {
       if (batch.length === 1) {
