@@ -1526,6 +1526,11 @@ export const MEASURE_NAMES: Readonly<Record<string, RegExp>> = {
   // and none of them counts as a localisation rule, and the words never say where the bank is.
   'local-bank-account': LOCALITY,
   'local-representative': /\b(represent\w*|agent\w*|office\w*|establish\w*|resident\w*)\b/i,
+  // Local content is about where the content is made, and its `defines` says so: "produced in the
+  // economy". A duty to carry channels -- "must carry" -- was India's local content requirement,
+  // and names no place at all.
+  'local-content-category': LOCALITY,
+  'local-content-product': LOCALITY,
   // "Presence" is the noun these rules use, and a stem ending in the verb cannot reach it:
   // present|presently|presented all match present\w*, and presence does not. auDA's licensing rule
   // 2.4.1 -- "A Person applying for a Licence must: have an Australian Presence" -- was read for
