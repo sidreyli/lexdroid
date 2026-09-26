@@ -60,7 +60,8 @@ const coverage = { sectionsRead: 24, sectionsIndexed: 32591, instrumentsConsider
 function at(id: string, over: Partial<Finding> = {}) {
   const evidence: Evidence[] = [
     {
-      finding: finding({ indicatorId: id, ...over }),
+      // 5.2 asks about telecommunications, and a cap in any other sector is not its subject.
+      finding: finding({ indicatorId: id, ...(id === '5.2' ? { subjectWords: 'a telecommunications licensee' } : {}), ...over }),
       sectionId: 1,
       instrumentId: 1,
       instrumentTitle: 'Foreign Acquisitions and Takeovers Act 1975',
@@ -134,7 +135,7 @@ describe('a band that is a proportion', () => {
       measure: 'telecom-equity-controlling',
       dutyBearer: 'no person',
       definingWords: 'more than fifty per cent',
-      subjectWords: 'a licensed person',
+      subjectWords: 'a licensed telecommunications person',
       quote: 'no person shall acquire any interest in shares of a licensed person by which he would hold more than fifty per cent',
     });
     expect(d.score).toBe(0);

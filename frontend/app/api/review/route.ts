@@ -1,11 +1,16 @@
 import { NextResponse } from "next/server";
 import { recordVerdict, type Verdict } from "@/lib/data/write";
+import { isReadOnlyDeployment, READ_ONLY_DEPLOYMENT_MESSAGE } from "@/lib/deployment";
 
 export const dynamic = "force-dynamic";
 
 const ACTIONS = new Set(["accept", "edit", "reject"]);
 
 export async function POST(request: Request) {
+  if (isReadOnlyDeployment()) {
+    return NextResponse.json({ error: READ_ONLY_DEPLOYMENT_MESSAGE }, { status: 503 });
+  }
+
   let body: Partial<Verdict>;
   try {
     body = (await request.json()) as Partial<Verdict>;

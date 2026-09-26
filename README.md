@@ -88,7 +88,8 @@ The reading engine is stock `gemma4:12b` at a wider context and nothing else; th
 cp .env.example .env
 ```
 
-Engine A needs nothing in it. Engine B is a hosted API and needs one key — see
+Engine A needs nothing in it. Engine B runs on a GPU rented from RunPod and needs a RunPod API
+key, as `api=...` in the root `.env` or `RUNPOD_API_KEY` in the environment — see
 [Your Two Declared Engines](#your-two-declared-engines). The core pipeline runs end to end with
 `.env` untouched, which is the Section 3 claim.
 
@@ -111,6 +112,35 @@ If the run stops immediately saying the engine is unreachable, Ollama is not run
 
 ---
 
+## Deploy to Vercel
+
+From the repository root:
+
+```bash
+npm run deploy
+```
+
+The first deployment asks you to sign in and choose or create a Vercel project. After that, the
+same command deploys straight to production. No environment variables or dashboard build overrides
+are required. Use `npm run deploy:preview` when you want a preview URL instead.
+
+The Vercel site is deliberately a **read-only snapshot**. It includes the recorded analysis,
+workbench, run history, and CSV/XLSX exports, but it does not pretend that Vercel can run the local
+pipeline: LexDroid's worker is long-lived and its SQLite store must persist between requests.
+Starting runs and recording reviews remain available through `npm run dev` on a machine with the
+working store. Set `LEXDROID_READ_ONLY=1` to use the same snapshot mode on another host.
+
+Before deploying, the complete web verification is one command:
+
+```bash
+npm run check:deploy
+```
+
+For Git-based Vercel deployments, choose `frontend` as the project's Root Directory. Its checked-in
+`vercel.json` supplies the remaining settings.
+
+---
+
 ## Your Interface
 
 | What a reviewer needs to do | Where it is |
@@ -120,6 +150,8 @@ If the run stops immediately saying the engine is unreachable, Ollama is not run
 | Follow a row to its official source at the cited article | **Workbench** → row → *Source* → the citation link, which carries the anchor for the section |
 | Accept, reject or correct a row | **Workbench** → row → *Accept* / *Reject*, or edit any field in the finding panel |
 | Switch the AI engine | **Home** → *Start a run* → the **Engine** control |
+| Load an engine into this machine's GPU, or rent a GPU for it | **Home** → *Start a run* → **Runs on** → *Load* / *Rent GPU*, with progress and the rent so far |
+| Re-score a finished run under the current rules | **Runs** → a run → *Rescore* (previews the changes before applying them) |
 | Export to the RDTII schema | **Runs** → a run → *Export N rows* |
 
 **Walkthrough recording:** _to be recorded before 30 September._
@@ -132,21 +164,27 @@ Declared in `backend/data/engines.json` and frozen at submission.
 
 | | Engine A | Engine B |
 | :---- | :---- | :---- |
-| Provider and model | Ollama, `gemma4-lex-16k` | Groq, `qwen/qwen3-32b` |
-| Version / checkpoint | `gemma4:12b-it-q4_K_M` | `qwen/qwen3-32b` |
-| Local or hosted API | Local (or a GPU rented by the hour) | Hosted API |
-| Kind | Open weights | Open weights, commercially hosted |
-| Config value | nothing — it is the default | `LEXDROID_HOSTED_API_KEY` in the environment |
+| Provider and model | Ollama, `gemma4-lex-16k` | Ollama on a rented RunPod GPU, `qwen3.8-lex-16k` |
+| Version / checkpoint | `gemma4:12b-it-q4_K_M` | `qwen3.8:27b-q4_K_M` |
+| Where it runs | This machine (16 GB of GPU memory or more), or a rented GPU | A rented GPU with 24 GB or more, at most $0.34/hr |
+| Kind | Open weights | Open weights, on commercial hardware |
+| Config value | nothing — it is the default | a RunPod API key (`api=` in `.env`, or `RUNPOD_API_KEY`) |
 
 They differ in kind on every axis ESCAP names: different model family (Gemma against Qwen),
-different size (12B against 32B), different quantisation, and someone else's hardware. Engine B is
-commercially hosted *and* open weights at once, which satisfies both the way the orientation slide
-puts it ("at least one must be open weights") and the way checklist item 20 puts it ("one
-commercial hosted, one open weights").
+different size (12B against 27B) and someone else's hardware. Both are open weights, so every
+reading can be reproduced from a pinned checkpoint and a Modelfile in `ollama/`.
 
-**The API key is never written to a file.** It is read from `LEXDROID_HOSTED_API_KEY` in the
-environment, because a key on disk is a key in a backup. `backend/test/engine-declaration.test.ts`
-asserts the registry file contains no key.
+**Renting the GPU happens in the interface.** *Start a run* → **Runs on** → *Rented GPU* →
+*Rent GPU* rents the cheapest card that fits under the cap, community tier first. The pod installs
+Ollama, builds the engine from the same Modelfile this repository declares, loads it, and refuses
+to report ready unless the whole model is in GPU memory. That takes about six minutes. The panel
+shows each stage and the rent so far, and *Stop GPU* deletes the pod. The pod answers only through
+RunPod's HTTPS proxy, behind a random per-pod token (`infra/runpod/pod.py`), and Ollama itself is
+bound to the pod's localhost. From the command line, `npm run -w backend gpu -- start --engine
+engine-b` does the same, and a run with `--on runpod` finds the pod by name.
+
+**The RunPod key is never sent to the pod or written anywhere else.** `backend/test/gpu-rental.test.ts`
+asserts that the body that creates a pod carries no key.
 
 Verify an engine actually works as declared, through the pipeline's own call path:
 
@@ -165,7 +203,8 @@ The choice is remembered, so a run started from the command line afterwards uses
 The abstraction is `backend/src/engines/ollama.ts`, whose `generate()` branches on whether a hosted
 engine is configured and otherwise behaves identically. Adding a provider means adding a row to
 `engines.json`: anything that speaks the OpenAI chat-completions shape — Groq, Together,
-Fireworks, DeepInfra, Ollama's own `/v1` — already works.
+Fireworks, DeepInfra, Ollama's own `/v1` — already works, with its key read from
+`LEXDROID_HOSTED_API_KEY` and never written to a file.
 
 ### Re-running without fetching
 
@@ -335,7 +374,7 @@ arithmetic.
 | OCR | Tesseract, local | $0.00 |
 | Embedding | bge-m3, local | $0.00 |
 | Mapping — Engine A | `gemma4-lex-16k` on 8 rented GPUs | **$19.32** |
-| Mapping — Engine B | `qwen/qwen3-32b` on Groq | not yet measured |
+| Mapping — Engine B | `qwen3.8-lex-16k` on a rented RTX A5000 | not yet measured |
 | Crawling | — | $0.00 |
 | **Total, Engine A** | | **$19.32 for 183 cells — $0.106 per cell** |
 
@@ -350,8 +389,8 @@ The corpus behind those cells — 4,045 documents, 162,901 sections — was buil
 fetches over several days, at $0.00: bandwidth off government portals is the only resource spent,
 which is exactly why the crawler is careful with it.
 
-**Engine B has not been billed yet.** Groq prices `qwen/qwen3-32b` per token; the cost of a
-comparison pass will be filled in once the engine has been run. It is not estimated here.
+**Engine B has not been billed for a full pass yet.** It bills by the hour the pod is held, like
+Engine A's rented GPUs, and the run record takes the price from the pod. It is not estimated here.
 
 ---
 
@@ -385,8 +424,8 @@ comparison pass will be filled in once the engine has been run. It is not estima
   attributed to `fetch_log.run_id`, which is what the Run Record reports and what C5a is scored on.
   The corpus was built by command-line passes that correctly belong to no run, and the only run
   since was cache-only. A fetching run through the interface is the remaining rehearsal.
-- **Engine B has not been verified against the live API.** It is fully declared and wired;
-  `engine-check` cannot reach it without a key.
+- **Engine B reads more slowly than Engine A.** On a rented RTX A5000 it decodes about 20 tokens
+  a second, entirely in GPU memory. A full pass has not been run on it yet.
 
 ---
 

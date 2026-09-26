@@ -1,0 +1,7 @@
+# Engine B. Declared checkpoint: the 4-bit quantisation of Qwen 3.8 27B, pinned by its full tag
+# rather than :latest, which the library moves. Same context as Engine A, and temperature pinned at
+# 0 because this base ships above it. Served from a rented GPU: infra/runpod/pod.py builds this tag
+# from this file.
+FROM qwen3.8:27b-q4_K_M
+PARAMETER num_ctx 16384
+PARAMETER temperature 0

@@ -647,7 +647,7 @@ function measureTokens(indicators: readonly Indicator[]): string[] {
 export const MAX_FINDINGS_PER_PROVISION = 12;
 
 /** The response shape, declared to the engine so decoding is constrained rather than hoped for. */
-const schemaFor = (indicators: readonly Indicator[]) => ({
+export const schemaFor = (indicators: readonly Indicator[]) => ({
   type: 'object',
   properties: {
     findings: {
@@ -674,7 +674,12 @@ const schemaFor = (indicators: readonly Indicator[]) => ({
           dutyBearerKind: { type: 'string', enum: ['government', 'organisation', 'individual'] },
           indicatorId: { type: 'string' },
           subjectWords: { type: ['string', 'null'] },
-          measure: { type: 'string', enum: measureTokens(indicators) },
+          // A pillar of frameworks (8.1 and 8.2 are safe harbours) recognises no measure, and an
+          // empty enum is a grammar llama.cpp refuses to compile: HTTP 400 on every read. The claim
+          // is checked against the indicator's measures afterwards, so an open string costs nothing.
+          measure: measureTokens(indicators).length > 0
+            ? { type: 'string', enum: measureTokens(indicators) }
+            : { type: 'string' },
           definingWords: { type: ['string', 'null'] },
           borderWords: { type: ['string', 'null'] },
           imposingWords: { type: ['string', 'null'] },
@@ -1475,6 +1480,17 @@ export function subjectQueries(subject: FrameworkSubject): string[] {
 }
 
 /**
+ * The subject asked of an economy whose law is written in `languages`: the English queries, and
+ * the subject's names in each of those languages.
+ *
+ * Only in those languages. A Thai query asks an English register's title vectors something, and
+ * would move every economy's ranking to answer one economy's gap.
+ */
+export function subjectQueriesIn(subject: FrameworkSubject, languages: readonly string[]): string[] {
+  return [...subjectQueries(subject), ...namesIn(subject, languages)];
+}
+
+/**
  * The words an instrument uses when the subject is what it is for.
  *
  * Malaysia's Personal Data Protection Act was named as the dedicated cybersecurity framework and
@@ -1488,7 +1504,14 @@ const SUBJECT_NAMES: Record<FrameworkSubject, string[]> = {
   // anything about intermediaries. The term of art they were standing in for is the one the
   // statutes actually use, and it is shared by Singapore's Electronic Transactions Act Part 6 and
   // Malaysia's Communications and Multimedia Act.
-  'copyright-safe-harbour': ['copyright', 'safe harbour', 'safe harbor', 'network service provider', 'service provider'],
+  //
+  // "intermediary" is the other one, and 8.2's list had it while this one did not. Where the shield
+  // is horizontal it is written about intermediaries and never says "copyright", so asked only for
+  // copyright and safe harbours the sections found were Maritime Safety and telephone quality
+  // standards, and India's Information Technology Act s.79 -- "Exemption from liability of
+  // intermediary" -- was not among the five examined for 8.1. With the word it is the second
+  // section found.
+  'copyright-safe-harbour': ['copyright', 'intermediary', 'safe harbour', 'safe harbor', 'network service provider', 'service provider'],
   'intermediary-liability': [
     'intermediary',
     'network service provider',
@@ -1500,10 +1523,49 @@ const SUBJECT_NAMES: Record<FrameworkSubject, string[]> = {
   'consumer-protection': ['consumer', 'unfair practice', 'fair trading', 'sale of goods'],
 };
 
+/**
+ * The same names in the other languages of the law read here, for the check and not the search.
+ *
+ * A Thai statute names its subject in Thai, so asked for "personal data" or "consumer" its words
+ * never answered: the Personal Data Protection Act, the Cyber Security Act, the Copyright Act's
+ * safe harbour and the Unfair Contract Terms Act were all read as frameworks and all banked as not
+ * shown, which left the cells saying none of the instruments examined establishes one. Each word
+ * here renders a name above one for one, keyed by the language of the law they are for.
+ *
+ * They search too, through `subjectQueriesIn`, for an economy that legislates in that language.
+ * Asked only in English, the register ranked Thai Acts by the English translation some titles carry
+ * in parentheses, and the section search matched nothing: Thailand's 12.9 never examined the
+ * Consumer Protection Act, whose title is Thai alone and ranked 17th for its own subject.
+ */
+const SUBJECT_NAMES_IN_OTHER_LANGUAGES: Record<string, Record<FrameworkSubject, string[]>> = {
+  th: {
+    'data-protection': ['ข้อมูลส่วนบุคคล', 'ความเป็นส่วนตัว'],
+    cybersecurity: ['ไซเบอร์', 'ความผิดเกี่ยวกับคอมพิวเตอร์', 'ความมั่นคงปลอดภัยสารสนเทศ', 'ความมั่นคงปลอดภัยของระบบสารสนเทศ'],
+    'copyright-safe-harbour': ['ลิขสิทธิ์', 'ผู้ให้บริการ'],
+    'intermediary-liability': ['ตัวกลาง', 'ผู้ให้บริการ'],
+    'consumer-protection': ['ผู้บริโภค'],
+  },
+};
+
+/** The subject's names in the given languages, beyond the English ones every economy is asked. */
+function namesIn(subject: FrameworkSubject, languages: readonly string[]): string[] {
+  return languages.flatMap((l) => SUBJECT_NAMES_IN_OTHER_LANGUAGES[l]?.[subject] ?? []);
+}
+
 /** Whether quoted words name the subject at all, as opposed to merely coming from the instrument. */
 function namesSubject(words: string, subject: FrameworkSubject): boolean {
   const w = words.toLowerCase();
-  return SUBJECT_NAMES[subject].some((n) => w.includes(n));
+  return [...SUBJECT_NAMES[subject], ...namesIn(subject, Object.keys(SUBJECT_NAMES_IN_OTHER_LANGUAGES))].some((n) => w.includes(n));
+}
+
+/** Whether the words said to make the framework are a rule in the instrument, naming the subject. */
+export function frameworkWordsShown(words: string | null, subject: FrameworkSubject, text: string): boolean {
+  return words !== null && quoteIsInSection(words, text, MIN_RULE_CHARS) && namesSubject(words, subject);
+}
+
+/** Whether the words said to show what the instrument is for are in its opening, naming the subject. */
+export function dedicatedWordsShown(words: string | null, subject: FrameworkSubject, opening: string): boolean {
+  return words !== null && quoteIsInSection(words, opening) && namesSubject(words, subject);
 }
 
 const FRAMEWORK_SCHEMA = {
@@ -1757,10 +1819,11 @@ export async function readFramework(
   // immunity, really in the Act, and about a data provider under the Consumer Data Right rather
   // than an intermediary carrying somebody else's content. Quoting proves the rule exists; only
   // the subject's own words show it is this rule.
-  const frameworkWordsVerified =
-    frameworkWords !== null &&
-    quoteIsInSection(frameworkWords, [input.provisionsText, input.openingText].join('\n\n'), MIN_RULE_CHARS) &&
-    namesSubject(frameworkWords, subject);
+  const frameworkWordsVerified = frameworkWordsShown(
+    frameworkWords,
+    subject,
+    [input.provisionsText, input.openingText].join('\n\n'),
+  );
 
   return {
     instrumentId: input.instrumentId,
@@ -1772,10 +1835,7 @@ export async function readFramework(
     sector: typeof p['sector'] === 'string' && p['sector'].trim() ? p['sector'].trim() : null,
     dedicated: p['dedicated'] === true,
     dedicatedWords: dedicatedWords,
-    dedicatedWordsVerified:
-      dedicatedWords !== null &&
-      quoteIsInSection(dedicatedWords, input.openingText) &&
-      namesSubject(dedicatedWords, subject),
+    dedicatedWordsVerified: dedicatedWordsShown(dedicatedWords, subject, input.openingText),
     sectorWords,
     sectorWordsVerified: sectorWords !== null && quoteIsInSection(sectorWords, input.openingText),
     quote,

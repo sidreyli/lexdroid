@@ -8,7 +8,7 @@ import { describe, expect, it } from 'vitest';
 import { openDb } from '../src/db/index.js';
 import { decide, type Evidence, type SurfacedInstrument } from '../src/decide/index.js';
 import { translationNote } from '../src/export/index.js';
-import { rejectionFor, type Finding } from '../src/read/index.js';
+import { dedicatedWordsShown, frameworkWordsShown, rejectionFor, type Finding } from '../src/read/index.js';
 import { otherLanguageCopies } from '../src/retrieve/index.js';
 import { loadRubric } from '../src/rubric/index.js';
 import { MEASURES } from '../src/rubric/measures.js';
@@ -126,6 +126,47 @@ describe('a subject stated in a language the domain has no words for', () => {
   });
 });
 
+describe('a Thai provision, read in its own language', () => {
+  const thai = {
+    indicatorId: '5.5',
+    measure: 'strict-telecom-licence',
+    dutyBearer: 'ผู้ใดประสงค์จะประกอบกิจการโทรคมนาคม',
+    dutyAct: 'ต้องได้รับใบอนุญาต',
+    dutyForce: 'requires' as const,
+    definingWords: 'ต้องได้รับใบอนุญาตจากคณะกรรมการ',
+    subjectWords: 'กิจการโทรคมนาคม',
+    quote: 'ต้องได้รับใบอนุญาตจากคณะกรรมการ',
+  };
+  const telecomAct = { sectionLanguage: 'th', instrumentTitle: 'พระราชบัญญัติการประกอบกิจการโทรคมนาคม พ.ศ. 2544' };
+
+  it('stands on the reader confirming the measure, since the English term of art cannot be in it', () => {
+    const d = at('5.5', [evidence(thai, { ...telecomAct, confirmed: true })]);
+    expect(d.basis).toHaveLength(1);
+  });
+
+  it('is still held where nobody confirmed it', () => {
+    const d = at('5.5', [evidence(thai, telecomAct)]);
+    expect(d.held.map((x) => x.reason).join(' ')).toContain('are in th');
+  });
+
+  it("names a term of art's domain in Thai", () => {
+    const secret = {
+      indicatorId: '4.1',
+      measure: 'trade-secret-protection',
+      dutyBearer: 'ผู้ควบคุมความลับทางการค้า',
+      dutyForce: 'permits' as const,
+      definingWords: 'สิทธิในความลับทางการค้า',
+      subjectWords: 'ความลับทางการค้า',
+      quote: 'ผู้ควบคุมความลับทางการค้าฟ้องคดีขอให้ศาลสั่ง',
+    };
+    const d = at('4.1', [evidence(secret, { sectionLanguage: 'th', confirmed: true })]);
+    expect(d.basis).toHaveLength(1);
+    // And a Thai subject outside it is still not the domain: "financial services" is no trade secret.
+    const off = at('4.1', [evidence({ ...secret, subjectWords: 'การใช้บริการทางการเงิน' }, { sectionLanguage: 'th', confirmed: true })]);
+    expect(off.basis).toHaveLength(0);
+  });
+});
+
 describe('a provision the corpus holds in two languages', () => {
   function corpus() {
     const db = openDb(':memory:');
@@ -189,5 +230,44 @@ describe('a row quoting a translation', () => {
     expect(translationNote('MYS', 'ms')).toBeNull();
     expect(translationNote('SGP', 'en')).toBeNull();
     expect(translationNote('MYS', null)).toBeNull();
+  });
+});
+
+describe('a framework named in the language of its own statute', () => {
+  const pdpa =
+    'มาตรา ๑ พระราชบัญญัตินี้เรียกว่า “พระราชบัญญัติคุ้มครองข้อมูลส่วนบุคคล พ.ศ. ๒๕๖๒” ' +
+    'มาตรา ๑๙ ผู้ควบคุมข้อมูลส่วนบุคคลจะกระทำการเก็บรวบรวม ใช้ หรือเปิดเผยข้อมูลส่วนบุคคลไม่ได้ หากเจ้าของข้อมูลส่วนบุคคลไม่ได้ให้ความยินยอม';
+
+  it('is shown by a Thai rule that names the subject in Thai', () => {
+    expect(frameworkWordsShown('ผู้ควบคุมข้อมูลส่วนบุคคลจะกระทำการเก็บรวบรวม ใช้ หรือเปิดเผยข้อมูลส่วนบุคคลไม่ได้', 'data-protection', pdpa)).toBe(true);
+    expect(dedicatedWordsShown('พระราชบัญญัติคุ้มครองข้อมูลส่วนบุคคล พ.ศ. ๒๕๖๒', 'data-protection', pdpa)).toBe(true);
+  });
+
+  it('is still not shown by words that are not in the instrument, or that name another subject', () => {
+    expect(frameworkWordsShown('ผู้ควบคุมข้อมูลส่วนบุคคลต้องแต่งตั้งเจ้าหน้าที่คุ้มครองข้อมูลส่วนบุคคลทุกกรณีโดยไม่มีข้อยกเว้น', 'data-protection', pdpa)).toBe(false);
+    expect(frameworkWordsShown('ผู้ควบคุมข้อมูลส่วนบุคคลจะกระทำการเก็บรวบรวม ใช้ หรือเปิดเผยข้อมูลส่วนบุคคลไม่ได้', 'consumer-protection', pdpa)).toBe(false);
+  });
+});
+
+describe('a cap on foreign shareholding, asked about telecommunications', () => {
+  const cap = {
+    indicatorId: '5.2',
+    measure: 'telecom-equity-minority',
+    dutyBearer: 'the pension fund',
+    dutyAct: 'shall not exceed',
+    dutyForce: 'forbids' as const,
+    definingWords: 'shall not exceed 26% of the paid-up capital',
+    subjectWords: 'the paid-up capital of the licensee',
+    quote: 'the aggregate holdings of foreign investors shall not exceed twenty-six per cent. of the paid-up capital',
+  };
+
+  it('does not answer from a cap on some other sector', () => {
+    const d = at('5.2', [evidence(cap, { instrumentTitle: 'The Pension Fund Regulatory and Development Authority Act, 2013' })]);
+    expect(d.basis).toHaveLength(0);
+  });
+
+  it('answers from the same cap in a telecommunications instrument, which need not name the sector again', () => {
+    const d = at('5.2', [evidence(cap, { instrumentTitle: 'Telecommunications (Foreign Ownership) Rules' })]);
+    expect(d.basis).toHaveLength(1);
   });
 });

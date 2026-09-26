@@ -18,7 +18,7 @@
  */
 import type { Indicator, ScoreBand } from '../rubric/types.js';
 import type { Finding } from '../read/index.js';
-import { MEASURES, MEASURE_DOMAIN, MEASURE_NAMES, SECTOR_DOMAINS, SUBJECTS, SUBJECT_DOMAIN } from '../rubric/measures.js';
+import { MEASURES, MEASURE_DOMAIN, MEASURE_NAMES, SECTOR_DOMAINS, SUBJECTS, TITLE_CARRIES_DOMAIN, SUBJECT_DOMAIN } from '../rubric/measures.js';
 import { tallyConfirmations, type ConfirmationTally } from '../read/confirmations.js';
 import { inUsd, moneyIn, type FxRates } from './currency.js';
 import { determinesAParticularCase } from '../discover/titles.js';
@@ -304,9 +304,22 @@ const decidesAParticularCase = (e: Evidence): boolean => determinesAParticularCa
 const isPublishedAboutTheLaw = (e: Evidence): boolean => e.instrumentKind === 'publication';
 
 /** A power that may be used is not a requirement that must be met. Read from the verb the finding
- *  quotes, not the mandatory flag beside it -- that flag called "may appoint" mandatory. */
+ *  quotes, not the mandatory flag beside it -- that flag called "may appoint" mandatory.
+ *
+ *  Or from the words the reader says impose it, where those are a mandate. The quote can be the
+ *  clause that sets the scene rather than the one that binds: a transfer section was quoted from
+ *  "where the controller sends or transfers personal data abroad" and filed as permitting, with
+ *  "ต้องมี" -- must have -- copied from the same section as the words imposing the duty, and
+ *  opening the words that define it. Those words are checked to be in the provision before they get
+ *  here, and have to belong to the duty the finding is about: its quote or its defining words. */
 const isRequirement = (f: Finding): boolean =>
-  f.dutyForce === 'requires' || f.dutyForce === 'forbids';
+  f.dutyForce === 'requires' || f.dutyForce === 'forbids' || imposesTheDutyItDefines(f);
+
+function imposesTheDutyItDefines(f: Finding): boolean {
+  const words = f.imposingWords?.trim();
+  if (!words || !MANDATES.test(words) || WAIVES.test(words)) return false;
+  return [f.quote, f.definingWords].some((w) => w?.includes(words));
+}
 
 const band = (indicator: Indicator, ordinal: number): ScoreBand => {
   const b = indicator.bands.find((x) => x.ordinal === ordinal);
@@ -518,7 +531,9 @@ export function statedProportion(words: string | null): 'none' | 'some' | null {
   const figure =
     /\b\d{1,3}(\.\d+)?\s*(%|per ?cent)/.test(t) ||
     /\b(one|two|three|four|five|six|seven|eight|nine|ten|fifteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)\b[ -]*(per ?cent|%)/.test(t) ||
-    /\b(majority|minority|controlling (stake|interest)|half|one[ -]third|two[ -]thirds|one[ -]quarter)\b/.test(t);
+    /\b(majority|minority|controlling (stake|interest)|half|one[ -]third|two[ -]thirds|one[ -]quarter)\b/.test(t) ||
+    // The same figures in Thai, which writes a percentage as ร้อยละ and has no word boundaries.
+    /ร้อยละ\s*[๐-๙0-9]|[๐-๙]+\s*%|กึ่งหนึ่ง|ข้างมาก|ข้างน้อย|หนึ่งในสาม|สองในสาม|หนึ่งในสี่/.test(t);
 
   // A total exclusion is a proportion too -- it is nought -- and it is how the top band is worded.
   const total =
@@ -622,6 +637,8 @@ const BANS_A_LIST =
   /\b(?:set\s+out|specified|listed|described|mentioned|enumerated)\s+in\s+(?:the\s+)?(?:\w+\s+)?(?:Schedule|list|table)\b|\bany\s+of\s+the\s+following\b/i;
 /** Words that put a duty on someone, in the languages of the law read here. Thai is written without spaces between words, so its words stand outside the word boundaries. */
 const MANDATES = /\b(?:shall|must|is required to|are required to|hendaklah|mesti)\b|ต้อง|ห้าม/i;
+/** A mandate word turned into its absence: "need not", "shall not be required to", "ไม่ต้อง". */
+const WAIVES = /\b(?:need not|not be required|not required|tidak perlu)\b|ไม่ต้อง/i;
 /** Words that leave the content of a duty to something specified, prescribed or imposed elsewhere. */
 const DEFERS = /\b(?:in accordance with|specified|prescribed|determined|imposed|issued|conditions of (?:the|a|its) licen[cs]e)\b|กำหนด|ตามหลักเกณฑ์/i;
 /** A figure stated as the default a regulation may replace: "$250 or such other amount as is prescribed". */
@@ -1566,7 +1583,14 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     // opposite -- we read the provision and it does not impose this measure -- which is a finding
     // of absence in that provision and evidence for the zero rather than a bar to it.
     const name = e.finding.measure ? MEASURE_NAMES[e.finding.measure] : undefined;
-    if (name && e.finding.definingWords && !name.test(e.finding.definingWords) && otherLanguage(e)) {
+    // Except where the reader, asked about this measure alone, found it in the provision's own
+    // language. Our terms of art are English, so a Thai provision can never say them, and holding
+    // every one of its findings for it left Thailand's Trade Secrets Act, its licence to run a
+    // telecommunications business and its identity checks all reported as unread. The second
+    // question is the one asked in the provision's language, so its yes is the test the English
+    // word cannot be there.
+    const readInItsLanguage = otherLanguage(e) !== null && e.confirmed === true;
+    if (name && e.finding.definingWords && !name.test(e.finding.definingWords) && otherLanguage(e) && !readInItsLanguage) {
       held.push({
         evidence: e,
         reason: `the words "${e.finding.definingWords}" are in ${otherLanguage(e)}, and what makes a provision ${e.finding.measure} is stated only in English`,
@@ -1586,6 +1610,7 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     if (
       name &&
       e.finding.definingWords &&
+      !readInItsLanguage &&
       !name.test(e.finding.definingWords) &&
       !(createsABody && name.test(e.finding.quote ?? ''))
     ) {
@@ -1636,7 +1661,8 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
       subject &&
       e.finding.subjectWords !== null &&
       e.finding.subjectWords !== undefined &&
-      sameAnswer(e.finding.subjectWords, e.finding.dutyBearer)
+      sameAnswer(e.finding.subjectWords, e.finding.dutyBearer) &&
+      !actedOnInThePassive(e.finding.quote, e.finding.subjectWords)
     ) {
       ruledOut.push({
         evidence: e,
@@ -1658,7 +1684,7 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     // instrument's title answers the domain for those, and the words answer it for the rest.
     const namesDomain =
       domain !== null &&
-      SECTOR_DOMAINS.has(indicatorId) &&
+      (SECTOR_DOMAINS.has(indicatorId) || TITLE_CARRIES_DOMAIN.has(e.finding.measure ?? '')) &&
       (domain.test(e.instrumentTitle) || domain.test(e.finding.subjectWords ?? ''));
     if (domain && !namesDomain && e.finding.subjectWords && !domain.test(e.finding.subjectWords) && otherLanguage(e)) {
       held.push({
@@ -2128,6 +2154,23 @@ function definedBy(indicatorId: string, measure: string | null): string | null {
  * Null for the two pillars whose subject is already asked for three other ways, and for the
  * catch-all measures that exist to record a ban on something this indicator does not score.
  */
+/**
+ * Whether the quote puts these words in the passive: "the subscriber ... has to be registered".
+ *
+ * The subject of a passive duty is the one it is done to. Whoever must do it is left unsaid -- the
+ * operator, the provider -- and a reader asked who is bound copies the only party the sentence
+ * names. Taken at its word, that made every passive identity duty identify the party bound, and a
+ * rule that all subscribers "has to be registered and authenticated" was ruled out as naming nobody.
+ */
+export function actedOnInThePassive(quote: string | null | undefined, words: string): boolean {
+  const w = words.trim();
+  if (!quote || !w) return false;
+  const at = quote.toLowerCase().indexOf(w.toLowerCase());
+  if (at < 0) return false;
+  const after = quote.slice(at + w.length, at + w.length + 120);
+  return /^\s*(?:\([^)]*\)\s*)?,?\s*(?:has|have|shall|must|is|are|will|should|may)(?: not)?\s+(?:to\s+|only\s+)?be\s+\w+(?:ed|en)\b/i.test(after);
+}
+
 function aboutness(indicatorId: string, measure: string | null): string | null {
   const declared = SUBJECTS[indicatorId];
   if (!declared) return null;
@@ -2146,7 +2189,6 @@ function aboutness(indicatorId: string, measure: string | null): string | null {
 function otherLanguage(e: Evidence): string | null {
   return e.sectionLanguage && e.sectionLanguage !== 'en' ? e.sectionLanguage : null;
 }
-
 /**
  * The words a subject must use to be in this indicator's domain, or null where none is declared.
  *
@@ -2170,14 +2212,14 @@ function inDomain(indicatorId: string, measure: string | null): RegExp | null {
  * copied out, because the nationality can sit in the party bound, the limit, or the sector.
  */
 const NATIONALITY =
-  /\b(foreign(er|ers|ly)?|non-?residents?|non-?citizens?|non-?nationals?|overseas|aliens?|citizens?|nationals?|nationality|residents?|residency|domestic|local(ly)?|indigenous|bumiputera|malaysian|singaporean|australian|incorporated in)\b/i;
+  /\b(foreign(er|ers|ly)?|non-?residents?|non-?citizens?|non-?nationals?|overseas|aliens?|citizens?|nationals?|nationality|residents?|residency|domestic|local(ly)?|indigenous|bumiputera|malaysian|singaporean|australian|incorporated in)\b|คนต่างด้าว|ต่างด้าว|ต่างชาติ|สัญชาติ/i;
 
 function namesNationality(f: Finding): boolean {
   return [f.dutyBearer, f.definingWords, f.subjectWords, f.quote].some((w) => w && NATIONALITY.test(w));
 }
 
 /** Words that make a party foreign to the economy, as opposed to merely naming a nationality. */
-const FOREIGN_PARTY = /\b(foreign(er|ers|ly|-owned|-ownership)?|non-?residents?|non-?citizens?|non-?nationals?|overseas|aliens?)\b/i;
+const FOREIGN_PARTY = /\b(foreign(er|ers|ly|-owned|-ownership)?|non-?residents?|non-?citizens?|non-?nationals?|overseas|aliens?)\b|คนต่างด้าว|ต่างด้าว|ต่างชาติ/i;
 
 /**
  * Is the foreign party the one being held, rather than the one holding?

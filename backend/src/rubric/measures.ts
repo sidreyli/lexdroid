@@ -1268,7 +1268,20 @@ export const SUBJECTS: Readonly<Record<string, string>> = {
  * statement of what a subject has to say to be the one asked for, in the words a provision uses to
  * say it. A subject saying none of them has not been shown, whatever it names.
  */
-const ONLINE = /\b(online|on-line|internet|e-?commerce|e-?business|e-?retail|electronic|digital|web|website|cyber|computer|network|platform|marketplace|application|app|software|data|mobile)\b/i;
+/**
+ * The terms of art in these domains, in the Thai of the law read here as well. Thai is written
+ * without spaces between words, so its terms stand outside the word boundaries, as the duty words
+ * in `decide` do. Each renders an English term in the same list one for one, and nothing else: a
+ * domain that only spoke English held every Thai finding as unread, so Thailand's Trade Secrets
+ * Act and the Act establishing its telecommunications regulator never reached their cells.
+ */
+const ONLINE = new RegExp(
+  [
+    /\b(online|on-line|internet|e-?commerce|e-?business|e-?retail|electronic|digital|web|website|cyber|computer|network|platform|marketplace|application|app|software|data|mobile)\b/.source,
+    'ออนไลน์|อินเทอร์เน็ต|อิเล็กทรอนิกส์|ดิจิทัล|เว็บไซต์|ไซเบอร์|คอมพิวเตอร์|เครือข่าย|แพลตฟอร์ม|ซอฟต์แวร์|แอปพลิเคชัน',
+  ].join('|'),
+  'i',
+);
 
 /**
  * 12.4 asks what limits paying for something online, and ESCAP answers it with the payment
@@ -1513,6 +1526,11 @@ export const MEASURE_NAMES: Readonly<Record<string, RegExp>> = {
   // and none of them counts as a localisation rule, and the words never say where the bank is.
   'local-bank-account': LOCALITY,
   'local-representative': /\b(represent\w*|agent\w*|office\w*|establish\w*|resident\w*)\b/i,
+  // Local content is about where the content is made, and its `defines` says so: "produced in the
+  // economy". A duty to carry channels -- "must carry" -- was India's local content requirement,
+  // and names no place at all.
+  'local-content-category': LOCALITY,
+  'local-content-product': LOCALITY,
   // "Presence" is the noun these rules use, and a stem ending in the verb cannot reach it:
   // present|presently|presented all match present\w*, and presence does not. auDA's licensing rule
   // 2.4.1 -- "A Person applying for a Licence must: have an Australian Presence" -- was read for
@@ -1571,13 +1589,14 @@ const ICT_GOODS = new RegExp(
   ].join('|'),
   'i',
 );
-const PROCUREMENT = /\b(procure\w*|tender\w*|bid\w*|public contract\w*|government contract\w*|supply to the (Government|State)|Commonwealth contract\w*|purchas\w* by (a|the) (public|government)\w*)\b/i;
-const SECRETS = /\b(trade secret\w*|source code\w*|algorithm\w*|confidential (business )?information|proprietary information|encrypt\w*|cryptograph\w*|know-how)\b/i;
-const PATENT = /\b(patent\w*|invention\w*|utility model\w*|patentee\w*)\b/i;
-const COPYRIGHT = /\b(copyright\w*|author\w*|literary|artistic|musical|cinematograph\w*|performer\w*|work\w*|broadcast\w*|infring\w*)\b/i;
+const PROCUREMENT = new RegExp([/\b(procure\w*|tender\w*|bid\w*|public contract\w*|government contract\w*|supply to the (Government|State)|Commonwealth contract\w*|purchas\w* by (a|the) (public|government)\w*)\b/.source, 'จัดซื้อจัดจ้าง|ประกวดราคา|เสนอราคา'].join('|'), 'i');
+const SECRETS = new RegExp([/\b(trade secret\w*|source code\w*|algorithm\w*|confidential (business )?information|proprietary information|encrypt\w*|cryptograph\w*|know-how)\b/.source, 'ความลับทางการค้า|รหัสต้นฉบับ|ซอร์สโค้ด|อัลกอริทึม|เข้ารหัส'].join('|'), 'i');
+const PATENT = new RegExp([/\b(patent\w*|invention\w*|utility model\w*|patentee\w*)\b/.source, 'สิทธิบัตร|การประดิษฐ์'].join('|'), 'i');
+const COPYRIGHT = new RegExp([/\b(copyright\w*|author\w*|literary|artistic|musical|cinematograph\w*|performer\w*|work\w*|broadcast\w*|infring\w*)\b/.source, 'ลิขสิทธิ์|ผู้สร้างสรรค์|นักแสดง|ละเมิด'].join('|'), 'i');
 const TELECOM = new RegExp(
   [
     /\b(telecom\w*|telephon\w*|carrier\w*|carriage service\w*|network service\w*|spectrum|radiocommunication\w*|licensee\w*|operator\w*|subscriber\w*|broadband|mobile)\b/.source,
+    'โทรคมนาคม|โทรศัพท์|คลื่นความถี่|วิทยุคมนาคม|ผู้รับใบอนุญาต',
     ONLINE.source,
   ].join('|'),
   'i',
@@ -1586,7 +1605,7 @@ const INVESTMENT = /\b(invest\w*|acquisi\w*|acquire\w*|takeover\w*|merger\w*|sha
 const DIGITAL_SECTOR = new RegExp([ONLINE.source, TELECOM.source, /\b(sector\w*|industry|business\w*|service\w*)\b/.source].join('|'), 'i');
 const ADVERTISING = new RegExp([/\b(advertis\w*|promotion\w*|marketing|sponsor\w*)\b/.source, ONLINE.source].join('|'), 'i');
 const PRODUCT_CERT = /\b(product\w*|goods|equipment|device\w*|apparatus|appliance\w*|radiocommunication\w*|emission\w*|electromagnetic|safety|conformity|standard\w*)\b/i;
-const TECHNICAL_STANDARD = /\b(standard\w*|specification\w*|technical regulation\w*|code of practice|conformity)\b/i;
+const TECHNICAL_STANDARD = new RegExp([/\b(standard\w*|specification\w*|technical regulation\w*|code of practice|conformity)\b/.source, 'มาตรฐาน|ข้อกำหนดทางเทคนิค'].join('|'), 'i');
 const CUSTOMS = /\b(import\w*|consign\w*|customs|duty|duties|goods|parcel\w*|shipment\w*|value of the goods|declaration\w*)\b/i;
 
 /**
@@ -1606,7 +1625,9 @@ const CUSTOMS = /\b(import\w*|consign\w*|customs|duty|duties|goods|parcel\w*|shi
  * are the subjects a legal system cannot word its own way, and a measure whose subject is a sector
  * gets none.
  */
-const ONLINE_SERVICE = /\b(internet|online|on-line|web\w*|cyber\w*|e-?commerce|digital (?:service|platform|identity)\w*|platform\w*|social media|search engine\w*|end-?users?)\b/i;
+// An intermediary is the pillar's own name for an online service -- "Internet Intermediary
+// Liability" -- and the law that regulates one calls it that and nothing else.
+const ONLINE_SERVICE = /\b(internet|online|on-line|web\w*|cyber\w*|e-?commerce|digital (?:service|platform|identity)\w*|platform\w*|social media|search engine\w*|end-?users?|intermediar(?:y|ies))\b/i;
 const MOBILE_SUBSCRIPTION =
   /\b(SIM\b|SIM cards?|pre-?paid|cellular|mobile\w*|carriage service\w*|telephon\w*|subscriber\w*|number portab\w*|porting)\b/i;
 
@@ -1626,8 +1647,13 @@ const MOBILE_SUBSCRIPTION =
  * survives is what the words describe: an online marketplace, a supply of goods through a website,
  * an e-commerce service.
  */
-const TRADE =
-  /\b(sell\w*|sale|sales|sold|buy\w*|purchas\w*|retail\w*|wholesal\w*|trad(e|er|ers|ing)|commerc\w*|market(place|ing)?|merchant\w*|vendor\w*|supply|supplying|suppliers?|goods|distributive)\b/i;
+const TRADE = new RegExp(
+  [
+    /\b(sell\w*|sale|sales|sold|buy\w*|purchas\w*|retail\w*|wholesal\w*|trad(e|er|ers|ing)|commerc\w*|market(place|ing)?|merchant\w*|vendor\w*|supply|supplying|suppliers?|goods|distributive)\b/.source,
+    'ขาย|ซื้อ|จำหน่าย|ค้าปลีก|ค้าส่ง|การค้า|ผู้ค้า|พาณิชย์|ตลาด|สินค้า',
+  ].join('|'),
+  'i',
+);
 
 /** Both halves, in either order: it has to be trade, and it has to be trade done online. */
 const ONLINE_TRADE = new RegExp(`(?=.*${TRADE.source})(?=.*${ONLINE.source})`, 'i');
@@ -1664,8 +1690,13 @@ export const MEASURE_DOMAIN: Readonly<Record<string, RegExp>> = {
  * and its licensing instrument says so in its title and nowhere else. A list without those three
  * phrases reads that regime's own class-licence guidelines as being about something else.
  */
-const COMMUNICATIONS =
-  /\b(telecom\w*|communication\w*|broadcast\w*|carriage service\w*|carrier\w*|spectrum|radiocommunication\w*|postal|media|network facilit\w*|network service\w*|applications service\w*)\b/i;
+const COMMUNICATIONS = new RegExp(
+  [
+    /\b(telecom\w*|communication\w*|broadcast\w*|carriage service\w*|carrier\w*|spectrum|radiocommunication\w*|postal|media|network facilit\w*|network service\w*|applications service\w*)\b/.source,
+    'โทรคมนาคม|คมนาคม|กระจายเสียง|คลื่นความถี่|ไปรษณีย์|สื่อ',
+  ].join('|'),
+  'i',
+);
 
 export const SUBJECT_DOMAIN: Readonly<Record<string, RegExp>> = {
   ...PILLAR_12_DOMAINS,
@@ -1683,6 +1714,9 @@ export const SUBJECT_DOMAIN: Readonly<Record<string, RegExp>> = {
   // market licence, an atomic energy licence, an abattoir's and a chit fund's all answered it.
   // Read with SECTOR_DOMAINS below, which is what makes it safe to ask.
   '5.5': COMMUNICATIONS,
+  // And 5.2, which asks what a foreign person may hold in a telecommunications company. India's
+  // cell was answered from the Pension Fund Act's 26% cap on foreign holdings in pension funds.
+  '5.2': COMMUNICATIONS,
   // Terms of art: a patent is a patent, a copyright a copyright, a trade secret a trade secret and
   // an encryption standard an encryption standard, in every one of these legal systems. The sector
   // domains that were here with them are gone -- see the note above.
@@ -1728,4 +1762,16 @@ export const SUBJECT_DOMAIN: Readonly<Record<string, RegExp>> = {
  * commission answered the telecom-regulator question. The rule is for a domain the provisions
  * inside a document stop repeating, not for one they were never going to state.
  */
-export const SECTOR_DOMAINS: ReadonlySet<string> = new Set(['5.5', '4.01', '4.2', '4.3']);
+export const SECTOR_DOMAINS: ReadonlySet<string> = new Set(['5.5', '5.2', '4.01', '4.2', '4.3']);
+
+/**
+ * Measures whose domain the instrument's title may carry, as a sector's is, though the indicator's
+ * other measures are asked of the words.
+ *
+ * Online identity is named once by the rules that impose it and then called "the user": a set of
+ * intermediary rules requires a platform to "identify such user and verify his identity", and the
+ * user of the platform is the only user it can mean. Asked of "user" alone the domain turned that
+ * away. The university ID rule and the customs declaration MEASURE_DOMAIN was written against are
+ * still turned away -- neither is in an instrument whose title names an online service.
+ */
+export const TITLE_CARRIES_DOMAIN: ReadonlySet<string> = new Set(['user-identity']);

@@ -201,7 +201,11 @@ async function once<T>(host: string, path: string, body: unknown, timeoutMs: num
     });
     const text = await res.body.text();
     if (res.statusCode >= 400) throw new Error(`HTTP ${res.statusCode}: ${text.slice(0, 300)}`);
-    return JSON.parse(text) as T;
+    const parsed = JSON.parse(text) as T & { error?: unknown };
+    // A rented engine's proxy has sent its status line before the answer exists, so a failure
+    // arrives as a 200 whose body is only an error. Read as an answer, it was an empty one.
+    if (typeof parsed.error === 'string') throw new Error(`engine: ${parsed.error.slice(0, 300)}`);
+    return parsed;
   } catch (err) {
     const message = failureText(err);
     // Stall first: a prompt the engine took and did not answer costs that provision, not the link.

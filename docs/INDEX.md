@@ -7,6 +7,12 @@ LexDroid's implementation notes:
 - `india-integration.md` — implemented Central-law foundation, supplied-document acceptance
   evidence, rollout sequence and declared India-specific limits.
 - `reader-batch.md` — the reader-side fixes held for one re-run, each with its rule.
+- `where-we-differ-from-escap.md` — all 87 cells where the five economies differ from ESCAP, sorted
+  into ours-right, judgment calls, not answerable from law, and our defects; and what the live test
+  asks of discovery.
+- `rehearsal-india.md` - the live test rehearsed for India from an empty store: what each stage
+  took, what broke, and the three fixes that took pillar 8 from 1 of 4 to 3 of 4 (citation-following,
+  contents built in every run, and the word the copyright subject was missing).
 - `aus-sgp-disagreements.md` — every cell where Australia or Singapore differs from ESCAP, sorted
   into retrieval failures, over-reads and genuine finds, and why agreement is the wrong target.
 - `malaysia-corpus-readiness.md` — whether Malaysia's corpus can carry its 61 cells, asked of the

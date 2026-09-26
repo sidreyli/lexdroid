@@ -2,6 +2,7 @@
 import "server-only";
 import { existsSync, readFileSync } from "node:fs";
 import { ENGINES_PATH } from "./paths";
+import enginesJson from "./fixtures/engines.json";
 
 export interface EngineChoice {
   id: string;
@@ -11,8 +12,9 @@ export interface EngineChoice {
 }
 
 export function getEngines(): { chosen: string; engines: EngineChoice[] } {
-  if (!existsSync(ENGINES_PATH)) return { chosen: "", engines: [] };
-  const raw = JSON.parse(readFileSync(ENGINES_PATH, "utf8")) as {
+  const raw = (existsSync(ENGINES_PATH)
+    ? JSON.parse(readFileSync(ENGINES_PATH, "utf8"))
+    : enginesJson) as {
     default: string;
     engines: EngineChoice[];
   };

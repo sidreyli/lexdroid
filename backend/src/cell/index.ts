@@ -28,7 +28,7 @@ import {
   readFramework,
   readSection,
   readInFull,
-  subjectQueries,
+  subjectQueriesIn,
   READING_MODEL,
   type FrameworkReading,
   type FrameworkSubject,
@@ -277,6 +277,7 @@ export async function answerPillar(
     const record = await retrieveForIndicator(db, indicator, {
       economy,
       vectors,
+      languages: loadProfile(economy).officialLanguages,
       ...(opts.depth ? { depth: opts.depth } : {}),
       ...(opts.embeddingModel ? { model: opts.embeddingModel } : {}),
     });
@@ -648,9 +649,10 @@ async function frameworkCandidates(
     ).map((r) => r.id),
   );
 
+  const queries = subjectQueriesIn(subject, loadProfile(economy).officialLanguages);
   const ranked = await shortlistInstruments(db, {
     economy,
-    queries: subjectQueries(subject),
+    queries,
     limit: FRAMEWORK_CANDIDATES * 4,
     ...(embeddingModel ? { model: embeddingModel } : {}),
   });
@@ -673,14 +675,67 @@ async function frameworkCandidates(
   // Transactions" and 8.2's band prose is about unlawful content. Asked of sections, the subject
   // puts it fourth. The comment this replaces asserted the band prose found it sixth; that was
   // true of the pillar before 8.1 and 8.2 were given separate subjects, and is no longer.
-  const fromSections = subjectSections(db, economy, subject, inForce);
+  const fromSections = subjectSections(db, economy, queries, inForce);
 
   // Taken alternately rather than in series. The three lists know different things and the caller
   // keeps five: appended, the later channels were never reached at all. A register knows what an
   // Act is called, a retrieval knows what answered this indicator's question, and a section search
   // on the subject knows which Act contains the rule.
-  return interleave(fromRegister, fromSections, fromRetrieval);
+  return withParentActs(db, economy, queries, inForce, interleave(fromRegister, fromSections, fromRetrieval));
 }
+
+/**
+ * Each candidate made under an Act brings that Act in, just ahead of it.
+ *
+ * A framework is established by an Act; the rules made under it set conditions on it. Rules name
+ * the subject in every provision and the Act names it in one, so once the rules were read they
+ * took the section search's places and pushed out the Act they are made under: India's IT Act,
+ * whose s.79 is the intermediary safe harbour, left all five candidates for 8.1 and 8.2 the run its
+ * intermediary and blocking rules were fetched, and 8.1 read "no framework". The Act is examined
+ * with its own provisions on the subject, the way the section channel hands over the rules'.
+ */
+export function withParentActs(
+  db: Db,
+  economy: string,
+  queries: string[],
+  inForce: Set<number>,
+  list: FrameworkCandidate[],
+): FrameworkCandidate[] {
+  const parentOf = db.prepare(
+    `SELECT p.id, p.title, p.source_url FROM instrument c JOIN instrument p ON p.id = c.made_under_instrument_id
+      WHERE c.id = ? AND p.kind = 'act'
+        AND EXISTS (SELECT 1 FROM document d JOIN section s ON s.document_id = d.id WHERE d.instrument_id = p.id)`,
+  );
+  const owner = db.prepare(`SELECT d.instrument_id id FROM section s JOIN document d ON d.id = s.document_id WHERE s.id = ?`);
+  // An Act already further down the list is moved up, not left where it is: the caller keeps the
+  // first five, and India's IT Act was on the list at twelfth and so was never examined.
+  const later = new Map(list.map((c) => [c.instrumentId, c]));
+  const placed = new Set<number>();
+  const out: FrameworkCandidate[] = [];
+  let hits: { sectionId: number }[] | undefined;
+  for (const c of list) {
+    if (placed.has(c.instrumentId)) continue;
+    const parent = parentOf.get(c.instrumentId) as { id: number; title: string; source_url: string } | undefined;
+    if (parent && !placed.has(parent.id) && inForce.has(parent.id)) {
+      // Deeper than the subject channel's own search: the Act's provision is the one that search
+      // ranked below its rules.
+      hits ??= fuse(queries.map((q) => searchLexical(db, q, { economy, limit: PARENT_SECTION_DEPTH })));
+      const found = hits
+        .filter((h) => (owner.get(h.sectionId) as { id: number } | undefined)?.id === parent.id)
+        .map((h) => h.sectionId);
+      const own = later.get(parent.id);
+      const sectionIds = [...new Set([...(own?.sectionIds ?? []), ...found])].slice(0, PARENT_SECTIONS);
+      placed.add(parent.id);
+      out.push(own ? { ...own, sectionIds } : { instrumentId: parent.id, title: parent.title, url: parent.source_url, sectionIds });
+    }
+    placed.add(c.instrumentId);
+    out.push(c);
+  }
+  return out;
+}
+
+const PARENT_SECTION_DEPTH = 60;
+const PARENT_SECTIONS = 4;
 
 /**
  * Two ranked lists taken alternately, each instrument once, the first list leading.
@@ -715,7 +770,7 @@ export function interleave<T extends { instrumentId: number }>(...lists: T[][]):
 function subjectSections(
   db: Db,
   economy: string,
-  subject: FrameworkSubject,
+  queries: string[],
   inForce: Set<number>,
 ): FrameworkCandidate[] {
   const out: FrameworkCandidate[] = [];
@@ -732,7 +787,7 @@ function subjectSections(
   // and Finance (No. 2) Act 2023 among the five instruments examined for its copyright safe
   // harbour, displacing the Communications and Multimedia Act. Fusion is what the rest of Zone 1
   // uses for the same reason, and it puts that Act first and the Copyright Act 1987 second.
-  const runs = subjectQueries(subject).map((q) => searchLexical(db, q, { economy, limit: SUBJECT_SECTION_DEPTH }));
+  const runs = queries.map((q) => searchLexical(db, q, { economy, limit: SUBJECT_SECTION_DEPTH }));
   for (const hit of fuse(runs)) {
     const row = owner.get(hit.sectionId) as { id: number; title: string; source_url: string } | undefined;
     if (!row || !inForce.has(row.id)) continue;

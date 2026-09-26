@@ -40,7 +40,10 @@ export async function parseDocument(res: FetchResult, opts: { languages?: readon
     return parseOcs(res.body.toString('utf8'), res.url);
   }
 
-  if (res.mediaType.includes('pdf')) return parsePdf(res.body, res.url, opts.languages ? { languages: opts.languages } : {});
+  // A server that labels a PDF as generic bytes -- DGFT's bucket serves its notifications as
+  // application/octet-stream -- has still sent a PDF, and the file says so in its first bytes.
+  const pdfByItsBytes = /octet-stream|binary|force-download/.test(res.mediaType) && res.body.subarray(0, 1024).includes('%PDF-');
+  if (res.mediaType.includes('pdf') || pdfByItsBytes) return parsePdf(res.body, res.url, opts.languages ? { languages: opts.languages } : {});
 
   if (res.mediaType.includes('html') || res.mediaType.includes('xml')) {
     const html = res.body.toString('utf8');

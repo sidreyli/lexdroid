@@ -51,6 +51,8 @@ backend/data/logs/
 # The fetched exchange rates. A cache, refreshed daily by any run that can reach the publisher.
 backend/data/fx-rates.json
 .playwright-mcp/
+.vercel/
 
 # Throwaway diagnostic probes, written to measure one thing and answer one question.
 backend/scripts/zz-*.ts
+backend/data/gpu/

@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { FindingView } from "@/components/workbench/finding-view";
 import { getEconomy, getExportRow, getIndicator, getQueueItems } from "@/lib/data";
+import { isReadOnlyDeployment } from "@/lib/deployment";
 
 export default async function FindingPage({ params }: PageProps<"/workbench/[id]">) {
   const { id } = await params;
@@ -20,6 +21,7 @@ export default async function FindingPage({ params }: PageProps<"/workbench/[id]
       total={queue.length}
       prevId={at > 0 ? queue[at - 1].id : null}
       nextId={at >= 0 && at < queue.length - 1 ? queue[at + 1].id : null}
+      readOnly={isReadOnlyDeployment()}
     />
   );
 }
