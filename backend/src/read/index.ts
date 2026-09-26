@@ -1475,6 +1475,17 @@ export function subjectQueries(subject: FrameworkSubject): string[] {
 }
 
 /**
+ * The subject asked of an economy whose law is written in `languages`: the English queries, and
+ * the subject's names in each of those languages.
+ *
+ * Only in those languages. A Thai query asks an English register's title vectors something, and
+ * would move every economy's ranking to answer one economy's gap.
+ */
+export function subjectQueriesIn(subject: FrameworkSubject, languages: readonly string[]): string[] {
+  return [...subjectQueries(subject), ...namesIn(subject, languages)];
+}
+
+/**
  * The words an instrument uses when the subject is what it is for.
  *
  * Malaysia's Personal Data Protection Act was named as the dedicated cybersecurity framework and
@@ -1507,21 +1518,32 @@ const SUBJECT_NAMES: Record<FrameworkSubject, string[]> = {
  * never answered: the Personal Data Protection Act, the Cyber Security Act, the Copyright Act's
  * safe harbour and the Unfair Contract Terms Act were all read as frameworks and all banked as not
  * shown, which left the cells saying none of the instruments examined establishes one. Each word
- * here renders a name above one for one. They are kept out of `subjectQueries`, which ranks the
- * register for every economy and is not where a language gap was.
+ * here renders a name above one for one, keyed by the language of the law they are for.
+ *
+ * They search too, through `subjectQueriesIn`, for an economy that legislates in that language.
+ * Asked only in English, the register ranked Thai Acts by the English translation some titles carry
+ * in parentheses, and the section search matched nothing: Thailand's 12.9 never examined the
+ * Consumer Protection Act, whose title is Thai alone and ranked 17th for its own subject.
  */
-const SUBJECT_NAMES_IN_OTHER_LANGUAGES: Record<FrameworkSubject, string[]> = {
-  'data-protection': ['ข้อมูลส่วนบุคคล', 'ความเป็นส่วนตัว'],
-  cybersecurity: ['ไซเบอร์', 'ความผิดเกี่ยวกับคอมพิวเตอร์', 'ความมั่นคงปลอดภัยสารสนเทศ', 'ความมั่นคงปลอดภัยของระบบสารสนเทศ'],
-  'copyright-safe-harbour': ['ลิขสิทธิ์', 'ผู้ให้บริการ'],
-  'intermediary-liability': ['ตัวกลาง', 'ผู้ให้บริการ'],
-  'consumer-protection': ['ผู้บริโภค'],
+const SUBJECT_NAMES_IN_OTHER_LANGUAGES: Record<string, Record<FrameworkSubject, string[]>> = {
+  th: {
+    'data-protection': ['ข้อมูลส่วนบุคคล', 'ความเป็นส่วนตัว'],
+    cybersecurity: ['ไซเบอร์', 'ความผิดเกี่ยวกับคอมพิวเตอร์', 'ความมั่นคงปลอดภัยสารสนเทศ', 'ความมั่นคงปลอดภัยของระบบสารสนเทศ'],
+    'copyright-safe-harbour': ['ลิขสิทธิ์', 'ผู้ให้บริการ'],
+    'intermediary-liability': ['ตัวกลาง', 'ผู้ให้บริการ'],
+    'consumer-protection': ['ผู้บริโภค'],
+  },
 };
+
+/** The subject's names in the given languages, beyond the English ones every economy is asked. */
+function namesIn(subject: FrameworkSubject, languages: readonly string[]): string[] {
+  return languages.flatMap((l) => SUBJECT_NAMES_IN_OTHER_LANGUAGES[l]?.[subject] ?? []);
+}
 
 /** Whether quoted words name the subject at all, as opposed to merely coming from the instrument. */
 function namesSubject(words: string, subject: FrameworkSubject): boolean {
   const w = words.toLowerCase();
-  return [...SUBJECT_NAMES[subject], ...SUBJECT_NAMES_IN_OTHER_LANGUAGES[subject]].some((n) => w.includes(n));
+  return [...SUBJECT_NAMES[subject], ...namesIn(subject, Object.keys(SUBJECT_NAMES_IN_OTHER_LANGUAGES))].some((n) => w.includes(n));
 }
 
 /** Whether the words said to make the framework are a rule in the instrument, naming the subject. */

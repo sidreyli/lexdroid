@@ -28,7 +28,7 @@ import {
   readFramework,
   readSection,
   readInFull,
-  subjectQueries,
+  subjectQueriesIn,
   READING_MODEL,
   type FrameworkReading,
   type FrameworkSubject,
@@ -648,9 +648,10 @@ async function frameworkCandidates(
     ).map((r) => r.id),
   );
 
+  const queries = subjectQueriesIn(subject, loadProfile(economy).officialLanguages);
   const ranked = await shortlistInstruments(db, {
     economy,
-    queries: subjectQueries(subject),
+    queries,
     limit: FRAMEWORK_CANDIDATES * 4,
     ...(embeddingModel ? { model: embeddingModel } : {}),
   });
@@ -673,7 +674,7 @@ async function frameworkCandidates(
   // Transactions" and 8.2's band prose is about unlawful content. Asked of sections, the subject
   // puts it fourth. The comment this replaces asserted the band prose found it sixth; that was
   // true of the pillar before 8.1 and 8.2 were given separate subjects, and is no longer.
-  const fromSections = subjectSections(db, economy, subject, inForce);
+  const fromSections = subjectSections(db, economy, queries, inForce);
 
   // Taken alternately rather than in series. The three lists know different things and the caller
   // keeps five: appended, the later channels were never reached at all. A register knows what an
@@ -715,7 +716,7 @@ export function interleave<T extends { instrumentId: number }>(...lists: T[][]):
 function subjectSections(
   db: Db,
   economy: string,
-  subject: FrameworkSubject,
+  queries: string[],
   inForce: Set<number>,
 ): FrameworkCandidate[] {
   const out: FrameworkCandidate[] = [];
@@ -732,7 +733,7 @@ function subjectSections(
   // and Finance (No. 2) Act 2023 among the five instruments examined for its copyright safe
   // harbour, displacing the Communications and Multimedia Act. Fusion is what the rest of Zone 1
   // uses for the same reason, and it puts that Act first and the Copyright Act 1987 second.
-  const runs = subjectQueries(subject).map((q) => searchLexical(db, q, { economy, limit: SUBJECT_SECTION_DEPTH }));
+  const runs = queries.map((q) => searchLexical(db, q, { economy, limit: SUBJECT_SECTION_DEPTH }));
   for (const hit of fuse(runs)) {
     const row = owner.get(hit.sectionId) as { id: number; title: string; source_url: string } | undefined;
     if (!row || !inForce.has(row.id)) continue;
