@@ -15,9 +15,22 @@ import { SectionBuilder, type ParsedDocument } from './types.js';
 /** The service's section types, as they occur across its documents. */
 const TITLE = 1;
 const PROVISION = 4;
+/**
+ * A clause of a regulation or notification, "ข้อ ๑". A ministerial regulation is numbered in
+ * clauses rather than sections, and the service types each one on its own. Unknown here until 26
+ * September 2026, so every one fell through to the formalities: 14,646 clauses across 1,452
+ * documents -- 936 of them ministerial regulations -- were kept as unsearchable prose, and a
+ * regulation listing the supplies the State must buy from favoured sellers was indexed as its
+ * enacting formula alone.
+ */
+const CLAUSE = 10;
+/** An annex: a schedule, a fee table, a map, a form, a notification printed with the instrument. */
+const ANNEX = 16;
 const AUTHORITY = 17;
 const CONTENT = 18;
 const SCHEDULE = 20;
+/** An annex that is really the title of an amending instrument, which the service sometimes types 16. */
+const AMENDING_TITLE_LABEL = /^ชื่อกฎหมาย/;
 /** Chapter and part headings: they head the provisions that follow, and are not provisions. */
 const HEADING_LABEL = /^(?:หมวด|ส่วน|ลักษณะ|บรรพ|บท)/;
 
@@ -96,7 +109,7 @@ export function parseOcs(raw: string, url: string): ParsedDocument {
     const text = textOf(s.sectionContent ?? '');
     if (!text) continue;
 
-    if (type === TITLE) {
+    if (type === TITLE || (type === ANNEX && AMENDING_TITLE_LABEL.test(label))) {
       if (seenTitle) {
         amending = text.replace(/\s+/g, ' ');
         heading = null;
@@ -106,7 +119,8 @@ export function parseOcs(raw: string, url: string): ParsedDocument {
       continue;
     }
 
-    const provisional = type === PROVISION || type === AUTHORITY || type === CONTENT || type === SCHEDULE;
+    const provisional =
+      type === PROVISION || type === CLAUSE || type === AUTHORITY || type === CONTENT || type === SCHEDULE || type === ANNEX;
     if (!provisional && text.length < 300 && (HEADING_LABEL.test(label) || HEADING_LABEL.test(text))) {
       heading = text.replace(/\s+/g, ' ');
       builder.addProse(text);
@@ -118,8 +132,12 @@ export function parseOcs(raw: string, url: string): ParsedDocument {
     // the title -- "country" put the Cleanliness Act's 200 sections first for a question about
     // sending data abroad. The English name stays on the document, where it names the instrument.
     const owner = amending ?? thai ?? title;
-    if (type === PROVISION) {
-      const number = /^มาตรา\s*(.+)$/.exec(label)?.[1]?.trim() ?? (label || null);
+    if (type === PROVISION || type === CLAUSE) {
+      // A section is cited by its number; a clause keeps its word, so ข้อ 3 is never read as มาตรา 3.
+      const number =
+        type === CLAUSE
+          ? label.replace(/\s+/g, ' ') || null
+          : (/^มาตรา\s*(.+)$/.exec(label)?.[1]?.trim() ?? (label || null));
       const cited = number ? (amending ? `${number} [${amending}]` : number) : null;
       builder.add({
         headingPath: [owner, heading, label || null].filter(Boolean).join(' > '),
@@ -133,7 +151,7 @@ export function parseOcs(raw: string, url: string): ParsedDocument {
       continue;
     }
 
-    if (type === CONTENT || type === AUTHORITY || type === SCHEDULE) {
+    if (type === CONTENT || type === AUTHORITY || type === SCHEDULE || type === ANNEX) {
       const parts = type === CONTENT ? clauses(text) : [{ label: null, text }];
       for (const part of parts) {
         const cited = part.label ? (amending ? `${part.label} [${amending}]` : part.label) : null;
