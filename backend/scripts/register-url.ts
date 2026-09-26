@@ -59,8 +59,10 @@ const db = openDb();
 
 // A portal the economy does not have would register the document under another economy's crawl,
 // and `adapterFor` would then hand it that adapter's resolveDocument.
-const via = portal ? `portal:${Number(portal)}` : null;
-if (via) {
+// With no portal the document came from its own URL, and says so: the column is NOT NULL, and a
+// value that names no portal gets no adapter, which is right for a document nothing listed.
+const via = portal ? `portal:${Number(portal)}` : 'url';
+if (portal) {
   const owns = db
     .prepare('SELECT economy_code FROM portal WHERE id = ?')
     .get(Number(portal)) as { economy_code: string } | undefined;
