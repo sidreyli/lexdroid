@@ -393,7 +393,9 @@ export async function generate(
     }).catch((err: unknown) => {
       // A provision too long for the plan's per-minute limit is a fact about that provision, like
       // a stall: recorded as a failure to read it, and the rest of the pillar is still read.
-      if (err instanceof Error && /will never accept this request/.test(err.message)) {
+      // So is an answer the host could not validate and had nothing of to hand back -- gpt-oss-20b
+      // produced empty output on one Russian provision and the refusal ended the pillar.
+      if (err instanceof Error && /will never accept this request|json_validate_failed/.test(err.message)) {
         throw new EngineFailure(hosted.model, err.message);
       }
       throw err;
