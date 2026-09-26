@@ -59,11 +59,57 @@ export interface HostedAnswer {
  */
 function responseFormat(schema: unknown): Record<string, unknown> | undefined {
   if (!schema || typeof schema !== 'object') return undefined;
-  const strict = { ...(schema as Record<string, unknown>), additionalProperties: false };
+  const strict = closed(schema) as Record<string, unknown>;
   return {
     type: 'json_schema',
     json_schema: { name: 'reading', schema: strict, strict: true },
   };
+}
+
+/**
+ * The schema with `additionalProperties: false` on every object in it, not only the outermost.
+ *
+ * Groq refuses a strict schema with any open object, and the reading schema's findings are objects
+ * inside an array: closing only the top level had every reading on Engine B rejected with a 400
+ * before a single provision was read.
+ */
+function closed(schema: unknown): unknown {
+  if (!schema || typeof schema !== 'object' || Array.isArray(schema)) return schema;
+  const out: Record<string, unknown> = { ...(schema as Record<string, unknown>) };
+  // Walked by keyword, so a property that happens to be called "type" or "properties" is a name
+  // and never mistaken for a schema.
+  if (out['properties'] && typeof out['properties'] === 'object') {
+    // Strict mode also wants every property required. One the schema left optional is required
+    // here but allowed to be null, which is what the reader's normaliser already makes of an
+    // absent field -- so the answer means the same whichever engine gave it.
+    const required = new Set(Array.isArray(out['required']) ? (out['required'] as string[]) : []);
+    const props = out['properties'] as Record<string, unknown>;
+    out['properties'] = Object.fromEntries(
+      Object.entries(props).map(([name, s]) => [name, required.has(name) ? closed(s) : nullable(closed(s))]),
+    );
+    out['required'] = Object.keys(props);
+  }
+  if (out['items'] !== undefined) out['items'] = Array.isArray(out['items']) ? out['items'].map(closed) : closed(out['items']);
+  for (const k of ['anyOf', 'oneOf', 'allOf'] as const) {
+    if (Array.isArray(out[k])) out[k] = (out[k] as unknown[]).map(closed);
+  }
+  const type = out['type'];
+  if (type === 'object' || (Array.isArray(type) && type.includes('object')) || out['properties']) {
+    out['additionalProperties'] = false;
+  }
+  return out;
+}
+
+/** A schema that also accepts null. */
+function nullable(schema: unknown): unknown {
+  if (!schema || typeof schema !== 'object' || Array.isArray(schema)) return schema;
+  const s = { ...(schema as Record<string, unknown>) };
+  if (Array.isArray(s['enum']) && !(s['enum'] as unknown[]).includes(null)) s['enum'] = [...(s['enum'] as unknown[]), null];
+  const t = s['type'];
+  if (typeof t === 'string' && t !== 'null') s['type'] = [t, 'null'];
+  else if (Array.isArray(t) && !t.includes('null')) s['type'] = [...t, 'null'];
+  else if (t === undefined && !s['enum']) return { anyOf: [s, { type: 'null' }] };
+  return s;
 }
 
 export async function hostedGenerate(

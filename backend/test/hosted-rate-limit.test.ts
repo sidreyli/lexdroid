@@ -50,3 +50,36 @@ describe('a hosted engine that is rate limited', () => {
     expect(h.asked()).toBe(1);
   });
 });
+
+describe('the schema a hosted engine is sent', () => {
+  it('closes every object in it, not only the outermost', async () => {
+    let sent: unknown = null;
+    server = createServer((req, res) => {
+      let body = '';
+      req.on('data', (c) => (body += c)).on('end', () => {
+        sent = JSON.parse(body);
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(OK);
+      });
+    });
+    await new Promise<void>((r) => server!.listen(0, '127.0.0.1', r));
+    const { port } = server.address() as AddressInfo;
+    process.env['LEXDROID_HOSTED_BASE_URL'] = `http://127.0.0.1:${port}/v1`;
+    process.env['LEXDROID_HOSTED_MODEL'] = 'm';
+    const schema = {
+      type: 'object',
+      properties: {
+        findings: { type: 'array', items: { type: 'object', properties: { type: { type: 'string' } } } },
+      },
+    };
+    await hostedGenerate('hi', 'sys', { schema });
+    const s = (sent as { response_format: { json_schema: { schema: any } } }).response_format.json_schema.schema;
+    expect(s.additionalProperties).toBe(false);
+    expect(s.properties.findings.items.additionalProperties).toBe(false);
+    // A property named "type" is a name, not a schema: closed as a string, not as an object.
+    expect(s.properties.findings.items.properties.type).toEqual({ type: ['string', 'null'] });
+    // Strict mode wants every property required; one the schema left optional may be null instead.
+    expect(s.required).toEqual(['findings']);
+    expect(s.properties.findings.items.required).toEqual(['type']);
+  });
+});
