@@ -37,7 +37,7 @@ if (!economy) throw new Error('--economy <CODE> is required');
 const engineId = arg('--engine') ?? 'engine-b';
 const redoAll = process.argv.includes('--all');
 const reportOnly = process.argv.includes('--report');
-const BATCH = Number(arg('--batch') ?? 20);
+const BATCH = Number(arg('--batch') ?? 10);
 
 const profile = loadProfile(economy);
 const language = profile.officialLanguages[0]!;
@@ -111,13 +111,21 @@ if (!reportOnly) {
     writeFileSync(translationsPath(economy), JSON.stringify(table, null, 1) + '\n');
   };
 
-  /** A hosted engine's rate limit is a wait, not a failure: back off and ask again. */
+  /**
+   * A hosted engine's rate limit is a wait, not a failure: back off and ask again.
+   *
+   * The completion limit is kept near what a batch needs. Groq's free tier allows 8,000 tokens a
+   * minute and counts each request's max_tokens against it up front, so asking for 6,000 made
+   * almost every request wait; a batch too long for 2,000 is split by translate() instead.
+   */
   const ask = async (prompt: string) => {
     for (let attempt = 0; ; attempt += 1) {
       try {
-        return await generate(prompt, system, { schema, temperature: 0, maxOutputTokens: 6000, ...(engine.hosted ? {} : { model: engine.model }) });
+        return await generate(prompt, system, { schema, temperature: 0, maxOutputTokens: 2000, ...(engine.hosted ? {} : { model: engine.model }) });
       } catch (err) {
-        const limited = err instanceof Error && /429/.test(err.message);
+        // A rate limit, a dropped connection or a server error is the host's state, not our
+        // request: wait and ask again. The first background run died on one ECONNRESET.
+        const limited = err instanceof Error && /429|ECONNRESET|ETIMEDOUT|EPIPE|socket|answered 5\d\d|not answering/i.test(err.message);
         if (!limited || attempt >= 8) throw err;
         const pause = 15_000 * (attempt + 1);
         console.log(`  rate-limited; waiting ${pause / 1000}s`);
@@ -126,32 +134,57 @@ if (!reportOnly) {
     }
   };
 
-  for (let i = 0; i < missing.length; i += BATCH) {
-    const batch = missing.slice(i, i + BATCH);
-    const prompt = `Translate each of these ${batch.length} queries.\n\n${JSON.stringify(batch, null, 1)}`;
-    const answer = await ask(prompt);
-    let out: string[];
+  /** A translation is kept only if it is in the language asked for; a mostly-Latin answer is an echo of the English. */
+  const accept = (t: string): boolean => {
+    const letters = (t.match(/\p{L}/gu) ?? []).length;
+    const latin = (t.match(/[A-Za-z]/g) ?? []).length;
+    return t.length > 0 && lang.script.test(t) && latin <= letters * 0.3;
+  };
+  let rejected = 0;
+
+  /**
+   * Translate a batch, halving it where the engine cannot fit its answer into one response -- a
+   * batch of twenty Russian queries ran past the completion limit and came back as a 400 rather
+   * than a translation. A single query that still fails is skipped and named.
+   */
+  const translate = async (batch: string[]): Promise<number> => {
+    const prompt = `Translate each of these ${batch.length} queries.
+
+${JSON.stringify(batch, null, 1)}`;
+    let out: string[] | null = null;
     try {
-      out = (JSON.parse(answer.text) as { translations: string[] }).translations;
-    } catch {
-      console.log(`  batch ${i / BATCH + 1}: the engine returned something that is not the JSON asked for; skipped`);
-      continue;
+      const answer = await ask(prompt);
+      table.model = answer.model;
+      const parsed = JSON.parse(answer.text) as { translations?: string[] };
+      out = Array.isArray(parsed.translations) && parsed.translations.length === batch.length ? parsed.translations : null;
+    } catch (err) {
+      if (!(err instanceof SyntaxError) && !(err instanceof Error && /json_validate_failed|400/.test(err.message))) throw err;
     }
-    if (out.length !== batch.length) {
-      console.log(`  batch ${i / BATCH + 1}: ${out.length} translations for ${batch.length} queries; skipped rather than misaligned`);
-      continue;
+    if (!out) {
+      if (batch.length === 1) {
+        console.log(`  could not translate: ${batch[0]!.slice(0, 80)}`);
+        return 0;
+      }
+      const half = Math.ceil(batch.length / 2);
+      return (await translate(batch.slice(0, half))) + (await translate(batch.slice(half)));
     }
     let kept = 0;
     batch.forEach((q, k) => {
-      const t = (out[k] ?? '').replace(/ໍາ/g, 'ຳ').replace(/\s+/g, ' ').trim();
-      // A translation must be in the language asked for; an echo of the English is not one.
-      if (t && lang.script.test(t) && !/[A-Za-z]{4}/.test(t)) {
+      const t = (out![k] ?? '').replace(/ໍາ/g, 'ຳ').replace(/\s+/g, ' ').trim();
+      if (accept(t)) {
         table.queries[q] = t;
         kept += 1;
+      } else if (rejected++ < 5) {
+        console.log(`  rejected: "${q.slice(0, 60)}" -> "${t.slice(0, 80)}"`);
       }
     });
-    table.model = answer.model;
     save();
+    return kept;
+  };
+
+  for (let i = 0; i < missing.length; i += BATCH) {
+    const batch = missing.slice(i, i + BATCH);
+    const kept = await translate(batch);
     console.log(`  batch ${i / BATCH + 1}/${Math.ceil(missing.length / BATCH)}: ${kept} of ${batch.length} kept`);
   }
 

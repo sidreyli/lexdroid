@@ -64,6 +64,15 @@ The first proves each pod is reachable, serving the right model, and reading one
 time. The second does the work. `--usd-per-hour` is the price of one pod; the fleet multiplies by
 the number of hosts and the wall time and records what the run cost.
 
+Always pass `--hosts`. The fleet does not fall back to `OLLAMA_HOST`, and without it the run is sent
+to a local Ollama that is not there, while the pods bill for nothing.
+
+Embed before the fleet, not inside it. The fleet's prepare stage embeds every new title and section
+one economy at a time while every pod bills, so run `zone1 --economy X --embed` against one pod
+first, then start the fleet with `--skip-prepare`. Each unit keeps the readings it has paid for in
+`data/fleet/<run>/<ECO>-p<N>.resume.db`, so a unit that dies and is retried replays them instead
+of paying again.
+
 ## Stop the pods
 
 Terminate them in the console when the run finishes. A pod bills while it is running, whether or

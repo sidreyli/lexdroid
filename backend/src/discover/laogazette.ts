@@ -141,8 +141,15 @@ export const laoGazetteAdapter: Adapter = {
           url: row.lao,
           kind,
           kindBasis: `the Lao Official Gazette types it "${row.type}"`,
-          // The gazette publishes promulgated instruments and says nothing of repeal, so standing is
-          // left to the documents rather than asserted.
+          // The gazette publishes promulgated national instruments and says nothing of repeal, and
+          // no other Lao source does. Left at unknown, no Lao law could ever be named as a
+          // framework (cell/index.ts gates candidates on in-force), so every framework indicator
+          // abstained. Recorded as in force with the inference stated, so a reviewer sees what it
+          // rests on: promulgation, not a statement of standing.
+          status: 'in-force',
+          statusBasis:
+            'Promulgated in the Lao Official Gazette (national issuer); the gazette records no repeal, ' +
+            'so standing is inferred from promulgation rather than stated',
           commencedOn: row.effective ?? row.gazetted,
           ...(row.english ? { alsoAt: [row.english] } : {}),
         });

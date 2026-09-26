@@ -26,6 +26,7 @@ import { loadEnv } from '../src/env.js';
 import { loadEngines, type Engine } from '../src/engines/registry.js';
 import { hostedGenerate } from '../src/engines/hosted.js';
 import { generate } from '../src/engines/ollama.js';
+import { quoteIsInSection } from '../src/read/index.js';
 
 // Before anything reads process.env: the hosted key lives in .env, never in engines.json.
 loadEnv();
@@ -92,6 +93,37 @@ const CASES: ProvisionCase[] = [
     ],
     years: 5,
     bearer: /оператор|лицензиат|лицо/i,
+  },
+  // Mongolian and Lao for the same reason as Russian, and each is harder in its own way: Mongolian
+  // Cyrillic has letters Russian lacks (ү, ө), and Lao writes no space between words, so a copied
+  // run of it has nothing to align on but the characters.
+  {
+    label: 'Mongolian',
+    language: 'mn',
+    provision:
+      'Үйлчилгээ үзүүлэгч нь тусгай зөвшөөрөлгүйгээр хувь хүний мэдээлэл боловсруулахыг хориглох ба ' +
+      'гүйлгээ бүрийн бүртгэлийг таваас доошгүй жилийн хугацаанд хадгална.',
+    ask: [
+      'Who does this provision bind? Copy the words stating how long records must be kept, exactly as',
+      'they appear above and in the same language as the provision, and give the number of years those',
+      'words state. Do not translate the words you copy.',
+    ],
+    years: 5,
+    bearer: /үйлчилгээ үзүүлэгч/i,
+  },
+  {
+    label: 'Lao',
+    language: 'lo',
+    provision:
+      'ຜູ້ໃຫ້ບໍລິການ ຕ້ອງໄດ້ຮັບອະນຸຍາດ ກ່ອນການປະມວນຜົນຂໍ້ມູນສ່ວນບຸກຄົນ ແລະ ຕ້ອງເກັບຮັກສາບັນທຶກ ' +
+      'ຂອງແຕ່ລະທຸລະກຳ ໄວ້ຢ່າງໜ້ອຍ ຫ້າ ປີ.',
+    ask: [
+      'Who does this provision bind? Copy the words stating how long records must be kept, exactly as',
+      'they appear above and in the same language as the provision, and give the number of years those',
+      'words state. Do not translate the words you copy.',
+    ],
+    years: 5,
+    bearer: /ຜູ້ໃຫ້ບໍລິການ/,
   },
 ];
 
@@ -176,7 +208,8 @@ async function check(engine: Engine): Promise<boolean> {
     // The substantive checks. Five years is in the provision and nowhere else, so an engine that
     // reads the page and produces a plausible number fails here having passed everything above.
     const quote = typeof parsed.periodWords === 'string' ? parsed.periodWords : null;
-    const quoteInSource = quote !== null && c.provision.toLowerCase().includes(quote.trim().toLowerCase());
+    // The pipeline's own check, so ຳ spelt either way and guillemets count as they will in a run.
+    const quoteInSource = quote !== null && quoteIsInSection(quote, c.provision, 10);
     const rightYears = parsed.retentionYears === c.years;
     const rightBearer = c.bearer.test(String(parsed.dutyBearer));
 

@@ -175,7 +175,7 @@ async function main(): Promise<void> {
       process.exit(1);
     }
   } else if (!(await haveModel(model))) {
-    console.error(`\n${model} is not installed. Run: ollama pull ${model}\n`);
+    console.error(`\n${model} is not installed. Run: ollama pull (or, for a model built from a Modelfile such as gemma4-lex-16k, ollama create) ${model}\n`);
     process.exit(1);
   }
 

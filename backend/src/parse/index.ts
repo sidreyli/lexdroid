@@ -19,6 +19,8 @@ import { parseOcs } from './ocs.js';
 import { parsePdf } from './pdf.js';
 import { parseSso } from './sso.js';
 import { identityMismatch } from './identity.js';
+import { detectLanguage } from './language.js';
+import { loadProfile } from '../profile/index.js';
 import { opensAsPublishedAbout, publishedAbout } from '../discover/titles.js';
 import type { ParsedDocument, UnreadReason } from './types.js';
 
@@ -107,6 +109,7 @@ export function storeDocument(
     // The same bytes parsed into the same provisions is the document already stored, and storing
     // it again deleted every section and every reading that cited one -- cascaded out of runs that
     // had nothing to do with this parse. Nothing about it has changed, so nothing is touched.
+    parsed = withLanguages(db, instrumentId, parsed);
     const unchanged = unchangedDocument(db, instrumentId, fetched, parsed);
     if (unchanged !== null) return { documentId: unchanged, sectionCount: parsed.sections.length, unread: false, unreadReason: null };
 
@@ -227,6 +230,38 @@ export function storeDocument(
     indexSections(db, documentId);
     return { documentId, sectionCount: parsed.sections.length, unread: false, unreadReason: null };
   })();
+}
+
+/**
+ * Each provision with the language it is written in, where its parser left that open.
+ *
+ * Most parsers leave it null for the export to decide at the end. But `decide` reads it long before
+ * then: a finding in a language other than English is held when an English-word test fails on it,
+ * because the test shows nothing about a provision that cannot use English words -- and only ruled
+ * out when the provision is known to be English. With the language null, every Mongolian and
+ * Russian finding was treated as English and ruled out by words it could never contain, which is a
+ * run producing zeros for laws that say the opposite. Detected among the economy's own languages,
+ * falling back to its first.
+ *
+ * Filled before the unchanged-document check, so a re-parse of the same bytes still matches what
+ * was stored and does not replace it.
+ */
+function withLanguages(db: Db, instrumentId: number, parsed: ParsedDocument): ParsedDocument {
+  if (parsed.unread || parsed.sections.every((s) => s.language)) return parsed;
+  const row = db.prepare('SELECT economy_code c FROM instrument WHERE id = ?').get(instrumentId) as { c: string } | undefined;
+  let languages: readonly string[] = [];
+  try {
+    if (row) languages = loadProfile(row.c).officialLanguages;
+  } catch {
+    // An economy with no profile -- a test fixture -- leaves languages to the export, as before.
+  }
+  if (languages.length === 0) return parsed;
+  return {
+    ...parsed,
+    sections: parsed.sections.map((s) =>
+      s.language ? s : { ...s, language: detectLanguage(s.text, { candidates: languages }) ?? languages[0]! },
+    ),
+  };
 }
 
 /**

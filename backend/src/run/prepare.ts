@@ -145,7 +145,9 @@ export async function prepareCorpus(db: Db, opts: PrepareOptions): Promise<Prepa
   for (const p of opts.pillars) {
     // In the economy's own language as well: this ranks the register's titles, and an English
     // question ranks Cyrillic or Lao titles on nothing.
-    for (const ind of indicatorsOfPillar(p, rubric)) asked.push(queriesFor(ind, undefined, economy));
+    // Named as retrieval names it ("in Mongolia", not "in the economy"): the translation table is
+    // keyed on the named query, and an unnamed one never found its translation.
+    for (const ind of indicatorsOfPillar(p, rubric)) asked.push(queriesFor(ind, profile.name, economy));
   }
 
   const top = opts.top ?? 15;

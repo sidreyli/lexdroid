@@ -113,8 +113,9 @@ export function quoteAppearsIn(sectionText: string, quote: string): boolean {
 function normalise(s: string): string {
   return s
     .replace(/[‘’‚‛]/g, "'")
-    .replace(/["“”„‟*]/g, '')
+    .replace(/["“”„‟*«»]/g, '')
     .replace(/[‐-―−]/g, '-')
+    .replace(/ຳ/g, 'ໍາ')
     .replace(/ /g, ' ')
     .replace(/\s+/g, ' ')
     .trim()

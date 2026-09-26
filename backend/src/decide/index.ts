@@ -517,6 +517,8 @@ export function statedProportion(words: string | null): 'none' | 'some' | null {
 
   const figure =
     /\b\d{1,3}(\.\d+)?\s*(%|per ?cent)/.test(t) ||
+    // The same figure in the corpus's other languages: процент (ru), хувь (mn), ສ່ວນຮ້ອຍ (lo).
+    /\b\d{1,3}([.,]\d+)?\s*(процент|хувь|ສ່ວນຮ້ອຍ|ເປີເຊັນ)/u.test(t) ||
     /\b(one|two|three|four|five|six|seven|eight|nine|ten|fifteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)\b[ -]*(per ?cent|%)/.test(t) ||
     /\b(majority|minority|controlling (stake|interest)|half|one[ -]third|two[ -]thirds|one[ -]quarter)\b/.test(t);
 
@@ -1365,6 +1367,20 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
   const ruledOut: { evidence: Evidence; reason: string }[] = [];
 
   for (const e of evidence) {
+    /**
+     * Rule out on an English-word test, unless the provision is not in English.
+     *
+     * The tests below that read the reader's copied words against English lists -- a period in
+     * years, a sector's name, a nationality, a word for information, a word for a country -- show
+     * nothing about a Russian, Mongolian or Lao provision, which cannot use those words whatever it
+     * says. There the finding is held, as the measure-name and subject tests already hold it, and a
+     * zero is never built on a test the provision could not have passed.
+     */
+    const excludeOnWords = (reason: string): void => {
+      const language = otherLanguage(e);
+      if (language) held.push({ evidence: e, reason: `${reason} -- but the provision is in ${language}, and the test is of English words` });
+      else ruledOut.push({ evidence: e, reason });
+    };
     // Before any measure-specific test: a sentence that declares rather than obliges has not
     // imposed a requirement on anyone, whatever the requirement would have been.
     //
@@ -1440,10 +1456,7 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     // Read from the words copied out of the provision, not from the reader's statedPeriod, which
     // is its own paraphrase and has named a period the provision leaves to regulations.
     if (e.finding.measure === 'minimum-retention' && !statesDuration(e.finding.quote, e.finding.definingWords)) {
-      ruledOut.push({
-        evidence: e,
-        reason: 'the provision states no retention period; a period left to be prescribed elsewhere is not a minimum period',
-      });
+      excludeOnWords('the provision states no retention period; a period left to be prescribed elsewhere is not a minimum period');
       continue;
     }
     // An outline is a signpost to provisions elsewhere in the same instrument. Drafting manuals
@@ -1653,10 +1666,7 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     // were read in, so the provision is about some other trade. Ruled out for the reason the
     // subject test is -- the provision was read and what it is about belongs elsewhere.
     if (domain && SECTOR_DOMAINS.has(indicatorId) && !namesDomain) {
-      ruledOut.push({
-        evidence: e,
-        reason: `neither "${e.finding.subjectWords ?? e.instrumentTitle}" nor the instrument it is in names ${subject ?? "this indicator's subject"}`,
-      });
+      excludeOnWords(`neither "${e.finding.subjectWords ?? e.instrumentTitle}" nor the instrument it is in names ${subject ?? "this indicator's subject"}`);
       continue;
     }
     // A band that is a proportion needs the provision to state one. 3.1, 5.2 and 12.01 descend
@@ -1679,20 +1689,14 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     // foreigners. Either side of the line will do, because the restriction is written both ways:
     // a ceiling on foreign holding, or a floor on the share that must stay in local hands.
     if (proportional(indicatorId, e.finding.measure) && !namesNationality(e.finding)) {
-      ruledOut.push({
-        evidence: e,
-        reason: 'the provision limits what anyone may hold, and every band of this indicator is a limit on foreign holding',
-      });
+      excludeOnWords('the provision limits what anyone may hold, and every band of this indicator is a limit on foreign holding');
       continue;
     }
     // The same question of every other measure that restricts a foreign party and no one else.
     // See Measure.restrictsForeigners: a joint venture entered for tax consolidation, and a branch
     // a domestic provider must open, are the act the measure describes done by nobody foreign.
     if (restrictsForeigners(indicatorId, e.finding.measure) && !namesNationality(e.finding)) {
-      ruledOut.push({
-        evidence: e,
-        reason: `the provision names no foreign party, and this measure is borne by ${actorOf(indicatorId, e.finding.measure) ?? 'a foreign one'}`,
-      });
+      excludeOnWords(`the provision names no foreign party, and this measure is borne by ${actorOf(indicatorId, e.finding.measure) ?? 'a foreign one'}`);
       continue;
     }
     // And the direction of it: the foreign party has to be the one holding, not the one held.
@@ -1847,10 +1851,7 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     // particulars, but none of them calls it a payment. Placed after the structural tests, which
     // need no view about what the words mean and so should have their say first.
     if (locational(indicatorId, e.finding.measure) && !INFORMATION.test(e.finding.informationWords ?? '')) {
-      ruledOut.push({
-        evidence: e,
-        reason: `the provision calls the thing "${e.finding.informationWords}", which is not information`,
-      });
+      excludeOnWords(`the provision calls the thing "${e.finding.informationWords}", which is not information`);
       continue;
     }
     // And a place that is not a place. These measures ask for the words naming the country,
@@ -1864,10 +1865,7 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     // instrument. Ruled out rather than held, for the reason the test above it is: the provision
     // was read, and the words it gave are not words about where anything has to be.
     if (locational(indicatorId, e.finding.measure) && !namesAPlace(e.finding.placeWords)) {
-      ruledOut.push({
-        evidence: e,
-        reason: `the provision puts the data "${e.finding.placeWords}", which names no country, territory or jurisdiction`,
-      });
+      excludeOnWords(`the provision puts the data "${e.finding.placeWords}", which names no country, territory or jurisdiction`);
       continue;
     }
     // A measure defined by a border crossing is not made out by a provision where nothing crosses.
