@@ -390,6 +390,13 @@ export async function generate(
       ...(opts.schema ? { schema: opts.schema } : {}),
       temperature: opts.temperature ?? 0,
       maxOutputTokens: limit,
+    }).catch((err: unknown) => {
+      // A provision too long for the plan's per-minute limit is a fact about that provision, like
+      // a stall: recorded as a failure to read it, and the rest of the pillar is still read.
+      if (err instanceof Error && /will never accept this request/.test(err.message)) {
+        throw new EngineFailure(hosted.model, err.message);
+      }
+      throw err;
     });
     text = answer.text;
     promptTokens = answer.promptTokens;
