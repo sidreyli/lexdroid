@@ -1293,7 +1293,7 @@ const ONLINE = new RegExp(
 const PAYMENT = new RegExp(
   [
     ONLINE.source,
-    /\bpayment\s+(service|system|facility|instrument|account|card|gateway|method|surcharge|order)/.source,
+    /\bpayment\s+(service|system|facility|instrument|account|card|gateway|aggregator|method|surcharge|order)/.source,
     /\b(e-?money|stored[- ]value|digital currency|crypto\w*|virtual asset|funds transfer|money transfer|remittance|non-?cash payment|wallet|credit card|debit card)s?\b/.source,
   ].join('|'),
   'i',
@@ -1774,4 +1774,17 @@ export const SECTOR_DOMAINS: ReadonlySet<string> = new Set(['5.5', '5.2', '4.01'
  * away. The university ID rule and the customs declaration MEASURE_DOMAIN was written against are
  * still turned away -- neither is in an instrument whose title names an online service.
  */
-export const TITLE_CARRIES_DOMAIN: ReadonlySet<string> = new Set(['user-identity']);
+export const TITLE_CARRIES_DOMAIN: ReadonlySet<string> = new Set([
+  'user-identity',
+  // A payment regulation names its instrument once, in the title -- a direction on payment
+  // aggregators, on prepaid payment instruments -- and then says "the funds", "the transaction",
+  // "its merchants". Asked of those words alone the domain turned away an escrow account required
+  // "with any Scheduled Commercial Bank in India", which is the requirement 12.4.1 asks about.
+  'local-bank-account',
+  'payment-currency',
+  'national-payment-standard',
+  'payment-licence',
+  'payment-ceiling',
+  'mandated-intermediary',
+  'other-payment-restriction',
+]);

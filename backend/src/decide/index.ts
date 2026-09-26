@@ -313,7 +313,7 @@ const isPublishedAboutTheLaw = (e: Evidence): boolean => e.instrumentKind === 'p
  *  opening the words that define it. Those words are checked to be in the provision before they get
  *  here, and have to belong to the duty the finding is about: its quote or its defining words. */
 const isRequirement = (f: Finding): boolean =>
-  f.dutyForce === 'requires' || f.dutyForce === 'forbids' || imposesTheDutyItDefines(f);
+  f.dutyForce === 'requires' || f.dutyForce === 'forbids' || imposesTheDutyItDefines(f) || confinesPermission(f);
 
 function imposesTheDutyItDefines(f: Finding): boolean {
   const words = f.imposingWords?.trim();
@@ -1385,6 +1385,27 @@ export function statesDuration(...words: (string | null | undefined)[]): boolean
   return words.some((w) => !!w && DURATION.test(w));
 }
 
+/**
+ * A permission or an eligibility confined to some, which shuts out everyone else.
+ *
+ * "Only 'Class-I local supplier' ... shall be eligible to bid" is a declaration by grammar and was
+ * ruled out as one, and it is the plainest exclusion of foreign bidders a procurement rule can
+ * state: every supplier outside the class may not bid. The word that turns it is "only", next to
+ * the permission or eligibility it narrows.
+ */
+const CONFINED_PERMISSION = new RegExp(
+  [
+    /\b(?:permitted|allowed|authori[sz]ed|eligible|may)\b[^.;]{0,100}\b(?:only|solely|exclusively)\b/.source,
+    /\b(?:only|solely|exclusively)\b[^.;]{0,100}\b(?:permitted|allowed|authori[sz]ed|eligible)\b/.source,
+    '(?:อนุญาต|มีสิทธิ)[^.;]{0,100}เท่านั้น',
+  ].join('|'),
+  'i',
+);
+
+export function confinesPermission(f: Pick<Finding, 'dutyAct' | 'quote'>): boolean {
+  return [f.dutyAct, f.quote].some((w) => !!w && CONFINED_PERMISSION.test(w));
+}
+
 function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
   kept: Evidence[];
   held: { evidence: Evidence; reason: string }[];
@@ -1433,7 +1454,7 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     // exceeding RM500 per user" -- which is the answer ESCAP gives for that cell and is a
     // declaration by grammar. The reader was right about the verb; the gate was asking the wrong
     // measures for one.
-    if (e.finding.dutyForce === 'declares' && !permits(indicatorId, e.finding.measure)) {
+    if (e.finding.dutyForce === 'declares' && !permits(indicatorId, e.finding.measure) && !confinesPermission(e.finding)) {
       ruledOut.push({
         evidence: e,
         reason: `the provision declares what is the case -- "${e.finding.dutyAct}" -- rather than requiring anyone to do anything`,
@@ -1826,12 +1847,15 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     // words must carry the duty themselves and must not hand its content to something imposed
     // elsewhere ("shall ... comply with the standards specified by the Bank", "except in accordance
     // with the conditions of the licence").
+    // A permission confined by "only" imposes itself too: it shuts everyone else out in the words
+    // quoted, and leaves nothing for another instrument to do.
     const imposesItself =
-      e.finding.mandatory &&
-      (e.finding.dutyForce === 'requires' || e.finding.dutyForce === 'forbids') &&
       !e.finding.prescribingWords &&
-      MANDATES.test(e.finding.quote) &&
-      !DEFERS.test(e.finding.quote);
+      !DEFERS.test(e.finding.quote) &&
+      ((e.finding.mandatory &&
+        (e.finding.dutyForce === 'requires' || e.finding.dutyForce === 'forbids') &&
+        MANDATES.test(e.finding.quote)) ||
+        confinesPermission(e.finding));
     if (!e.finding.imposingWords && !imposesItself && !permits(indicatorId, e.finding.measure)) {
       ruledOut.push({
         evidence: e,
