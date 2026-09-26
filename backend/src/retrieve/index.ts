@@ -299,8 +299,17 @@ export async function retrieveForIndicator(
   const repeats = duplicateProvisions(db, opts.economy, suppressed);
   const skip = (id: number): boolean => suppressed.has(id) || repeats.has(id);
   const runs: SearchHit[][] = [];
+  // Where the questions were translated, the English ones are not asked of the words. A Cyrillic
+  // or Lao statute book matches English only on stray Latin -- product codes, a URL -- and each such
+  // run weighs as much in the fusion as a real one: Russia's 6.1 was decided on a sweets-labelling
+  // rule while every translated query ranked 152-ФЗ first. The dense channel still asks them, since
+  // the embedding model reads across languages. No table, as for every English economy: unchanged.
+  const translated = new Set(translatedQueries(opts.economy, englishQueriesFor(indicator, economyRow?.name)));
   for (const query of queries) {
-    const lex = searchLexical(db, query, { limit: perQueryDepth, economy: opts.economy }).filter((h) => !skip(h.sectionId));
+    const lexical = translated.size === 0 || translated.has(query);
+    const lex = lexical
+      ? searchLexical(db, query, { limit: perQueryDepth, economy: opts.economy }).filter((h) => !skip(h.sectionId))
+      : [];
     if (lex.length) runs.push(lex);
     if (vectors.ids.length) {
       const dense = (await searchDense(query, vectors, {
