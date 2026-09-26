@@ -71,3 +71,33 @@ describe('the body of a heading', () => {
     for (const s of doc.sections) expect(doc.text.slice(s.charStart, s.charEnd)).toBe(s.text);
   });
 });
+
+/** Shaped like rbi.org.in: ASP.NET WebForms wraps the page in one form, under chrome headings. */
+const WEBFORMS = `<html><body><form id="form1" method="post"><div role="main">
+  <h1 class="page_title">Master Directions</h1>
+  <table class="tablebg"><tr><td>
+    <p>1. Short Title and Commencement. These Directions shall be called the Master Direction.</p>
+    <p>2. Applicability. These Directions apply to every payment aggregator.</p>
+    <p>3. Authorisation. No person shall act as a payment aggregator without authorisation.</p>
+    ${'<p>The aggregator shall keep the funds in an escrow account with a scheduled bank. </p>'.repeat(12)}
+  </td></tr></table>
+  <h2 class="year">Archives</h2><p>2016 2015</p>
+</div></form></body></html>`;
+
+describe('a page the server wraps in one form', () => {
+  it('keeps the form that holds the page', () => {
+    const doc = parseHtml(WEBFORMS, 'https://example.test/md');
+    expect(doc.unread).toBeNull();
+    expect(doc.text).toContain('without authorisation');
+  });
+
+  it('drops a form that is only a search box', () => {
+    const html = WEBFORMS.replace('<div role="main">', '<div role="main"><form><p>Search the site for anything you like</p></form>');
+    expect(parseHtml(html, 'https://example.test/md').text).not.toContain('Search the site');
+  });
+
+  it('splits by numbered provisions when chrome headings leave the document under one of them', () => {
+    const labels = parseHtml(WEBFORMS, 'https://example.test/md').sections.map((s) => s.label);
+    expect(labels).toEqual(expect.arrayContaining(['1', '2', '3']));
+  });
+});

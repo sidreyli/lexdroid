@@ -17,7 +17,15 @@ import { nodeText } from './html-text.js';
 import { namesTheSame } from './identity.js';
 import { SectionBuilder, type ParsedDocument } from './types.js';
 
-const STRIP = 'script, style, noscript, nav, header, footer, aside, form, iframe, .nav, .navbar, .menu, .breadcrumb, .cookie, .skip-link';
+const STRIP = 'script, style, noscript, nav, header, footer, aside, iframe, .nav, .navbar, .menu, .breadcrumb, .cookie, .skip-link';
+
+/**
+ * A form is chrome -- a search box, a login, a newsletter sign-up -- except on an ASP.NET WebForms
+ * site, which wraps the whole body in one `<form runat=server>`. Stripping every form there strips
+ * the page: the Reserve Bank of India's directions came back as 0 characters. So a form is removed
+ * only when it holds less than half the text of the body it sits in.
+ */
+const FORM_HOLDS_THE_PAGE = 0.5;
 
 const MAIN_CANDIDATES = ['main', 'article', '[role=main]', '#content', '#main', '.content', '.main-content', 'body'];
 
@@ -25,6 +33,8 @@ const MAIN_CANDIDATES = ['main', 'article', '[role=main]', '#content', '#main', 
 const PROVISION_LINE = /^\s*(?:(?:Section|Sec\.|Article|Art\.|Regulation|Reg\.|Rule|Clause|Paragraph)\s+)?(\d+[A-Z]{0,2}(?:\(\d+\))?)[.)—-]\s+(?=\S)/;
 
 const MIN_DOCUMENT_CHARS = 600;
+/** Above this share of the page's text under one heading, the headings are not its structure. */
+const HEADING_HOLDS_THE_PAGE = 0.8;
 /** Joining flight rows with this keeps them separate blocks to cheerio, as the page had them. */
 const NEWLINE = '\n';
 /** Above this share of text sitting inside anchors, the page is a list of links, not a document. */
@@ -97,6 +107,10 @@ function parseHtmlAsServed(html: string, url: string): ParsedDocument {
   const title = ($('title').first().text() || $('h1').first().text() || '').replace(/\s+/g, ' ').trim() || null;
 
   $(STRIP).remove();
+  const bodyChars = nodeText($('body').toArray()).length;
+  $('form').each((_, form) => {
+    if (nodeText([form]).length < bodyChars * FORM_HOLDS_THE_PAGE) $(form).remove();
+  });
 
   let $main: cheerio.Cheerio<AnyNode> = $('body');
   for (const sel of MAIN_CANDIDATES) {
@@ -130,7 +144,15 @@ function parseHtmlAsServed(html: string, url: string): ParsedDocument {
   const headings = $main.find('h1, h2, h3, h4').toArray().filter((h) => nodeText([h]).trim().length > 0);
 
 
-  if (headings.length >= 2) {
+  // Headings that are the site's chrome -- a page title and an archive menu -- leave the document
+  // itself under one of them. RBI's directions came out as two sections, one holding 330k
+  // characters. When one heading holds most of the page and numbered provisions of its own, the
+  // headings are not the document's structure, and those provisions are.
+  const bodies = headings.map((h, i) => bodyBetween($, mainEl, h, headings[i + 1]));
+  const numbered = (b: string) => b.split('\n').filter((l) => PROVISION_LINE.test(l)).length;
+  const oneHoldsThePage = bodies.some((b) => b.length > text.length * HEADING_HOLDS_THE_PAGE && numbered(b) >= 3);
+
+  if (headings.length >= 2 && !oneHoldsThePage) {
     const trail: string[] = [];
     headings.forEach((h, i) => {
       const level = Number($(h).prop('tagName')!.slice(1));
@@ -138,8 +160,7 @@ function parseHtmlAsServed(html: string, url: string): ParsedDocument {
       trail.length = Math.min(trail.length, level - 1);
       trail[level - 1] = heading;
 
-      const stop = headings[i + 1];
-      const body = bodyBetween($, mainEl, h, stop);
+      const body = bodies[i]!;
       const sectionText = [heading, body.trim()].filter(Boolean).join('\n');
       builder.add({
         headingPath: trail.filter(Boolean).join(' > '),
