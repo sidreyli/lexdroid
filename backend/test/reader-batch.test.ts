@@ -248,3 +248,26 @@ describe('a framework named in the language of its own statute', () => {
     expect(frameworkWordsShown('ผู้ควบคุมข้อมูลส่วนบุคคลจะกระทำการเก็บรวบรวม ใช้ หรือเปิดเผยข้อมูลส่วนบุคคลไม่ได้', 'consumer-protection', pdpa)).toBe(false);
   });
 });
+
+describe('a cap on foreign shareholding, asked about telecommunications', () => {
+  const cap = {
+    indicatorId: '5.2',
+    measure: 'telecom-equity-minority',
+    dutyBearer: 'the pension fund',
+    dutyAct: 'shall not exceed',
+    dutyForce: 'forbids' as const,
+    definingWords: 'shall not exceed 26% of the paid-up capital',
+    subjectWords: 'the paid-up capital of the licensee',
+    quote: 'the aggregate holdings of foreign investors shall not exceed twenty-six per cent. of the paid-up capital',
+  };
+
+  it('does not answer from a cap on some other sector', () => {
+    const d = at('5.2', [evidence(cap, { instrumentTitle: 'The Pension Fund Regulatory and Development Authority Act, 2013' })]);
+    expect(d.basis).toHaveLength(0);
+  });
+
+  it('answers from the same cap in a telecommunications instrument, which need not name the sector again', () => {
+    const d = at('5.2', [evidence(cap, { instrumentTitle: 'Telecommunications (Foreign Ownership) Rules' })]);
+    expect(d.basis).toHaveLength(1);
+  });
+});

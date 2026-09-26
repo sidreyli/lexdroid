@@ -1707,6 +1707,9 @@ export const SUBJECT_DOMAIN: Readonly<Record<string, RegExp>> = {
   // market licence, an atomic energy licence, an abattoir's and a chit fund's all answered it.
   // Read with SECTOR_DOMAINS below, which is what makes it safe to ask.
   '5.5': COMMUNICATIONS,
+  // And 5.2, which asks what a foreign person may hold in a telecommunications company. India's
+  // cell was answered from the Pension Fund Act's 26% cap on foreign holdings in pension funds.
+  '5.2': COMMUNICATIONS,
   // Terms of art: a patent is a patent, a copyright a copyright, a trade secret a trade secret and
   // an encryption standard an encryption standard, in every one of these legal systems. The sector
   // domains that were here with them are gone -- see the note above.
@@ -1752,4 +1755,4 @@ export const SUBJECT_DOMAIN: Readonly<Record<string, RegExp>> = {
  * commission answered the telecom-regulator question. The rule is for a domain the provisions
  * inside a document stop repeating, not for one they were never going to state.
  */
-export const SECTOR_DOMAINS: ReadonlySet<string> = new Set(['5.5', '4.01', '4.2', '4.3']);
+export const SECTOR_DOMAINS: ReadonlySet<string> = new Set(['5.5', '5.2', '4.01', '4.2', '4.3']);
