@@ -187,6 +187,12 @@ async function hostedOnce(
   }
 
   const text = await res.body.text();
+  // "Request too large" is a 429 that no wait cures: the account's per-minute limit is smaller than
+  // one request. Qwen on Groq's free tier refuses every reading this way (1,000 output tokens a
+  // minute), so it is said at once rather than waited on for five minutes a provision.
+  if (res.statusCode === 429 && /request too large/i.test(text)) {
+    throw new Error(`${config.provider} will never accept this request on the current plan: ${text.slice(0, 300)}`);
+  }
   if (res.statusCode === 429) return { result: null, retryAfterMs: retryAfter(res.headers['retry-after'], text) };
   if (res.statusCode >= 500) {
     throw new OllamaUnavailable(`${config.provider} answered ${res.statusCode}`, config.baseUrl);
@@ -227,7 +233,9 @@ export async function probeHosted(): Promise<{ ok: boolean; detail: string }> {
   if (!config) return { ok: false, detail: 'no hosted engine configured' };
   try {
     const answer = await hostedGenerate('Reply with the word ready.', 'You answer in one word.', {
-      maxOutputTokens: 16,
+      // Room for a reasoning model to think before its one word: gpt-oss spent 16 tokens thinking
+      // and answered with nothing, which read as an engine that does not answer.
+      maxOutputTokens: 512,
     });
     return answer.text.trim()
       ? { ok: true, detail: `${config.provider} / ${config.model} answered` }
