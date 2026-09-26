@@ -1834,9 +1834,15 @@ export const SUBJECT_DOMAIN: Readonly<Record<string, RegExp>> = {
  * 8.1's, and an instrument named for copyright cannot be the one for everything else.
  */
 export const FRAMEWORK_TITLE_DOMAIN: Readonly<Record<string, { must?: RegExp; not?: RegExp }>> = {
-  '7.1': { must: /\b(personal (data|information)|data protection|privacy)\b|ข้อมูลส่วนบุคคล/i },
-  '8.2': { not: /\bcopyright\b|ลิขสิทธิ์/i },
-  '12.9': { must: /\bconsumer\w*|ผู้บริโภค/i },
+  // With the subject's name in the other languages the law is read in, beside the Thai: Russia's
+  // "О персональных данных", Mongolia's "ХҮНИЙ ХУВИЙН МЭДЭЭЛЭЛ ХАМГААЛАХ ТУХАЙ" and Lao's
+  // "ກົດໝາຍວ່າດ້ວຍການປົກປ້ອງຂໍ້ມູນເອເລັກໂຕຣນິກ" were all taken for frameworks for something else,
+  // and their 7.1 cells abstained. Stems, without \b, which bounds no Cyrillic or Lao word.
+  '7.1': {
+    must: /\b(personal (data|information)|data protection|privacy)\b|ข้อมูลส่วนบุคคล|персональн|хувийн мэдээлэл|хувь хүний мэдээлэл|ຂໍ້ມູນສ່ວນບຸກຄົນ|ປົກປ້ອງຂໍ້ມູນ/i,
+  },
+  '8.2': { not: /\bcopyright\b|ลิขสิทธิ์|авторск|зохиогчийн эрх|ລິຂະສິດ/i },
+  '12.9': { must: /\bconsumer\w*|ผู้บริโภค|потребител|хэрэглэгч|ຜູ້ຊົມໃຊ້/i },
 };
 
 /**

@@ -20,7 +20,7 @@ import type { Db } from '../db/index.js';
 import type { Indicator } from '../rubric/types.js';
 import { generate, EngineAborted, EngineFailure, EngineOverran, READING_MODEL } from '../engines/ollama.js';
 import { MEASURES, INDICATOR_OF_MEASURE, MEASURE_NAMES, SUBJECTS } from '../rubric/measures.js';
-import { findFragment } from '../util/locate.js';
+import { findFragment, locateNearQuote } from '../util/locate.js';
 
 /**
  * One requirement a provision imposes, described in the terms the score bands use.
@@ -1606,6 +1606,19 @@ function namesSubject(words: string, subject: FrameworkSubject): boolean {
   return [...SUBJECT_NAMES[subject], ...namesIn(subject, Object.keys(SUBJECT_NAMES_IN_OTHER_LANGUAGES))].some((n) => w.includes(n));
 }
 
+/**
+ * The words as the source has them, where the reader's copy of a Cyrillic or Lao rule is nearly but
+ * not exactly verbatim: two Latin letters inside a Mongolian word left Mongolia's Personal Data
+ * Protection Law unshown as its own framework. The source's span is kept in place of the copy, so
+ * what is quoted is the law. Exact copies, English, and anything short of 92% of the quote found in
+ * order come back as they were -- see locateNearQuote.
+ */
+export function sourceWords(words: string | null, text: string): string | null {
+  if (words === null || quoteIsInSection(words, text, MIN_RULE_CHARS)) return words;
+  const near = locateNearQuote(text, words);
+  return near ? text.slice(near.start, near.end) : words;
+}
+
 /** Whether the words said to make the framework are a rule in the instrument, naming the subject. */
 export function frameworkWordsShown(words: string | null, subject: FrameworkSubject, text: string): boolean {
   if (words === null || !quoteIsInSection(words, text, MIN_RULE_CHARS)) return false;
@@ -1871,7 +1884,8 @@ export async function readFramework(
   const quote = typeof p['quote'] === 'string' ? p['quote'] : '';
   const dedicatedWords = wordsOrNull(p['dedicatedWords']);
   const sectorWords = wordsOrNull(p['sectorWords']);
-  const frameworkWords = wordsOrNull(p['frameworkWords']);
+  const haystack = [input.provisionsText, input.openingText].join('\n\n');
+  const frameworkWords = sourceWords(wordsOrNull(p['frameworkWords']), haystack);
   // Checked against the provisions and the opening together, because a rule may be stated in
   // either, and at a longer floor than the other quotes. Widening a haystack widens what a weak
   // quote can match: the eight-character floor let a quote of "No findings." verify once the
@@ -1884,11 +1898,7 @@ export async function readFramework(
   // immunity, really in the Act, and about a data provider under the Consumer Data Right rather
   // than an intermediary carrying somebody else's content. Quoting proves the rule exists; only
   // the subject's own words show it is this rule.
-  const frameworkWordsVerified = frameworkWordsShown(
-    frameworkWords,
-    subject,
-    [input.provisionsText, input.openingText].join('\n\n'),
-  );
+  const frameworkWordsVerified = frameworkWordsShown(frameworkWords, subject, haystack);
 
   return {
     instrumentId: input.instrumentId,
