@@ -102,10 +102,34 @@ if (!reportOnly) {
     required: ['translations'],
   };
 
+  /** Written after every batch, so a rate limit or a dropped connection costs one batch, not the run. */
+  const save = (): void => {
+    table.engine = engineId;
+    table.generatedAt = new Date().toISOString();
+    table.queries = Object.fromEntries(english.filter((q) => table.queries[q]).map((q) => [q, table.queries[q]!]));
+    mkdirSync(dirname(translationsPath(economy)), { recursive: true });
+    writeFileSync(translationsPath(economy), JSON.stringify(table, null, 1) + '\n');
+  };
+
+  /** A hosted engine's rate limit is a wait, not a failure: back off and ask again. */
+  const ask = async (prompt: string) => {
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        return await generate(prompt, system, { schema, temperature: 0, maxOutputTokens: 6000, ...(engine.hosted ? {} : { model: engine.model }) });
+      } catch (err) {
+        const limited = err instanceof Error && /429/.test(err.message);
+        if (!limited || attempt >= 8) throw err;
+        const pause = 15_000 * (attempt + 1);
+        console.log(`  rate-limited; waiting ${pause / 1000}s`);
+        await new Promise((r) => setTimeout(r, pause));
+      }
+    }
+  };
+
   for (let i = 0; i < missing.length; i += BATCH) {
     const batch = missing.slice(i, i + BATCH);
     const prompt = `Translate each of these ${batch.length} queries.\n\n${JSON.stringify(batch, null, 1)}`;
-    const answer = await generate(prompt, system, { schema, temperature: 0, maxOutputTokens: 6000, ...(engine.hosted ? {} : { model: engine.model }) });
+    const answer = await ask(prompt);
     let out: string[];
     try {
       out = (JSON.parse(answer.text) as { translations: string[] }).translations;
@@ -127,15 +151,11 @@ if (!reportOnly) {
       }
     });
     table.model = answer.model;
+    save();
     console.log(`  batch ${i / BATCH + 1}/${Math.ceil(missing.length / BATCH)}: ${kept} of ${batch.length} kept`);
   }
 
-  table.engine = engineId;
-  table.generatedAt = new Date().toISOString();
-  const ordered = Object.fromEntries(english.filter((q) => table.queries[q]).map((q) => [q, table.queries[q]!]));
-  table.queries = ordered;
-  mkdirSync(dirname(translationsPath(economy)), { recursive: true });
-  writeFileSync(translationsPath(economy), JSON.stringify(table, null, 1) + '\n');
+  save();
   clearTranslations();
   console.log(`wrote ${translationsPath(economy)}`);
 }

@@ -30,7 +30,29 @@ const section = (doc: ParsedDocument, label: string, annex = false) => {
 };
 const range = (a: number, b: number): string[] => Array.from({ length: b - a + 1 }, (_, i) => String(a + i));
 
-const ALL = ['decree-763', 'law-152-fz', 'law-149-fz', 'government-resolution-1119', 'code-administrative-offences-section-i-ch1-4'];
+const ALL = [
+  'decree-763',
+  'law-152-fz',
+  'law-149-fz',
+  'government-resolution-1119',
+  'code-administrative-offences-section-i-ch1-4',
+  'government-resolution-781-typescript',
+  'water-code-1995-typescript',
+];
+
+/**
+ * The article headings a page marks, counted without the parser. The current form marks them
+ * `<p class="H">Статья`; the older typescript form puts each in a line of its own, often
+ * letter-spaced ("С т а т ь я 65-1."), so there the tags are stripped and the spacing closed up.
+ */
+const headingsIn = (html: string): number =>
+  /<p class="?H/.test(html)
+    ? (html.match(/<p class="?H"?[^>]*>(?:\s|<[^>]+>)*Статья(?:\s|&nbsp;)/g) ?? []).length
+    : html
+        .replace(/<[^>]+>/g, '\n')
+        .split('\n')
+        .map((l) => l.replace(/\s+/g, ' ').trim().replace(/(?<!\p{L})((?:\p{L} ){2,}\p{L})(?!\p{L})/gu, (m) => m.replace(/ /g, '')))
+        .filter((l) => /^Статья \d+(?:\.\d+)*(?:-\d+)?\*?\./u.test(l)).length;
 
 describe('every Russian fixture', () => {
   it.each(ALL)('%s decodes from windows-1251, holds the offset invariant, and has unique labels', (name) => {
@@ -55,7 +77,7 @@ describe('every Russian fixture', () => {
 
   it.each(ALL)('%s has one section for every article heading the page marks', (name) => {
     const html = source(name);
-    const headings = (html.match(/<p class="?H"?[^>]*>(?:\s|<[^>]+>)*Статья(?:\s|&nbsp;)/g) ?? []).length;
+    const headings = headingsIn(html);
     const doc = read(name);
     expect(doc.sections.filter((s) => /^Статья\s/.test(s.headingPath.split(' > ').at(-1)!)).length).toBe(headings);
   });
@@ -63,7 +85,11 @@ describe('every Russian fixture', () => {
   it.each(ALL)('%s keeps every line of its text', (name) => {
     const html = source(name);
     const flat = read(name).text.replace(/\s+/g, ' ');
-    const body = html.slice(html.search(/<p[\s>]/));
+    // From the document body on, in either form: a typescript page has no <p> at all, and starting
+    // the search at one would have checked nothing.
+    const start = html.search(/<p[\s>]|<pre[\s>]/);
+    expect(start).toBeGreaterThan(0);
+    const body = html.slice(start);
     for (const m of body.matchAll(/>([^<>]*[\u0400-\u04ff]{2}[^<>]*)</g)) {
       const t = m[1]!.replace(/&nbsp;/g, ' ').replace(/&quot;/g, '"').replace(/\s+/g, ' ').trim();
       if (!t || t.includes('&') || t.startsWith('<!--')) continue;
@@ -199,5 +225,35 @@ describe('reading a long document whole', () => {
     const part = htmlFromMhtml(archive)!;
     expect(part.charset).toBe('windows-1251');
     expect(decodeBody({ body: part.html, mediaType: 'text/html', charset: part.charset })).toBe('<p class="H">Статья 1.1.</p>');
+  });
+});
+
+describe('an older act in IPS\'s typescript form', () => {
+  // One <pre>, a <span> per paragraph, lines hard-wrapped, headings letter-spaced. Eighteen such
+  // documents -- the RSFSR codes, the 1995 Water Code, decrees before about 2010 -- read as empty
+  // before the parser learned the form.
+
+  it('reads the 1995 Water Code as its 150 articles, letter-spaced headings and hyphenated insertions included', () => {
+    const doc = read('water-code-1995-typescript');
+    expect(doc.sections).toHaveLength(150);
+    expect(doc.sections.every((s) => s.label !== null)).toBe(true);
+    const labels = doc.sections.map((s) => s.label);
+    expect(labels).toEqual(expect.arrayContaining(['1', '65', '65-1', '148']));
+    // "С т а т ь я  1." as printed; "Статья 1." in the path a reader sees.
+    expect(section(doc, '1').text.startsWith('С т а т ь я 1. Основные понятия')).toBe(true);
+    expect(section(doc, '1').headingPath).toBe('РАЗДЕЛ I. ОБЩИЕ ПОЛОЖЕНИЯ > Глава 1. Основные положения > Статья 1. Основные понятия');
+  });
+
+  it('joins a heading wrapped onto the next line to its heading, not into a provision', () => {
+    const doc = read('water-code-1995-typescript');
+    expect(section(doc, '50').headingPath).toMatch(/^РАЗДЕЛ II\. ПРАВО СОБСТВЕННОСТИ И ДРУГИЕ ПРАВА НА ВОДНЫЕ ОБЪЕКТЫ > Глава 5\. Приобретение и прекращение прав пользования водными объектами > /);
+  });
+
+  it('reads a 2007 resolution and names its annexed regulation by the regulation\'s own title', () => {
+    const doc = read('government-resolution-781-typescript');
+    expect(doc.sections.filter((s) => !s.headingPath.startsWith('Прил')).map((s) => s.label)).toEqual(['1', '2']);
+    const annex = doc.sections.filter((s) => s.headingPath.startsWith('Прил'));
+    expect(annex.map((s) => s.label)).toEqual(range(1, 21));
+    expect(annex[0]!.headingPath).toMatch(/^Приложение: ПОЛОЖЕНИЕ об обеспечении безопасности персональных данных при их обработке в информационных системах персональных данных/);
   });
 });
