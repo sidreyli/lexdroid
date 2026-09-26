@@ -67,7 +67,7 @@ export function scorecard(db: Database, runId: string, baselinePath?: string): C
   const rowsOf = new Map<string, (number | null)[]>();
   for (const row of baseline
     .prepare(`SELECT economy, indicator_id, raw_score FROM baseline_row
-              WHERE source = 'round-1' AND indicator_id IS NOT NULL`)
+              WHERE source IN ('round-1', 'round-2') AND indicator_id IS NOT NULL`)
     .all() as { economy: string; indicator_id: string; raw_score: number | null }[]) {
     const key = `${row.economy}/${row.indicator_id}`;
     const at = rowsOf.get(key);
