@@ -169,13 +169,14 @@ export async function hostedGenerate(
     }
     if (answer.retryAfterMs === null) return answer.result;
     if (attempt >= RATE_LIMIT_RETRIES || answer.retryAfterMs > MAX_RATE_LIMIT_WAIT_MS) {
-      throw new OllamaUnavailable(`${config.provider} answered 429 (rate limited)`, config.baseUrl);
+      throw new OllamaUnavailable(`${config.provider} answered 429 (rate limited) ${attempt + 1} times; last asked to wait ${Math.round(answer.retryAfterMs / 1000)}s`, config.baseUrl);
     }
+    if (attempt % 5 === 4) console.warn(`  ${config.provider}: rate limited ${attempt + 1} times in a row; waiting ${Math.round(answer.retryAfterMs / 1000)}s`);
     await new Promise((r) => setTimeout(r, answer.retryAfterMs! + 500));
   }
 }
 
-const RATE_LIMIT_RETRIES = 20;
+const RATE_LIMIT_RETRIES = 60;
 
 /** Below this an answer has no room to be one, and the prompt alone is the problem. */
 const MIN_RESERVED_TOKENS = 800;
