@@ -378,7 +378,20 @@ async function main(): Promise<void> {
 
   /** One attempt, then one more: a passing fault deserves another go, a real defect fails twice. */
   const attempt = async (unit: Unit, hosts: string[], label: string): Promise<void> => {
+    // Two fleets sharing a run each choose their units when they start, so both can take the same
+    // pillar. The second to finish then fails on the cells the first recorded, and its retry cleared
+    // them: Thailand's pillar 10 was read twice and ended with no cells at all. A unit another
+    // fleet has answered is neither started nor cleared.
+    if (alreadyAnswered(db, run.id, unit)) {
+      console.log(`${unit.economy} pillar ${unit.pillar} answered by another fleet; skipped`);
+      done.push({ unit, host: label, code: 0 });
+      return;
+    }
     let code = await runUnit(unit, hosts, run.id, logDir, args);
+    if (code !== 0 && alreadyAnswered(db, run.id, unit)) {
+      console.log(`${unit.economy} pillar ${unit.pillar} answered by another fleet meanwhile; kept`);
+      code = 0;
+    }
     if (code !== 0) {
       console.log(`${unit.economy} pillar ${unit.pillar} failed on ${label}; one more attempt`);
       clearUnit(db, run.id, unit);
