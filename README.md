@@ -174,6 +174,15 @@ They differ in kind on every axis ESCAP names: different model family (Gemma aga
 different size (12B against 27B) and someone else's hardware. Both are open weights, so every
 reading can be reproduced from a pinned checkpoint and a Modelfile in `ollama/`.
 
+**Engine B is shown the answer schema instead of being held to it.** Engine A answers under
+Ollama's schema-constrained decoding. Qwen 3.8 under the same constraint returned
+`{"findings": []}` for every provision, including Rule 4 of India's Intermediary Rules ("identify
+such user and verify his identity"), which it reads correctly when left unconstrained. So an
+engine declared `"schema": "described"` in `engines.json` gets the JSON Schema in its system
+prompt, and the JSON object is taken from its answer. An answer with no JSON in it is asked once
+more under the constraint. Every finding still has to pass the same quote check against the
+provision text (`backend/src/engines/ollama.ts`, `schemaDecoding`).
+
 **Renting the GPU happens in the interface.** *Start a run* → **Runs on** → *Rented GPU* →
 *Rent GPU* rents the cheapest card that fits under the cap, community tier first. The pod installs
 Ollama, builds the engine from the same Modelfile this repository declares, loads it, and refuses
@@ -374,7 +383,7 @@ arithmetic.
 | OCR | Tesseract, local | $0.00 |
 | Embedding | bge-m3, local | $0.00 |
 | Mapping — Engine A | `gemma4-lex-16k` on 8 rented GPUs | **$19.32** |
-| Mapping — Engine B | `qwen3.8-lex-16k` on a rented RTX A5000 | not yet measured |
+| Mapping — Engine B | `qwen3.8-lex-16k` on a rented RTX A5000 | $0.18 for India pillar 8 (148 reads, 38 min); a full pass not yet measured |
 | Crawling | — | $0.00 |
 | **Total, Engine A** | | **$19.32 for 183 cells — $0.106 per cell** |
 
@@ -425,7 +434,9 @@ Engine A's rented GPUs, and the run record takes the price from the pod. It is n
   The corpus was built by command-line passes that correctly belong to no run, and the only run
   since was cache-only. A fetching run through the interface is the remaining rehearsal.
 - **Engine B reads more slowly than Engine A.** On a rented RTX A5000 it decodes about 20 tokens
-  a second, entirely in GPU memory. A full pass has not been run on it yet.
+  a second, entirely in GPU memory. India pillar 8 took 38 minutes for 148 reads (about 7.5 s for
+  an empty answer, 25–160 s for one with findings) and agrees with ESCAP on 4 of 4 questions, as
+  Engine A does. A full pass has not been run on it yet.
 
 ---
 

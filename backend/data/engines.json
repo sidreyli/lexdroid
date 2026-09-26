@@ -31,6 +31,7 @@
       "checkpoint": "qwen3.8:27b-q4_K_M",
       "hosted": false,
       "hosts": [],
+      "schema": "described",
       "rented": {
         "provider": "RunPod",
         "minGpuMemoryGb": 24,

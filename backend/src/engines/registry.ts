@@ -22,6 +22,11 @@ export interface Engine {
    */
   rented?: Rental;
   declared: boolean;
+  /**
+   * How the engine is held to a JSON schema: by the decoder (the default), or by being shown it.
+   * Qwen 3.8 held by the decoder returns no findings at all; see schemaDecoding in ollama.ts.
+   */
+  schema?: 'constrained' | 'described';
   weaknesses: string;
   notes: string;
 }
