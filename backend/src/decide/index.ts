@@ -18,7 +18,7 @@
  */
 import type { Indicator, ScoreBand } from '../rubric/types.js';
 import type { Finding } from '../read/index.js';
-import { MEASURES, MEASURE_DOMAIN, MEASURE_NAMES, SECTOR_DOMAINS, SUBJECTS, SUBJECT_DOMAIN } from '../rubric/measures.js';
+import { MEASURES, MEASURE_DOMAIN, MEASURE_NAMES, SECTOR_DOMAINS, SUBJECTS, TITLE_CARRIES_DOMAIN, SUBJECT_DOMAIN } from '../rubric/measures.js';
 import { tallyConfirmations, type ConfirmationTally } from '../read/confirmations.js';
 import { inUsd, moneyIn, type FxRates } from './currency.js';
 import { determinesAParticularCase } from '../discover/titles.js';
@@ -1661,7 +1661,8 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
       subject &&
       e.finding.subjectWords !== null &&
       e.finding.subjectWords !== undefined &&
-      sameAnswer(e.finding.subjectWords, e.finding.dutyBearer)
+      sameAnswer(e.finding.subjectWords, e.finding.dutyBearer) &&
+      !actedOnInThePassive(e.finding.quote, e.finding.subjectWords)
     ) {
       ruledOut.push({
         evidence: e,
@@ -1683,7 +1684,7 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     // instrument's title answers the domain for those, and the words answer it for the rest.
     const namesDomain =
       domain !== null &&
-      SECTOR_DOMAINS.has(indicatorId) &&
+      (SECTOR_DOMAINS.has(indicatorId) || TITLE_CARRIES_DOMAIN.has(e.finding.measure ?? '')) &&
       (domain.test(e.instrumentTitle) || domain.test(e.finding.subjectWords ?? ''));
     if (domain && !namesDomain && e.finding.subjectWords && !domain.test(e.finding.subjectWords) && otherLanguage(e)) {
       held.push({
@@ -2153,6 +2154,23 @@ function definedBy(indicatorId: string, measure: string | null): string | null {
  * Null for the two pillars whose subject is already asked for three other ways, and for the
  * catch-all measures that exist to record a ban on something this indicator does not score.
  */
+/**
+ * Whether the quote puts these words in the passive: "the subscriber ... has to be registered".
+ *
+ * The subject of a passive duty is the one it is done to. Whoever must do it is left unsaid -- the
+ * operator, the provider -- and a reader asked who is bound copies the only party the sentence
+ * names. Taken at its word, that made every passive identity duty identify the party bound, and a
+ * rule that all subscribers "has to be registered and authenticated" was ruled out as naming nobody.
+ */
+export function actedOnInThePassive(quote: string | null | undefined, words: string): boolean {
+  const w = words.trim();
+  if (!quote || !w) return false;
+  const at = quote.toLowerCase().indexOf(w.toLowerCase());
+  if (at < 0) return false;
+  const after = quote.slice(at + w.length, at + w.length + 120);
+  return /^\s*(?:\([^)]*\)\s*)?,?\s*(?:has|have|shall|must|is|are|will|should|may)(?: not)?\s+(?:to\s+|only\s+)?be\s+\w+(?:ed|en)\b/i.test(after);
+}
+
 function aboutness(indicatorId: string, measure: string | null): string | null {
   const declared = SUBJECTS[indicatorId];
   if (!declared) return null;

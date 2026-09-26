@@ -1625,7 +1625,9 @@ const CUSTOMS = /\b(import\w*|consign\w*|customs|duty|duties|goods|parcel\w*|shi
  * are the subjects a legal system cannot word its own way, and a measure whose subject is a sector
  * gets none.
  */
-const ONLINE_SERVICE = /\b(internet|online|on-line|web\w*|cyber\w*|e-?commerce|digital (?:service|platform|identity)\w*|platform\w*|social media|search engine\w*|end-?users?)\b/i;
+// An intermediary is the pillar's own name for an online service -- "Internet Intermediary
+// Liability" -- and the law that regulates one calls it that and nothing else.
+const ONLINE_SERVICE = /\b(internet|online|on-line|web\w*|cyber\w*|e-?commerce|digital (?:service|platform|identity)\w*|platform\w*|social media|search engine\w*|end-?users?|intermediar(?:y|ies))\b/i;
 const MOBILE_SUBSCRIPTION =
   /\b(SIM\b|SIM cards?|pre-?paid|cellular|mobile\w*|carriage service\w*|telephon\w*|subscriber\w*|number portab\w*|porting)\b/i;
 
@@ -1761,3 +1763,15 @@ export const SUBJECT_DOMAIN: Readonly<Record<string, RegExp>> = {
  * inside a document stop repeating, not for one they were never going to state.
  */
 export const SECTOR_DOMAINS: ReadonlySet<string> = new Set(['5.5', '5.2', '4.01', '4.2', '4.3']);
+
+/**
+ * Measures whose domain the instrument's title may carry, as a sector's is, though the indicator's
+ * other measures are asked of the words.
+ *
+ * Online identity is named once by the rules that impose it and then called "the user": a set of
+ * intermediary rules requires a platform to "identify such user and verify his identity", and the
+ * user of the platform is the only user it can mean. Asked of "user" alone the domain turned that
+ * away. The university ID rule and the customs declaration MEASURE_DOMAIN was written against are
+ * still turned away -- neither is in an instrument whose title names an online service.
+ */
+export const TITLE_CARRIES_DOMAIN: ReadonlySet<string> = new Set(['user-identity']);

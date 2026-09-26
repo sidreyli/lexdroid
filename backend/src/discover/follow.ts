@@ -21,6 +21,7 @@
  * spaces between words, so it finds nothing in Thai, where only the parent links apply.
  */
 import type { Db } from '../db/index.js';
+import { fuse, searchLexical } from '../index/index.js';
 
 export interface FollowCandidate {
   instrumentId: number;
@@ -135,4 +136,186 @@ export function followCitations(db: Db, opts: FollowOptions): FollowCandidate[] 
     .filter((c) => c.score >= minScore)
     .sort((a, b) => b.score - a.score || b.children - a.children || a.instrumentId - b.instrumentId)
     .slice(0, limit);
+}
+
+export interface DownOptions {
+  economy: string;
+  /** Each indicator's questions. Every indicator gets its own pick, so one pillar cannot take all. */
+  asked: string[][];
+  /** Never returned: already read, or already on their way. */
+  exclude?: Iterable<number>;
+  limit?: number;
+}
+
+export interface DownCandidate {
+  instrumentId: number;
+  title: string;
+  parentId: number;
+  /** The provisions of the parent that led here. */
+  because: string[];
+  /** Other registered versions of the same instrument, best first, to try if this one will not read. */
+  alternates: number[];
+}
+
+/** Acts looked under per indicator, and provisions of each whose headings do the ranking. */
+const PARENTS_PER_QUESTION = 3;
+const HEADINGS_PER_PARENT = 3;
+const SECTION_DEPTH = 12;
+
+/**
+ * The rules made under an Act already read, reached through the provision that answers the question.
+ *
+ * The other direction to `followCitations`. An Act states the power and the rules made under it
+ * state the duty: whether a platform must know who its users are is in the rules, and the Act says
+ * only that an intermediary is exempt if it observes what the rules require. Nothing in those rules'
+ * title matches the question -- they are "guidelines" and an "ethics code" -- and ranking them on
+ * the question's words put them below rules on waste and partnerships.
+ *
+ * So the question picks the provisions, and the provisions pick the rules. The sections read so far
+ * that answer an indicator best name their Acts; the headings of those sections are what the rules
+ * under each Act are ranked on, less every word the rules share with the Act's own title, which
+ * all of them do. "Exemption from liability of intermediary" leaves "intermediary", and among the
+ * forty sets of rules under that Act, the few that say it are the ones that matter.
+ *
+ * A register lists the same rules several times -- as made, as amended, as consolidated on a date.
+ * They are one candidate, and the version dated latest is the one fetched. Words are split on
+ * spaces, so this finds nothing in a script written without them; there it returns no leads.
+ */
+export async function followDown(db: Db, opts: DownOptions): Promise<DownCandidate[]> {
+  const limit = opts.limit ?? 20;
+  const exclude = new Set(opts.exclude ?? []);
+  if (limit <= 0) return [];
+
+  const owner = db.prepare(
+    `SELECT i.id, i.title, i.kind, s.heading_path FROM section s
+       JOIN document d ON d.id = s.document_id
+       JOIN instrument i ON i.id = d.instrument_id
+      WHERE s.id = ?`,
+  );
+  // Delegated law only. A notice or an order made under an Act appoints someone, declares a place
+  // or brings a section into force; the duties are in the rules and regulations.
+  const childrenOf = db.prepare(
+    `SELECT id, title, kind FROM instrument
+      WHERE economy_code = ? AND made_under_instrument_id = ? AND COALESCE(kind, '') NOT IN ('notice', 'order')`,
+  );
+
+  const taken = new Set<string>();
+  const out: DownCandidate[] = [];
+  for (const queries of opts.asked) {
+    if (out.length >= limit) break;
+
+    const parents = new Map<number, { title: string; headings: string[] }>();
+    const hits = fuse(queries.map((q) => searchLexical(db, q, { economy: opts.economy, limit: SECTION_DEPTH })));
+    for (const hit of hits) {
+      const row = owner.get(hit.sectionId) as
+        | { id: number; title: string; kind: string | null; heading_path: string }
+        | undefined;
+      if (!row || row.kind !== 'act') continue;
+      const parent = parents.get(row.id);
+      if (!parent && parents.size >= PARENTS_PER_QUESTION) continue;
+      const p = parent ?? { title: row.title, headings: [] };
+      // The provision's own words, without the number it is filed under.
+      const heading = (row.heading_path.split(' > ').at(-1) ?? '').replace(/^[^\p{L}]*\p{L}+\s+[\p{N}\p{Lu}().-]+\s*[—–:-]\s*/u, '');
+      if (p.headings.length < HEADINGS_PER_PARENT && heading && !p.headings.includes(heading)) p.headings.push(heading);
+      parents.set(row.id, p);
+    }
+
+    // The Acts in the order their provisions answered the question; the first with a rule to offer
+    // is looked under and the rest are not. A score is only comparable among one Act's rules --
+    // its weights come from how many rules that Act has -- and so is only compared there.
+    for (const [parentId, p] of parents) {
+      const children = childrenOf.all(opts.economy, parentId) as { id: number; title: string; kind: string | null }[];
+      if (children.length === 0) continue;
+      const inTitle = new Set(stems(p.title));
+      const childStems = children.map((c) => new Set(stems(c.title)));
+      const idfOf = (t: string): number => {
+        const df = childStems.reduce((n, cs) => n + (cs.has(t) ? 1 : 0), 0);
+        return df > 0 ? Math.log(children.length / df) : 0;
+      };
+
+      // One pick per provision, not one for all of them. Pooled, a long heading about monitoring
+      // traffic data outvoted a short one about intermediaries with all of its words, and the
+      // rules for the short one were the answer.
+      const picks: DownCandidate[] = [];
+      for (const heading of p.headings) {
+        const terms = [...new Set(stems(heading).filter((t) => !inTitle.has(t)))];
+        const weights = terms.map((t) => [t, idfOf(t)] as const).filter(([, w]) => w > 0);
+        if (weights.length === 0) continue;
+
+        const groups = new Map<string, { score: number; members: typeof children }>();
+        children.forEach((c, i) => {
+          let score = 0;
+          for (const [t, w] of weights) if (childStems[i]!.has(t)) score += w;
+          if (score <= 0) return;
+          const key = versionKey(c.title);
+          const g = groups.get(key) ?? { score: 0, members: [] };
+          g.score = Math.max(g.score, score);
+          g.members.push(c);
+          groups.set(key, g);
+        });
+
+        const ranked = [...groups.entries()]
+          // The rules a register lists most often are the ones in force and consolidated, not a
+          // one-off amendment to them.
+          .sort(
+            ([ka, a], [kb, b]) =>
+              b.score - a.score || b.members.length - a.members.length || latestYear(kb) - latestYear(ka),
+          );
+        for (const [key, g] of ranked) {
+          // A version already read or on its way answers for all of them, and for this provision.
+          if (g.members.some((m) => exclude.has(m.id))) break;
+          if (taken.has(key)) break;
+          const [first, ...rest] = [...g.members].sort(latestFirst);
+          if (!first) break;
+          taken.add(key);
+          picks.push({
+            instrumentId: first.id,
+            title: first.title,
+            parentId,
+            because: [heading],
+            alternates: rest.map((m) => m.id),
+          });
+          break;
+        }
+      }
+      if (picks.length > 0) {
+        out.push(...picks.slice(0, limit - out.length));
+        break;
+      }
+    }
+  }
+  return out;
+}
+
+/** Title words stemmed just enough that "intermediaries" meets "intermediary". */
+function stems(s: string): string[] {
+  return normaliseTitle(s)
+    .split(' ')
+    .filter((w) => w.length >= 4 && !/^\d+$/.test(w))
+    .map((w) => w.replace(/ies$/, 'y').replace(/(?<!s)s$/, ''));
+}
+
+/** A title up to and including its first year: what stays the same across versions of it. */
+export function versionKey(title: string): string {
+  const words = normaliseTitle(title).split(' ');
+  const end = words.findIndex((w) => YEAR.test(w));
+  return (end < 0 ? words : words.slice(0, end + 1)).join(' ');
+}
+
+/** The version dated latest first; made law before a notice about it; then the register's order. */
+function latestFirst(
+  a: { id: number; title: string; kind: string | null },
+  b: { id: number; title: string; kind: string | null },
+): number {
+  return (
+    latestYear(b.title) - latestYear(a.title) ||
+    Number(a.kind === 'notice') - Number(b.kind === 'notice') ||
+    a.id - b.id
+  );
+}
+
+function latestYear(title: string): number {
+  let best = 0;
+  for (const m of title.matchAll(/(?<!\d)(1[6-9]|20)\d\d(?!\d)/g)) best = Math.max(best, Number(m[0]));
+  return best;
 }

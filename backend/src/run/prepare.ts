@@ -26,7 +26,7 @@ import { loadProfile, applyProfile } from '../profile/index.js';
 import { register, materialise } from '../discover/index.js';
 import { buildDenseIndex } from '../index/index.js';
 import { buildInstrumentIndex, shortlistInstruments } from '../shortlist/index.js';
-import { followCitations } from '../discover/follow.js';
+import { followCitations, followDown } from '../discover/follow.js';
 import { embedContents, recordParsedContents } from '../contents/index.js';
 import { indicatorsOfPillar, loadRubric } from '../rubric/index.js';
 import { queriesFor } from '../retrieve/index.js';
@@ -52,6 +52,8 @@ export interface PrepareOptions {
    * a provision cites. Zero turns the hop off.
    */
   follow?: number;
+  /** Rules fetched from under the Acts read, one per indicator at most. 0 turns the round off. */
+  down?: number;
   minDelayMs?: number;
   emit?: Emit;
   log?: (line: string) => void;
@@ -65,6 +67,7 @@ export interface PrepareResult {
   shortlisted: number;
   /** Instruments read because what was shortlisted names them, not because a title matched. */
   followed: number;
+  followedDown: number;
   parsed: number;
   unread: number;
   failed: number;
@@ -83,6 +86,7 @@ const EMPTY = (economy: string): PrepareResult => ({
   registered: 0,
   shortlisted: 0,
   followed: 0,
+  followedDown: 0,
   parsed: 0,
   unread: 0,
   failed: 0,
@@ -209,6 +213,35 @@ export async function prepareCorpus(db: Db, opts: PrepareOptions): Promise<Prepa
       );
     }
   }
+  // 3c. And one hop down, from the provisions that answer each indicator to the rules made under
+  // their Acts. The Act holds the power, the rules hold the duty.
+  const downLimit = opts.down ?? 20;
+  if (downLimit > 0) {
+    const leads = await followDown(db, { economy, asked, exclude: wanted, limit: downLimit });
+    out.followedDown = leads.length;
+    if (leads.length > 0) {
+      emit({
+        stage: 'fetch',
+        kind: 'started',
+        economy,
+        detail: `${leads.length} instrument(s) made under what was read`,
+        total: leads.length,
+      });
+      for (const l of leads) {
+        log?.(`  down: ${l.title} (from ${l.because.join('; ')})`);
+        wanted.add(l.instrumentId);
+        let got = await materialise(db, profile, fetcher, { instrumentIds: [l.instrumentId], log });
+        // A consolidated version the portal lists but will not serve; an earlier one says the same.
+        for (const alt of l.alternates) {
+          if (got.some((r) => r.outcome === 'parsed')) break;
+          wanted.add(alt);
+          got = await materialise(db, profile, fetcher, { instrumentIds: [alt], log });
+        }
+        results.push(...got);
+      }
+    }
+  }
+
   const by = (outcome: string) => results.filter((r) => r.outcome === outcome).length;
   out.parsed = by('parsed');
   out.unread = by('unread');
@@ -267,6 +300,6 @@ export function describePrepare(r: PrepareResult): string {
   if (r.notes.some((n) => n.startsWith('cache-only'))) return `  ${r.economy}: cache-only, 0 fetched`;
   return (
     `  ${r.economy}: ${r.registered} registered, ${r.shortlisted} shortlisted, ` +
-    `${r.followed} followed, ${r.parsed} parsed, ${r.embedded} embedded, ${r.fetched} fetched over the network`
+    `${r.followed} followed up, ${r.followedDown} down, ${r.parsed} parsed, ${r.embedded} embedded, ${r.fetched} fetched over the network`
   );
 }
