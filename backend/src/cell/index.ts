@@ -277,6 +277,7 @@ export async function answerPillar(
     const record = await retrieveForIndicator(db, indicator, {
       economy,
       vectors,
+      languages: loadProfile(economy).officialLanguages,
       ...(opts.depth ? { depth: opts.depth } : {}),
       ...(opts.embeddingModel ? { model: opts.embeddingModel } : {}),
     });

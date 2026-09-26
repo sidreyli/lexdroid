@@ -20,6 +20,7 @@
 import type { Db } from '../db/index.js';
 import type { Indicator } from '../rubric/types.js';
 import { MEASURES } from '../rubric/measures.js';
+import { THAI } from './queries-th.js';
 import { shortlistInstruments } from '../shortlist/index.js';
 import { determinesAParticularCase } from '../discover/titles.js';
 import {
@@ -198,23 +199,47 @@ function named(text: string, economyName?: string): string {
  * embeds to the average of everything it mentions, which is close to nothing; the band wordings
  * are the distinctions that decide the score and each deserves its own retrieval.
  */
-export function queriesFor(indicator: Indicator, economyName?: string): string[] {
+export function queriesFor(indicator: Indicator, economyName?: string, languages: readonly string[] = []): string[] {
   const out: string[] = [];
-  const push = (s: string | null | undefined): void => {
-    const t = named((s ?? '').replace(/\s+/g, ' ').trim(), economyName);
+  const push = (s: string | null): void => {
+    if (s === null) return;
+    const t = s.replace(/\s+/g, ' ').trim();
     if (t.length >= 12 && !out.includes(t)) out.push(t);
   };
+  for (const q of asked(indicator, (s) => s)) push(q === null ? null : named(q.replace(/\s+/g, ' ').trim(), economyName));
 
-  const subject = `${indicator.pillarName}: ${indicator.category}`;
-  push(subject);
+  // The same questions in the language the economy legislates in, after the English, so that
+  // every English run keeps the seat it had. A wording with no rendering is not asked in that
+  // language rather than asked half in English.
+  for (const language of languages) {
+    const words = QUERY_WORDS[language];
+    if (!words) continue;
+    for (const q of asked(indicator, (s) => words[s.replace(/\s+/g, ' ').trim()] ?? null)) push(q);
+  }
+  return out;
+}
+
+/** The rubric's retrieval words in each language they have been rendered into, beyond English. */
+const QUERY_WORDS: Record<string, Readonly<Record<string, string>>> = { th: THAI };
+
+/** The questions for one indicator, each wording passed through `say`; null where it has none. */
+function asked(indicator: Indicator, say: (english: string) => string | null): (string | null)[] {
+  const both = (a: string, sep: string, b: string): string | null => {
+    const x = say(a);
+    const y = say(b);
+    return x === null || y === null ? null : `${x}${sep}${y}`;
+  };
+  const out: (string | null)[] = [];
+
+  out.push(both(indicator.pillarName, ': ', indicator.category));
 
   // What the indicator is looking for, said the way a statute would say it. The rubric's own
   // wording names a policy issue; these name an obligation, and provisions are written as
   // obligations. Measured on Singapore, this is the difference between finding the Companies Act's
   // record-keeping duty and not finding it at all -- see rubric/measures.ts.
   for (const measure of MEASURES[indicator.id] ?? []) {
-    push(measure.gloss);
-    for (const extra of measure.alsoAsked ?? []) push(extra);
+    out.push(say(measure.gloss));
+    for (const extra of measure.alsoAsked ?? []) out.push(say(extra));
   }
 
   for (const band of indicator.bands) {
@@ -227,9 +252,20 @@ export function queriesFor(indicator: Indicator, economyName?: string): string[]
     // dense channel scored it 0.62 against Health Information and 0.63 against Application of Act,
     // and the provision the indicator is actually about -- section 26, transfer of personal data
     // outside Singapore -- was pushed out of the fused results by that noise.
-    push(`${indicator.category}. ${band.criterion}`);
+    out.push(both(indicator.category, '. ', band.criterion));
   }
   return out;
+}
+
+/** Every English wording `queriesFor` renders, for holding a translation table to the rubric. */
+export function queryWordings(indicator: Indicator): string[] {
+  const seen: string[] = [];
+  asked(indicator, (s) => {
+    const t = s.replace(/\s+/g, ' ').trim();
+    if (!seen.includes(t)) seen.push(t);
+    return t;
+  });
+  return seen;
 }
 
 /*  The exception is deliberately not a query.
@@ -247,6 +283,8 @@ export interface RetrieveOptions {
   depth?: number;
   vectors?: LoadedVectors;
   model?: string;
+  /** The languages the economy legislates in; each rendered one asks the questions again. */
+  languages?: readonly string[];
 }
 
 /** Whether a shortlisted instrument may be named as governing a question. See the call site. */
@@ -277,7 +315,14 @@ export async function retrieveForIndicator(
   const economyRow = db
     .prepare('SELECT name FROM economy WHERE code = ?')
     .get(opts.economy) as { name: string } | undefined;
-  const queries = queriesFor(indicator, economyRow?.name);
+  // Asked in English, and then asked again in each language the economy legislates in -- as a
+  // second search, not as more of the first. Folded into one fusion, Thailand's Thai questions took
+  // seats the English ones had held, and a correct cell lost the provision it stood on: 4.1 the
+  // Trade Secrets Act's section 35, 5.7 the Frequency Allocation Act's sections 6 and 81. Searched
+  // apart, what the English asks is found exactly as before, and what only Thai reaches is added.
+  const english = queriesFor(indicator, economyRow?.name);
+  const rendered = queriesFor(indicator, economyRow?.name, opts.languages ?? []).slice(english.length);
+  const queries = [...english, ...rendered];
   const vectors = opts.vectors ?? loadVectors(db, { economy: opts.economy, ...(opts.model ? { model: opts.model } : {}) });
 
   const second = otherLanguageCopies(db, opts.economy);
@@ -289,6 +334,88 @@ export async function retrieveForIndicator(
   const suppressed = new Set<number>([...second, ...outlines, ...copies, ...decided]);
   const repeats = duplicateProvisions(db, opts.economy, suppressed);
   const skip = (id: number): boolean => suppressed.has(id) || repeats.has(id);
+  const ask = { depth, perQueryDepth, vectors, skip };
+
+  const first = await seatFor(db, english, opts, ask);
+  const again = rendered.length ? await seatFor(db, rendered, opts, ask) : null;
+  const order = [...first.order];
+  const seen = new Set(order.map((h) => h.sectionId));
+  for (const hit of again?.order ?? []) {
+    if (seen.has(hit.sectionId)) continue;
+    seen.add(hit.sectionId);
+    order.push(hit);
+  }
+  const surfacings = new Map(first.surfacings);
+  for (const [id, list] of again?.surfacings ?? []) surfacings.set(id, [...(surfacings.get(id) ?? []), ...list]);
+  const governing = [...first.governing];
+  for (const g of again?.governing ?? []) if (!governing.some((x) => x.instrumentId === g.instrumentId)) governing.push(g);
+  const surfaced = new Set([...first.fused, ...(again?.fused ?? [])]).size;
+
+  const byId = db.prepare(
+    `SELECT s.id, s.document_id, s.heading_path, s.text, s.anchor,
+            d.instrument_id, i.title AS instrument_title
+       FROM section s
+       JOIN document d ON d.id = s.document_id
+       JOIN instrument i ON i.id = d.instrument_id
+      WHERE s.id = ?`,
+  );
+
+  const sections: RetrievedSection[] = [];
+  for (const hit of order) {
+    const row = byId.get(hit.sectionId) as
+      | {
+          id: number;
+          document_id: number;
+          heading_path: string;
+          text: string;
+          anchor: string | null;
+          instrument_id: number;
+          instrument_title: string;
+        }
+      | undefined;
+    if (!row) continue;
+    sections.push({
+      sectionId: row.id,
+      documentId: row.document_id,
+      instrumentId: row.instrument_id,
+      instrumentTitle: row.instrument_title,
+      headingPath: row.heading_path,
+      text: row.text,
+      anchor: row.anchor,
+      rank: sections.length + 1,
+      channels: hit.channels,
+      found: (surfacings.get(hit.sectionId) ?? []).sort((a, b) => a.rank - b.rank),
+    });
+  }
+
+  return {
+    indicatorId: indicator.id,
+    economy: opts.economy,
+    queries,
+    depth,
+    surfaced,
+    indexedSections,
+    perQueryDepth,
+    governing,
+    sections,
+  };
+}
+
+/**
+ * One search: every query on both channels, fused, each run's best seated, diversified across
+ * instruments, and the governing instruments' seats added, cut to depth.
+ */
+async function seatFor(
+  db: Db,
+  queries: string[],
+  opts: RetrieveOptions,
+  { depth, perQueryDepth, vectors, skip }: { depth: number; perQueryDepth: number; vectors: LoadedVectors; skip: (id: number) => boolean },
+): Promise<{
+  order: { sectionId: number; channels: string[] }[];
+  surfacings: Map<number, Surfacing[]>;
+  governing: RetrievalRecord['governing'];
+  fused: number[];
+}> {
   const runs: SearchHit[][] = [];
   for (const query of queries) {
     const lex = searchLexical(db, query, { limit: perQueryDepth, economy: opts.economy }).filter((h) => !skip(h.sectionId));
@@ -385,54 +512,7 @@ export async function retrieveForIndicator(
     seated: seated.counts.get(c.instrumentId) ?? 0,
   }));
 
-  const byId = db.prepare(
-    `SELECT s.id, s.document_id, s.heading_path, s.text, s.anchor,
-            d.instrument_id, i.title AS instrument_title
-       FROM section s
-       JOIN document d ON d.id = s.document_id
-       JOIN instrument i ON i.id = d.instrument_id
-      WHERE s.id = ?`,
-  );
-
-  const sections: RetrievedSection[] = [];
-  for (const hit of seated.order) {
-    const row = byId.get(hit.sectionId) as
-      | {
-          id: number;
-          document_id: number;
-          heading_path: string;
-          text: string;
-          anchor: string | null;
-          instrument_id: number;
-          instrument_title: string;
-        }
-      | undefined;
-    if (!row) continue;
-    sections.push({
-      sectionId: row.id,
-      documentId: row.document_id,
-      instrumentId: row.instrument_id,
-      instrumentTitle: row.instrument_title,
-      headingPath: row.heading_path,
-      text: row.text,
-      anchor: row.anchor,
-      rank: sections.length + 1,
-      channels: hit.channels,
-      found: (surfacings.get(hit.sectionId) ?? []).sort((a, b) => a.rank - b.rank),
-    });
-  }
-
-  return {
-    indicatorId: indicator.id,
-    economy: opts.economy,
-    queries,
-    depth,
-    surfaced: fused.length,
-    indexedSections,
-    perQueryDepth,
-    governing,
-    sections,
-  };
+  return { order: seated.order, surfacings, governing, fused: fused.map((h) => h.sectionId) };
 }
 
 /** The language the rubric is written in, and so the one a provision is read in where there is a choice. */
