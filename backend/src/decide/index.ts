@@ -304,9 +304,22 @@ const decidesAParticularCase = (e: Evidence): boolean => determinesAParticularCa
 const isPublishedAboutTheLaw = (e: Evidence): boolean => e.instrumentKind === 'publication';
 
 /** A power that may be used is not a requirement that must be met. Read from the verb the finding
- *  quotes, not the mandatory flag beside it -- that flag called "may appoint" mandatory. */
+ *  quotes, not the mandatory flag beside it -- that flag called "may appoint" mandatory.
+ *
+ *  Or from the words the reader says impose it, where those are a mandate. The quote can be the
+ *  clause that sets the scene rather than the one that binds: a transfer section was quoted from
+ *  "where the controller sends or transfers personal data abroad" and filed as permitting, with
+ *  "ต้องมี" -- must have -- copied from the same section as the words imposing the duty, and
+ *  opening the words that define it. Those words are checked to be in the provision before they get
+ *  here, and have to belong to the duty the finding is about: its quote or its defining words. */
 const isRequirement = (f: Finding): boolean =>
-  f.dutyForce === 'requires' || f.dutyForce === 'forbids';
+  f.dutyForce === 'requires' || f.dutyForce === 'forbids' || imposesTheDutyItDefines(f);
+
+function imposesTheDutyItDefines(f: Finding): boolean {
+  const words = f.imposingWords?.trim();
+  if (!words || !MANDATES.test(words) || WAIVES.test(words)) return false;
+  return [f.quote, f.definingWords].some((w) => w?.includes(words));
+}
 
 const band = (indicator: Indicator, ordinal: number): ScoreBand => {
   const b = indicator.bands.find((x) => x.ordinal === ordinal);
@@ -518,7 +531,9 @@ export function statedProportion(words: string | null): 'none' | 'some' | null {
   const figure =
     /\b\d{1,3}(\.\d+)?\s*(%|per ?cent)/.test(t) ||
     /\b(one|two|three|four|five|six|seven|eight|nine|ten|fifteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)\b[ -]*(per ?cent|%)/.test(t) ||
-    /\b(majority|minority|controlling (stake|interest)|half|one[ -]third|two[ -]thirds|one[ -]quarter)\b/.test(t);
+    /\b(majority|minority|controlling (stake|interest)|half|one[ -]third|two[ -]thirds|one[ -]quarter)\b/.test(t) ||
+    // The same figures in Thai, which writes a percentage as ร้อยละ and has no word boundaries.
+    /ร้อยละ\s*[๐-๙0-9]|[๐-๙]+\s*%|กึ่งหนึ่ง|ข้างมาก|ข้างน้อย|หนึ่งในสาม|สองในสาม|หนึ่งในสี่/.test(t);
 
   // A total exclusion is a proportion too -- it is nought -- and it is how the top band is worded.
   const total =
@@ -622,6 +637,8 @@ const BANS_A_LIST =
   /\b(?:set\s+out|specified|listed|described|mentioned|enumerated)\s+in\s+(?:the\s+)?(?:\w+\s+)?(?:Schedule|list|table)\b|\bany\s+of\s+the\s+following\b/i;
 /** Words that put a duty on someone, in the languages of the law read here. Thai is written without spaces between words, so its words stand outside the word boundaries. */
 const MANDATES = /\b(?:shall|must|is required to|are required to|hendaklah|mesti)\b|ต้อง|ห้าม/i;
+/** A mandate word turned into its absence: "need not", "shall not be required to", "ไม่ต้อง". */
+const WAIVES = /\b(?:need not|not be required|not required|tidak perlu)\b|ไม่ต้อง/i;
 /** Words that leave the content of a duty to something specified, prescribed or imposed elsewhere. */
 const DEFERS = /\b(?:in accordance with|specified|prescribed|determined|imposed|issued|conditions of (?:the|a|its) licen[cs]e)\b|กำหนด|ตามหลักเกณฑ์/i;
 /** A figure stated as the default a regulation may replace: "$250 or such other amount as is prescribed". */
@@ -2154,7 +2171,6 @@ function aboutness(indicatorId: string, measure: string | null): string | null {
 function otherLanguage(e: Evidence): string | null {
   return e.sectionLanguage && e.sectionLanguage !== 'en' ? e.sectionLanguage : null;
 }
-
 /**
  * The words a subject must use to be in this indicator's domain, or null where none is declared.
  *
@@ -2178,14 +2194,14 @@ function inDomain(indicatorId: string, measure: string | null): RegExp | null {
  * copied out, because the nationality can sit in the party bound, the limit, or the sector.
  */
 const NATIONALITY =
-  /\b(foreign(er|ers|ly)?|non-?residents?|non-?citizens?|non-?nationals?|overseas|aliens?|citizens?|nationals?|nationality|residents?|residency|domestic|local(ly)?|indigenous|bumiputera|malaysian|singaporean|australian|incorporated in)\b/i;
+  /\b(foreign(er|ers|ly)?|non-?residents?|non-?citizens?|non-?nationals?|overseas|aliens?|citizens?|nationals?|nationality|residents?|residency|domestic|local(ly)?|indigenous|bumiputera|malaysian|singaporean|australian|incorporated in)\b|คนต่างด้าว|ต่างด้าว|ต่างชาติ|สัญชาติ/i;
 
 function namesNationality(f: Finding): boolean {
   return [f.dutyBearer, f.definingWords, f.subjectWords, f.quote].some((w) => w && NATIONALITY.test(w));
 }
 
 /** Words that make a party foreign to the economy, as opposed to merely naming a nationality. */
-const FOREIGN_PARTY = /\b(foreign(er|ers|ly|-owned|-ownership)?|non-?residents?|non-?citizens?|non-?nationals?|overseas|aliens?)\b/i;
+const FOREIGN_PARTY = /\b(foreign(er|ers|ly|-owned|-ownership)?|non-?residents?|non-?citizens?|non-?nationals?|overseas|aliens?)\b|คนต่างด้าว|ต่างด้าว|ต่างชาติ/i;
 
 /**
  * Is the foreign party the one being held, rather than the one holding?

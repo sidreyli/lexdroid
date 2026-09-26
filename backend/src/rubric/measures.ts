@@ -1645,8 +1645,13 @@ const MOBILE_SUBSCRIPTION =
  * survives is what the words describe: an online marketplace, a supply of goods through a website,
  * an e-commerce service.
  */
-const TRADE =
-  /\b(sell\w*|sale|sales|sold|buy\w*|purchas\w*|retail\w*|wholesal\w*|trad(e|er|ers|ing)|commerc\w*|market(place|ing)?|merchant\w*|vendor\w*|supply|supplying|suppliers?|goods|distributive)\b/i;
+const TRADE = new RegExp(
+  [
+    /\b(sell\w*|sale|sales|sold|buy\w*|purchas\w*|retail\w*|wholesal\w*|trad(e|er|ers|ing)|commerc\w*|market(place|ing)?|merchant\w*|vendor\w*|supply|supplying|suppliers?|goods|distributive)\b/.source,
+    'ขาย|ซื้อ|จำหน่าย|ค้าปลีก|ค้าส่ง|การค้า|ผู้ค้า|พาณิชย์|ตลาด|สินค้า',
+  ].join('|'),
+  'i',
+);
 
 /** Both halves, in either order: it has to be trade, and it has to be trade done online. */
 const ONLINE_TRADE = new RegExp(`(?=.*${TRADE.source})(?=.*${ONLINE.source})`, 'i');
