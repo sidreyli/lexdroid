@@ -63,6 +63,17 @@ describe('a host with no robots.txt', () => {
     expect(await delayFor({ status: 429, body: 'Slow down' })).toBe(10_000);
   });
 
+  it('goes at the ordinary pace when the server fails to produce the file', async () => {
+    // India Code answers 500 to every robots.txt request, which cost the register walk 43 minutes.
+    expect(await delayFor({ status: 500, body: 'Internal Server Error' })).toBe(1000);
+    expect(await delayFor({ status: 502, body: 'Bad Gateway' })).toBe(1000);
+    expect(await delayFor({ status: 504, body: 'Gateway Timeout' })).toBe(1000);
+  });
+
+  it('slows down for 503, which is a host asking for it', async () => {
+    expect(await delayFor({ status: 503, body: 'Service Unavailable' })).toBe(10_000);
+  });
+
   it('still obeys a file that is there', async () => {
     expect(await delayFor({ status: 200, body: 'user-agent: *\ncrawl-delay: 6\n' })).toBe(6000);
   });

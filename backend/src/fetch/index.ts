@@ -271,6 +271,15 @@ const SLOWDOWN_MS = 6000;
 const UNKNOWN_ROBOTS_DELAY_MS = 10_000;
 
 /**
+ * A robots.txt the server failed to produce: 500, 502 or 504, the file broken rather than a host
+ * pushing back. India Code answers 500 to every robots.txt request, and at the unknown pace its
+ * register walk and fetches spent 43 of the rehearsal's 59 minutes waiting (26 Sep 2026). These
+ * go at the ordinary one request a second, and a host that then throttles is still slowed by
+ * SLOWDOWN_MS. 503 is the status that means "slow down", so it stays with the unknown pace.
+ */
+const BROKEN_ROBOTS = new Set([500, 502, 504]);
+
+/**
  * How long to wait before asking again after the connection dropped with no answer at all.
  *
  * Short, and short on purpose. A reset is not a host saying no -- it said nothing, and the
@@ -919,7 +928,9 @@ export class Fetcher {
     // rules. Only 404 and 410 say that: 403 and 429 are a host pushing back, which is the opposite.
     const unknown = (): Robots => ({ disallow: [], allow: [], crawlDelayMs: UNKNOWN_ROBOTS_DELAY_MS, fetched: false });
     const noRules = (): Robots => ({ disallow: [], allow: [], crawlDelayMs: null, fetched: true });
+    const broken = (): Robots => ({ disallow: [], allow: [], crawlDelayMs: null, fetched: false });
     let absent = false;
+    let brokenStatus: number | null = null;
 
     let robotsBody: string | null = null;
 
@@ -953,6 +964,9 @@ export class Fetcher {
               null, 2,
             ),
           );
+        } else if (BROKEN_ROBOTS.has(res.status)) {
+          brokenStatus = res.status;
+          s.robots = broken();
         } else {
           s.robots = unknown();
         }
@@ -966,7 +980,9 @@ export class Fetcher {
     this.onLog(
       absent
         ? `  ${host}: no robots.txt, which is a host saying it has no rules: ${delay}ms between requests`
-        : s.robots.fetched
+        : brokenStatus !== null
+          ? `  ${host}: robots.txt answered ${brokenStatus}, a server error rather than a rule: ${delay}ms between requests`
+          : s.robots.fetched
           ? `  ${host}: robots.txt read, ${s.robots.disallow.length} disallow rule(s), ${delay}ms between requests`
           : `  ${host}: robots.txt could not be read. Treating that as unknown rather than permissive: ${delay}ms between requests.`,
     );
