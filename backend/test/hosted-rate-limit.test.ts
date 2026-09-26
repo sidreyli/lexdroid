@@ -98,3 +98,27 @@ describe('a reading refused for a field it left out', () => {
     await expect(hostedGenerate('hi', 'sys')).rejects.toThrow(/400/);
   });
 });
+
+describe('a request larger than the per-minute limit', () => {
+  it('is asked again reserving less output, by as much as it was over', async () => {
+    const reserved: number[] = [];
+    server = createServer((req, res) => {
+      let body = '';
+      req.on('data', (c) => (body += c)).on('end', () => {
+        reserved.push((JSON.parse(body) as { max_tokens: number }).max_tokens);
+        if (reserved.length === 1) {
+          res.writeHead(413, { 'content-type': 'application/json' });
+          res.end(JSON.stringify({ error: { message: 'Request too large for model `m` on tokens per minute (TPM): Limit 8000, Requested 9528, please reduce your message size' } }));
+        } else {
+          res.writeHead(200, { 'content-type': 'application/json' });
+          res.end(OK);
+        }
+      });
+    });
+    await new Promise<void>((r) => server!.listen(0, '127.0.0.1', r));
+    process.env['LEXDROID_HOSTED_BASE_URL'] = `http://127.0.0.1:${(server.address() as AddressInfo).port}/v1`;
+    process.env['LEXDROID_HOSTED_MODEL'] = 'm';
+    expect((await hostedGenerate('hi', 'sys', { maxOutputTokens: 4096 })).text).toBe('ready');
+    expect(reserved).toEqual([4096, 4096 - 1528 - 100]);
+  });
+});

@@ -153,7 +153,20 @@ export async function hostedGenerate(
   // no wait the first 429 retired the only engine and ended the pillar. The wait is the host's own
   // (retry-after, or "try again in 28.9s" in the body), bounded so a daily quota still fails.
   for (let attempt = 0; ; attempt += 1) {
-    const answer = await hostedOnce(config, body, model, started);
+    let answer;
+    try {
+      answer = await hostedOnce(config, body, model, started);
+    } catch (err) {
+      const reserved = (body as { max_tokens?: number }).max_tokens;
+      const smaller = err instanceof TooLarge && reserved ? reserved - err.excess - 100 : 0;
+      if (!(err instanceof TooLarge) || smaller < MIN_RESERVED_TOKENS) {
+        throw err instanceof TooLarge
+          ? new Error(`${config.provider} will never accept this request on the current plan: ${err.detail.slice(0, 300)}`)
+          : err;
+      }
+      (body as { max_tokens?: number }).max_tokens = smaller;
+      continue;
+    }
     if (answer.retryAfterMs === null) return answer.result;
     if (attempt >= RATE_LIMIT_RETRIES || answer.retryAfterMs > MAX_RATE_LIMIT_WAIT_MS) {
       throw new OllamaUnavailable(`${config.provider} answered 429 (rate limited)`, config.baseUrl);
@@ -163,6 +176,19 @@ export async function hostedGenerate(
 }
 
 const RATE_LIMIT_RETRIES = 20;
+
+/** Below this an answer has no room to be one, and the prompt alone is the problem. */
+const MIN_RESERVED_TOKENS = 800;
+
+/** A request over the per-minute limit, by this many tokens, whatever the wait. */
+class TooLarge extends Error {
+  constructor(
+    readonly excess: number,
+    readonly detail: string,
+  ) {
+    super(`request too large by ${excess} tokens`);
+  }
+}
 const MAX_RATE_LIMIT_WAIT_MS = 5 * 60_000;
 
 /** How long a 429 asks us to wait: the header if sent, else the body's "try again in 28.9s". */
@@ -202,7 +228,14 @@ async function hostedOnce(
   // "Request too large" is a 429 that no wait cures: the account's per-minute limit is smaller than
   // one request. Qwen on Groq's free tier refuses every reading this way (1,000 output tokens a
   // minute), so it is said at once rather than waited on for five minutes a provision.
-  if (res.statusCode === 429 && /request too large/i.test(text)) {
+  //
+  // Except where only the output reservation makes it too large. Groq counts the prompt plus
+  // max_tokens against its 8,000 tokens a minute, so a long provision asking for 4,096 back is
+  // refused outright; the caller can ask again reserving less, and an answer that then runs long
+  // is split by the reader like any other overrun.
+  if ((res.statusCode === 429 || res.statusCode === 413) && /request too large/i.test(text)) {
+    const m = /tokens per minute \(TPM\): Limit (\d+), Requested (\d+)/i.exec(text);
+    if (m) throw new TooLarge(Number(m[2]) - Number(m[1]), text);
     throw new Error(`${config.provider} will never accept this request on the current plan: ${text.slice(0, 300)}`);
   }
   if (res.statusCode === 429) return { result: null, retryAfterMs: retryAfter(res.headers['retry-after'], text) };
