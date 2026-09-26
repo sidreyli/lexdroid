@@ -8,7 +8,7 @@ Written 27 September 2026 over the latest full run of each economy:
 | India | `283f457e` | 26 Sep |
 | Thailand | `f8848a01` | 26 Sep, branch `feat/thailand-run` |
 
-Agreement with ESCAP was 215 of 305 cells as run, and is 225 with today's fixes. This document
+Agreement with ESCAP was 215 of 305 cells as run, and is 231 with today's fixes. This document
 sorts the disagreements by **who is right**, because agreement measures the reader, not the law (see `aus-sgp-disagreements.md` for the
 same exercise on an earlier Australia and Singapore run).
 
@@ -24,13 +24,14 @@ plus India's pillar 8 re-read (run `78642831`, which carried the rest of `283f45
 
 | | AUS | MYS | SGP | IND | THA | Total |
 | :-- | --: | --: | --: | --: | --: | --: |
-| Agree | 45 | 49 | 45 | 41 | 45 | **225** |
-| We are wrong | 9 | 10 | 8 | 10 | 12 | **49** |
+| Agree | 48 | 48 | 45 | 42 | 48 | **231** |
+| We are wrong | 6 | 11 | 8 | 9 | 9 | **43** |
 | We are right, ESCAP is not | 3 | 0 | 5 | 3 | 1 | **12** |
 | Contestable | 2 | 1 | 2 | 5 | 2 | **12** |
 | Not answerable from legislation | 2 | 1 | 1 | 2 | 1 | **7** |
 
-So **237 of 305 (78%) are defensible**. 49 cells (16%) are ours to fix.
+So **243 of 305 (80%) are right** (agreement plus our finds), and 262 (86%) are defensible once the contestable and
+unanswerable cells are added. 43 cells (14%) are ours to fix.
 
 Where the ten extra agreements came from, against the 215 the runs recorded:
 - **Five from rule fixes already on master since the Australia, Malaysia and Singapore run:**
@@ -95,7 +96,7 @@ is the highest band legislation can reach.
 
 ## We are wrong
 
-The 49, by cause.
+The 43, by cause.
 
 **The answer rests on the wrong statute, and the right one was never reached (16).** A zero is
 witnessed by an instrument unrelated to the question. Examples: India's other payment restrictions
@@ -110,15 +111,22 @@ provision is usually in the corpus.
 IND 12.01 is the sharpest case: the FDI Circular's "not permitted in inventory based model of
 e-commerce" was read and answered "does not apply".
 
-**We counted a provision about something else (20).** For example: genetically engineered
+**We counted a provision about something else (15).** For example: genetically engineered
 organisms as an ICT import ban (IND 10.1); a `.au` domain licence, a digital-token licence and a
 telecom licence as online-content licences (AUS, SGP, THA 9.4); endangered species and food as ICT
 export controls (SGP 10.4); a maritime radio operator's personal certificate as accepted product
 testing (IND 11.3).
-- AUS 3.1, 9.4, 10.1, 10.2, 11.3
+- AUS 3.1, 11.3
 - SGP 4.1, 9.4, 10.2, 10.4
-- IND 9.4, 10.1, 10.2, 11.3
-- THA 3.4, 4.3, 9.3, 9.4, 10.1, 10.2, 12.4.3
+- IND 10.1, 10.2, 11.3
+- THA 3.4, 4.3, 9.3, 12.4.3
+- MYS 10.1: the ICT import-ban rule below took away an agreement that rested on trademark-infringing goods and
+  the strategic items list. ESCAP's evidence is the Customs (Prohibition of Imports) Order 2023, which the reader
+  reached for 10.2 but not 10.1.
+
+SGP 9.4, IND 10.1, IND 10.2 and SGP 10.2 lost their wrong witness to the rules below and are still wrong: ESCAP's
+evidence is the Broadcasting Act class licence and the DGFT and IMDA import schedules, which were never registered or
+never read.
 
 **Left unanswered where an answer existed (7).** Each rests on a provision held as "could not be
 evaluated": no figure stated, a definition, or a code of practice issued under an Act and filed as
@@ -143,6 +151,9 @@ evaluated": no figure stated, a definition, or a code of practice issued under a
 | A permission or eligibility confined by "only" is a requirement, not a declaration | IND 2.1, 2.3, 12.4.2 | +3, nothing lost |
 | Two RBI Master Directions and the FEMA Receipt and Payment Regulations 2023 had been registered as `guideline` (advisory), `register-url`'s default. Corrected in the India database to `notice` and `regulation` | IND 12.4.5 | +1 |
 | India pillar 8 re-read on current code, which puts the parent Act in front of a framework question (22ad63d, after this run) | IND 8.1, 8.2 | +2. The IT Act s.79 safe harbour is now examined. |
+
+| A licence answers 9.4 only if it licenses online content, applications or platforms, in its words or its instrument's title | AUS, IND, THA 9.4 | +3, nothing lost |
+| An import ban or import quota counts in pillar 10 only on goods it names as ICT | AUS, THA 10.1; AUS, THA 10.2 | +4, −1 (MYS 10.1, above) |
 
 Tried and reverted, because each lost more than it won:
 - Scoring a licence-lifted import prohibition as a licence, not a ban: −2. ESCAP counts approval-gated bans on named telecom equipment.

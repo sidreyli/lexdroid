@@ -1658,6 +1658,20 @@ const TRADE = new RegExp(
 /** Both halves, in either order: it has to be trade, and it has to be trade done online. */
 const ONLINE_TRADE = new RegExp(`(?=.*${TRADE.source})(?=.*${ONLINE.source})`, 'i');
 
+/**
+ * What a licence has to be a licence *for* to be a licence to provide online content.
+ *
+ * Every regulated trade now holds some licence and does its business on a network, so "a licence"
+ * alone answers 9.4 from anything: a domain-name licence in a namespace, a digital token service
+ * licence, a telecommunications right-of-way licence and a certifying authority's licence each
+ * answered it. The indicator asks about providers of online content, applications and platforms,
+ * and the law that licenses one names the service, or names it in its title.
+ */
+const ONLINE_CONTENT = new RegExp(
+  [ONLINE_SERVICE.source, /\b(applications? services?|content applications?|apps?|online games?|news websites?)\b/.source, 'ออนไลน์|อินเทอร์เน็ต|แพลตฟอร์ม|เว็บไซต์|แอปพลิเคชัน'].join('|'),
+  'i',
+);
+
 export const MEASURE_DOMAIN: Readonly<Record<string, RegExp>> = {
   // 8.3's two bands are two subjects: identity to reach a service online, and identity for the
   // mobile subscription the service runs over. Only the top band gets a domain. The band below it
@@ -1669,6 +1683,14 @@ export const MEASURE_DOMAIN: Readonly<Record<string, RegExp>> = {
   // A licence to sell online is narrower than its indicator's "online", for the reason
   // ONLINE_TRADE gives: online is where the business operates, not what it is licensed to do.
   'ecommerce-licence': ONLINE_TRADE,
+  // An import ban or quota counts here only on goods it names as ICT. A customs Act's "the
+  // importation of the goods is prohibited unless a licence ... has been granted", and its quota
+  // orders on "goods of the kind to which the order relates", restrict every good there is; read as
+  // ICT measures they scored the top band in two economies whose ICT imports are not banned. The
+  // indicator's own subject stays unset, for the reason 1.4's note gives: an export control reaches
+  // computers through a schedule and never says so, and 10.4 still has to see it.
+  'ict-import-ban': ICT_GOODS,
+  'import-quota': ICT_GOODS,
 };
 
 /**
@@ -1737,6 +1759,8 @@ export const SUBJECT_DOMAIN: Readonly<Record<string, RegExp>> = {
   // makes use of any confidential information or document" -- a secrecy duty on investigators,
   // read as standards being set behind closed doors.
   '11.1': TECHNICAL_STANDARD,
+  // See ONLINE_CONTENT above: a licence answers 9.4 only when it is a licence to provide online content.
+  '9.4': ONLINE_CONTENT,
   '11.4': /\b(encrypt\w*|cryptograph\w*|cipher\w*|key length|algorithm\w*|AES|DES|RSA|ECC|FIPS|ISO|IEC|ITU)\b/i,
 };
 
@@ -1787,4 +1811,7 @@ export const TITLE_CARRIES_DOMAIN: ReadonlySet<string> = new Set([
   'payment-ceiling',
   'mandated-intermediary',
   'other-payment-restriction',
+  // And an online content licence, for the same reason: the rules that license a platform name it once and then say "the licensee".
+  'content-licence',
+  'strict-content-licence',
 ]);
