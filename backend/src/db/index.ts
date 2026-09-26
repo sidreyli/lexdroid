@@ -93,6 +93,7 @@ const ADDED_COLUMNS: readonly { table: string; column: string; type: string }[] 
   { table: 'framework_reading', column: 'sector_words', type: 'TEXT' },
   { table: 'framework_reading', column: 'sectoral_shown', type: 'INTEGER' },
   { table: 'run', column: 'fx_rates', type: 'TEXT' },
+  { table: 'run', column: 'indicators', type: 'TEXT' },
   { table: 'cell_answer', column: 'confirmations_asked', type: 'INTEGER' },
   { table: 'cell_answer', column: 'confirmations_applied', type: 'INTEGER' },
   { table: 'answer_basis', column: 'quote', type: 'TEXT' },

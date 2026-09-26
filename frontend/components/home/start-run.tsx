@@ -47,6 +47,9 @@ export function StartRun({
   const router = useRouter();
   const [picked, setPicked] = useState<string[]>([economies[0]?.code ?? ""]);
   const [pillar, setPillar] = useState<string>(ALL);
+  // The indicators of the chosen pillar to answer. None picked is every one of them.
+  const [only, setOnly] = useState<string[]>([]);
+  const pillarIndicators = pillars.find((p) => String(p.id) === pillar)?.indicatorIds ?? [];
   const [engine, setEngine] = useState(chosenEngine);
   const [fetchNew, setFetchNew] = useState(true);
   const [starting, setStarting] = useState(false);
@@ -81,6 +84,7 @@ export function StartRun({
         body: JSON.stringify({
           economies: picked,
           pillars: pillar === ALL ? undefined : [Number(pillar)],
+          indicators: pillar === ALL || only.length === 0 ? undefined : only,
           engine,
           cacheOnly: !fetchNew,
           on: target,
@@ -138,6 +142,7 @@ export function StartRun({
               value={pillar}
               onValueChange={(v) => {
                 setPillar(v);
+                setOnly([]);
                 setError(null);
               }}
             >
@@ -178,6 +183,42 @@ export function StartRun({
             </Select>
           </div>
         </div>
+
+        {pillarIndicators.length > 0 ? (
+          <div className="flex flex-col gap-2">
+            <Label className="text-[12.5px] font-medium text-navy-deep">Indicators</Label>
+            <div className="flex flex-wrap gap-2">
+              {pillarIndicators.map((id) => {
+                const on = only.includes(id);
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => {
+                      setError(null);
+                      setOnly((prev) => (prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]));
+                    }}
+                    aria-pressed={on}
+                    className={cn(
+                      "rounded-full px-3 py-1 text-[12.5px] font-medium tabular-nums transition-all duration-150",
+                      "focus-visible:ring-2 focus-visible:ring-navy/40 focus-visible:outline-none",
+                      on
+                        ? "bg-navy text-paper shadow-[0_2px_8px_-3px_rgb(23_50_78/0.5)]"
+                        : "bg-inset text-muted-foreground hover:bg-edge hover:text-navy-deep",
+                    )}
+                  >
+                    {id}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="text-[12px] leading-snug text-muted-foreground">
+              {only.length === 0
+                ? "None picked answers every indicator of the pillar."
+                : `Only ${[...only].sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).join(" and ")} will be read and scored.`}
+            </p>
+          </div>
+        ) : null}
 
         {chosen?.declared && !readOnly ? (
           <div className="flex flex-col gap-2">

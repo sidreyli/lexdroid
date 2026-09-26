@@ -19,7 +19,7 @@ import { amendsAnotherAct, citesADefinition, inheritsAPower, insertsTheQuotedWor
 import { loadProfile } from '../profile/index.js';
 import type { InstrumentType } from '../profile/types.js';
 import type { Indicator } from '../rubric/types.js';
-import { indicatorsOfPillar, loadRubric } from '../rubric/index.js';
+import { chosenIndicators, loadRubric } from '../rubric/index.js';
 import { fuse, loadVectors, searchLexical, type LoadedVectors } from '../index/index.js';
 import { retrieveForIndicator, type RetrievalRecord } from '../retrieve/index.js';
 import { shortlistInstruments } from '../shortlist/index.js';
@@ -155,6 +155,11 @@ export interface AnswerOptions {
    * a caller passes one to hold the set steady across a pillar, or an empty one to score without.
    */
   confirmations?: ConfirmationSet;
+  /**
+   * Only these indicators of the pillar, by id. Absent or empty is the whole pillar. What is read,
+   * examined as a framework and scored is then only what these ask.
+   */
+  indicators?: readonly string[];
 }
 
 interface SectionRow {
@@ -256,8 +261,14 @@ export async function answerPillar(
   // found not to carry the measure is evidence for a zero, and the live run has to see that at the
   // moment it scores -- otherwise the stored score and every later re-derivation of it disagree.
   const confirmations = opts.confirmations ?? loadConfirmations(db, { model: opts.model ?? READING_MODEL });
-  const indicators = indicatorsOfPillar(pillarId, rubric);
-  if (indicators.length === 0) throw new Error(`No indicators in pillar ${pillarId}`);
+  const indicators = chosenIndicators(pillarId, opts.indicators, rubric);
+  if (indicators.length === 0) {
+    throw new Error(
+      opts.indicators?.length
+        ? `None of ${opts.indicators.join(', ')} is in pillar ${pillarId}`
+        : `No indicators in pillar ${pillarId}`,
+    );
+  }
   const pillarName = indicators[0]!.pillarName;
 
   const vectors =

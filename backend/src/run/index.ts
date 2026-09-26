@@ -44,6 +44,8 @@ export interface OpenRunOptions {
   economies: string[];
   /** Pillar ids, or 'all'. Recorded verbatim so a partial run is never mistaken for a full one. */
   pillars: number[] | 'all';
+  /** Only these indicators of those pillars. Absent or empty is all of them. */
+  indicators?: readonly string[];
   model: string;
   engine?: string;
   sourceMode?: 'fetch' | 'cache-only';
@@ -72,8 +74,8 @@ export function openRun(db: Db, opts: OpenRunOptions): RunContext {
   const engine = opts.engine ?? DEFAULT_ENGINE;
   db.prepare(
     `INSERT INTO run (id, started_at, economies, pillars, engine, engine_model, source_mode,
-                      code_revision, rubric_derived_at, status, notes)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?)`,
+                      code_revision, rubric_derived_at, status, notes, indicators)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?)`,
   ).run(
     id,
     new Date().toISOString(),
@@ -85,6 +87,7 @@ export function openRun(db: Db, opts: OpenRunOptions): RunContext {
     codeRevision(),
     loadRubric().derivedAt,
     opts.notes ?? null,
+    opts.indicators?.length ? JSON.stringify(opts.indicators) : null,
   );
   return { id, db, engine, sourceMode: opts.sourceMode ?? 'fetch' };
 }

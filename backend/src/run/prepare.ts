@@ -28,7 +28,7 @@ import { buildDenseIndex } from '../index/index.js';
 import { buildInstrumentIndex, shortlistInstruments } from '../shortlist/index.js';
 import { followCitations, followDown } from '../discover/follow.js';
 import { embedContents, recordParsedContents } from '../contents/index.js';
-import { indicatorsOfPillar, loadRubric } from '../rubric/index.js';
+import { chosenIndicators, loadRubric } from '../rubric/index.js';
 import { queriesFor } from '../retrieve/index.js';
 import { EMBEDDING_MODEL, haveModel, OllamaUnavailable } from '../engines/ollama.js';
 import type { Emit } from './events.js';
@@ -45,6 +45,8 @@ export interface PrepareOptions {
    * that question, so the claim would rest on our word rather than on the log.
    */
   runId?: string;
+  /** Only these indicators of the pillars. Absent or empty is all of them. */
+  indicators?: readonly string[];
   /** How many instruments each question may pull into the corpus. */
   top?: number;
   /**
@@ -157,7 +159,7 @@ export async function prepareCorpus(db: Db, opts: PrepareOptions): Promise<Prepa
   const rubric = loadRubric();
   const asked: string[][] = [];
   for (const p of opts.pillars) {
-    for (const ind of indicatorsOfPillar(p, rubric)) asked.push(queriesFor(ind, undefined, profile.officialLanguages));
+    for (const ind of chosenIndicators(p, opts.indicators, rubric)) asked.push(queriesFor(ind, undefined, profile.officialLanguages));
   }
 
   const top = opts.top ?? 15;

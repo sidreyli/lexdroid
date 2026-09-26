@@ -104,6 +104,34 @@ export function indicatorsOfPillar(id: number, rubric: Rubric = loadRubric()): I
   return rubric.indicators.filter((i) => i.pillarId === id);
 }
 
+/**
+ * The indicators of a pillar a run asks about: every one, or only those named.
+ *
+ * The live test draws one pillar and two of its indicators, and reading the whole pillar for two
+ * answers spends most of the hour on questions nobody asked. An empty or absent list means all.
+ */
+export function chosenIndicators(
+  id: number,
+  only: readonly string[] | null | undefined,
+  rubric: Rubric = loadRubric(),
+): Indicator[] {
+  const all = indicatorsOfPillar(id, rubric);
+  if (!only || only.length === 0) return all;
+  return all.filter((i) => only.includes(i.id));
+}
+
+/**
+ * Indicator ids that are not in the rubric, or not in any of the pillars given. Empty when every
+ * one names an indicator of those pillars, which is what a run may be started with.
+ */
+export function strayIndicators(
+  ids: readonly string[],
+  pillars: readonly number[],
+  rubric: Rubric = loadRubric(),
+): string[] {
+  return ids.filter((id) => !rubric.indicators.some((i) => i.id === id && pillars.includes(i.pillarId)));
+}
+
 /** Every cell owed for one economy: one per regulatory indicator, in ESCAP's own order. */
 export function cellsFor(economy: string, rubric: Rubric = loadRubric()): { economy: string; indicatorId: IndicatorId }[] {
   return rubric.indicators.map((i) => ({ economy, indicatorId: i.id }));

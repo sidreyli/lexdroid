@@ -28,7 +28,7 @@ import {
   workUnits,
   type Unit,
 } from '../src/run/fleet.js';
-import { indicatorsOfPillar, loadRubric } from '../src/rubric/index.js';
+import { chosenIndicators, loadRubric, strayIndicators } from '../src/rubric/index.js';
 import { READING_MODEL } from '../src/engines/ollama.js';
 import { resetEnginePool } from '../src/engines/pool.js';
 import { probeEngine, describeReport, usable, mismatchedEngine, fingerprintOf } from '../src/engines/probe.js';
@@ -49,6 +49,8 @@ loadEnv();
 interface Args {
   economies: string[];
   pillars: number[];
+  /** Only these indicators of the pillars, as the live test asks; empty is all of them. */
+  indicators: string[];
   hosts: string[];
   model: string;
   depth: number | null;
@@ -92,6 +94,7 @@ function parseArgs(argv: string[]): Args {
       .split(',')
       .map((p) => Number(p.trim()))
       .filter((p) => Number.isInteger(p) && p > 0),
+    indicators: (get('indicators') ?? '').split(',').map((i) => i.trim()).filter(Boolean),
     hosts: (get('hosts') ?? engine?.hosts.join(',') ?? process.env['OLLAMA_HOST'] ?? 'http://127.0.0.1:11434')
       .split(',')
       .map((h) => h.trim().replace(/[/]+$/, ''))
@@ -144,6 +147,10 @@ function runUnit(unit: Unit, hosts: string[], runId: string, logDir: string, arg
     '--model',
     args.model,
   ];
+  // Only the named indicators that are in this unit's pillar. A pillar none of them is in is not
+  // a unit at all: the pillars are cut down to the ones the indicators belong to.
+  const mine = args.indicators.filter((id) => id.split('.')[0] === String(unit.pillar));
+  if (mine.length) argv.push('--indicators', mine.join(','));
   if (args.depth) argv.push('--depth', String(args.depth));
   if (args.carryFrom) argv.push('--carry', args.carryFrom);
   if (args.reread) argv.push('--reread', args.reread);
@@ -317,8 +324,18 @@ async function main(): Promise<void> {
 
   // How many indicators a pillar asks about is the size signal available before any of it runs.
   const rubric = loadRubric();
+  if (args.indicators.length) {
+    // Named indicators settle the pillars: a pillar given with none of them in it has nothing to
+    // answer, and one of them outside every pillar given is a typo that would read nothing.
+    const stray = strayIndicators(args.indicators, args.pillars, rubric);
+    if (stray.length) {
+      console.error(`\n${stray.join(', ')} is not an indicator of pillar(s) ${args.pillars.join(', ')}.\n`);
+      process.exit(1);
+    }
+    args.pillars = args.pillars.filter((p) => args.indicators.some((id) => id.split('.')[0] === String(p)));
+  }
   const units = longestFirst(workUnits(args.economies, args.pillars), (u) =>
-    indicatorsOfPillar(u.pillar, rubric).length,
+    chosenIndicators(u.pillar, args.indicators, rubric).length,
   );
 
   const db = openDb();
@@ -329,6 +346,7 @@ async function main(): Promise<void> {
     : openRun(db, {
         economies: args.economies,
         pillars: args.pillars,
+        ...(args.indicators.length ? { indicators: args.indicators } : {}),
         model: args.model,
         ...(args.engine ? { engine: args.engine.id } : {}),
         sourceMode: args.cacheOnly ? ('cache-only' as const) : ('fetch' as const),
@@ -391,6 +409,7 @@ async function main(): Promise<void> {
           economy,
           runId: run.id,
           pillars: args.pillars,
+          ...(args.indicators.length ? { indicators: args.indicators } : {}),
           sourceMode: args.cacheOnly ? 'cache-only' : 'fetch',
           top: args.top,
           emit: (e) => recordEvent(run, e),
