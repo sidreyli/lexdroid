@@ -31,7 +31,7 @@ plus India's pillar 8 re-read (run `78642831`, which carried the rest of `283f45
 | Not answerable from legislation | 2 | 1 | 1 | 2 | 1 | **7** |
 
 So **243 of 305 (80%) are right** (agreement plus our finds), and 262 (86%) are defensible once the contestable and
-unanswerable cells are added. 43 cells (14%) are ours to fix.
+unanswerable cells are added. That counts every agreement; 15 of them rest on the wrong law (below), which leaves 228 (75%). 43 cells (14%) are ours to fix.
 
 Where the ten extra agreements came from, against the 215 the runs recorded:
 - **Five from rule fixes already on master since the Australia, Malaysia and Singapore run:**
@@ -39,6 +39,56 @@ Where the ten extra agreements came from, against the 215 the runs recorded:
   citations include the hazardous-waste and meat import bans next to the real telecom equipment one.
 - **Seven for India from today** (below).
 - **Minus two** where today's payment fix made us disagree, and we are the ones who are right.
+
+## Agreements we did not earn
+
+A matching score is not a matching answer. The final round reports citations, so an agreement that
+rests on the wrong law is a wrong answer that happens to land on ESCAP's number. Every one of the 231
+agreements was checked: our counted instruments against ESCAP's cited ones, then by hand wherever
+they differed.
+
+| | Cells | What it means |
+| :-- | --: | :-- |
+| Same instrument as ESCAP | 53 | Matched by title. |
+| Both find nothing | 114 | Neither side cites a restriction, or both name the same kind of framework. We cannot prove a shared miss wrong. |
+| Different instrument, but a real answer | 49 | A newer or more specific law, the regulations under ESCAP's Act, or the same law under a Thai or renamed title. For example: the 2025 Payment Aggregator Master Direction, which replaced the 2020 guidelines ESCAP cites; Malaysia's Online Safety Act 2025; Singapore's SGNIC registration rules. |
+| **Wrong law** | **12** | The score matches, but the cited provision does not answer the question. |
+| **Score carried by a wrong citation** | **3** | One real measure plus one unrelated one lifts the score into ESCAP's band. |
+
+**Wrong law (12):**
+- AUS 7.1: the Identity Verification Services Rules named as the data protection framework, not the Privacy Act 1988.
+- MYS 11.2: the Digital Signature Act's recognition of foreign certification authorities as EMC product certification.
+- SGP 8.1: the Electronic Transactions Act and Online Safety Act as the copyright safe harbour, not the Copyright Act 2021.
+- IND 6.4: currency export control and customs confidentiality as data transfer conditions. ESCAP cites the IT (Reasonable Security Practices) Rules.
+- IND 12.4.6: a broadcaster's duty to offer subscribers an online payment gateway as a mandated payment intermediary.
+- IND 12.9: the Commercial Courts Act as the online consumer protection framework, not the Consumer Protection Act 2019.
+- THA 3.1: a Bank of Thailand capital rule for foreign bank branches ("do not exceed 10%") as a foreign equity cap.
+- THA 3.5: Thai banks opening branches *abroad* as a commercial presence requirement on foreign suppliers.
+- THA 5.4: accounting separation for Shariah banking windows as telecom accounting separation.
+- THA 8.2: the Copyright Act as the safe harbour for *non*-copyright liability.
+- THA 10.2: the Export and Import of Goods Act's transit ban on unnamed goods as an ICT import restriction.
+- THA 11.2: medical-device declarations of conformity as SDoC for radio and EMC equipment.
+
+**Score carried by a wrong citation (3):**
+- MYS 9.4 (1): the applications service provider licence is right, but the second "scheme" is the cyber-security service provider licence. Alone, the licence gives 0.5.
+- MYS 10.2 (1): SIRIM approval of radio equipment is right, but the second measure is a CITES permit. Alone, it gives 0.5.
+- MYS 11.3 (0.5): the testing duty is right (certification of communications modules), but the acceptance of third-party results comes from reference materials under the National Measurement System Act.
+
+Weak but kept: MYS 3.4 (land and bank-transfer approvals as screening), SGP 4.01 (the agent rule is in the UK-patent
+registration regulations), AUS 12.7 (the quote does not itself show the presence rule), THA 9.4 (a notification
+scheme counted as licensing), THA 11.3 (general industrial product standards, though they include IT equipment),
+and MYS 12.8 (a PDPA representative as local presence).
+
+**So 216 agreements are earned.** With the 12 finds, **228 of 305 (75%) are right**, down from 243.
+
+| | AUS | MYS | SGP | IND | THA | Total |
+| :-- | --: | --: | --: | --: | --: | --: |
+| Earned agreements | 47 | 44 | 44 | 39 | 42 | 216 |
+| Right (earned + finds) | 50 | 44 | 49 | 42 | 43 | 228 |
+
+Most of the 15 are decision-side subject errors of the kind fixed below (a framework indicator taking a law about
+something else, a measure outside its pillar's domain), so they are free to fix. Fixing them will move some scores
+off ESCAP's, where the right law was never read, and that is the honest outcome.
 
 ## Our finds: we are right and ESCAP is not
 
