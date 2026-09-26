@@ -18,7 +18,7 @@
  */
 import type { Indicator, ScoreBand } from '../rubric/types.js';
 import type { Finding } from '../read/index.js';
-import { MEASURES, MEASURE_DOMAIN, MEASURE_NAMES, SECTOR_DOMAINS, SUBJECTS, SUBJECT_DOMAIN } from '../rubric/measures.js';
+import { FRAMEWORK_TITLE_DOMAIN, MEASURES, MEASURE_DOMAIN, MEASURE_NAMES, SECTOR_DOMAINS, SUBJECTS, TITLE_CARRIES_DOMAIN, SUBJECT_DOMAIN } from '../rubric/measures.js';
 import { tallyConfirmations, type ConfirmationTally } from '../read/confirmations.js';
 import { inUsd, moneyIn, type FxRates } from './currency.js';
 import { determinesAParticularCase } from '../discover/titles.js';
@@ -304,9 +304,22 @@ const decidesAParticularCase = (e: Evidence): boolean => determinesAParticularCa
 const isPublishedAboutTheLaw = (e: Evidence): boolean => e.instrumentKind === 'publication';
 
 /** A power that may be used is not a requirement that must be met. Read from the verb the finding
- *  quotes, not the mandatory flag beside it -- that flag called "may appoint" mandatory. */
+ *  quotes, not the mandatory flag beside it -- that flag called "may appoint" mandatory.
+ *
+ *  Or from the words the reader says impose it, where those are a mandate. The quote can be the
+ *  clause that sets the scene rather than the one that binds: a transfer section was quoted from
+ *  "where the controller sends or transfers personal data abroad" and filed as permitting, with
+ *  "ต้องมี" -- must have -- copied from the same section as the words imposing the duty, and
+ *  opening the words that define it. Those words are checked to be in the provision before they get
+ *  here, and have to belong to the duty the finding is about: its quote or its defining words. */
 const isRequirement = (f: Finding): boolean =>
-  f.dutyForce === 'requires' || f.dutyForce === 'forbids';
+  f.dutyForce === 'requires' || f.dutyForce === 'forbids' || imposesTheDutyItDefines(f) || confinesPermission(f);
+
+function imposesTheDutyItDefines(f: Finding): boolean {
+  const words = f.imposingWords?.trim();
+  if (!words || !MANDATES.test(words) || WAIVES.test(words)) return false;
+  return [f.quote, f.definingWords].some((w) => w?.includes(words));
+}
 
 const band = (indicator: Indicator, ordinal: number): ScoreBand => {
   const b = indicator.bands.find((x) => x.ordinal === ordinal);
@@ -510,24 +523,34 @@ function distinctSectors(evidence: Evidence[]): number {
  * Whether the figure is stated from the foreign end or the local end is deliberately not decided
  * here -- "not more than 30% foreign" and "at least 70% local" are one rule, and a reading that
  * took the number alone would put them on opposite rungs. All this says is that a figure is there.
+ *
+ * The quote is asked one question, where the defining words are a bare prohibition: whether what
+ * is not permitted is foreign investment itself. "Foreign investment is not permitted in inventory
+ * based model of e-commerce" states the top rung as plainly as "no shares", and its reader copied
+ * out "not permitted" as the defining words, which alone name no proportion.
  */
-export function statedProportion(words: string | null): 'none' | 'some' | null {
+export function statedProportion(words: string | null, quote: string | null = null): 'none' | 'some' | null {
   if (!words) return null;
   const t = words.toLowerCase().replace(/\s+/g, ' ');
+  const q = (quote ?? '').toLowerCase().replace(/\s+/g, ' ');
 
   const figure =
     /\b\d{1,3}(\.\d+)?\s*(%|per ?cent)/.test(t) ||
     // The same figure in the corpus's other languages: процент (ru), хувь (mn), ສ່ວນຮ້ອຍ (lo).
     /\b\d{1,3}([.,]\d+)?\s*(процент|хувь|ສ່ວນຮ້ອຍ|ເປີເຊັນ)/u.test(t) ||
     /\b(one|two|three|four|five|six|seven|eight|nine|ten|fifteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)\b[ -]*(per ?cent|%)/.test(t) ||
-    /\b(majority|minority|controlling (stake|interest)|half|one[ -]third|two[ -]thirds|one[ -]quarter)\b/.test(t);
+    /\b(majority|minority|controlling (stake|interest)|half|one[ -]third|two[ -]thirds|one[ -]quarter)\b/.test(t) ||
+    // The same figures in Thai, which writes a percentage as ร้อยละ and has no word boundaries.
+    /ร้อยละ\s*[๐-๙0-9]|[๐-๙]+\s*%|กึ่งหนึ่ง|ข้างมาก|ข้างน้อย|หนึ่งในสาม|สองในสาม|หนึ่งในสี่/.test(t);
 
   // A total exclusion is a proportion too -- it is nought -- and it is how the top band is worded.
   const total =
     /\bno (shares?|equity|stake|interest|shareholding)\b/.test(t) ||
     /\b(wholly|entirely|fully) (owned|held)\b/.test(t) ||
     /\b100\s*(%|per ?cent)\b/.test(t) ||
-    /\b(shall|must|may) not\b[^.]{0,40}\bany (shares?|equity|stake|interest)\b/.test(t);
+    /\b(shall|must|may) not\b[^.]{0,40}\bany (shares?|equity|stake|interest)\b/.test(t) ||
+    (/\b(not (be )?(permitted|allowed)|prohibited)\b/.test(t) &&
+      /\b(foreign (direct )?investment|fdi|foreign (equity|ownership|shareholding))\b[^.;]{0,20}\b(not (be )?(permitted|allowed)|prohibited)\b/.test(q));
 
   if (total && !figure) return 'none';
   if (figure) return 'some';
@@ -565,7 +588,7 @@ function equityLadder(
     // be held. Which of the two rungs below it is not decided here, because the figure alone does
     // not say -- "not more than 30% foreign" and "at least 70% local" are one rule read from two
     // ends. So the finding is put back to the reader rather than guessed at.
-    const bans = of(t.ban).filter((e) => statedProportion(e.finding.definingWords) !== 'some');
+    const bans = of(t.ban).filter((e) => statedProportion(e.finding.definingWords, e.finding.quote) !== 'some');
     const minority = of(t.minority);
     const controlling = of(t.controlling);
     const stateOwned = of(t.stateOwnedOnly);
@@ -608,6 +631,28 @@ function equityLadder(
 /** The party a licence is granted to, and the party a patent is granted to. */
 const LICENSEE = /\b(licensee\w*|beneficiar\w* of the (?:compulsory )?licen[cs]e|holder of (?:a|the) (?:compulsory )?licen[cs]e)\b/i;
 const PATENTEE = /\b(patentee\w*|proprietor\w*|owner of the patent|patent (?:holder|owner)\w*)\b/i;
+/** A duty to comply with rules, laws or requirements made somewhere other than this provision. */
+const COMPLY_WITH_RULES =
+  /\bcomply\s+with\s+(?:the\s+|any\s+|all\s+)?(?:prevailing\s+|applicable\s+|relevant\s+|existing\s+)?[\w\s-]{0,50}?\b(?:rules|regulations|laws|requirements|policies|guidelines|directions|notices|standards)\b[^.;]*/i;
+function definedOnlyInAPointer(quote: string, definingWords: string | null): boolean {
+  if (!definingWords) return false;
+  const m = COMPLY_WITH_RULES.exec(quote);
+  if (!m) return false;
+  const pointer = m[0].toLowerCase();
+  const words = definingWords.toLowerCase().trim();
+  return pointer.includes(words) && !quote.toLowerCase().replace(pointer, '').includes(words);
+}
+/** Goods named by a schedule or a list rather than one by one. */
+const BANS_A_LIST =
+  /\b(?:set\s+out|specified|listed|described|mentioned|enumerated)\s+in\s+(?:the\s+)?(?:\w+\s+)?(?:Schedule|list|table)\b|\bany\s+of\s+the\s+following\b/i;
+/** Words that put a duty on someone, in the languages of the law read here. Thai is written without spaces between words, so its words stand outside the word boundaries. */
+const MANDATES = /\b(?:shall|must|is required to|are required to|hendaklah|mesti)\b|ต้อง|ห้าม/i;
+/** A mandate word turned into its absence: "need not", "shall not be required to", "ไม่ต้อง". */
+const WAIVES = /\b(?:need not|not be required|not required|tidak perlu)\b|ไม่ต้อง/i;
+/** Words that leave the content of a duty to something specified, prescribed or imposed elsewhere. */
+const DEFERS = /\b(?:in accordance with|specified|prescribed|determined|imposed|issued|conditions of (?:the|a|its) licen[cs]e)\b|กำหนด|ตามหลักเกณฑ์/i;
+/** A figure stated as the default a regulation may replace: "$250 or such other amount as is prescribed". */
+const REPLACEABLE_FIGURE = /\bor\s+(?:such\s+)?(?:other|another|a\s+different)\s+(?:amount|sum|value|figure)\s+(?:as\s+)?(?:is|may\s+be|that\s+is)\s+(?:prescribed|specified|determined)\b/i;
 
 /** Measures that are a body being established, whose defining words are the body's own name. */
 const BODY_CREATED = new Set(['independent-telecom-authority']);
@@ -794,6 +839,11 @@ const RULES: Record<string, Rule> = {
     const ict = qualifying.filter((e) => e.finding.measure === 'ict-import-ban');
     if (ict.length > 1) {
       return { ordinal: 1, reason: `${ict.length} ICT import bans`, counted: ict };
+    }
+    // A ban on the goods a schedule or list sets out bans every good on it, which is more than one:
+    // "No person shall import any telecommunication equipment set out in the Third Schedule".
+    if (ict.length === 1 && BANS_A_LIST.test(ict[0]!.finding.quote)) {
+      return { ordinal: 1, reason: 'an ICT import ban on the goods a schedule or list sets out', counted: ict };
     }
     if (ict.length === 1) {
       return { ordinal: 2, reason: 'a ban on one product or service', counted: ict };
@@ -1135,7 +1185,13 @@ const RULES: Record<string, Rule> = {
     });
     if (thresholds.length === 0) return { ordinal: 1, reason: 'no de minimis threshold found' };
 
-    const lowest = thresholds.reduce((a, b) => (b.usd < a.usd ? b : a));
+    // A figure the statute states "or such other amount as is prescribed" is a default a regulation
+    // may replace, so it leads only where no figure without that allowance was read. The Customs
+    // Act's "$250 or such other amount as is prescribed" is the law only until a regulation says
+    // otherwise, and the Customs Regulation does: "For subparagraph 68(1)(f)(iii) of the Act, the
+    // amount is $1 000". The lowest of the two would have scored a threshold no goods clear under.
+    const firm = thresholds.filter((t) => !REPLACEABLE_FIGURE.test(`${t.evidence.finding.definingWords ?? ''} ${t.evidence.finding.quote}`));
+    const lowest = (firm.length > 0 ? firm : thresholds).reduce((a, b) => (b.usd < a.usd ? b : a));
     const assumed = lowest.money.assumedCurrency ? ', the provision using a bare symbol' : '';
     const on = ctx?.rates ? ` on the ${ctx.rates.asOf} reference rate` : '';
     const reason =
@@ -1339,6 +1395,27 @@ export function statesDuration(...words: (string | null | undefined)[]): boolean
   return words.some((w) => !!w && (DURATION.test(w) || DURATION_LOCAL.test(w)));
 }
 
+/**
+ * A permission or an eligibility confined to some, which shuts out everyone else.
+ *
+ * "Only 'Class-I local supplier' ... shall be eligible to bid" is a declaration by grammar and was
+ * ruled out as one, and it is the plainest exclusion of foreign bidders a procurement rule can
+ * state: every supplier outside the class may not bid. The word that turns it is "only", next to
+ * the permission or eligibility it narrows.
+ */
+const CONFINED_PERMISSION = new RegExp(
+  [
+    /\b(?:permitted|allowed|authori[sz]ed|eligible|may)\b[^.;]{0,100}\b(?:only|solely|exclusively)\b/.source,
+    /\b(?:only|solely|exclusively)\b[^.;]{0,100}\b(?:permitted|allowed|authori[sz]ed|eligible)\b/.source,
+    '(?:อนุญาต|มีสิทธิ)[^.;]{0,100}เท่านั้น',
+  ].join('|'),
+  'i',
+);
+
+export function confinesPermission(f: Pick<Finding, 'dutyAct' | 'quote'>): boolean {
+  return [f.dutyAct, f.quote].some((w) => !!w && CONFINED_PERMISSION.test(w));
+}
+
 function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
   kept: Evidence[];
   held: { evidence: Evidence; reason: string }[];
@@ -1401,7 +1478,7 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     // exceeding RM500 per user" -- which is the answer ESCAP gives for that cell and is a
     // declaration by grammar. The reader was right about the verb; the gate was asking the wrong
     // measures for one.
-    if (e.finding.dutyForce === 'declares' && !permits(indicatorId, e.finding.measure)) {
+    if (e.finding.dutyForce === 'declares' && !permits(indicatorId, e.finding.measure) && !confinesPermission(e.finding)) {
       ruledOut.push({
         evidence: e,
         reason: `the provision declares what is the case -- "${e.finding.dutyAct}" -- rather than requiring anyone to do anything`,
@@ -1548,7 +1625,14 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     // opposite -- we read the provision and it does not impose this measure -- which is a finding
     // of absence in that provision and evidence for the zero rather than a bar to it.
     const name = e.finding.measure ? MEASURE_NAMES[e.finding.measure] : undefined;
-    if (name && e.finding.definingWords && !name.test(e.finding.definingWords) && otherLanguage(e)) {
+    // Except where the reader, asked about this measure alone, found it in the provision's own
+    // language. Our terms of art are English, so a Thai provision can never say them, and holding
+    // every one of its findings for it left Thailand's Trade Secrets Act, its licence to run a
+    // telecommunications business and its identity checks all reported as unread. The second
+    // question is the one asked in the provision's language, so its yes is the test the English
+    // word cannot be there.
+    const readInItsLanguage = otherLanguage(e) !== null && e.confirmed === true;
+    if (name && e.finding.definingWords && !name.test(e.finding.definingWords) && otherLanguage(e) && !readInItsLanguage) {
       held.push({
         evidence: e,
         reason: `the words "${e.finding.definingWords}" are in ${otherLanguage(e)}, and what makes a provision ${e.finding.measure} is stated only in English`,
@@ -1568,6 +1652,7 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     if (
       name &&
       e.finding.definingWords &&
+      !readInItsLanguage &&
       !name.test(e.finding.definingWords) &&
       !(createsABody && name.test(e.finding.quote ?? ''))
     ) {
@@ -1618,7 +1703,8 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
       subject &&
       e.finding.subjectWords !== null &&
       e.finding.subjectWords !== undefined &&
-      sameAnswer(e.finding.subjectWords, e.finding.dutyBearer)
+      sameAnswer(e.finding.subjectWords, e.finding.dutyBearer) &&
+      !actedOnInThePassive(e.finding.quote, e.finding.subjectWords)
     ) {
       ruledOut.push({
         evidence: e,
@@ -1640,7 +1726,7 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     // instrument's title answers the domain for those, and the words answer it for the rest.
     const namesDomain =
       domain !== null &&
-      SECTOR_DOMAINS.has(indicatorId) &&
+      (SECTOR_DOMAINS.has(indicatorId) || TITLE_CARRIES_DOMAIN.has(e.finding.measure ?? '')) &&
       (domain.test(e.instrumentTitle) || domain.test(e.finding.subjectWords ?? ''));
     if (domain && !namesDomain && e.finding.subjectWords && !domain.test(e.finding.subjectWords) && otherLanguage(e)) {
       held.push({
@@ -1675,7 +1761,7 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     // financial services licence", "limitation on ownership of certain licensees", "The
     // shareholding of the company shall comply with relevant Malaysian foreign investment
     // restrictions" -- a cross-reference to a rule kept somewhere else.
-    if (proportional(indicatorId, e.finding.measure) && statedProportion(e.finding.definingWords) === null) {
+    if (proportional(indicatorId, e.finding.measure) && statedProportion(e.finding.definingWords, e.finding.quote) === null) {
       held.push({
         evidence: e,
         reason: 'the provision states no proportion, and every band of this indicator is a proportion',
@@ -1697,6 +1783,26 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     // a domestic provider must open, are the act the measure describes done by nobody foreign.
     if (restrictsForeigners(indicatorId, e.finding.measure) && !namesNationality(e.finding)) {
       excludeOnWords(`the provision names no foreign party, and this measure is borne by ${actorOf(indicatorId, e.finding.measure) ?? 'a foreign one'}`);
+      continue;
+    }
+    // And the direction of a presence: it has to be one required here. A bank regulator's approval
+    // for a domestic bank "seeking to establish an overseas branch" names a foreign place, which is
+    // why it passed the gate above, and is the opposite measure -- the local firm going out.
+    if (e.finding.measure === 'commercial-presence' && presenceAbroad(e.finding.subjectWords)) {
+      ruledOut.push({
+        evidence: e,
+        reason: `"${e.finding.subjectWords}" is a presence abroad, and this measure is a presence required in the economy`,
+      });
+      continue;
+    }
+    // A patentee barred from putting anti-competitive terms in a licence it grants is limited as a
+    // licensor, not as a patentee enforcing against an infringer. Thailand's Patent Act s.39 was
+    // counted as a restriction on enforcing patents in every sector.
+    if (e.finding.measure === 'patent-enforcement-restriction' && limitsLicenceTerms(e.finding)) {
+      ruledOut.push({
+        evidence: e,
+        reason: 'the provision limits the terms of a licence the patentee grants, not the enforcement of the patent',
+      });
       continue;
     }
     // And the direction of it: the foreign party has to be the one holding, not the one held.
@@ -1762,7 +1868,27 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     }
     // A power to require is not a requirement -- unless the measure the rubric names is itself a
     // power, where nothing is imposed and this hold would swallow every genuine finding.
-    if (!e.finding.imposingWords && !permits(indicatorId, e.finding.measure)) {
+    //
+    // Only where something else is left to impose it, though. A provision that itself requires or
+    // forbids, and names no instrument to do the imposing, empowers nothing: "shall nominate for
+    // the purposes of this Act a representative established in Malaysia" came back with the verb
+    // "requires", mandatory, no prescribing instrument and no imposingWords, and was ruled out as a
+    // power on the empty field alone.
+    // The reader's own fields are not enough to say so -- it also labels "An application for the
+    // registration ... of a registered corporate service provider" as mandatory -- so the quoted
+    // words must carry the duty themselves and must not hand its content to something imposed
+    // elsewhere ("shall ... comply with the standards specified by the Bank", "except in accordance
+    // with the conditions of the licence").
+    // A permission confined by "only" imposes itself too: it shuts everyone else out in the words
+    // quoted, and leaves nothing for another instrument to do.
+    const imposesItself =
+      !e.finding.prescribingWords &&
+      !DEFERS.test(e.finding.quote) &&
+      ((e.finding.mandatory &&
+        (e.finding.dutyForce === 'requires' || e.finding.dutyForce === 'forbids') &&
+        MANDATES.test(e.finding.quote)) ||
+        confinesPermission(e.finding));
+    if (!e.finding.imposingWords && !imposesItself && !permits(indicatorId, e.finding.measure)) {
       ruledOut.push({
         evidence: e,
         reason: `the provision does not impose the requirement itself; it empowers another instrument to impose one`,
@@ -1866,6 +1992,19 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     // was read, and the words it gave are not words about where anything has to be.
     if (locational(indicatorId, e.finding.measure) && !namesAPlace(e.finding.placeWords)) {
       excludeOnWords(`the provision puts the data "${e.finding.placeWords}", which names no country, territory or jurisdiction`);
+      continue;
+    }
+    // A duty to comply with rules made elsewhere is not the requirement those rules make. "An EMI
+    // shall ensure e-money transactions comply with the prevailing foreign exchange rules,
+    // including ... payment in foreign currency between residents" names a currency only inside
+    // its pointer to the rules, and scored a requirement on the currency of international
+    // payments that the provision never states. Where the defining words sit in the pointer, the
+    // measure, if there is one, is in the rules pointed at.
+    if (definedOnlyInAPointer(e.finding.quote, e.finding.definingWords)) {
+      ruledOut.push({
+        evidence: e,
+        reason: 'the provision requires compliance with rules made elsewhere, and the words said to state the measure are only its pointer to them',
+      });
       continue;
     }
     // A measure defined by a border crossing is not made out by a provision where nothing crosses.
@@ -2065,6 +2204,23 @@ function definedBy(indicatorId: string, measure: string | null): string | null {
  * Null for the two pillars whose subject is already asked for three other ways, and for the
  * catch-all measures that exist to record a ban on something this indicator does not score.
  */
+/**
+ * Whether the quote puts these words in the passive: "the subscriber ... has to be registered".
+ *
+ * The subject of a passive duty is the one it is done to. Whoever must do it is left unsaid -- the
+ * operator, the provider -- and a reader asked who is bound copies the only party the sentence
+ * names. Taken at its word, that made every passive identity duty identify the party bound, and a
+ * rule that all subscribers "has to be registered and authenticated" was ruled out as naming nobody.
+ */
+export function actedOnInThePassive(quote: string | null | undefined, words: string): boolean {
+  const w = words.trim();
+  if (!quote || !w) return false;
+  const at = quote.toLowerCase().indexOf(w.toLowerCase());
+  if (at < 0) return false;
+  const after = quote.slice(at + w.length, at + w.length + 120);
+  return /^\s*(?:\([^)]*\)\s*)?,?\s*(?:has|have|shall|must|is|are|will|should|may)(?: not)?\s+(?:to\s+|only\s+)?be\s+\w+(?:ed|en)\b/i.test(after);
+}
+
 function aboutness(indicatorId: string, measure: string | null): string | null {
   const declared = SUBJECTS[indicatorId];
   if (!declared) return null;
@@ -2083,7 +2239,6 @@ function aboutness(indicatorId: string, measure: string | null): string | null {
 function otherLanguage(e: Evidence): string | null {
   return e.sectionLanguage && e.sectionLanguage !== 'en' ? e.sectionLanguage : null;
 }
-
 /**
  * The words a subject must use to be in this indicator's domain, or null where none is declared.
  *
@@ -2107,7 +2262,7 @@ function inDomain(indicatorId: string, measure: string | null): RegExp | null {
  * copied out, because the nationality can sit in the party bound, the limit, or the sector.
  */
 const NATIONALITY =
-  /\b(foreign(er|ers|ly)?|non-?residents?|non-?citizens?|non-?nationals?|overseas|aliens?|citizens?|nationals?|nationality|residents?|residency|domestic|local(ly)?|indigenous|bumiputera|malaysian|singaporean|australian|incorporated in)\b/i;
+  /\b(foreign(er|ers|ly)?|non-?residents?|non-?citizens?|non-?nationals?|overseas|aliens?|citizens?|nationals?|nationality|residents?|residency|domestic|local(ly)?|indigenous|bumiputera|malaysian|singaporean|australian|incorporated in)\b|คนต่างด้าว|ต่างด้าว|ต่างชาติ|สัญชาติ/i;
 
 /**
  * The same categories in Russian, Mongolian and Lao. Stems, matched as substrings: `\b` is ASCII-only
@@ -2135,7 +2290,7 @@ function namesNationality(f: Finding): boolean {
 }
 
 /** Words that make a party foreign to the economy, as opposed to merely naming a nationality. */
-const FOREIGN_PARTY = /\b(foreign(er|ers|ly|-owned|-ownership)?|non-?residents?|non-?citizens?|non-?nationals?|overseas|aliens?)\b/i;
+const FOREIGN_PARTY = /\b(foreign(er|ers|ly|-owned|-ownership)?|non-?residents?|non-?citizens?|non-?nationals?|overseas|aliens?)\b|คนต่างด้าว|ต่างด้าว|ต่างชาติ/i;
 
 /**
  * Is the foreign party the one being held, rather than the one holding?
@@ -2225,6 +2380,20 @@ const EQUITY_INDICATORS: ReadonlySet<string> = new Set(['3.1', '5.2', '12.01']);
 function restrictsForeigners(indicatorId: string, measure: string | null): boolean {
   if (!measure) return false;
   return (MEASURES[indicatorId] ?? []).some((m) => m.token === measure && m.restrictsForeigners === true);
+}
+
+/**
+ * Is this establishment one opened outside the economy? "Overseas" alone is not enough: several
+ * systems call a foreign company an "overseas company", and that is exactly who a presence rule binds.
+ */
+/** Whether a finding restricts what a licence may say, as competition law does, rather than enforcement. */
+export function limitsLicenceTerms(f: Pick<Finding, 'quote' | 'definingWords'>): boolean {
+  const words = `${f.quote ?? ''} ${f.definingWords ?? ''}`;
+  return /\b(restrict\w* (of )?competition|anti-?competitive|licen[cs]e (terms|conditions|agreements?)|licensing (terms|conditions))\b|จำกัดการแข่งขัน/i.test(words);
+}
+
+export function presenceAbroad(subject: string | null): boolean {
+  return /\b(overseas|offshore) (branch|office|subsidiar)\w*|\b(branch|office|subsidiar\w*)\w* (abroad|overseas|outside)\b|สาขาในต่างประเทศ/i.test(subject ?? '');
 }
 
 /** Who the catalogue says bears this measure, for the reason given when it is not borne. */
@@ -2732,9 +2901,16 @@ function decideFramework(input: DecideInput): Decision {
   // cell today, which is luck rather than a rule. Excluded from candidacy altogether rather than
   // demoted to the sectoral band, because an advisory document is not a narrow framework, it is
   // not one at all.
-  const candidates = (input.frameworkEvidence ?? []).filter(
+  const claimed = (input.frameworkEvidence ?? []).filter(
     (f) => f.establishesFramework && f.frameworkShown !== false && f.bindingness !== 'advisory',
   );
+  // And it has to be a framework for this subject -- see FRAMEWORK_TITLE_DOMAIN.
+  const domain = FRAMEWORK_TITLE_DOMAIN[indicator.id];
+  const onSubject = (f: FrameworkEvidence) =>
+    !domain ||
+    ((!domain.must || domain.must.test(f.instrumentTitle)) && (!domain.not || !domain.not.test(f.instrumentTitle)));
+  const candidates = claimed.filter(onSubject);
+  const offSubject = claimed.filter((f) => !onSubject(f));
 
   const unread = coverage.frameworkUnread ?? 0;
   if (coverage.instrumentsConsidered === 0) {
@@ -2796,6 +2972,28 @@ function decideFramework(input: DecideInput): Decision {
       ordinal === lowest
         ? `a framework, which this indicator scores without regard to its reach: ${partial.map((c) => c.instrumentTitle).join(', ')}`
         : `a framework limited in reach or subject: ${partial.map((c) => c.instrumentTitle).join(', ')}`;
+  } else if (offSubject.length > 0) {
+    // The only framework the reading found is a framework for something else. That is not
+    // evidence the economy has none: the instrument that is about the subject was not among those
+    // read, and an absence reported from it would be a claim nobody checked.
+    return {
+      indicatorId: indicator.id,
+      economy,
+      state: 'unresolved',
+      score: null,
+      band: null,
+      basis: [],
+      excluded: [],
+      held: [],
+      frameworkBasis: [],
+      absence: null,
+      coverage,
+      decidingFact: `the only framework found is not about this subject: ${offSubject.map((c) => c.instrumentTitle).join(', ')}`,
+      rationale:
+        `The framework(s) found are named for another subject (${offSubject.map((c) => c.instrumentTitle).join(', ')}), ` +
+        `and none of the ${coverage.instrumentsConsidered} instrument(s) examined is a framework for this one. ` +
+        'Its absence is not reported, because the instrument that would be it was not among those read.',
+    };
   } else if (unread > 0) {
     // The instrument that goes unread is as likely as any to be the framework, and the likelier:
     // the long consolidated Act is the one a reading overruns on.

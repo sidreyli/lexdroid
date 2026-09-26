@@ -50,7 +50,7 @@ export function queryWith<T>(sql: string, params: unknown[]): T[] {
 }
 
 /** Whether the store has a column yet: one written by an older backend has not had it added. */
-function hasColumn(table: string, column: string): boolean {
+export function hasColumn(table: string, column: string): boolean {
   return query<{ name: string }>(`PRAGMA table_info(${table})`).some((c) => c.name === column);
 }
 
@@ -243,9 +243,10 @@ export const liveRuns = cached(() => {
   const unknownUsd = hasColumn("run_cost", "usd_unknown")
     ? "(SELECT COALESCE(MAX(usd_unknown), 0) FROM run_cost rc WHERE rc.run_id = r.id)"
     : "0";
+  const indicators = hasColumn("run", "indicators") ? "r.indicators" : "NULL";
   const rows = query<Record<string, unknown>>(`
     SELECT r.id, r.started_at AS startedAt, r.finished_at AS finishedAt, r.economies,
-           r.pillars, r.engine, r.engine_model AS model, r.source_mode AS sourceMode,
+           r.pillars, ${indicators} AS indicators, r.engine, r.engine_model AS model, r.source_mode AS sourceMode,
            r.code_revision AS codeRevision, r.rubric_derived_at AS rubricDerivedAt,
            r.status, r.notes,
            (SELECT COUNT(*) FROM cell c WHERE c.run_id = r.id) AS cells,
@@ -270,6 +271,7 @@ export const liveRuns = cached(() => {
     rows_: undefined,
     economies: jsonOr(r["economies"], [] as string[]),
     pillars: jsonOr<unknown>(r["pillars"], "all"),
+    indicators: jsonOr<string[] | null>(r["indicators"], null),
     notes: nullIfBlank(r["notes"]),
     stages: stages
       .filter((s) => s.runId === r["id"])

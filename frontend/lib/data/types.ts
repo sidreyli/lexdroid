@@ -217,6 +217,8 @@ export interface Run {
   finishedAt: string | null;
   economies: string[];
   pillars: number[] | "all";
+  /** The indicators asked, when the run asked only some of its pillars' -- as the live test does. */
+  indicators?: string[] | null;
   engine: string;
   model: string;
   sourceMode: "fetch" | "cache-only";

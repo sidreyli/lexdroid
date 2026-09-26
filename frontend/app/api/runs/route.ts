@@ -4,14 +4,19 @@ import { join } from "node:path";
 import { NextResponse } from "next/server";
 import { BACKEND, ENGINES_PATH, TSX_CLI } from "@/lib/data/paths";
 import { readFileSync } from "node:fs";
+import { isReadOnlyDeployment, READ_ONLY_DEPLOYMENT_MESSAGE } from "@/lib/deployment";
 
 export const dynamic = "force-dynamic";
 
 interface StartRun {
   economies?: string[];
   pillars?: number[];
+  /** Only these indicators of the pillars, as the live test draws them. Absent is all of them. */
+  indicators?: string[];
   engine?: string;
   cacheOnly?: boolean;
+  /** Where the engine runs: this machine, or the GPU rented for it from the engine panel. */
+  on?: "local" | "runpod";
 }
 
 const ALL_PILLARS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
@@ -46,6 +51,10 @@ function firstRunId(stdout: NodeJS.ReadableStream): Promise<string> {
 }
 
 export async function POST(request: Request) {
+  if (isReadOnlyDeployment()) {
+    return NextResponse.json({ error: READ_ONLY_DEPLOYMENT_MESSAGE }, { status: 503 });
+  }
+
   let body: StartRun;
   try {
     body = (await request.json()) as StartRun;
@@ -76,6 +85,19 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: `There is no pillar ${badPillar}` }, { status: 400 });
   }
 
+  // Indicator ids go on the same command line, so they are held to the shape an id has, and to
+  // the pillars chosen. Whether each is really in the rubric is the runner's to say, and it does.
+  const indicators = (body.indicators ?? []).map((i) => String(i).trim()).filter(Boolean);
+  const badIndicator = indicators.find(
+    (i) => !/^\d{1,2}\.\d{1,2}$/.test(i) || !pillars.includes(Number(i.split(".")[0])),
+  );
+  if (badIndicator !== undefined) {
+    return NextResponse.json(
+      { error: `${badIndicator} is not an indicator of the pillar${pillars.length > 1 ? "s" : ""} chosen` },
+      { status: 400 },
+    );
+  }
+
   const engine = declaredEngine(body.engine);
   if (!engine) return NextResponse.json({ error: `No engine ${body.engine}` }, { status: 404 });
   if (!engine.declared) {
@@ -95,7 +117,12 @@ export async function POST(request: Request) {
     "--engine",
     engine.id,
   ];
+  if (indicators.length) args.push("--indicators", indicators.join(","));
   if (body.cacheOnly) args.push("--cache-only");
+  if (body.on === "runpod") args.push("--on", "runpod");
+  else if (body.on !== undefined && body.on !== "local") {
+    return NextResponse.json({ error: `Nowhere called ${body.on} to run` }, { status: 400 });
+  }
 
   const logDir = join(BACKEND, "data", "runs");
   mkdirSync(logDir, { recursive: true });

@@ -23,6 +23,9 @@ else
   export OLLAMA_HOST=127.0.0.1:11434
 fi
 
+# The installer looks for the card with lspci to decide whether to fetch the CUDA libraries.
+# Without it, it installs the CPU build and the engine never touches the GPU.
+command -v lspci >/dev/null 2>&1 || { apt-get -qq update && apt-get -qq install -y pciutils; } >/dev/null 2>&1 || true
 command -v ollama >/dev/null 2>&1 || curl -fsSL https://ollama.com/install.sh | sh
 
 pgrep -x ollama >/dev/null 2>&1 || { nohup ollama serve > /var/log/ollama.log 2>&1 & sleep 5; }

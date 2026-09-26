@@ -322,6 +322,28 @@ describe('a prohibition that carries a way through', () => {
     expect(decideWith(i64).score).toBe(1);
   });
 
+  it('is a requirement where the words imposing it are a mandate, though the quote only sets the scene', () => {
+    // Thailand's PDPA s.28, as the reader filed it: quoted from the clause that describes the
+    // transfer, which permits, with "ต้องมี" -- must have -- as the words imposing the duty.
+    const scene = evidence(1, 'พระราชบัญญัติคุ้มครองข้อมูลส่วนบุคคล พ.ศ. 2562', {
+      indicatorId: '6.4',
+      measure: 'transfer-condition',
+      quote: 'ในกรณีที่ผู้ควบคุมข้อมูลส่วนบุคคลส่งหรือโอนข้อมูลส่วนบุคคลไปยังต่างประเทศ',
+      dutyAct: 'ส่งหรือโอน',
+      dutyForce: 'permits',
+      imposingWords: 'ต้องมี',
+      definingWords: 'ต้องมีมาตรฐานการคุ้มครองข้อมูลส่วนบุคคลที่เพียงพอ',
+      placeWords: 'ต่างประเทศ',
+      borderWords: 'ต่างประเทศ',
+    });
+    expect(decide({ indicator: i64, economy: 'THA', evidence: [scene], surfaced, coverage }).score).toBe(1);
+    // And not where the mandate is waived, or belongs to some other duty than the one defined.
+    const waived = { ...scene, finding: { ...scene.finding, imposingWords: 'ไม่ต้อง', definingWords: 'ไม่ต้องมี' } };
+    expect(decide({ indicator: i64, economy: 'THA', evidence: [waived], surfaced, coverage }).score).toBe(0);
+    const elsewhere = { ...scene, finding: { ...scene.finding, definingWords: 'มาตรฐานที่เพียงพอ' } };
+    expect(decide({ indicator: i64, economy: 'THA', evidence: [elsewhere], surfaced, coverage }).score).toBe(0);
+  });
+
   it('stays a ban when nothing lets the transfer happen', () => {
     const outright = {
       ...section26,
@@ -1373,7 +1395,9 @@ describe('a framework indicator, which asks about instruments rather than provis
       indicator: i129,
       economy: 'SGP',
       evidence: [],
-      frameworkEvidence: [instrument({ horizontal: false, sectoralShown: true })],
+      frameworkEvidence: [
+        instrument({ instrumentTitle: 'Consumer Protection (Fair Trading) Act 2003', horizontal: false, sectoralShown: true }),
+      ],
       coverage: examined,
     });
     expect(d.score).toBe(0);

@@ -10,23 +10,36 @@
       "model": "gemma4-lex-16k",
       "checkpoint": "gemma4:12b-it-q4_K_M",
       "hosted": false,
-      "hosts": ["http://127.0.0.1:11434"],
+      "hosts": [
+        "http://127.0.0.1:11434"
+      ],
       "declared": true,
       "weaknesses": "Quantised to 4 bits. Reads a long provision in one pass at 16k context; a longer section is split, and a definition that sits outside the split is not seen.",
-      "notes": "Runs on this machine, or on a GPU rented by the hour. The whole pipeline runs on it alone, which is the Section 3 claim: no proprietary API is called and the weights are open."
+      "notes": "Runs on this machine, or on a GPU the interface rents by the hour. The whole pipeline runs on it alone, which is the Section 3 claim: no proprietary API is called and the weights are open.",
+      "rented": {
+        "provider": "RunPod",
+        "minGpuMemoryGb": 16,
+        "maxUsdPerHour": 0.34
+      }
     },
     {
       "id": "engine-b",
       "label": "Engine B",
-      "kind": "hosted",
-      "provider": "Google",
-      "model": "gemini-3.8-flash",
-      "checkpoint": "gemini-3.8-flash",
-      "hosted": true,
-      "hosts": ["https://generativelanguage.googleapis.com/v1beta/openai"],
+      "kind": "open-weights",
+      "provider": "Ollama on a rented RunPod GPU",
+      "model": "qwen3.8-lex-16k",
+      "checkpoint": "qwen3.8:27b-q4_K_M",
+      "hosted": false,
+      "hosts": [],
+      "schema": "described",
+      "rented": {
+        "provider": "RunPod",
+        "minGpuMemoryGb": 24,
+        "maxUsdPerHour": 0.34
+      },
       "declared": true,
-      "weaknesses": "Proprietary and reached over the network, so a run depends on Google's availability, pricing and rate limits, and on the model version continuing to be served; the weights cannot be inspected or run elsewhere. Pinned to a named version rather than a -latest alias, so the declaration does not change underneath the run. Until 26 September 2026 this declaration named Qwen on Groq (qwen/qwen3-32b, then qwen/qwen3.8-27b after Groq retired the first); the free tier's limit of 1,000 output tokens a minute refused every full-size reading, so that engine could not in practice read.",
-      "notes": "Differs from Engine A in kind on every axis ESCAP names: a commercial hosted model against open weights run locally, a different model and size, and someone else's hardware. One commercial hosted engine and one open-weights engine is the pairing the submission checklist asks for. The Section 3 claim rests on Engine A alone, which runs the whole pipeline with no proprietary API. Needs LEXDROID_HOSTED_API_KEY in the environment; verify with: npm run -w backend engine-check -- --engine engine-b"
+      "weaknesses": "Quantised to 4 bits, like Engine A, and read at the same 16k context, so a long section is split the same way. Served from a GPU rented by the hour: a run depends on RunPod placing a pod, and on that pod's download speed the first time it pulls the weights.",
+      "notes": "Differs from Engine A in kind on the axes ESCAP names: a different model family (Qwen against Gemma), more than twice the size (27B against 12B), and someone else's hardware. Open weights end to end, served by the same Ollama from the same kind of Modelfile (ollama/qwen3.8-lex-16k.Modelfile), so what differs between the two engines is the model and nothing in the pipeline. Started from the interface: it rents the cheapest 24 GB GPU listed under the ceiling, the pod builds this tag itself, and it answers behind a per-pod token on RunPod's HTTPS proxy."
     }
   ]
 }

@@ -91,7 +91,8 @@ The reading engine is stock `gemma4:12b` at a wider context and nothing else; th
 cp .env.example .env
 ```
 
-Engine A needs nothing in it. Engine B is a hosted API and needs one key — see
+Engine A needs nothing in it. Engine B runs on a GPU rented from RunPod and needs a RunPod API
+key, as `api=...` in the root `.env` or `RUNPOD_API_KEY` in the environment — see
 [Your Two Declared Engines](#your-two-declared-engines). The core pipeline runs end to end with
 `.env` untouched, which is the Section 3 claim.
 
@@ -114,6 +115,35 @@ If the run stops immediately saying the engine is unreachable, Ollama is not run
 
 ---
 
+## Deploy to Vercel
+
+From the repository root:
+
+```bash
+npm run deploy
+```
+
+The first deployment asks you to sign in and choose or create a Vercel project. After that, the
+same command deploys straight to production. No environment variables or dashboard build overrides
+are required. Use `npm run deploy:preview` when you want a preview URL instead.
+
+The Vercel site is deliberately a **read-only snapshot**. It includes the recorded analysis,
+workbench, run history, and CSV/XLSX exports, but it does not pretend that Vercel can run the local
+pipeline: LexDroid's worker is long-lived and its SQLite store must persist between requests.
+Starting runs and recording reviews remain available through `npm run dev` on a machine with the
+working store. Set `LEXDROID_READ_ONLY=1` to use the same snapshot mode on another host.
+
+Before deploying, the complete web verification is one command:
+
+```bash
+npm run check:deploy
+```
+
+For Git-based Vercel deployments, choose `frontend` as the project's Root Directory. Its checked-in
+`vercel.json` supplies the remaining settings.
+
+---
+
 ## Your Interface
 
 | What a reviewer needs to do | Where it is |
@@ -123,6 +153,8 @@ If the run stops immediately saying the engine is unreachable, Ollama is not run
 | Follow a row to its official source at the cited article | **Workbench** → row → *Source* → the citation link, which carries the anchor for the section |
 | Accept, reject or correct a row | **Workbench** → row → *Accept* / *Reject*, or edit any field in the finding panel |
 | Switch the AI engine | **Home** → *Start a run* → the **Engine** control |
+| Load an engine into this machine's GPU, or rent one to four GPUs for it | **Home** → *Start a run* → **Runs on** → *Load*, or **GPUs** 1–4 → *Rent GPU*, with each pod's progress and the rent so far |
+| Re-score a finished run under the current rules | **Runs** → a run → *Rescore* (previews the changes before applying them) |
 | Export to the RDTII schema | **Runs** → a run → *Export N rows* |
 
 **Walkthrough recording:** _to be recorded before 30 September._
@@ -135,26 +167,44 @@ Declared in `backend/data/engines.json` and frozen at submission.
 
 | | Engine A | Engine B |
 | :---- | :---- | :---- |
-| Provider and model | Ollama, `gemma4-lex-16k` | Google, `gemini-3.8-flash` |
-| Version / checkpoint | `gemma4:12b-it-q4_K_M` | `gemini-3.8-flash` (a pinned version, not a `-latest` alias) |
-| Local or hosted API | Local (or a GPU rented by the hour) | Hosted API (Gemini's OpenAI-compatible endpoint) |
-| Kind | Open weights | Commercial hosted |
-| Config value | nothing — it is the default | `LEXDROID_HOSTED_API_KEY` in the environment |
+| Provider and model | Ollama, `gemma4-lex-16k` | Ollama on a rented RunPod GPU, `qwen3.8-lex-16k` |
+| Version / checkpoint | `gemma4:12b-it-q4_K_M` | `qwen3.8:27b-q4_K_M` |
+| Where it runs | This machine (16 GB of GPU memory or more), or a rented GPU | A rented GPU with 24 GB or more, at most $0.34/hr |
+| Kind | Open weights | Open weights, on commercial hardware |
+| Config value | nothing — it is the default | a RunPod API key (`api=` in `.env`, or `RUNPOD_API_KEY`) |
 
-They differ in kind on every axis ESCAP names: open weights run locally against a commercial hosted
-model, a different model and size, and someone else's hardware. One commercial hosted and one open
-weights is the pairing checklist item 20 asks for, and the orientation slide's "at least one must be
-open weights" is met by Engine A. The Section 3 claim rests on Engine A alone: the whole pipeline
-runs on it with no proprietary API.
+They differ in kind on every axis ESCAP names: different model family (Gemma against Qwen),
+different size (12B against 27B) and someone else's hardware. Both are open weights, so every
+reading can be reproduced from a pinned checkpoint and a Modelfile in `ollama/`.
 
-Engine B was Qwen on Groq until 26 September 2026. Groq's free tier allows 1,000 output tokens a
-minute, which refused every full-size reading outright, so that engine could not in practice read.
-`gemini-3.8-flash` passed `engine-check` the same day in English, Russian, Mongolian and Lao,
-quoting each untranslated and reading the retention period correctly.
+**Engine B is shown the answer schema instead of being held to it.** Engine A answers under
+Ollama's schema-constrained decoding. Qwen 3.8 under the same constraint returned
+`{"findings": []}` for every provision, including Rule 4 of India's Intermediary Rules ("identify
+such user and verify his identity"), which it reads correctly when left unconstrained. So an
+engine declared `"schema": "described"` in `engines.json` gets the JSON Schema in its system
+prompt, and the JSON object is taken from its answer. An answer with no JSON in it is asked once
+more under the constraint. Every finding still has to pass the same quote check against the
+provision text (`backend/src/engines/ollama.ts`, `schemaDecoding`).
 
-**The API key is never written to a file.** It is read from `LEXDROID_HOSTED_API_KEY` in the
-environment, because a key on disk is a key in a backup. `backend/test/engine-declaration.test.ts`
-asserts the registry file contains no key.
+**Renting the GPU happens in the interface.** *Start a run* → **Runs on** → *Rented GPU* →
+*Rent GPU* rents the cheapest card that fits under the cap, community tier first. The pod installs
+Ollama, builds the engine from the same Modelfile this repository declares, loads it, and refuses
+to report ready unless the whole model is in GPU memory. That takes about six minutes. The panel
+shows each stage and the rent so far, and *Stop GPU* deletes the pod. The pod answers only through
+RunPod's HTTPS proxy, behind a random token (`infra/runpod/pod.py`), and Ollama itself is bound to
+the pod's localhost. From the command line, `npm run -w backend gpu -- start --engine engine-b`
+does the same, and a run with `--on runpod` finds the pods by name.
+
+**More GPUs, less waiting.** **GPUs** picks one to four pods for the engine, each at most the same
+$0.34/hr. A run on them divides the pillar's reads across them, one read per pod at a time, which
+is how every multi-engine run here has been kept from batching reads together. The live test is
+one pillar, so this is the one stage it can shorten: Engine B read Thailand's 11.3 and 11.4 at about
+24 s per provision on one pod. The pods of an engine share one token. A pod that is still loading
+or has failed when the run starts is left out, and the run log says so. `--pods N` on `gpu start`,
+and `--pod ID` on `gpu stop` to give back just one.
+
+**The RunPod key is never sent to the pod or written anywhere else.** `backend/test/gpu-rental.test.ts`
+asserts that the body that creates a pod carries no key.
 
 Verify an engine actually works as declared, through the pipeline's own call path:
 
@@ -178,7 +228,8 @@ The choice is remembered, so a run started from the command line afterwards uses
 The abstraction is `backend/src/engines/ollama.ts`, whose `generate()` branches on whether a hosted
 engine is configured and otherwise behaves identically. Adding a provider means adding a row to
 `engines.json`: anything that speaks the OpenAI chat-completions shape — Groq, Together,
-Fireworks, DeepInfra, Ollama's own `/v1` — already works.
+Fireworks, DeepInfra, Ollama's own `/v1` — already works, with its key read from
+`LEXDROID_HOSTED_API_KEY` and never written to a file.
 
 ### Re-running without fetching
 
@@ -365,7 +416,7 @@ arithmetic.
 | OCR | Tesseract, local | $0.00 |
 | Embedding | bge-m3, local | $0.00 |
 | Mapping — Engine A | `gemma4-lex-16k` on 8 rented GPUs | **$19.32** |
-| Mapping — Engine B | `gemini-3.8-flash` on Google | not yet measured |
+| Mapping — Engine B | `qwen3.8-lex-16k` on a rented RTX A5000 | $0.18 for India pillar 8 (148 reads, 38 min); a full pass not yet measured |
 | Crawling | — | $0.00 |
 | **Total, Engine A** | | **$19.32 for 183 cells — $0.106 per cell** |
 
@@ -380,8 +431,8 @@ The corpus behind those cells — 4,045 documents, 162,901 sections — was buil
 fetches over several days, at $0.00: bandwidth off government portals is the only resource spent,
 which is exactly why the crawler is careful with it.
 
-**Engine B has not been billed yet.** Google prices `gemini-3.8-flash` per token; the cost of a
-comparison pass will be filled in once the engine has been run. It is not estimated here.
+**Engine B has not been billed for a full pass yet.** It bills by the hour the pod is held, like
+Engine A's rented GPUs, and the run record takes the price from the pod. It is not estimated here.
 
 ---
 
@@ -434,17 +485,10 @@ comparison pass will be filled in once the engine has been run. It is not estima
   attributed to `fetch_log.run_id`, which is what the Run Record reports and what C5a is scored on.
   The corpus was built by command-line passes that correctly belong to no run, and the only run
   since was cache-only. A fetching run through the interface is the remaining rehearsal.
-- **Engine B's declaration was wrong until 21 September 2026, and only calling it found that.**
-  It was declared as `qwen/qwen3-32b`; the first live `engine-check` returned
-  `model_not_found` — Groq had retired that model. It then named `qwen/qwen3.8-27b`, which answered
-  `engine-check` but, on Groq's free tier, refused every full-size reading (1,000 output tokens a
-  minute). On 26 September 2026 it was re-declared as `gemini-3.8-flash`, which passes all checks
-  in English, Russian, Mongolian and Lao. A hosted engine can be withdrawn under a frozen
-  declaration in a way a local one cannot, so Engine B should be re-checked shortly before
-  30 September rather than assumed to still exist.
-- **Engine B is verified but not yet billed.** `engine-check` proves it answers, quotes and reads
-  correctly; no scored run has used it, so the per-token cost in Measured Cost is still blank
-  rather than estimated.
+- **Engine B reads more slowly than Engine A.** On a rented RTX A5000 it decodes about 20 tokens
+  a second, entirely in GPU memory. India pillar 8 took 38 minutes for 148 reads (about 7.5 s for
+  an empty answer, 25–160 s for one with findings) and agrees with ESCAP on 4 of 4 questions, as
+  Engine A does. A full pass has not been run on it yet.
 
 ---
 

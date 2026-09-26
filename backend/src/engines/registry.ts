@@ -5,6 +5,7 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import type { Rental } from '../gpu/runpod.js';
 
 export interface Engine {
   id: string;
@@ -15,7 +16,17 @@ export interface Engine {
   checkpoint: string;
   hosted: boolean;
   hosts: string[];
+  /**
+   * Where it can be rented, and what it needs there. An engine with no hosts of its own is served
+   * only from a rented GPU, which the interface starts and the fleet finds by the engine's id.
+   */
+  rented?: Rental;
   declared: boolean;
+  /**
+   * How the engine is held to a JSON schema: by the decoder (the default), or by being shown it.
+   * Qwen 3.8 held by the decoder returns no findings at all; see schemaDecoding in ollama.ts.
+   */
+  schema?: 'constrained' | 'described';
   weaknesses: string;
   notes: string;
 }

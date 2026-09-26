@@ -5,20 +5,20 @@
  * an English or Malay economy asks the same questions and checks quotes the same way it did.
  */
 import { describe, expect, it } from 'vitest';
-import { subjectQueries } from '../src/read/index.js';
+import { subjectQueries, subjectQueriesIn } from '../src/read/index.js';
 import { quoteIsInSection } from '../src/read/index.js';
 import { wholeWordAt } from '../src/util/locate.js';
 
 describe('an English economy after the three new ones', () => {
   it('asks exactly the framework queries it asked before', () => {
     expect(subjectQueries('data-protection').slice(1)).toEqual(['personal data', 'personal information', 'data protection', 'privacy']);
-    expect(subjectQueries('data-protection', ['en']).slice(1)).toEqual(['personal data', 'personal information', 'data protection', 'privacy']);
-    expect(subjectQueries('data-protection', ['ms', 'en']).length).toBe(5);
+    expect(subjectQueriesIn('data-protection', ['en']).slice(1)).toEqual(['personal data', 'personal information', 'data protection', 'privacy']);
+    expect(subjectQueriesIn('data-protection', ['ms', 'en']).length).toBe(5);
   });
 
   it('asks the local terms only of an economy that publishes in that language', () => {
-    expect(subjectQueries('data-protection', ['mn'])).toContain('хувийн мэдээлэл');
-    expect(subjectQueries('data-protection', ['ru'])).not.toContain('хувийн мэдээлэл');
+    expect(subjectQueriesIn('data-protection', ['mn'])).toContain('хувийн мэдээлэл');
+    expect(subjectQueriesIn('data-protection', ['ru'])).not.toContain('хувийн мэдээлэл');
   });
 
   it('keeps a list marker in an English quote where it was', () => {

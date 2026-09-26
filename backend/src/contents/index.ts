@@ -176,6 +176,54 @@ export function contentsFromParsedSections(db: Db, instrumentId: number): string
   return rows.map((r) => r.heading_path);
 }
 
+/**
+ * Contents for every instrument already parsed, taken from its own sections at no request.
+ *
+ * Free work must never be queued behind work that can be refused. Taking these inside a fetch loop
+ * looked equivalent and was not: the loop walks the register in order, so a free instrument at
+ * position 350 waits behind 349 paid ones, and when the host stops answering at position 90 it is
+ * never reached at all. That is how the Personal Data Protection Act -- the most-cited instrument
+ * in two of the pillars, with 86 sections already parsed and stored -- ended a full crawl with no
+ * contents and fell from rank 1 to rank 39 for want of an artefact we were already holding.
+ *
+ * And it has to happen in a run, not only in the contents crawl. India's Information Technology Act
+ * was parsed, 125 sections, and never given contents, so the framework ranking -- which reads
+ * contents -- could not see section 79's safe harbour and examined the Dam Safety Act instead.
+ *
+ * With no ids, every instrument of the economy that has sections and no contents. Returns the ids
+ * given contents.
+ */
+export function recordParsedContents(db: Db, ids: number[] | { economy: string }): Set<number> {
+  const candidates = Array.isArray(ids)
+    ? ids
+    : (
+        db
+          .prepare(
+            `SELECT DISTINCT d.instrument_id id FROM document d JOIN instrument i ON i.id = d.instrument_id
+              WHERE i.economy_code = ?
+                AND NOT EXISTS (SELECT 1 FROM instrument_contents c WHERE c.instrument_id = i.id)`,
+          )
+          .all(ids.economy) as { id: number }[]
+      ).map((r) => r.id);
+  const url = db.prepare('SELECT source_url FROM instrument WHERE id = ?');
+  const insert = db.prepare(
+    `INSERT OR REPLACE INTO instrument_contents
+       (instrument_id, headings, heading_count, source_url, extractor, fetched_at)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+  );
+  const done = new Set<number>();
+  db.transaction(() => {
+    for (const id of candidates) {
+      const parsed = contentsFromParsedSections(db, id);
+      if (parsed.length === 0) continue;
+      const row = url.get(id) as { source_url: string } | undefined;
+      insert.run(id, JSON.stringify(parsed), parsed.length, row?.source_url ?? '', 'parsed-sections', new Date().toISOString());
+      done.add(id);
+    }
+  })();
+  return done;
+}
+
 export interface ContentsProgress {
   fetched: number;
   fromParsed: number;
@@ -514,26 +562,10 @@ export async function buildContents(
   log(`  ${order.length} instrument(s) without contents`);
 
   // Every free one first, in a sweep of its own, before a single request leaves the machine.
-  //
-  // A document we already parsed has told us its headings, so its contents cost nothing. Taking
-  // them inside the fetch loop looked equivalent and was not: the loop walks the register in
-  // order, so a free instrument sitting at position 350 waits behind 349 paid ones, and when the
-  // host stops answering at position 90 it is never reached at all. That is how the Personal Data
-  // Protection Act -- the most-cited instrument in two of the pillars, with 86 sections already
-  // parsed and stored -- ended a full crawl with no contents and fell from rank 1 to rank 39 for
-  // want of an artefact we were already holding.
-  //
-  // Free work must never be queued behind work that can be refused.
-  const needsFetch: typeof order = [];
-  for (const inst of order) {
-    const parsed = contentsFromParsedSections(db, inst.id);
-    if (parsed.length > 0) {
-      insert.run(inst.id, JSON.stringify(parsed), parsed.length, inst.source_url, 'parsed-sections', new Date().toISOString());
-      progress.fromParsed += 1;
-    } else {
-      needsFetch.push(inst);
-    }
-  }
+  // Why that order matters is on `recordParsedContents`.
+  const free = recordParsedContents(db, order.map((o) => o.id));
+  progress.fromParsed = free.size;
+  const needsFetch = order.filter((o) => !free.has(o.id));
   if (progress.fromParsed > 0) {
     log(`  ${progress.fromParsed} taken from documents already parsed, at no request`);
   }

@@ -14,7 +14,7 @@
  * here. Keyed by the English query itself, so a rubric edit that changes a query leaves that query
  * untranslated -- visibly, in the table's coverage -- rather than asking a stale translation.
  */
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -59,6 +59,7 @@ export function loadTranslations(economy: string): QueryTranslations | null {
 
 /** Forget what was read, for a test or a script that has just written a table. */
 export function clearTranslations(): void {
+  byLanguage.clear();
   cache.clear();
 }
 
@@ -73,4 +74,40 @@ export function translatedQueries(economy: string, english: readonly string[]): 
     }
   }
   return out;
+}
+
+const byLanguage = new Map<string, string | null>();
+
+/**
+ * The economy whose table is in this language, or null. Retrieval is handed the languages an
+ * economy legislates in, not its code, so the table is found by the language written inside it.
+ * One table per language: MNG is Mongolian, RUS Russian, LAO Lao.
+ */
+function economyForLanguage(language: string): string | null {
+  if (byLanguage.has(language)) return byLanguage.get(language)!;
+  const dir = process.env['LEXDROID_QUERY_TRANSLATIONS_DIR'] ?? DIR;
+  let found: string | null = null;
+  if (existsSync(dir)) {
+    for (const file of readdirSync(dir)) {
+      if (!file.endsWith('.json')) continue;
+      const code = file.slice(0, -'.json'.length);
+      if (loadTranslations(code)?.language === language) {
+        found = code;
+        break;
+      }
+    }
+  }
+  byLanguage.set(language, found);
+  return found;
+}
+
+/** Whether one of our tables renders the questions into this language. */
+export function hasTranslationTable(language: string): boolean {
+  return economyForLanguage(language) !== null;
+}
+
+/** The questions in this language, where a table holds them; empty where none does. */
+export function translatedQueriesIn(language: string, english: readonly string[]): string[] {
+  const economy = economyForLanguage(language);
+  return economy ? translatedQueries(economy, english) : [];
 }

@@ -84,6 +84,34 @@ describe('parsing a Council of State law', () => {
     expect(reg.sections[1]!.text).toContain('ความต่อพนักงาน');
   });
 
+  it('keeps a regulation whose clauses the service types one by one, and its annexes', () => {
+    const reg = parseOcs(JSON.stringify({
+      sourceUrl: 'u',
+      doc: {
+        lawInfo: { lawNameTh: 'กฎกระทรวงกำหนดพัสดุ พ.ศ. 2563' },
+        lawSections: [
+          section(1, 1, 'ชื่อกฎหมาย', '<p>กฎกระทรวง</p>'),
+          section(2, 17, 'บทอาศัยอำนาจ', '<p>อาศัยอำนาจตามความในมาตรา ๕</p>'),
+          section(3, 10, 'ข้อ 1', '<p>ข้อ ๑ ให้ยกเลิกกฎกระทรวงเดิม</p>'),
+          section(4, 8, 'หมวด / หมวดที่ 1', '<p>หมวด ๑</p><p>พัสดุส่งเสริมนวัตกรรม</p>'),
+          section(5, 10, 'ข้อ 3', '<p>ข้อ ๓ ให้พัสดุดังต่อไปนี้ เป็นพัสดุที่รัฐต้องการส่งเสริมหรือสนับสนุน</p>'),
+          section(6, 16, 'บัญชีท้ายกฎกระทรวงฯ', '<p>บัญชีรายการพัสดุ</p>'),
+          section(7, 16, 'ชื่อกฎหมาย ฉบับที่ 2', '<p>กฎกระทรวงกำหนดพัสดุ (ฉบับที่ ๒) พ.ศ. ๒๕๖๓</p>'),
+          section(8, 10, 'ข้อ 2', '<p>ข้อ ๒ กฎกระทรวงนี้ให้ใช้บังคับตั้งแต่วันถัดจากวันประกาศ</p>'),
+        ],
+      },
+    }), 'u');
+    expect(reg.sections.map((s) => s.label)).toEqual([
+      null,
+      'ข้อ 1',
+      'ข้อ 3',
+      null,
+      'ข้อ 2 [กฎกระทรวงกำหนดพัสดุ (ฉบับที่ ๒) พ.ศ. ๒๕๖๓]',
+    ]);
+    expect(reg.sections[2]!.headingPath).toContain('พัสดุส่งเสริมนวัตกรรม');
+    expect(reg.sections[3]!.text).toContain('บัญชีรายการพัสดุ');
+  });
+
   it('records a law with no sections as unread rather than empty', () => {
     const none = parseOcs(JSON.stringify({ sourceUrl: 'u', doc: { lawInfo: { lawNameTh: 'x' }, lawSections: [] } }), 'u');
     expect(none.sections).toEqual([]);

@@ -93,6 +93,7 @@ const ADDED_COLUMNS: readonly { table: string; column: string; type: string }[] 
   { table: 'framework_reading', column: 'sector_words', type: 'TEXT' },
   { table: 'framework_reading', column: 'sectoral_shown', type: 'INTEGER' },
   { table: 'run', column: 'fx_rates', type: 'TEXT' },
+  { table: 'run', column: 'indicators', type: 'TEXT' },
   { table: 'cell_answer', column: 'confirmations_asked', type: 'INTEGER' },
   { table: 'cell_answer', column: 'confirmations_applied', type: 'INTEGER' },
   { table: 'answer_basis', column: 'quote', type: 'TEXT' },
@@ -102,6 +103,9 @@ const ADDED_COLUMNS: readonly { table: string; column: string; type: string }[] 
   { table: 'run_cost', column: 'usd_unknown', type: 'INTEGER NOT NULL DEFAULT 0' },
   { table: 'fetch_log', column: 'method', type: "TEXT NOT NULL DEFAULT 'GET'" },
   { table: 'document', column: 'ocr_confidence', type: 'REAL' },
+  // What each fetch returned, for the Run Record's file type: the URL of an API or a register
+  // search says nothing about it, and a guessed type is a wrong line in the list ESCAP checks.
+  { table: 'fetch_log', column: 'media_type', type: 'TEXT' },
 ];
 
 function addMissingColumns(db: Db): void {

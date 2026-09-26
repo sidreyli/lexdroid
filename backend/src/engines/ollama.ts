@@ -16,6 +16,7 @@ import { cacheEnabled, cacheGet, cacheKey, cachePut, resumePath } from './cache.
 import { enginePool, engineHosts } from './pool.js';
 import { OllamaUnavailable } from './errors.js';
 import { hostedConfig, hostedGenerate } from './hosted.js';
+import { loadEngines } from './registry.js';
 export { OllamaUnavailable, NoEnginesLeft } from './errors.js';
 
 /**
@@ -201,7 +202,11 @@ async function once<T>(host: string, path: string, body: unknown, timeoutMs: num
     });
     const text = await res.body.text();
     if (res.statusCode >= 400) throw new Error(`HTTP ${res.statusCode}: ${text.slice(0, 300)}`);
-    return JSON.parse(text) as T;
+    const parsed = JSON.parse(text) as T & { error?: unknown };
+    // A rented engine's proxy has sent its status line before the answer exists, so a failure
+    // arrives as a 200 whose body is only an error. Read as an answer, it was an empty one.
+    if (typeof parsed.error === 'string') throw new Error(`engine: ${parsed.error.slice(0, 300)}`);
+    return parsed;
   } catch (err) {
     const message = failureText(err);
     // Stall first: a prompt the engine took and did not answer costs that provision, not the link.
@@ -306,6 +311,79 @@ export interface GenerateOptions {
    * it, and open-ended deliberation is where a reader stops reading and starts speculating.
    */
   think?: boolean;
+  /** How the engine is held to the schema, where not as its declaration says. */
+  decoding?: SchemaDecoding;
+}
+
+/**
+ * How an engine is held to the schema: by the decoder, or by being shown it.
+ *
+ * Constrained is the default, and Engine A reads well under it. Qwen 3.8 does not: on Rule 4 of
+ * India's Intermediary Rules, the provision that decides 8.3, it answered `{"findings": []}` in
+ * seven tokens every time it was constrained. Unconstrained, the same engine at the same
+ * temperature named the duty ("identify such user and verify his identity") and the others around
+ * it. So for an engine declared `"schema": "described"`, the schema goes in the system prompt, the
+ * answer is read as JSON wherever it sits in the text, and only an answer that holds no JSON is
+ * asked again under the decoder.
+ */
+export type SchemaDecoding = 'constrained' | 'described';
+
+let declared: Map<string, SchemaDecoding> | null = null;
+
+export function schemaDecoding(model: string): SchemaDecoding {
+  const forced = process.env['LEXDROID_SCHEMA_DECODING'];
+  if (forced === 'constrained' || forced === 'described') return forced;
+  declared ??= new Map(loadEngines().engines.map((e) => [e.model, e.schema ?? 'constrained']));
+  return declared.get(model.replace(/:latest$/, '')) ?? 'constrained';
+}
+
+/** What the engine is told when the decoder does not hold it to the schema. */
+export function describedSchema(system: string, schema: unknown): string {
+  return [
+    system,
+    '',
+    'Answer with one JSON object and nothing else: no code fence, and no words before or after it.',
+    'Write every field as a JSON string, number, boolean or null. The object must satisfy this JSON Schema:',
+    JSON.stringify(schema),
+  ].join('\n');
+}
+
+/**
+ * The JSON object in an answer, or null when there is none.
+ *
+ * An engine asked for JSON in words, rather than held to it by the decoder, sometimes fences it in
+ * Markdown or says a sentence first. The object itself is taken from the first brace to the brace
+ * that closes it, strings respected; anything else is not an answer and is not guessed at.
+ */
+export function jsonIn(text: string): string | null {
+  const whole = text.trim();
+  try {
+    if (typeof JSON.parse(whole) === 'object') return whole;
+  } catch {
+    // Not bare JSON; look inside it.
+  }
+  for (let start = whole.indexOf('{'); start !== -1; start = whole.indexOf('{', start + 1)) {
+    let depth = 0;
+    let inString = false;
+    for (let i = start; i < whole.length; i += 1) {
+      const c = whole[i];
+      if (inString) {
+        if (c === '\\') i += 1;
+        else if (c === '"') inString = false;
+      } else if (c === '"') inString = true;
+      else if (c === '{') depth += 1;
+      else if (c === '}' && --depth === 0) {
+        const candidate = whole.slice(start, i + 1);
+        try {
+          JSON.parse(candidate);
+          return candidate;
+        } catch {
+          break;
+        }
+      }
+    }
+  }
+  return null;
 }
 
 export interface Generated {
@@ -333,6 +411,10 @@ export async function generate(
   opts: GenerateOptions = {},
 ): Promise<Generated> {
   const model = opts.model ?? READING_MODEL;
+  // Never for a hosted engine: its API holds it to the schema by its own means.
+  if (opts.schema && !hostedConfig() && (opts.decoding ?? schemaDecoding(model)) === 'described') {
+    return generateDescribed(prompt, system, { ...opts, model });
+  }
   const limit = opts.maxOutputTokens ?? MAX_OUTPUT_TOKENS;
   const started = Date.now();
 
@@ -432,4 +514,36 @@ export async function generate(
   if (key) cachePut(key, answer);
   if (resume && resumeKey) cachePut(resumeKey, answer, resume);
   return { ...answer, fromCache: false, fromResume: false };
+}
+
+/**
+ * One prompt to an engine that is shown the schema rather than held to it.
+ *
+ * The answer comes back as the JSON object it contains, so every caller parses it as it parses a
+ * constrained one. An answer with no JSON in it is asked once more under the decoder, and what the
+ * two calls cost is added together; whether that second answer is any good is the caller's to
+ * judge, as it is for every answer.
+ */
+async function generateDescribed(prompt: string, system: string, opts: GenerateOptions): Promise<Generated> {
+  const { schema, ...rest } = opts;
+  const first = await generate(prompt, describedSchema(system, schema), rest);
+  const json = jsonIn(first.text);
+  if (json !== null) return { ...first, text: json };
+  describedFallbacks += 1;
+  const again = await generate(prompt, system, { ...opts, decoding: 'constrained' });
+  return {
+    ...again,
+    promptTokens: first.promptTokens + again.promptTokens,
+    completionTokens: first.completionTokens + again.completionTokens,
+    durationMs: first.durationMs + again.durationMs,
+    fromCache: first.fromCache && again.fromCache,
+    fromResume: first.fromResume && again.fromResume,
+  };
+}
+
+let describedFallbacks = 0;
+
+/** How many answers held no JSON and were asked again under the decoder. Reported, never silent. */
+export function describedSchemaFallbacks(): number {
+  return describedFallbacks;
 }

@@ -12,7 +12,7 @@
  * pipeline so much as imports the module.
  */
 import { openDb } from '../src/db/index.js';
-import { loadRubric, indicatorsOfPillar } from '../src/rubric/index.js';
+import { loadRubric, chosenIndicators } from '../src/rubric/index.js';
 import type { Indicator } from '../src/rubric/types.js';
 import { answerPillar } from '../src/cell/index.js';
 import { engineReconnects, haveModel, OllamaUnavailable, READING_MODEL } from '../src/engines/ollama.js';
@@ -37,6 +37,8 @@ const SLOW_READ_SECONDS = 30;
 interface Args {
   economy: string;
   pillars: number[];
+  /** Only these indicators of the pillars; empty is all of them. */
+  indicators: string[];
   depth: number | null;
   carryFrom: string | null;
   reread: Set<number>;
@@ -61,6 +63,7 @@ function parseArgs(argv: string[]): Args {
   return {
     economy: (get('economy') ?? 'SGP').toUpperCase(),
     pillars,
+    indicators: (get('indicators') ?? '').split(',').map((i) => i.trim()).filter(Boolean),
     depth: get('depth') !== null ? Number(get('depth')) : null,
     carryFrom: get('carry'),
     reread: new Set((get('reread') ?? '').split(',').filter(Boolean).map(Number)),
@@ -226,7 +229,13 @@ async function main(): Promise<void> {
     ? null
     : args.joinRunId
       ? joinRun(db, args.joinRunId)
-      : openRun(db, { economies: [args.economy], pillars: args.pillars, model, notes: 'gate' });
+      : openRun(db, {
+          economies: [args.economy],
+          pillars: args.pillars,
+          ...(args.indicators.length ? { indicators: args.indicators } : {}),
+          model,
+          notes: 'gate',
+        });
   if (run) console.log(`run ${run.id}  (code ${codeRevision()})`);
 
   // One indicator compares a customs threshold with 200 USD, so the run settles on a rate once and
@@ -255,13 +264,14 @@ async function main(): Promise<void> {
   emit({ stage: 'run', kind: 'started', economy: args.economy, detail: `pillars ${args.pillars.join(', ')} on ${model}` });
 
   for (const pillarId of args.pillars) {
-    const indicators = indicatorsOfPillar(pillarId, rubric);
+    const indicators = chosenIndicators(pillarId, args.indicators, rubric);
     console.log(`\n=== Pillar ${pillarId}: ${indicators[0]?.pillarName ?? ''} (${args.economy}) ===`);
 
     const answer = await answerPillar(db, pillarId, args.economy, {
       ...(args.depth ? { depth: args.depth } : {}),
       ...(carryFrom ? { carryFrom } : {}),
       ...(args.reread.size ? { reread: args.reread } : {}),
+      ...(args.indicators.length ? { indicators: args.indicators } : {}),
       model,
       log: (l) => console.log(l),
       emit,

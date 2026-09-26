@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { Loader2, Play } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
+import { EngineTarget, type Target } from "./engine-target";
 
 export interface RunFormPillar {
   id: number;
@@ -35,19 +36,27 @@ export function StartRun({
   pillars,
   engines,
   chosenEngine,
+  readOnly = false,
 }: {
   economies: { code: string; name: string }[];
   pillars: RunFormPillar[];
   engines: RunFormEngine[];
   chosenEngine: string;
+  readOnly?: boolean;
 }) {
   const router = useRouter();
   const [picked, setPicked] = useState<string[]>([economies[0]?.code ?? ""]);
   const [pillar, setPillar] = useState<string>(ALL);
+  // The indicators of the chosen pillar to answer. None picked is every one of them.
+  const [only, setOnly] = useState<string[]>([]);
+  const pillarIndicators = pillars.find((p) => String(p.id) === pillar)?.indicatorIds ?? [];
   const [engine, setEngine] = useState(chosenEngine);
   const [fetchNew, setFetchNew] = useState(true);
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [target, setTarget] = useState<Target>("local");
+  const [targetReady, setTargetReady] = useState<{ ready: boolean; why: string }>({ ready: false, why: "" });
+  const onReady = useCallback((ready: boolean, why: string) => setTargetReady({ ready, why }), []);
 
   const toggle = (code: string) => {
     setError(null);
@@ -57,7 +66,7 @@ export function StartRun({
   };
 
   const chosen = engines.find((e) => e.id === engine);
-  const ready = picked.length > 0 && !!chosen?.declared && !starting;
+  const ready = !readOnly && picked.length > 0 && !!chosen?.declared && targetReady.ready && !starting;
 
   const start = async () => {
     setStarting(true);
@@ -75,8 +84,10 @@ export function StartRun({
         body: JSON.stringify({
           economies: picked,
           pillars: pillar === ALL ? undefined : [Number(pillar)],
+          indicators: pillar === ALL || only.length === 0 ? undefined : only,
           engine,
           cacheOnly: !fetchNew,
+          on: target,
         }),
       });
       const body = (await response.json()) as { runId?: string; error?: string };
@@ -131,6 +142,7 @@ export function StartRun({
               value={pillar}
               onValueChange={(v) => {
                 setPillar(v);
+                setOnly([]);
                 setError(null);
               }}
             >
@@ -172,6 +184,49 @@ export function StartRun({
           </div>
         </div>
 
+        {pillarIndicators.length > 0 ? (
+          <div className="flex flex-col gap-2">
+            <Label className="text-[12.5px] font-medium text-navy-deep">Indicators</Label>
+            <div className="flex flex-wrap gap-2">
+              {pillarIndicators.map((id) => {
+                const on = only.includes(id);
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => {
+                      setError(null);
+                      setOnly((prev) => (prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]));
+                    }}
+                    aria-pressed={on}
+                    className={cn(
+                      "rounded-full px-3 py-1 text-[12.5px] font-medium tabular-nums transition-all duration-150",
+                      "focus-visible:ring-2 focus-visible:ring-navy/40 focus-visible:outline-none",
+                      on
+                        ? "bg-navy text-paper shadow-[0_2px_8px_-3px_rgb(23_50_78/0.5)]"
+                        : "bg-inset text-muted-foreground hover:bg-edge hover:text-navy-deep",
+                    )}
+                  >
+                    {id}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="text-[12px] leading-snug text-muted-foreground">
+              {only.length === 0
+                ? "None picked answers every indicator of the pillar."
+                : `Only ${[...only].sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).join(" and ")} will be read and scored.`}
+            </p>
+          </div>
+        ) : null}
+
+        {chosen?.declared && !readOnly ? (
+          <div className="flex flex-col gap-2">
+            <Label className="text-[12.5px] font-medium text-navy-deep">Runs on</Label>
+            <EngineTarget engineId={engine} target={target} onTarget={setTarget} onReady={onReady} />
+          </div>
+        ) : null}
+
         <div className="flex flex-col gap-2">
           <Label className="text-[12.5px] font-medium text-navy-deep">Sources</Label>
           <div className="flex h-10 items-center justify-between rounded-xl bg-inset px-3.5">
@@ -190,10 +245,18 @@ export function StartRun({
         </div>
       </div>
 
-      {chosen && !chosen.declared ? (
+      {readOnly ? (
+        <p className="mt-5 rounded-xl bg-ochre-soft px-3.5 py-3 text-[12.5px] leading-snug text-ochre">
+          Runs need the persistent SQLite store and a long-lived worker, so they start from a local
+          checkout rather than this hosted snapshot.
+        </p>
+      ) : chosen && !chosen.declared ? (
         <p className="mt-5 text-[12.5px] leading-snug text-muted-foreground">
           {chosen.label} has no provider, model or checkpoint declared yet, so nothing can run on it.
         </p>
+      ) : null}
+      {chosen?.declared && !targetReady.ready && targetReady.why ? (
+        <p className="mt-5 text-[12.5px] leading-snug text-muted-foreground">{targetReady.why}.</p>
       ) : null}
       {error ? (
         <p className="mt-5 text-[12.5px] leading-snug text-destructive" role="alert">
@@ -208,7 +271,7 @@ export function StartRun({
         className="mt-6 h-11 rounded-xl bg-navy text-[14px] font-medium text-paper shadow-[0_3px_12px_-4px_rgb(23_50_78/0.55)] hover:bg-navy-deep"
       >
         {starting ? <Loader2 className="size-4 animate-spin" /> : <Play className="size-4" />}
-        {starting ? "Starting" : "Start run"}
+        {readOnly ? "Available locally" : starting ? "Starting" : "Start run"}
       </Button>
     </section>
   );

@@ -26,9 +26,11 @@ import { loadProfile, applyProfile } from '../profile/index.js';
 import { register, materialise } from '../discover/index.js';
 import { buildDenseIndex } from '../index/index.js';
 import { buildInstrumentIndex, shortlistInstruments } from '../shortlist/index.js';
-import { indicatorsOfPillar, loadRubric } from '../rubric/index.js';
+import { followCitations, followDown } from '../discover/follow.js';
+import { embedContents, recordParsedContents } from '../contents/index.js';
+import { chosenIndicators, loadRubric } from '../rubric/index.js';
 import { queriesFor } from '../retrieve/index.js';
-import { loadTranslations } from '../retrieve/translations.js';
+import { hasTranslationTable } from '../retrieve/translations.js';
 import { EMBEDDING_MODEL, haveModel, OllamaUnavailable } from '../engines/ollama.js';
 import type { Emit } from './events.js';
 
@@ -44,8 +46,17 @@ export interface PrepareOptions {
    * that question, so the claim would rest on our word rather than on the log.
    */
   runId?: string;
+  /** Only these indicators of the pillars. Absent or empty is all of them. */
+  indicators?: readonly string[];
   /** How many instruments each question may pull into the corpus. */
   top?: number;
+  /**
+   * How many more the ones read may pull in by naming them: the Act a rule is made under, the Act
+   * a provision cites. Zero turns the hop off.
+   */
+  follow?: number;
+  /** Rules fetched from under the Acts read, one per indicator at most. 0 turns the round off. */
+  down?: number;
   minDelayMs?: number;
   emit?: Emit;
   log?: (line: string) => void;
@@ -57,6 +68,9 @@ export interface PrepareResult {
   registered: number;
   /** Instruments the run's own questions asked for. */
   shortlisted: number;
+  /** Instruments read because what was shortlisted names them, not because a title matched. */
+  followed: number;
+  followedDown: number;
   parsed: number;
   unread: number;
   failed: number;
@@ -74,6 +88,8 @@ const EMPTY = (economy: string): PrepareResult => ({
   economy,
   registered: 0,
   shortlisted: 0,
+  followed: 0,
+  followedDown: 0,
   parsed: 0,
   unread: 0,
   failed: 0,
@@ -144,13 +160,10 @@ export async function prepareCorpus(db: Db, opts: PrepareOptions): Promise<Prepa
   const rubric = loadRubric();
   const asked: string[][] = [];
   for (const p of opts.pillars) {
-    // In the economy's own language as well: this ranks the register's titles, and an English
-    // question ranks Cyrillic or Lao titles on nothing.
-    // Named as retrieval names it ("in Mongolia", not "in the economy") where the economy has a
-    // translation table: the table is keyed on the named query, and an unnamed one never found its
-    // translation. Elsewhere unnamed, exactly as before, so no English economy's shortlist moves.
-    const named = loadTranslations(economy) ? profile.name : undefined;
-    for (const ind of indicatorsOfPillar(p, rubric)) asked.push(queriesFor(ind, named, economy));
+    // Named ("in Mongolia") only where one of our translation tables covers the economy's language:
+    // those tables are keyed on the named question. Unnamed elsewhere, exactly as before.
+    const named = profile.officialLanguages.some((l) => hasTranslationTable(l)) ? profile.name : undefined;
+    for (const ind of chosenIndicators(p, opts.indicators, rubric)) asked.push(queriesFor(ind, named, profile.officialLanguages));
   }
 
   const top = opts.top ?? 15;
@@ -181,6 +194,60 @@ export async function prepareCorpus(db: Db, opts: PrepareOptions): Promise<Prepa
   // 3. Fetch and parse exactly those.
   emit({ stage: 'fetch', kind: 'started', economy, detail: `${wanted.size} instrument(s)`, total: wanted.size });
   const results = await materialise(db, profile, fetcher, { instrumentIds: [...wanted], log });
+
+  // 3b. One hop from what was read. A title shortlist cannot see the Act whose name shares no word
+  // with the question, but the rules made under it and the provisions citing it name it outright.
+  const followLimit = opts.follow ?? 10;
+  if (followLimit > 0) {
+    const read = results.filter((r) => r.outcome === 'parsed').map((r) => r.instrumentId);
+    const leads = followCitations(db, { economy, from: read, exclude: wanted, limit: followLimit });
+    out.followed = leads.length;
+    if (leads.length > 0) {
+      emit({
+        stage: 'fetch',
+        kind: 'started',
+        economy,
+        detail: `${leads.length} instrument(s) named by what was read`,
+        total: leads.length,
+      });
+      for (const l of leads) {
+        log?.(`  follow: ${l.title} (parent of ${l.children}, cited by ${l.citedBy})`);
+        wanted.add(l.instrumentId);
+      }
+      results.push(
+        ...(await materialise(db, profile, fetcher, { instrumentIds: leads.map((l) => l.instrumentId), log })),
+      );
+    }
+  }
+  // 3c. And one hop down, from the provisions that answer each indicator to the rules made under
+  // their Acts. The Act holds the power, the rules hold the duty.
+  const downLimit = opts.down ?? 20;
+  if (downLimit > 0) {
+    const leads = await followDown(db, { economy, asked, exclude: wanted, limit: downLimit });
+    out.followedDown = leads.length;
+    if (leads.length > 0) {
+      emit({
+        stage: 'fetch',
+        kind: 'started',
+        economy,
+        detail: `${leads.length} instrument(s) made under what was read`,
+        total: leads.length,
+      });
+      for (const l of leads) {
+        log?.(`  down: ${l.title} (from ${l.because.join('; ')})`);
+        wanted.add(l.instrumentId);
+        let got = await materialise(db, profile, fetcher, { instrumentIds: [l.instrumentId], log });
+        // A consolidated version the portal lists but will not serve; an earlier one says the same.
+        for (const alt of l.alternates) {
+          if (got.some((r) => r.outcome === 'parsed')) break;
+          wanted.add(alt);
+          got = await materialise(db, profile, fetcher, { instrumentIds: [alt], log });
+        }
+        results.push(...got);
+      }
+    }
+  }
+
   const by = (outcome: string) => results.filter((r) => r.outcome === outcome).length;
   out.parsed = by('parsed');
   out.unread = by('unread');
@@ -208,6 +275,13 @@ export async function prepareCorpus(db: Db, opts: PrepareOptions): Promise<Prepa
     } else {
       const built = await buildDenseIndex(db, { economy, log });
       out.embedded = built.embedded;
+      // What was read, as contents: the framework indicators rank Acts by their headings, and an
+      // Act read in this run has no contents unless they are taken from its own sections here.
+      const withContents = recordParsedContents(db, { economy });
+      if (withContents.size > 0) {
+        const headings = await embedContents(db, { economy, log });
+        log(`  contents for ${withContents.size} instrument(s) read, ${headings.embedded} heading(s) embedded`);
+      }
       emit({
         stage: 'index',
         kind: 'finished',
@@ -232,6 +306,6 @@ export function describePrepare(r: PrepareResult): string {
   if (r.notes.some((n) => n.startsWith('cache-only'))) return `  ${r.economy}: cache-only, 0 fetched`;
   return (
     `  ${r.economy}: ${r.registered} registered, ${r.shortlisted} shortlisted, ` +
-    `${r.parsed} parsed, ${r.embedded} embedded, ${r.fetched} fetched over the network`
+    `${r.followed} followed up, ${r.followedDown} down, ${r.parsed} parsed, ${r.embedded} embedded, ${r.fetched} fetched over the network`
   );
 }

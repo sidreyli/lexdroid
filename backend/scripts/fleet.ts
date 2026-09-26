@@ -28,7 +28,7 @@ import {
   workUnits,
   type Unit,
 } from '../src/run/fleet.js';
-import { indicatorsOfPillar, loadRubric } from '../src/rubric/index.js';
+import { chosenIndicators, loadRubric, strayIndicators } from '../src/rubric/index.js';
 import { READING_MODEL } from '../src/engines/ollama.js';
 import { resetEnginePool } from '../src/engines/pool.js';
 import { probeEngine, describeReport, usable, mismatchedEngine, fingerprintOf } from '../src/engines/probe.js';
@@ -40,6 +40,7 @@ import { buildExportRows } from '../src/export/index.js';
 import { verifyRun } from '../src/verify/index.js';
 import { tagRun } from '../src/baseline/tag.js';
 import { defaultEngine, findEngine, type Engine } from '../src/engines/registry.js';
+import { podsFor, podStatus } from '../src/gpu/runpod.js';
 
 // Before any engine is chosen: a hosted engine needs its key from .env, and the workers this
 // process spawns inherit whatever it loads here.
@@ -48,6 +49,8 @@ loadEnv();
 interface Args {
   economies: string[];
   pillars: number[];
+  /** Only these indicators of the pillars, as the live test asks; empty is all of them. */
+  indicators: string[];
   hosts: string[];
   model: string;
   depth: number | null;
@@ -67,6 +70,8 @@ interface Args {
   skipPrepare: boolean;
   /** Stop after the cells are answered, without confirming, exporting or verifying them. */
   skipFinish: boolean;
+  /** Where the engine runs: its own hosts, or the GPU the interface rented for it. */
+  on: 'local' | 'runpod';
   /** How many instruments each of the run's questions may pull into the corpus. */
   top: number;
 }
@@ -89,6 +94,7 @@ function parseArgs(argv: string[]): Args {
       .split(',')
       .map((p) => Number(p.trim()))
       .filter((p) => Number.isInteger(p) && p > 0),
+    indicators: (get('indicators') ?? '').split(',').map((i) => i.trim()).filter(Boolean),
     hosts: (get('hosts') ?? engine?.hosts.join(',') ?? process.env['OLLAMA_HOST'] ?? 'http://127.0.0.1:11434')
       .split(',')
       .map((h) => h.trim().replace(/[/]+$/, ''))
@@ -113,6 +119,11 @@ function parseArgs(argv: string[]): Args {
     skipPrepare: argv.includes('--skip-prepare'),
     skipFinish: argv.includes('--skip-finish'),
     top: get('top') !== null ? Number(get('top')) : 15,
+    // An engine declared with no hosts of its own is only ever served from a rented GPU.
+    on:
+      get('on') === 'runpod' || (get('on') === null && get('hosts') === null && engine?.rented && engine.hosts.length === 0)
+        ? 'runpod'
+        : 'local',
   };
 }
 
@@ -137,6 +148,10 @@ function runUnit(unit: Unit, hosts: string[], runId: string, logDir: string, arg
     '--model',
     args.model,
   ];
+  // Only the named indicators that are in this unit's pillar. A pillar none of them is in is not
+  // a unit at all: the pillars are cut down to the ones the indicators belong to.
+  const mine = args.indicators.filter((id) => id.split('.')[0] === String(unit.pillar));
+  if (mine.length) argv.push('--indicators', mine.join(','));
   if (args.depth) argv.push('--depth', String(args.depth));
   if (args.carryFrom) argv.push('--carry', args.carryFrom);
   if (args.reread) argv.push('--reread', args.reread);
@@ -222,6 +237,57 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
+  // The rented GPUs are found by the engine's name, and their addresses, token and prices come from
+  // RunPod's record of them. The token goes to the workers through the environment and nowhere else.
+  if (args.on === 'runpod') {
+    if (!args.engine) throw new Error('--on runpod needs an --engine');
+    const rented = await podsFor(args.engine.id);
+    if (rented.length === 0) {
+      console.error(`\nNo GPU is rented for ${args.engine.label}. Start one from the interface first.\n`);
+      process.exit(1);
+    }
+    const states = await Promise.all(rented.map(podStatus));
+    const pods = rented.filter((_, i) => states[i]!.stage === 'ready');
+    // A pod still loading, or one that failed, is left out rather than waited for: on the day the
+    // clock is the constraint, and three GPUs reading now beat four reading in five minutes.
+    rented.forEach((p, i) => {
+      const st = states[i]!;
+      if (st.stage !== 'ready') {
+        console.error(`  ${p.id} is not ready (${st.stage}${st.detail ? `: ${st.detail}` : ''}); reading without it`);
+      }
+    });
+    if (pods.length === 0) {
+      console.error(`\nNone of ${args.engine.label}'s ${rented.length} GPU(s) is ready yet.\n`);
+      process.exit(1);
+    }
+    // One token per engine, whichever pod answers. Pods with differing tokens were not rented
+    // together, and a read sent to the wrong one would fail as unauthorised halfway through a run.
+    if (new Set(pods.map((p) => p.token)).size > 1) {
+      console.error(`\n${args.engine.label}'s GPUs hold different tokens. Stop them and rent them together.\n`);
+      process.exit(1);
+    }
+    args.hosts = pods.map((p) => p.url);
+    process.env['LEXDROID_ENGINE_TOKEN'] = pods[0]!.token;
+    // Rent is charged per host at this rate, so the mean over the pods charges their true sum.
+    if (!args.usdPerHour) args.usdPerHour = pods.reduce((t, p) => t + p.usdPerHour, 0) / pods.length;
+    // Fewer units than GPUs leaves GPUs idle unless every GPU reads each unit together -- the
+    // live test is one economy and one pillar, which is one unit.
+    if (pods.length > 1 && !args.perEconomy) args.fanOut = true;
+    if (replayingWhilePaying(cacheEnabled(), args.usdPerHour)) {
+      console.error('\nThe engine cache is on and this GPU is being paid for by the hour.');
+      console.error('A replayed run is not a measurement; unset LEXDROID_ENGINE_CACHE.\n');
+      process.exit(1);
+    }
+    for (const p of pods) {
+      const st = states[rented.indexOf(p)]!;
+      console.log(`\n${args.engine.label} on a rented ${p.gpu || st.gpu} at $${p.usdPerHour}/hr (${p.id})`);
+    }
+  }
+  if (args.hosts.length === 0) {
+    console.error('\nNo engine to run on: pass --hosts, or --on runpod for a rented GPU.\n');
+    process.exit(1);
+  }
+
   const duplicate = duplicateEngine(args.hosts);
   if (duplicate) {
     console.error(`\n${duplicate} is listed twice. Two workers on one engine have their reads`);
@@ -284,8 +350,18 @@ async function main(): Promise<void> {
 
   // How many indicators a pillar asks about is the size signal available before any of it runs.
   const rubric = loadRubric();
+  if (args.indicators.length) {
+    // Named indicators settle the pillars: a pillar given with none of them in it has nothing to
+    // answer, and one of them outside every pillar given is a typo that would read nothing.
+    const stray = strayIndicators(args.indicators, args.pillars, rubric);
+    if (stray.length) {
+      console.error(`\n${stray.join(', ')} is not an indicator of pillar(s) ${args.pillars.join(', ')}.\n`);
+      process.exit(1);
+    }
+    args.pillars = args.pillars.filter((p) => args.indicators.some((id) => id.split('.')[0] === String(p)));
+  }
   const units = longestFirst(workUnits(args.economies, args.pillars), (u) =>
-    indicatorsOfPillar(u.pillar, rubric).length,
+    chosenIndicators(u.pillar, args.indicators, rubric).length,
   );
 
   const db = openDb();
@@ -296,6 +372,7 @@ async function main(): Promise<void> {
     : openRun(db, {
         economies: args.economies,
         pillars: args.pillars,
+        ...(args.indicators.length ? { indicators: args.indicators } : {}),
         model: args.model,
         ...(args.engine ? { engine: args.engine.id } : {}),
         sourceMode: args.cacheOnly ? ('cache-only' as const) : ('fetch' as const),
@@ -358,6 +435,7 @@ async function main(): Promise<void> {
           economy,
           runId: run.id,
           pillars: args.pillars,
+          ...(args.indicators.length ? { indicators: args.indicators } : {}),
           sourceMode: args.cacheOnly ? 'cache-only' : 'fetch',
           top: args.top,
           emit: (e) => recordEvent(run, e),
@@ -382,7 +460,20 @@ async function main(): Promise<void> {
 
   /** One attempt, then one more: a passing fault deserves another go, a real defect fails twice. */
   const attempt = async (unit: Unit, hosts: string[], label: string): Promise<void> => {
+    // Two fleets sharing a run each choose their units when they start, so both can take the same
+    // pillar. The second to finish then fails on the cells the first recorded, and its retry cleared
+    // them: Thailand's pillar 10 was read twice and ended with no cells at all. A unit another
+    // fleet has answered is neither started nor cleared.
+    if (alreadyAnswered(db, run.id, unit)) {
+      console.log(`${unit.economy} pillar ${unit.pillar} answered by another fleet; skipped`);
+      done.push({ unit, host: label, code: 0 });
+      return;
+    }
     let code = await runUnit(unit, hosts, run.id, logDir, args);
+    if (code !== 0 && alreadyAnswered(db, run.id, unit)) {
+      console.log(`${unit.economy} pillar ${unit.pillar} answered by another fleet meanwhile; kept`);
+      code = 0;
+    }
     if (code !== 0) {
       console.log(`${unit.economy} pillar ${unit.pillar} failed on ${label}; one more attempt`);
       clearUnit(db, run.id, unit);

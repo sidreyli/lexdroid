@@ -62,19 +62,26 @@ export function RunMonitor({
   seed,
   pillars,
   economyNames,
+  snapshot = false,
 }: {
   run: Run;
   seed: RunEvent[];
   pillars: Pillar[];
   economyNames: string[];
+  snapshot?: boolean;
 }) {
-  const { events, status, connection, silentFor } = useLiveRun(run.id, seed, run.status);
+  const { events, status, connection, silentFor } = useLiveRun(
+    run.id,
+    seed,
+    run.status,
+    !snapshot,
+  );
   const progress = readProgress({ ...run, status }, events, pillars);
 
   const elapsed = useSecondsSince(run.startedAt);
 
   const wall =
-    status === "running"
+    status === "running" && !snapshot
       ? elapsed
       : run.finishedAt
         ? (new Date(run.finishedAt).getTime() - new Date(run.startedAt).getTime()) / 1000
@@ -111,7 +118,11 @@ export function RunMonitor({
           <PillarTrack legs={progress.legs} reading={progress.reading} />
         </div>
 
-        {status === "running" && connection !== "live" ? (
+        {snapshot && status === "running" ? (
+          <p className="mt-5 text-[12.5px] leading-snug text-ochre">
+            This run was still in progress when the hosted snapshot was captured. It is not live.
+          </p>
+        ) : status === "running" && connection !== "live" ? (
           <p className="mt-5 text-[12.5px] leading-snug text-ochre">
             {connection === "offline"
               ? "Not receiving updates. This shows the run as it stood when the page loaded."

@@ -272,6 +272,25 @@ const SLOWDOWN_MS = 6000;
 const UNKNOWN_ROBOTS_DELAY_MS = 10_000;
 
 /**
+ * A robots.txt the server failed to produce: 500, 502 or 504, the file broken rather than a host
+ * pushing back. India Code answers 500 to every robots.txt request, and at the unknown pace its
+ * register walk and fetches spent 43 of the rehearsal's 59 minutes waiting (26 Sep 2026). These
+ * go at the ordinary one request a second, and a host that then throttles is still slowed by
+ * SLOWDOWN_MS. 503 is the status that means "slow down", so it stays with the unknown pace.
+ */
+const BROKEN_ROBOTS = new Set([500, 502, 504]);
+
+/**
+ * A robots.txt behind a login: 401 asks who we are, not how fast to go. RFC 9309 lets a crawler
+ * proceed on any 4xx; 403 and 429 stay careful because they are a host pushing back, and 401 is
+ * not. The Bank of Thailand's CDN answered 401 once to its circulars database's robots.txt, then
+ * served every page asked for and 404 to the same file minutes later, and the unknown pace cost
+ * the Thailand rehearsal about three and a half minutes (26 Sep 2026). It goes in the broken
+ * lane: the ordinary pace, still slowed by SLOWDOWN_MS if the host then throttles.
+ */
+const LOGIN_ROBOTS = new Set([401]);
+
+/**
  * How long to wait before asking again after the connection dropped with no answer at all.
  *
  * Short, and short on purpose. A reset is not a host saying no -- it said nothing, and the
@@ -754,13 +773,14 @@ export class Fetcher {
     bytes: number,
     waitMs: number,
     method: 'GET' | 'POST' = 'GET',
+    mediaType: string | null = null,
   ): void {
     this.db
       .prepare(
-        `INSERT INTO fetch_log (run_id, host, url, requested_at, http_status, bytes, wait_ms, outcome, method)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO fetch_log (run_id, host, url, requested_at, http_status, bytes, wait_ms, outcome, method, media_type)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run(this.runId, new URL(url).host, url, new Date().toISOString(), status, bytes, waitMs, outcome, method);
+      .run(this.runId, new URL(url).host, url, new Date().toISOString(), status, bytes, waitMs, outcome, method, mediaType);
   }
 
   private readCache(url: string): FetchResult | null {
@@ -963,7 +983,9 @@ export class Fetcher {
     // rules. Only 404 and 410 say that: 403 and 429 are a host pushing back, which is the opposite.
     const unknown = (): Robots => ({ disallow: [], allow: [], crawlDelayMs: UNKNOWN_ROBOTS_DELAY_MS, fetched: false });
     const noRules = (): Robots => ({ disallow: [], allow: [], crawlDelayMs: null, fetched: true });
+    const broken = (): Robots => ({ disallow: [], allow: [], crawlDelayMs: null, fetched: false });
     let absent = false;
+    let brokenStatus: number | null = null;
 
     let robotsBody: string | null = null;
 
@@ -997,10 +1019,13 @@ export class Fetcher {
               null, 2,
             ),
           );
+        } else if (BROKEN_ROBOTS.has(res.status) || LOGIN_ROBOTS.has(res.status)) {
+          brokenStatus = res.status;
+          s.robots = broken();
         } else {
           s.robots = unknown();
         }
-        this.log(`${origin}/robots.txt`, s.robots.fetched ? 'ok' : 'error', res.status, res.body.length, 0);
+        this.log(`${origin}/robots.txt`, s.robots.fetched ? 'ok' : 'error', res.status, res.body.length, 0, 'GET', res.mediaType);
       } catch {
         s.robots = unknown();
       }
@@ -1010,7 +1035,9 @@ export class Fetcher {
     this.onLog(
       absent
         ? `  ${host}: no robots.txt, which is a host saying it has no rules: ${delay}ms between requests`
-        : s.robots.fetched
+        : brokenStatus !== null
+          ? `  ${host}: robots.txt answered ${brokenStatus}, ${LOGIN_ROBOTS.has(brokenStatus) ? 'a login prompt' : 'a server error'} rather than a rule: ${delay}ms between requests`
+          : s.robots.fetched
           ? `  ${host}: robots.txt read, ${s.robots.disallow.length} disallow rule(s), ${delay}ms between requests`
           : `  ${host}: robots.txt could not be read. Treating that as unknown rather than permissive: ${delay}ms between requests.`,
     );
@@ -1121,7 +1148,7 @@ export class Fetcher {
         // Logged at the address that served the bytes, not the one we asked for. B3 reads these
         // rows to show that no disallowed path was ever fetched, and a redirect into a disallowed
         // path recorded under the permitted address we asked for would be invisible to it.
-        this.log(res.finalUrl, isSoftBlock(res) ? 'soft-blocked' : 'ok', res.status, res.body.length, waitMs, method);
+        this.log(res.finalUrl, isSoftBlock(res) ? 'soft-blocked' : 'ok', res.status, res.body.length, waitMs, method, res.mediaType);
 
         // Back off and retry a throttled or empty response before giving up on it. The delays are
         // long on purpose: the point is to stop asking, not to ask more insistently.
@@ -1137,7 +1164,7 @@ export class Fetcher {
           await new Promise((r) => setTimeout(r, pause));
           waitMs += pause;
           res = await this.sendThroughDrops(url, host, post);
-          this.log(res.finalUrl, isSoftBlock(res) ? 'soft-blocked' : 'ok', res.status, res.body.length, pause, method);
+          this.log(res.finalUrl, isSoftBlock(res) ? 'soft-blocked' : 'ok', res.status, res.body.length, pause, method, res.mediaType);
         }
         if (isSoftBlock(res)) {
           this.stats.softBlocked += 1;

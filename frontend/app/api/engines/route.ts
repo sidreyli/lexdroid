@@ -1,6 +1,8 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { NextResponse } from "next/server";
 import { ENGINES_PATH } from "@/lib/data/paths";
+import enginesJson from "@/lib/data/fixtures/engines.json";
+import { isReadOnlyDeployment, READ_ONLY_DEPLOYMENT_MESSAGE } from "@/lib/deployment";
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +17,7 @@ interface Registry {
 }
 
 function read(): Registry {
-  if (!existsSync(ENGINES_PATH)) return { default: "", engines: [] };
+  if (!existsSync(ENGINES_PATH)) return enginesJson as Registry;
   return JSON.parse(readFileSync(ENGINES_PATH, "utf8")) as Registry;
 }
 
@@ -25,6 +27,10 @@ export async function GET() {
 
 /** Only the choice moves. The declarations themselves are frozen after 30 September. */
 export async function POST(request: Request) {
+  if (isReadOnlyDeployment()) {
+    return NextResponse.json({ error: READ_ONLY_DEPLOYMENT_MESSAGE }, { status: 503 });
+  }
+
   let body: { id?: string };
   try {
     body = (await request.json()) as { id?: string };

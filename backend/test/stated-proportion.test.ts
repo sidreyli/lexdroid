@@ -60,7 +60,8 @@ const coverage = { sectionsRead: 24, sectionsIndexed: 32591, instrumentsConsider
 function at(id: string, over: Partial<Finding> = {}) {
   const evidence: Evidence[] = [
     {
-      finding: finding({ indicatorId: id, ...over }),
+      // 5.2 asks about telecommunications, and a cap in any other sector is not its subject.
+      finding: finding({ indicatorId: id, ...(id === '5.2' ? { subjectWords: 'a telecommunications licensee' } : {}), ...over }),
       sectionId: 1,
       instrumentId: 1,
       instrumentTitle: 'Foreign Acquisitions and Takeovers Act 1975',
@@ -77,6 +78,21 @@ describe('reading a proportion out of the provision', () => {
     expect(statedProportion('no shares may be held by a foreign person')).toBe('none');
     expect(statedProportion('the company must be wholly owned by citizens')).toBe('none');
     expect(statedProportion('a foreign person must not hold any shares in the licensee')).toBe('none');
+  });
+
+  it('finds one where what is not permitted is foreign investment itself', () => {
+    // The reader copied "not permitted" as the defining words; the quote says what is not.
+    const quote = 'Foreign investment is not permitted in inventory based model of e-commerce.';
+    expect(statedProportion('not permitted', quote)).toBe('none');
+    expect(statedProportion('FDI is not permitted', 'FDI is not permitted in inventory-based model of e-commerce.')).toBe('none');
+    // A prohibition on something else, in a provision that mentions foreign investment, is not.
+    expect(
+      statedProportion(
+        'shall not be permitted',
+        'An entity having equity participation by a foreign marketplace entity shall not be permitted to sell its products on the platform.',
+      ),
+    ).toBeNull();
+    expect(statedProportion('not permitted')).toBeNull();
   });
 
   it('finds a figure, from either end', () => {
@@ -134,7 +150,7 @@ describe('a band that is a proportion', () => {
       measure: 'telecom-equity-controlling',
       dutyBearer: 'no person',
       definingWords: 'more than fifty per cent',
-      subjectWords: 'a licensed person',
+      subjectWords: 'a licensed telecommunications person',
       quote: 'no person shall acquire any interest in shares of a licensed person by which he would hold more than fifty per cent',
     });
     expect(d.score).toBe(0);

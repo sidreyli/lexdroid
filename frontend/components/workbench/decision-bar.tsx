@@ -33,6 +33,7 @@ export function DecisionBar({
   editing,
   setEditing,
   nextHref,
+  readOnly = false,
 }: {
   rowId: number;
   baseline: FindingEdit;
@@ -40,6 +41,7 @@ export function DecisionBar({
   editing: boolean;
   setEditing: (v: boolean) => void;
   nextHref: string | null;
+  readOnly?: boolean;
 }) {
   const { decisions, reviewer, record, clear } = useReview();
   const router = useRouter();
@@ -54,6 +56,16 @@ export function DecisionBar({
   const advance = () => {
     if (nextHref) router.push(nextHref);
   };
+
+  if (readOnly) {
+    return (
+      <Bar note="This hosted snapshot is for inspection. Run LexDroid locally to record a review.">
+        <span className="rounded-full bg-inset px-3 py-1.5 text-[12px] font-medium text-muted-foreground">
+          Read only
+        </span>
+      </Bar>
+    );
+  }
 
   const commit = async (action: ReviewAction, text: string) => {
     const fields = action === "edit" ? changed : {};

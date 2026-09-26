@@ -16,12 +16,13 @@ import type { ExportRow, Run } from "@/lib/data/types";
 import type { ReviewDecision } from "@/lib/review";
 import {
   addEngineComparison,
+  addRunRecord,
   addInstructions,
   addSubmissionChecklist,
   checklist,
   type EnginePass,
 } from "./sheets";
-import { getEngines, documentsFetchedBy, zeroFetchDemonstrated } from "@/lib/data/submission";
+import { getEngines, documentsFetchedBy, documentsFetchedIn, zeroFetchDemonstrated } from "@/lib/data/submission";
 
 export const OUTPUT_COLUMNS = [
   "Economy",
@@ -248,7 +249,8 @@ export async function buildWorkbook(selection: Selection): Promise<Buffer> {
     sheet.columns.forEach((c, i) => (c.width = [10, 40, 18, 12, 60, 60][i] ?? 16));
   }
 
-  const record = book.addWorksheet("Run Record");
+  // The run table this file always carried. "Run Record" is the template's own sheet, below.
+  const record = book.addWorksheet("Run Log");
   record.addRow([
     "Run",
     "Started",
@@ -308,6 +310,12 @@ export async function buildWorkbook(selection: Selection): Promise<Buffer> {
     documentsFetched: documentsFetchedBy(selection.compareRunId),
   };
   addEngineComparison(book, passA, passB);
+  addRunRecord(
+    book,
+    passA,
+    passB,
+    documentsFetchedIn([passA.run?.id, passB.run?.id].filter((id): id is string => !!id)),
+  );
 
   const engines = getEngines();
   const pillars = new Set(rows.map((r) => pillarOf(r.indicatorId)));

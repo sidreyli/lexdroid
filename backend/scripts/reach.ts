@@ -60,7 +60,7 @@ const corpusOf = (economy: string) =>
 /** The instruments ESCAP cites for a cell, by the law name on their row. */
 const citedFor = baseline.prepare(
   `SELECT act_or_practice FROM baseline_row
-    WHERE source = 'round-1' AND economy = ? AND indicator_id = ?
+    WHERE source IN ('round-1', 'round-2') AND economy = ? AND indicator_id = ?
       AND act_or_practice IS NOT NULL AND act_or_practice != ''`,
 );
 

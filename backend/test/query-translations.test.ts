@@ -39,13 +39,13 @@ afterAll(() => {
 describe('queries in the economy\'s language', () => {
   it('asks the English queries and then their translations', () => {
     const english = englishQueriesFor(indicator, 'Mongolia');
-    const asked = queriesFor(indicator, 'Mongolia', 'MNG');
+    const asked = queriesFor(indicator, 'Mongolia', ['mn']);
     expect(asked.slice(0, english.length)).toEqual(english);
     expect(asked.slice(english.length)).toEqual(['хувь хүний мэдээлэл хамгаалах', 'мэдээллийг хилийн чанадад шилжүүлэх']);
   });
 
   it('asks English alone where the economy has no table', () => {
-    expect(queriesFor(indicator, 'Singapore', 'SGP')).toEqual(englishQueriesFor(indicator, 'Singapore'));
+    expect(queriesFor(indicator, 'Singapore', ['en'])).toEqual(englishQueriesFor(indicator, 'Singapore'));
     expect(translatedQueries('SGP', ['anything'])).toEqual([]);
   });
 

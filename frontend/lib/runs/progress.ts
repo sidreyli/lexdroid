@@ -113,6 +113,13 @@ function asked(run: Run, rubric: Pillar[]): number[] {
   return ids.sort((a, b) => a - b);
 }
 
+/** How many of a pillar's indicators a run asked about: the ones it named, or all of them. */
+function indicatorsAsked(pillar: readonly string[] | undefined, chosen: readonly string[] | null | undefined): number | undefined {
+  if (!pillar) return undefined;
+  const named = chosen ? pillar.filter((id) => chosen.includes(id)).length : 0;
+  return named > 0 ? named : pillar.length;
+}
+
 export function readProgress(run: Run, events: RunEvent[], rubric: Pillar[]): RunProgress {
   const byId = new Map(rubric.map((p) => [p.id, p]));
   const wanted = asked(run, rubric);
@@ -170,7 +177,10 @@ export function readProgress(run: Run, events: RunEvent[], rubric: Pillar[]): Ru
     return {
       id,
       name: p?.name ?? `Pillar ${id}`,
-      indicators: p?.indicatorIds.length ?? 1,
+      // The indicators asked, where the run asked only some -- the live test's two of a pillar.
+      // Counted against the whole pillar, a finished run read "2 of 4 settled" and said the
+      // pillar finished without settling its cells, which is the two nobody asked about.
+      indicators: indicatorsAsked(p?.indicatorIds, run.indicators) ?? 1,
       answered: answeredIn.get(id) ?? 0,
       state,
     };

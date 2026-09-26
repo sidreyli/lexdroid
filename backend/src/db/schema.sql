@@ -31,7 +31,10 @@ CREATE TABLE IF NOT EXISTS run (
   -- The exchange rates this run scored with, as fetched. Indicator 12.5 compares a customs
   -- threshold with 200 USD, and a score re-derived next month must use the run's own rate.
   fx_rates        TEXT,
-  notes           TEXT
+  notes           TEXT,
+  -- JSON array of indicator ids when the run asked about only some of its pillars' indicators, as
+  -- the live test does. NULL is every indicator of the pillars.
+  indicators      TEXT
 );
 
 -- What a run cost, per engine, measured rather than estimated.
@@ -375,7 +378,8 @@ CREATE TABLE IF NOT EXISTS fetch_log (
   -- a GET with page one of an unfiltered listing whatever it is asked -- produces several rows
   -- at one url that are different requests, and a log that cannot tell them apart understates
   -- what left this machine. C5a is scored on these rows.
-  method          TEXT NOT NULL DEFAULT 'GET'
+  method          TEXT NOT NULL DEFAULT 'GET',
+  media_type      TEXT                        -- what the server said it sent, where it answered
 );
 
 CREATE INDEX IF NOT EXISTS idx_fetch_log_run ON fetch_log(run_id);
