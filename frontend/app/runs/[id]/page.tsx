@@ -5,6 +5,7 @@ import { RunMonitor } from "@/components/runs/run-monitor";
 import { RescoreButton } from "@/components/runs/rescore-button";
 import { getEconomies, getExportRows, getRubric, getRun, getRunEvents } from "@/lib/data";
 import { Download } from "lucide-react";
+import { isReadOnlyDeployment } from "@/lib/deployment";
 
 export default async function RunPage({ params }: PageProps<"/runs/[id]">) {
   const { id } = await params;
@@ -34,7 +35,7 @@ export default async function RunPage({ params }: PageProps<"/runs/[id]">) {
             on build {run.codeRevision}.
           </p>
         </div>
-        {run.status === "complete" ? <RescoreButton runId={run.id} /> : null}
+        {run.status === "complete" && !isReadOnlyDeployment() ? <RescoreButton runId={run.id} /> : null}
         {rows > 0 ? (
           <a
             href={`/api/export?run=${run.id}`}
@@ -51,6 +52,7 @@ export default async function RunPage({ params }: PageProps<"/runs/[id]">) {
         seed={getRunEvents(run.id)}
         pillars={[...rubric.pillars]}
         economyNames={run.economies.map((c) => names.get(c) ?? c)}
+        snapshot={isReadOnlyDeployment()}
       />
     </div>
   );

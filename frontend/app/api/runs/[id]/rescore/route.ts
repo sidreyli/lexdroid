@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { NextResponse } from "next/server";
 import { BACKEND, TSX_CLI } from "@/lib/data/paths";
+import { isReadOnlyDeployment, READ_ONLY_DEPLOYMENT_MESSAGE } from "@/lib/deployment";
 
 export const dynamic = "force-dynamic";
 
@@ -9,6 +10,9 @@ export const dynamic = "force-dynamic";
  * engine and no network. `dryRun` reports what would change and writes nothing.
  */
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  if (isReadOnlyDeployment()) {
+    return NextResponse.json({ error: READ_ONLY_DEPLOYMENT_MESSAGE }, { status: 503 });
+  }
   const { id } = await params;
   if (!/^[0-9a-f-]{8,36}$/.test(id)) return NextResponse.json({ error: "Not a run id" }, { status: 400 });
   let dryRun = true;

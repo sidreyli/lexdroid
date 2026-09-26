@@ -36,11 +36,13 @@ export function StartRun({
   pillars,
   engines,
   chosenEngine,
+  readOnly = false,
 }: {
   economies: { code: string; name: string }[];
   pillars: RunFormPillar[];
   engines: RunFormEngine[];
   chosenEngine: string;
+  readOnly?: boolean;
 }) {
   const router = useRouter();
   const [picked, setPicked] = useState<string[]>([economies[0]?.code ?? ""]);
@@ -61,7 +63,7 @@ export function StartRun({
   };
 
   const chosen = engines.find((e) => e.id === engine);
-  const ready = picked.length > 0 && !!chosen?.declared && targetReady.ready && !starting;
+  const ready = !readOnly && picked.length > 0 && !!chosen?.declared && targetReady.ready && !starting;
 
   const start = async () => {
     setStarting(true);
@@ -177,7 +179,7 @@ export function StartRun({
           </div>
         </div>
 
-        {chosen?.declared ? (
+        {chosen?.declared && !readOnly ? (
           <div className="flex flex-col gap-2">
             <Label className="text-[12.5px] font-medium text-navy-deep">Runs on</Label>
             <EngineTarget engineId={engine} target={target} onTarget={setTarget} onReady={onReady} />
@@ -202,7 +204,12 @@ export function StartRun({
         </div>
       </div>
 
-      {chosen && !chosen.declared ? (
+      {readOnly ? (
+        <p className="mt-5 rounded-xl bg-ochre-soft px-3.5 py-3 text-[12.5px] leading-snug text-ochre">
+          Runs need the persistent SQLite store and a long-lived worker, so they start from a local
+          checkout rather than this hosted snapshot.
+        </p>
+      ) : chosen && !chosen.declared ? (
         <p className="mt-5 text-[12.5px] leading-snug text-muted-foreground">
           {chosen.label} has no provider, model or checkpoint declared yet, so nothing can run on it.
         </p>
@@ -223,7 +230,7 @@ export function StartRun({
         className="mt-6 h-11 rounded-xl bg-navy text-[14px] font-medium text-paper shadow-[0_3px_12px_-4px_rgb(23_50_78/0.55)] hover:bg-navy-deep"
       >
         {starting ? <Loader2 className="size-4 animate-spin" /> : <Play className="size-4" />}
-        {starting ? "Starting" : "Start run"}
+        {readOnly ? "Available locally" : starting ? "Starting" : "Start run"}
       </Button>
     </section>
   );

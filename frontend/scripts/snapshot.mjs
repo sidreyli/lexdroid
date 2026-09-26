@@ -38,6 +38,20 @@ mkdirSync(OUT, { recursive: true });
 const rubric = JSON.parse(readFileSync(join(CHECKOUT, 'backend/data/rubric.json'), 'utf8'));
 writeFileSync(join(OUT, 'rubric.json'), JSON.stringify(rubric));
 
+const engineRegistry = JSON.parse(readFileSync(join(CHECKOUT, 'backend/data/engines.json'), 'utf8'));
+writeFileSync(
+  join(OUT, 'engines.json'),
+  JSON.stringify({
+    default: engineRegistry.default,
+    engines: engineRegistry.engines.map(({ id, label, model, declared }) => ({
+      id,
+      label,
+      model,
+      declared,
+    })),
+  }),
+);
+
 const profileDir = join(CHECKOUT, 'backend/data/profiles');
 const profiles = readdirSync(profileDir)
   .filter((f) => f.endsWith('.json'))

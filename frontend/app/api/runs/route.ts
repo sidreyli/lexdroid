@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { NextResponse } from "next/server";
 import { BACKEND, ENGINES_PATH, TSX_CLI } from "@/lib/data/paths";
 import { readFileSync } from "node:fs";
+import { isReadOnlyDeployment, READ_ONLY_DEPLOYMENT_MESSAGE } from "@/lib/deployment";
 
 export const dynamic = "force-dynamic";
 
@@ -48,6 +49,10 @@ function firstRunId(stdout: NodeJS.ReadableStream): Promise<string> {
 }
 
 export async function POST(request: Request) {
+  if (isReadOnlyDeployment()) {
+    return NextResponse.json({ error: READ_ONLY_DEPLOYMENT_MESSAGE }, { status: 503 });
+  }
+
   let body: StartRun;
   try {
     body = (await request.json()) as StartRun;

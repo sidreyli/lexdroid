@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { NextResponse } from "next/server";
 import { BACKEND, TSX_CLI } from "@/lib/data/paths";
+import { isReadOnlyDeployment, READ_ONLY_DEPLOYMENT_MESSAGE } from "@/lib/deployment";
 
 export const dynamic = "force-dynamic";
 
@@ -34,12 +35,18 @@ function gpu(args: string[], timeoutMs = 90_000): Promise<{ ok: boolean; body: u
 }
 
 export async function GET(request: Request) {
+  if (isReadOnlyDeployment()) {
+    return NextResponse.json({ error: READ_ONLY_DEPLOYMENT_MESSAGE }, { status: 503 });
+  }
   const offers = new URL(request.url).searchParams.get("offers") === "1";
   const { ok, body } = await gpu(offers ? ["status", "--offers"] : ["status"]);
   return NextResponse.json(body, { status: ok ? 200 : 502 });
 }
 
 export async function POST(request: Request) {
+  if (isReadOnlyDeployment()) {
+    return NextResponse.json({ error: READ_ONLY_DEPLOYMENT_MESSAGE }, { status: 503 });
+  }
   let body: { action?: string; engine?: string };
   try {
     body = (await request.json()) as { action?: string; engine?: string };

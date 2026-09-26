@@ -12,6 +12,7 @@ import {
   getRuns,
 } from "@/lib/data";
 import { clip } from "@/lib/format";
+import { isReadOnlyDeployment } from "@/lib/deployment";
 
 export default function Home() {
   const rubric = getRubric();
@@ -20,6 +21,7 @@ export default function Home() {
   const rows = getExportRows();
   const runs = getRuns();
   const { chosen, engines } = getEngines();
+  const readOnly = isReadOnlyDeployment();
 
   const names = new Map(economies.map((e) => [e.code, e.name]));
   const labels = new Map(rubric.indicators.map((i) => [i.id, clip(i.category, 150)]));
@@ -88,6 +90,7 @@ export default function Home() {
               pillars={[...rubric.pillars]}
               engines={engines}
               chosenEngine={chosen}
+              readOnly={readOnly}
             />
           </div>
           <div className="xl:col-span-4">

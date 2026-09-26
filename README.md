@@ -112,6 +112,35 @@ If the run stops immediately saying the engine is unreachable, Ollama is not run
 
 ---
 
+## Deploy to Vercel
+
+From the repository root:
+
+```bash
+npm run deploy
+```
+
+The first deployment asks you to sign in and choose or create a Vercel project. After that, the
+same command deploys straight to production. No environment variables or dashboard build overrides
+are required. Use `npm run deploy:preview` when you want a preview URL instead.
+
+The Vercel site is deliberately a **read-only snapshot**. It includes the recorded analysis,
+workbench, run history, and CSV/XLSX exports, but it does not pretend that Vercel can run the local
+pipeline: LexDroid's worker is long-lived and its SQLite store must persist between requests.
+Starting runs and recording reviews remain available through `npm run dev` on a machine with the
+working store. Set `LEXDROID_READ_ONLY=1` to use the same snapshot mode on another host.
+
+Before deploying, the complete web verification is one command:
+
+```bash
+npm run check:deploy
+```
+
+For Git-based Vercel deployments, choose `frontend` as the project's Root Directory. Its checked-in
+`vercel.json` supplies the remaining settings.
+
+---
+
 ## Your Interface
 
 | What a reviewer needs to do | Where it is |
