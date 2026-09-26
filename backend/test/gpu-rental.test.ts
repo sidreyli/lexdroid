@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { findEngine } from '../src/engines/registry.js';
-import { createBody, podName, spentUsd, type Pod } from '../src/gpu/runpod.js';
+import { createBody, freeSlots, MAX_PODS, podName, slotOf, spentUsd, type Pod } from '../src/gpu/runpod.js';
 
 const root = join(__dirname, '..', '..');
 const engineB = findEngine('engine-b')!;
@@ -74,5 +74,34 @@ describe('rent so far', () => {
     const pod = { since: '2026-09-26T12:00:00Z', usdPerHour: 0.2 } as Pod;
     expect(spentUsd(pod, Date.parse('2026-09-26T13:30:00Z'))).toBeCloseTo(0.3, 6);
     expect(spentUsd({ ...pod, since: '' }, Date.now())).toBe(0);
+  });
+});
+
+describe('more than one GPU for an engine', () => {
+  it('keeps the first pod under the name one pod always had, and numbers the rest', () => {
+    expect(podName('engine-b')).toBe('lexdroid-engine-b');
+    expect(podName('engine-b', 1)).toBe('lexdroid-engine-b');
+    expect(podName('engine-b', 3)).toBe('lexdroid-engine-b-3');
+    expect(createBody(engineB, engineB.rented!, ['x'], 't', root, 'COMMUNITY', 2).name).toBe('lexdroid-engine-b-2');
+  });
+
+  it("reads a slot back only from the engine's own names", () => {
+    expect(slotOf('lexdroid-engine-b', 'engine-b')).toBe(1);
+    expect(slotOf('lexdroid-engine-b-4', 'engine-b')).toBe(4);
+    // Another engine whose id starts the same is not this engine's pod.
+    expect(slotOf('lexdroid-engine-b-large', 'engine-b')).toBeNull();
+    expect(slotOf('lexdroid-engine-b-1', 'engine-b')).toBeNull();
+    expect(slotOf('lexdroid-engine-a', 'engine-b')).toBeNull();
+    expect(slotOf('someone-elses-pod', 'engine-b')).toBeNull();
+  });
+
+  it('fills the gaps a stopped pod left before adding new slots', () => {
+    expect(freeSlots([], 4)).toEqual([1, 2, 3, 4]);
+    expect(freeSlots([1, 3], 2)).toEqual([2, 4]);
+    expect(freeSlots([2], 1)).toEqual([1]);
+  });
+
+  it('holds an engine to four', () => {
+    expect(MAX_PODS).toBe(4);
   });
 });

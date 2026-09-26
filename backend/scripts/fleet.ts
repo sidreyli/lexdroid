@@ -40,7 +40,7 @@ import { buildExportRows } from '../src/export/index.js';
 import { verifyRun } from '../src/verify/index.js';
 import { tagRun } from '../src/baseline/tag.js';
 import { defaultEngine, findEngine, type Engine } from '../src/engines/registry.js';
-import { podFor, podStatus } from '../src/gpu/runpod.js';
+import { podsFor, podStatus } from '../src/gpu/runpod.js';
 
 // Before any engine is chosen: a hosted engine needs its key from .env, and the workers this
 // process spawns inherit whatever it loads here.
@@ -233,29 +233,51 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  // The rented GPU is found by the engine's name, and its address, token and price come from
-  // RunPod's record of it. The token goes to the workers through the environment and nowhere else.
+  // The rented GPUs are found by the engine's name, and their addresses, token and prices come from
+  // RunPod's record of them. The token goes to the workers through the environment and nowhere else.
   if (args.on === 'runpod') {
     if (!args.engine) throw new Error('--on runpod needs an --engine');
-    const pod = await podFor(args.engine.id);
-    if (!pod) {
+    const rented = await podsFor(args.engine.id);
+    if (rented.length === 0) {
       console.error(`\nNo GPU is rented for ${args.engine.label}. Start one from the interface first.\n`);
       process.exit(1);
     }
-    const ready = await podStatus(pod);
-    if (ready.stage !== 'ready') {
-      console.error(`\n${args.engine.label}'s GPU is not ready: ${ready.stage}${ready.detail ? ` (${ready.detail})` : ''}.\n`);
+    const states = await Promise.all(rented.map(podStatus));
+    const pods = rented.filter((_, i) => states[i]!.stage === 'ready');
+    // A pod still loading, or one that failed, is left out rather than waited for: on the day the
+    // clock is the constraint, and three GPUs reading now beat four reading in five minutes.
+    rented.forEach((p, i) => {
+      const st = states[i]!;
+      if (st.stage !== 'ready') {
+        console.error(`  ${p.id} is not ready (${st.stage}${st.detail ? `: ${st.detail}` : ''}); reading without it`);
+      }
+    });
+    if (pods.length === 0) {
+      console.error(`\nNone of ${args.engine.label}'s ${rented.length} GPU(s) is ready yet.\n`);
       process.exit(1);
     }
-    args.hosts = [pod.url];
-    process.env['LEXDROID_ENGINE_TOKEN'] = pod.token;
-    if (!args.usdPerHour) args.usdPerHour = pod.usdPerHour;
+    // One token per engine, whichever pod answers. Pods with differing tokens were not rented
+    // together, and a read sent to the wrong one would fail as unauthorised halfway through a run.
+    if (new Set(pods.map((p) => p.token)).size > 1) {
+      console.error(`\n${args.engine.label}'s GPUs hold different tokens. Stop them and rent them together.\n`);
+      process.exit(1);
+    }
+    args.hosts = pods.map((p) => p.url);
+    process.env['LEXDROID_ENGINE_TOKEN'] = pods[0]!.token;
+    // Rent is charged per host at this rate, so the mean over the pods charges their true sum.
+    if (!args.usdPerHour) args.usdPerHour = pods.reduce((t, p) => t + p.usdPerHour, 0) / pods.length;
+    // Fewer units than GPUs leaves GPUs idle unless every GPU reads each unit together -- the
+    // live test is one economy and one pillar, which is one unit.
+    if (pods.length > 1 && !args.perEconomy) args.fanOut = true;
     if (replayingWhilePaying(cacheEnabled(), args.usdPerHour)) {
       console.error('\nThe engine cache is on and this GPU is being paid for by the hour.');
       console.error('A replayed run is not a measurement; unset LEXDROID_ENGINE_CACHE.\n');
       process.exit(1);
     }
-    console.log(`\n${args.engine.label} on a rented ${pod.gpu || ready.gpu} at $${pod.usdPerHour}/hr (${pod.id})`);
+    for (const p of pods) {
+      const st = states[rented.indexOf(p)]!;
+      console.log(`\n${args.engine.label} on a rented ${p.gpu || st.gpu} at $${p.usdPerHour}/hr (${p.id})`);
+    }
   }
   if (args.hosts.length === 0) {
     console.error('\nNo engine to run on: pass --hosts, or --on runpod for a rented GPU.\n');

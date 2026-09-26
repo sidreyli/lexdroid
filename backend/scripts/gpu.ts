@@ -5,8 +5,9 @@
  *   gpu status [--offers]         every declared engine, on this machine and rented
  *   gpu load   --engine ID        pull, build and load it on this machine (writes progress)
  *   gpu unload --engine ID        take it out of this machine's GPU memory
- *   gpu start  --engine ID        rent a GPU for it; the pod then loads the engine itself
- *   gpu stop   --engine ID        give that GPU back
+ *   gpu start  --engine ID [--pods N]   rent GPUs for it, up to N in all (default 1, at most 4);
+ *                                       each pod then loads the engine itself
+ *   gpu stop   --engine ID [--pod POD]  give its GPUs back, or only the one named
  *
  * No token and no key is ever printed. The pod's token stays in RunPod's record of the pod, and the
  * fleet reads it from there when a run is started on it.
@@ -18,7 +19,7 @@ import { fileURLToPath } from 'node:url';
 import { loadEnv } from '../src/env.js';
 import { findEngine, loadEngines, type Engine } from '../src/engines/registry.js';
 import { LOCAL_HOST, loadLocal, localStatus, unloadLocal } from '../src/gpu/local.js';
-import { offers, podFor, podStatus, spentUsd, startPod, stopPod, type Pod } from '../src/gpu/runpod.js';
+import { MAX_PODS, offers, podStatus, podsFor, spentUsd, startPods, stopPods, type Pod } from '../src/gpu/runpod.js';
 
 loadEnv();
 
@@ -82,17 +83,18 @@ async function status(withOffers: boolean) {
     const local = e.hosts.length > 0 || fitsHere ? await localStatus(e, e.hosts[0] ?? LOCAL_HOST).catch(() => null) : null;
     let rented: object | null = null;
     if (e.rented) {
-      let pod: Pod | undefined;
+      let pods: Pod[] = [];
       let error: string | null = null;
       try {
-        pod = await podFor(e.id);
+        pods = await podsFor(e.id);
       } catch (err) {
         error = err instanceof Error ? err.message : String(err);
       }
       rented = {
         ...e.rented,
-        pod: pod ? await withStatus(pod) : null,
-        offers: withOffers && !pod ? await offers(e.rented).catch(() => []) : undefined,
+        maxPods: MAX_PODS,
+        pods: await Promise.all(pods.map(withStatus)),
+        offers: withOffers && pods.length < MAX_PODS ? await offers(e.rented).catch(() => []) : undefined,
         error,
       };
     }
@@ -106,6 +108,11 @@ async function status(withOffers: boolean) {
     });
   }
   return { gpu, engines: out };
+}
+
+function flag(argv: string[], name: string): string | undefined {
+  const i = argv.indexOf(name);
+  return i >= 0 ? argv[i + 1] : undefined;
 }
 
 function engineArg(argv: string[]): Engine {
@@ -144,17 +151,18 @@ async function main(): Promise<void> {
     case 'start': {
       const e = engineArg(rest);
       if (!e.rented) throw new Error(`${e.label} is not declared as rentable`);
-      console.log(JSON.stringify({ ok: true, pod: publicPod(await startPod(e, e.rented)) }));
+      const { pods, shortfall } = await startPods(e, e.rented, Number(flag(rest, '--pods') ?? 1));
+      console.log(JSON.stringify({ ok: true, pods: pods.map(publicPod), shortfall }));
       return;
     }
     case 'stop': {
       const e = engineArg(rest);
-      const pod = await stopPod(e.id);
-      console.log(JSON.stringify({ ok: true, stopped: pod ? publicPod(pod) : null }));
+      const stopped = await stopPods(e.id, flag(rest, '--pod'));
+      console.log(JSON.stringify({ ok: true, stopped: stopped.map(publicPod) }));
       return;
     }
     default:
-      throw new Error('usage: gpu status [--offers] | load|unload|start|stop --engine ID');
+      throw new Error('usage: gpu status [--offers] | load|unload --engine ID | start --engine ID [--pods N] | stop --engine ID [--pod POD]');
   }
 }
 

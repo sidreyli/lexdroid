@@ -150,7 +150,7 @@ For Git-based Vercel deployments, choose `frontend` as the project's Root Direct
 | Follow a row to its official source at the cited article | **Workbench** → row → *Source* → the citation link, which carries the anchor for the section |
 | Accept, reject or correct a row | **Workbench** → row → *Accept* / *Reject*, or edit any field in the finding panel |
 | Switch the AI engine | **Home** → *Start a run* → the **Engine** control |
-| Load an engine into this machine's GPU, or rent a GPU for it | **Home** → *Start a run* → **Runs on** → *Load* / *Rent GPU*, with progress and the rent so far |
+| Load an engine into this machine's GPU, or rent one to four GPUs for it | **Home** → *Start a run* → **Runs on** → *Load*, or **GPUs** 1–4 → *Rent GPU*, with each pod's progress and the rent so far |
 | Re-score a finished run under the current rules | **Runs** → a run → *Rescore* (previews the changes before applying them) |
 | Export to the RDTII schema | **Runs** → a run → *Export N rows* |
 
@@ -188,9 +188,17 @@ provision text (`backend/src/engines/ollama.ts`, `schemaDecoding`).
 Ollama, builds the engine from the same Modelfile this repository declares, loads it, and refuses
 to report ready unless the whole model is in GPU memory. That takes about six minutes. The panel
 shows each stage and the rent so far, and *Stop GPU* deletes the pod. The pod answers only through
-RunPod's HTTPS proxy, behind a random per-pod token (`infra/runpod/pod.py`), and Ollama itself is
-bound to the pod's localhost. From the command line, `npm run -w backend gpu -- start --engine
-engine-b` does the same, and a run with `--on runpod` finds the pod by name.
+RunPod's HTTPS proxy, behind a random token (`infra/runpod/pod.py`), and Ollama itself is bound to
+the pod's localhost. From the command line, `npm run -w backend gpu -- start --engine engine-b`
+does the same, and a run with `--on runpod` finds the pods by name.
+
+**More GPUs, less waiting.** **GPUs** picks one to four pods for the engine, each at most the same
+$0.34/hr. A run on them divides the pillar's reads across them, one read per pod at a time, which
+is how every multi-engine run here has been kept from batching reads together. The live test is
+one pillar, so this is the one stage it can shorten: Engine B read Thailand's 11.3 and 11.4 at about
+24 s per provision on one pod. The pods of an engine share one token. A pod that is still loading
+or has failed when the run starts is left out, and the run log says so. `--pods N` on `gpu start`,
+and `--pod ID` on `gpu stop` to give back just one.
 
 **The RunPod key is never sent to the pod or written anywhere else.** `backend/test/gpu-rental.test.ts`
 asserts that the body that creates a pod carries no key.

@@ -6,6 +6,8 @@ import { isReadOnlyDeployment, READ_ONLY_DEPLOYMENT_MESSAGE } from "@/lib/deploy
 export const dynamic = "force-dynamic";
 
 const ACTIONS = ["load", "unload", "start", "stop"] as const;
+/** Mirrors MAX_PODS in backend/src/gpu/runpod.ts, which refuses more whatever this says. */
+const MAX_PODS = 4;
 type Action = (typeof ACTIONS)[number];
 
 /**
@@ -47,9 +49,9 @@ export async function POST(request: Request) {
   if (isReadOnlyDeployment()) {
     return NextResponse.json({ error: READ_ONLY_DEPLOYMENT_MESSAGE }, { status: 503 });
   }
-  let body: { action?: string; engine?: string };
+  let body: { action?: string; engine?: string; pods?: number; pod?: string };
   try {
-    body = (await request.json()) as { action?: string; engine?: string };
+    body = (await request.json()) as { action?: string; engine?: string; pods?: number; pod?: string };
   } catch {
     return NextResponse.json({ error: "Send a JSON body with an action and an engine" }, { status: 400 });
   }
@@ -76,6 +78,20 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true, started: true });
   }
 
-  const { ok, body: result } = await gpu([action, "--engine", body.engine], 120_000);
+  const args = [action, "--engine", body.engine];
+  if (action === "start" && body.pods !== undefined) {
+    if (!Number.isInteger(body.pods) || body.pods < 1 || body.pods > MAX_PODS) {
+      return NextResponse.json({ error: `Between 1 and ${MAX_PODS} GPUs` }, { status: 400 });
+    }
+    args.push("--pods", String(body.pods));
+  }
+  if (action === "stop" && body.pod !== undefined) {
+    if (!/^[a-z0-9]{6,40}$/.test(body.pod)) {
+      return NextResponse.json({ error: "Name a pod by its id" }, { status: 400 });
+    }
+    args.push("--pod", body.pod);
+  }
+  // Renting four pods is four RunPod calls in a row, each of which can wait on stock.
+  const { ok, body: result } = await gpu(args, action === "start" ? 240_000 : 120_000);
   return NextResponse.json(result, { status: ok ? 200 : 502 });
 }

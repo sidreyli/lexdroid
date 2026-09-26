@@ -1,10 +1,11 @@
 /**
  * Renting a GPU for one engine, from the interface.
  *
- * One pod per engine, named for it, and nothing about it kept on this machine: RunPod's own record
- * of the pod is the record. The pod's token is in the pod's environment, which is read back through
- * the same API that created it -- anyone who can read it there could already stop or start the pod,
- * so writing it to a file here would add a copy and no protection.
+ * Up to MAX_PODS pods per engine, named for it, and nothing about them kept on this machine: RunPod's
+ * own record of each pod is the record. The token is in each pod's environment, which is read back
+ * through the same API that created it -- anyone who can read it there could already stop or start
+ * the pod, so writing it to a file here would add a copy and no protection. An engine's pods share
+ * one token, so a run reading across all of them authenticates the same way it does on one.
  *
  * The pod serves Ollama through `infra/runpod/pod.py` on RunPod's HTTPS proxy. Ollama itself stays
  * bound to localhost on the pod.
@@ -25,6 +26,11 @@ const OLLAMA_VERSION = '0.34.4';
 const PORT = 8000;
 /** The ceiling on one GPU's rent. A pod that comes back dearer is given back at once. */
 export const DEFAULT_MAX_USD_PER_HOUR = 0.34;
+/**
+ * The most pods one engine may hold. A pillar's reads divide across them, one read per pod at a
+ * time, so four cut the slowest stage of the live test about fourfold for four times the rent.
+ */
+export const MAX_PODS = 4;
 
 export interface Rental {
   provider: 'RunPod';
@@ -72,8 +78,25 @@ export function runpodKey(root = REPO_ROOT): string {
   return key;
 }
 
-export function podName(engineId: string): string {
-  return `lexdroid-${engineId}`;
+/** The first pod keeps the name one pod always had; the rest are numbered from 2. */
+export function podName(engineId: string, slot = 1): string {
+  return slot === 1 ? `lexdroid-${engineId}` : `lexdroid-${engineId}-${slot}`;
+}
+
+/** The slot a pod's name says it holds for the engine, or null when it is not one of its pods. */
+export function slotOf(name: string, engineId: string): number | null {
+  if (name === podName(engineId)) return 1;
+  const prefix = `${podName(engineId)}-`;
+  if (!name.startsWith(prefix)) return null;
+  const n = name.slice(prefix.length);
+  return /^[2-9]\d*$/.test(n) ? Number(n) : null;
+}
+
+/** The lowest free slots, as many as are asked for. */
+export function freeSlots(taken: readonly number[], count: number): number[] {
+  const out: number[] = [];
+  for (let slot = 1; out.length < count; slot++) if (!taken.includes(slot)) out.push(slot);
+  return out;
 }
 
 async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
@@ -162,14 +185,21 @@ function toPod(p: RawPod): Pod {
   };
 }
 
-/** The pods this interface started, one per engine at most. Pods named otherwise are not ours. */
+/** The pods this interface started. Pods named otherwise are not ours. */
 export async function listPods(): Promise<Pod[]> {
   const all = await call<RawPod[]>('GET', '/pods');
   return all.filter((p) => p.name.startsWith('lexdroid-') && p.env?.['LEX_TOKEN']).map(toPod);
 }
 
+/** Every pod rented for the engine, in slot order. */
+export async function podsFor(engineId: string): Promise<Pod[]> {
+  return (await listPods())
+    .filter((p) => p.engineId === engineId && slotOf(p.name, engineId) !== null)
+    .sort((a, b) => slotOf(a.name, engineId)! - slotOf(b.name, engineId)!);
+}
+
 export async function podFor(engineId: string): Promise<Pod | undefined> {
-  return (await listPods()).find((p) => p.name === podName(engineId));
+  return (await podsFor(engineId))[0];
 }
 
 /** What the pod says it is doing. Unreachable means it is still booting, not that it has failed. */
@@ -210,10 +240,11 @@ export function createBody(
   token: string,
   root = REPO_ROOT,
   cloud: Cloud = 'COMMUNITY',
+  slot = 1,
 ) {
   const script = readFileSync(join(root, 'infra', 'runpod', 'pod.py'));
   return {
-    name: podName(engine.id),
+    name: podName(engine.id, slot),
     imageName: IMAGE,
     gpuTypeIds: gpus,
     gpuTypePriority: 'custom',
@@ -236,29 +267,68 @@ export function createBody(
   };
 }
 
+export interface Rented {
+  /** Every pod the engine now has, in slot order, including any it had before. */
+  pods: Pod[];
+  /** Why fewer were rented than asked for, when that happened. */
+  shortfall: string | null;
+}
+
 /**
- * Rent one GPU for the engine and start it serving. Returns as soon as the pod exists; the pod
- * then installs and loads the engine itself, which `podStatus` reports.
+ * Bring the engine up to `count` GPUs, renting only the ones it lacks. Returns as soon as they
+ * exist; each pod then installs and loads the engine itself, which `podStatus` reports.
  *
- * The price is checked twice: the offers are filtered by the ceiling before asking, and the pod
+ * The price is checked twice: the offers are filtered by the ceiling before asking, and each pod
  * RunPod actually placed is checked after, because what it bills can differ from what it listed.
+ * Stock runs out a card at a time, so a partial rental is kept and said rather than given back:
+ * three pods of four still read a pillar three times faster than one.
  */
-export async function startPod(engine: Engine, rental: Rental): Promise<Pod> {
-  const existing = await podFor(engine.id);
-  if (existing) return existing;
+export async function startPods(engine: Engine, rental: Rental, count = 1): Promise<Rented> {
+  if (!Number.isInteger(count) || count < 1 || count > MAX_PODS) {
+    throw new Error(`Between 1 and ${MAX_PODS} GPUs per engine, not ${count}`);
+  }
+  const existing = await podsFor(engine.id);
+  if (existing.length >= count) return { pods: existing, shortfall: null };
   const cap = rental.maxUsdPerHour ?? DEFAULT_MAX_USD_PER_HOUR;
   const available = await offers(rental);
   if (available.length === 0) {
     throw new Error(`No GPU with ${rental.minGpuMemoryGb} GB or more is listed at $${cap.toFixed(2)}/hr or less`);
   }
-  const token = randomBytes(32).toString('base64url');
+  const token = existing.find((p) => p.token)?.token ?? randomBytes(32).toString('base64url');
+  const slots = freeSlots(
+    existing.map((p) => slotOf(p.name, engine.id)!),
+    count - existing.length,
+  );
+  const pods = [...existing];
+  let shortfall: string | null = null;
+  for (const slot of slots) {
+    try {
+      pods.push(await rentOne(engine, rental, available, token, slot, cap));
+    } catch (err) {
+      shortfall = `${pods.length} of ${count} rented: ${err instanceof Error ? err.message : String(err)}`;
+      break;
+    }
+  }
+  if (pods.length === 0) throw new Error(shortfall ?? 'No GPU could be rented');
+  return { pods, shortfall };
+}
+
+/** One pod, into one slot: the community tier first, then the secure one. */
+async function rentOne(
+  engine: Engine,
+  rental: Rental,
+  available: Offer[],
+  token: string,
+  slot: number,
+  cap: number,
+): Promise<Pod> {
   let created: RawPod | undefined;
   let lastError: unknown;
   for (const cloud of ['COMMUNITY', 'SECURE'] as const) {
     const gpus = available.filter((o) => o.cloud === cloud).slice(0, 8).map((o) => o.gpu);
     if (gpus.length === 0) continue;
     try {
-      created = await call<RawPod>('POST', '/pods', createBody(engine, rental, gpus, token, REPO_ROOT, cloud));
+      created = await call<RawPod>('POST', '/pods', createBody(engine, rental, gpus, token, REPO_ROOT, cloud, slot));
       break;
     } catch (err) {
       // Out of stock on this tier is the expected failure; anything else is not.
@@ -284,11 +354,14 @@ export async function deletePod(id: string): Promise<void> {
   await call('DELETE', `/pods/${id}`);
 }
 
-/** Stop the engine's pod. Only a pod this interface named for the engine is ever touched. */
-export async function stopPod(engineId: string): Promise<Pod | undefined> {
-  const pod = await podFor(engineId);
-  if (pod) await deletePod(pod.id);
-  return pod;
+/**
+ * Give back the engine's pods, or the one named. Only a pod this interface named for the engine is
+ * ever touched: an id that is not one of them stops nothing.
+ */
+export async function stopPods(engineId: string, podId?: string): Promise<Pod[]> {
+  const pods = (await podsFor(engineId)).filter((p) => !podId || p.id === podId);
+  await Promise.all(pods.map((p) => deletePod(p.id)));
+  return pods;
 }
 
 /** Rent so far, from when the pod last started billing. */

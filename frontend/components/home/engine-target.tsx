@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Cloud, Cpu, Loader2, Power, Square, Upload } from "lucide-react";
+import { Cloud, Cpu, Loader2, Power, Square, Upload, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
@@ -40,7 +40,8 @@ interface EngineState {
   rented: {
     minGpuMemoryGb: number;
     maxUsdPerHour?: number;
-    pod: PodState | null;
+    maxPods: number;
+    pods: PodState[];
     offers?: Offer[];
     error: string | null;
   } | null;
@@ -77,6 +78,8 @@ export function EngineTarget({
   const [status, setStatus] = useState<GpuStatus | null>(null);
   const [offers, setOffers] = useState<Record<string, Offer[]>>({});
   const [busy, setBusy] = useState<string | null>(null);
+  /** How many GPUs the engine should read on. Only ever raised by the user, never by a poll. */
+  const [want, setWant] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const alive = useRef(true);
 
@@ -108,7 +111,12 @@ export function EngineTarget({
   const engine = status?.engines.find((e) => e.id === engineId);
   const local = engine?.local ?? null;
   const rented = engine?.rented ?? null;
-  const pod = rented?.pod ?? null;
+  const pods = rented?.pods ?? [];
+  const ready = pods.filter((p) => p.status.stage === "ready");
+  const failed = pods.filter((p) => p.status.stage === "failed");
+  const count = want ?? Math.max(1, pods.length);
+  const hourly = pods.reduce((t, p) => t + p.usdPerHour, 0);
+  const spent = pods.reduce((t, p) => t + p.spentUsd, 0);
   const localLoading = !!local?.progress && LOADING.has(local.progress.stage) && !local.loaded;
 
   // An engine that cannot run here is run where it can, without the user having to find that out.
@@ -125,22 +133,30 @@ export function EngineTarget({
       if (!local.loaded) return onReady(false, `Load ${engine.model} before starting`);
       return onReady(true, "");
     }
-    if (!pod) return onReady(false, "Rent a GPU for this engine before starting");
-    if (pod.status.stage !== "ready") return onReady(false, "The rented GPU is still getting ready");
+    if (pods.length === 0) return onReady(false, "Rent a GPU for this engine before starting");
+    if (failed.length > 0) return onReady(false, "A rented GPU could not load the engine. Stop it, then start");
+    if (count > pods.length) {
+      return onReady(false, `${pods.length} of the ${count} GPUs picked are rented; rent the rest or pick ${pods.length}`);
+    }
+    if (ready.length < pods.length) {
+      return onReady(false, `${ready.length} of ${pods.length} rented GPUs ready; the run starts when all are`);
+    }
     return onReady(true, "");
-  }, [engine, local, pod, target, onReady]);
+  }, [engine, local, pods.length, ready.length, failed.length, count, target, onReady]);
 
-  const act = async (action: "load" | "unload" | "start" | "stop") => {
-    setBusy(action);
+  const act = async (action: "load" | "unload" | "start" | "stop", extra: { pods?: number; pod?: string } = {}) => {
+    setBusy(extra.pod ? `stop:${extra.pod}` : action);
     setError(null);
     try {
       const res = await fetch("/api/gpu", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action, engine: engineId }),
+        body: JSON.stringify({ action, engine: engineId, ...extra }),
       });
-      const body = (await res.json()) as { ok?: boolean; error?: string };
+      const body = (await res.json()) as { ok?: boolean; error?: string; shortfall?: string | null };
       if (!res.ok || body.ok === false) throw new Error(body.error ?? `Could not ${action}`);
+      if (body.shortfall) setError(body.shortfall);
+      if (action === "stop" && !extra.pod) setWant(null);
       await refresh(action === "stop");
     } catch (err) {
       setError((err as Error).message);
@@ -177,8 +193,8 @@ export function EngineTarget({
           icon={<Cloud className="size-3.5" />}
           title="Rented GPU"
           note={
-            pod
-              ? `${gpuName(pod.gpu)}, $${pod.usdPerHour.toFixed(2)}/hr`
+            pods.length > 0
+              ? `${pods.length} × ${gpuName(pods[0]!.gpu)}, $${hourly.toFixed(2)}/hr`
               : cheapest
                 ? `from $${cheapest.usdPerHour.toFixed(2)}/hr`
                 : rented
@@ -242,50 +258,101 @@ export function EngineTarget({
       ) : null}
 
       {target === "runpod" && rented ? (
-        <div className="rounded-xl bg-inset px-3.5 py-3">
-          {pod ? (
-            <>
-              <div className="flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="truncate text-[13px] font-medium text-navy-deep">
-                    {gpuName(pod.gpu)} <span className="text-muted-foreground">({pod.id})</span>
-                  </p>
-                  <p className="text-[12px] text-muted-foreground">
-                    <span className={cn(pod.status.stage === "ready" && "text-navy-deep font-medium")}>
-                      {pod.status.stage === "ready" ? "Ready" : pod.status.stage}
-                    </span>
-                    {pod.status.stage !== "ready" && pod.status.detail ? `: ${pod.status.detail}` : ""}
-                    {` · $${pod.spentUsd.toFixed(2)} so far at $${pod.usdPerHour.toFixed(2)}/hr`}
-                  </p>
-                </div>
+        <div className="flex flex-col gap-2.5 rounded-xl bg-inset px-3.5 py-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-[13px] font-medium text-navy-deep">GPUs</p>
+              <p className="text-[12px] leading-snug text-muted-foreground">
+                The pillar's reads divide across them, one at a time on each.
+              </p>
+            </div>
+            <div className="flex shrink-0 gap-1" role="radiogroup" aria-label="How many GPUs">
+              {Array.from({ length: rented.maxPods }, (_, i) => i + 1).map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  role="radio"
+                  aria-checked={count === n}
+                  disabled={!!busy || n < pods.length}
+                  onClick={() => setWant(n)}
+                  className={cn(
+                    "size-8 rounded-lg text-[13px] font-medium tabular-nums transition-colors duration-150",
+                    "focus-visible:ring-2 focus-visible:ring-navy/40 focus-visible:outline-none",
+                    "disabled:cursor-not-allowed disabled:opacity-45",
+                    count === n ? "bg-navy text-paper" : "bg-paper text-navy-deep hover:bg-edge",
+                  )}
+                >
+                  {n}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {pods.length > 0 ? (
+            <ul className="flex flex-col gap-1.5">
+              {pods.map((pod) => (
+                <li key={pod.id} className="rounded-lg bg-paper px-3 py-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="min-w-0 truncate text-[12.5px] text-muted-foreground">
+                      <span className="font-medium text-navy-deep">{gpuName(pod.gpu) || "GPU"}</span>{" "}
+                      <span className={cn(pod.status.stage === "ready" && "font-medium text-navy-deep")}>
+                        {pod.status.stage === "ready" ? "Ready" : pod.status.stage}
+                      </span>
+                      {pod.status.stage !== "ready" && pod.status.detail ? `: ${pod.status.detail}` : ""}
+                      <span className="text-muted-foreground/70">{` · ${pod.id}`}</span>
+                    </p>
+                    <button
+                      type="button"
+                      aria-label={`Stop ${pod.id}`}
+                      title="Stop this GPU"
+                      disabled={!!busy}
+                      onClick={() => act("stop", { pod: pod.id })}
+                      className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-edge hover:text-navy-deep disabled:opacity-45"
+                    >
+                      {busy === `stop:${pod.id}` ? <Loader2 className="size-3.5 animate-spin" /> : <X className="size-3.5" />}
+                    </button>
+                  </div>
+                  {pod.status.stage !== "ready" && pod.status.progress != null ? (
+                    <Progress value={pod.status.progress * 100} className="mt-2 h-1" />
+                  ) : null}
+                  {pod.status.stage === "failed" ? (
+                    <p className="mt-1.5 text-[12px] text-destructive">
+                      Could not load the engine. Stop it so it stops billing, then rent another.
+                    </p>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-[12.5px] leading-snug text-muted-foreground">
+              {pods.length > 0
+                ? `$${spent.toFixed(2)} so far at $${hourly.toFixed(2)}/hr for ${pods.length}.`
+                : cheapest
+                  ? `Rents the cheapest free cards with ${rented.minGpuMemoryGb} GB or more, at most $${(rented.maxUsdPerHour ?? 0.34).toFixed(2)}/hr each. Each pod loads ${engine.model} itself, in a few minutes.`
+                  : `No card with ${rented.minGpuMemoryGb} GB or more is listed under $${(rented.maxUsdPerHour ?? 0.34).toFixed(2)}/hr right now.`}
+            </p>
+            <div className="flex shrink-0 gap-1.5">
+              {pods.length > 0 ? (
                 <Button size="sm" variant="ghost" disabled={!!busy} onClick={() => act("stop")}>
                   {busy === "stop" ? <Loader2 className="size-3.5 animate-spin" /> : <Power className="size-3.5" />}
-                  Stop GPU
+                  {pods.length > 1 ? "Stop all" : "Stop GPU"}
                 </Button>
-              </div>
-              {pod.status.stage !== "ready" && pod.status.progress != null ? (
-                <Progress value={pod.status.progress * 100} className="mt-2.5 h-1.5" />
               ) : null}
-              {pod.status.stage === "failed" ? (
-                <p className="mt-2 text-[12px] text-destructive">
-                  The pod could not load the engine. Stop it so it stops billing, then try again.
-                </p>
+              {count > pods.length ? (
+                <Button size="sm" disabled={!!busy || !cheapest} onClick={() => act("start", { pods: count })}>
+                  {busy === "start" ? <Loader2 className="size-3.5 animate-spin" /> : <Power className="size-3.5" />}
+                  {pods.length === 0
+                    ? count === 1
+                      ? "Rent GPU"
+                      : `Rent ${count} GPUs`
+                    : `Rent ${count - pods.length} more`}
+                </Button>
               ) : null}
-            </>
-          ) : (
-            <div className="flex items-center justify-between gap-3">
-              <p className="text-[12.5px] leading-snug text-muted-foreground">
-                {cheapest
-                  ? `Rents the cheapest free card with ${rented.minGpuMemoryGb} GB or more, at most $${(rented.maxUsdPerHour ?? 0.34).toFixed(2)}/hr. The pod downloads and loads ${engine.model} itself, which takes a few minutes the first time.`
-                  : `No card with ${rented.minGpuMemoryGb} GB or more is listed under $${(rented.maxUsdPerHour ?? 0.34).toFixed(2)}/hr right now.`}
-              </p>
-              <Button size="sm" disabled={!!busy || !cheapest} onClick={() => act("start")}>
-                {busy === "start" ? <Loader2 className="size-3.5 animate-spin" /> : <Power className="size-3.5" />}
-                Rent GPU
-              </Button>
             </div>
-          )}
-          {rented.error ? <p className="mt-2 text-[12px] text-destructive">{rented.error}</p> : null}
+          </div>
+          {rented.error ? <p className="text-[12px] text-destructive">{rented.error}</p> : null}
         </div>
       ) : null}
 
