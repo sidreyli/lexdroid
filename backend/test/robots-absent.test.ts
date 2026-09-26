@@ -70,12 +70,31 @@ describe('a host with no robots.txt', () => {
     expect(await delayFor({ status: 504, body: 'Gateway Timeout' })).toBe(1000);
   });
 
+  it('goes at the ordinary pace when the file asks for a login', async () => {
+    // The Bank of Thailand's CDN answered 401 once, then served every page and 404 to the file.
+    expect(await delayFor({ status: 401, body: 'Unauthorized' })).toBe(1000);
+  });
+
   it('slows down for 503, which is a host asking for it', async () => {
     expect(await delayFor({ status: 503, body: 'Service Unavailable' })).toBe(10_000);
   });
 
   it('still obeys a file that is there', async () => {
     expect(await delayFor({ status: 200, body: 'user-agent: *\ncrawl-delay: 6\n' })).toBe(6000);
+  });
+
+  it('logs what each fetch returned, for the Run Record to name its file type', async () => {
+    const db = openDb(':memory:');
+    const fetcher = new Fetcher({ db, sourceMode: 'fetch' });
+    await fetcher.fetch(`${await host({ status: 200, body: 'user-agent: *' })}/a-page`);
+    const logged = db
+      .prepare(`SELECT url, media_type AS mediaType FROM fetch_log WHERE outcome = 'ok' ORDER BY id`)
+      .all() as { url: string; mediaType: string | null }[];
+    db.close();
+    expect(logged.map((l) => [new URL(l.url).pathname, l.mediaType])).toEqual([
+      ['/robots.txt', 'text/plain'],
+      ['/a-page', 'text/html'],
+    ]);
   });
 
   it('says which of the two happened', async () => {

@@ -19,8 +19,14 @@
  */
 import type ExcelJS from "exceljs";
 import type { ExportRow, Run } from "@/lib/data/types";
+import { clockAt, LIVE_TEST_TIME_ZONE } from "./pair";
 
 const BOLD = { bold: true } as const;
+
+/** Dollars to the cent, as a bill reads; a floating-point tail is not a figure anyone was charged. */
+const cents = (usd: number): number =>
+  // A pass that cost a fraction of a cent keeps its figure: rounded to 0 it would read as free.
+  usd > 0 && usd < 0.005 ? Math.round(usd * 10000) / 10000 : Math.round(usd * 100) / 100;
 
 /** A section heading inside a sheet, as the template lays them out. */
 function heading(sheet: ExcelJS.Worksheet, text: string): void {
@@ -179,18 +185,18 @@ export function addEngineComparison(
     const ms = new Date(run.finishedAt).getTime() - new Date(run.startedAt).getTime();
     return ms > 0 ? (ms / 60000).toFixed(1) : "";
   };
-  const clock = (iso: string | null | undefined): string => (iso ? iso.slice(11, 16) : "");
+  const clock = (iso: string | null | undefined): string => clockAt(iso);
 
   heading(sheet, "1 · Per-engine summary");
   sheet.addRow(["Field", "Engine A — first pass", "Engine B — second pass"]).font = BOLD;
   sheet.addRow(["Provider and model name", passA.run?.model ?? "", passB.run?.model ?? ""]);
   sheet.addRow(["Run id", passA.run?.id ?? "", passB.run?.id ?? ""]);
-  sheet.addRow(["Start time (hh:mm)", clock(passA.run?.startedAt), clock(passB.run?.startedAt)]);
-  sheet.addRow(["End time (hh:mm)", clock(passA.run?.finishedAt), clock(passB.run?.finishedAt)]);
+  sheet.addRow([`Start time (hh:mm, ${LIVE_TEST_TIME_ZONE})`, clock(passA.run?.startedAt), clock(passB.run?.startedAt)]);
+  sheet.addRow([`End time (hh:mm, ${LIVE_TEST_TIME_ZONE})`, clock(passA.run?.finishedAt), clock(passB.run?.finishedAt)]);
   sheet.addRow(["Elapsed (minutes)", minutes(passA.run), minutes(passB.run)]);
   sheet.addRow(["Documents fetched during this pass", passA.documentsFetched, passB.documentsFetched]);
   // Unknown is said, not rounded to nothing: a hosted engine's bill was never recorded here.
-  const cost = (run: typeof passA.run): number | string => (!run ? "" : run.usd === null ? "unknown" : run.usd);
+  const cost = (run: typeof passA.run): number | string => (!run ? "" : run.usd === null ? "unknown" : cents(run.usd));
   sheet.addRow(["Cost of this pass (US$)", cost(passA.run), cost(passB.run)]);
   sheet.addRow(["Evidence rows produced", passA.rows.length, passB.rows.length]);
 
@@ -267,6 +273,165 @@ export function addEngineComparison(
 
   sheet.columns.forEach((c, i) => (c.width = [6, 44, 20, 14, 14, 16, 16, 18, 62][i] ?? 18));
   sheet.getColumn(9).alignment = { wrapText: true, vertical: "top" };
+  sheet.getColumn(2).alignment = { wrapText: true, vertical: "top" };
+}
+
+/* ---------------------------------------------------------------------------------------------
+ * Run Record
+ * ------------------------------------------------------------------------------------------- */
+
+export interface Downloaded {
+  runId: string;
+  url: string;
+  at: string;
+  bytes: number | null;
+  mediaType: string | null;
+}
+
+/**
+ * What the template calls a file type: PDF, HTML, DOCX. From what the server said it sent, else the
+ * URL's extension, else blank -- an API or a search form names nothing, and a guess is a wrong line.
+ */
+export function fileType(mediaType: string | null, url: string): string {
+  const byMedia: Record<string, string> = {
+    "application/pdf": "PDF",
+    "text/html": "HTML",
+    "application/xhtml+xml": "HTML",
+    "text/plain": "TXT",
+    "application/msword": "DOC",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "DOCX",
+    "application/epub+zip": "EPUB",
+    "application/json": "JSON",
+    "application/xml": "XML",
+    "text/xml": "XML",
+  };
+  const media = mediaType?.split(";")[0]?.trim().toLowerCase();
+  if (media && byMedia[media]) return byMedia[media];
+  if (media?.endsWith("+json")) return "JSON";
+  if (media?.endsWith("+xml")) return "XML";
+  let path = url;
+  try {
+    path = new URL(url).pathname;
+  } catch {
+    // Not a URL; read it as a path.
+  }
+  const ext = /\.([a-z0-9]{2,5})$/i.exec(path)?.[1]?.toLowerCase();
+  if (!ext) return "";
+  // Pages a server builds: what they send is a page, whatever the script is called.
+  if (["htm", "html", "aspx", "asp", "php", "jsp", "cfm"].includes(ext)) return "HTML";
+  return ext.toUpperCase();
+}
+
+/**
+ * The template's Run Record: the two passes, every document downloaded during the hour, and the
+ * short note's headings. The document list is the hard check -- "if no documents were fetched
+ * during the hour, C5a scores zero" -- so it is written from the fetch log, row for row, and the
+ * counts under it are counted from the list itself rather than stated beside it.
+ */
+export function addRunRecord(
+  book: ExcelJS.Workbook,
+  passA: EnginePass,
+  passB: EnginePass,
+  documents: readonly Downloaded[],
+): void {
+  const sheet = book.addWorksheet("Run Record");
+  sheet.addRow(["Finale morning — run record"]).font = BOLD;
+  sheet.addRow([
+    "Evidence that the hour happened as described. The document list is the hard check: if no documents " +
+      "were fetched during the hour, C5a scores zero regardless of what the evidence file contains.",
+  ]);
+  sheet.addRow([]);
+
+  const minutes = (run: Run | null): number | string => {
+    if (!run?.startedAt || !run.finishedAt) return "";
+    const ms = new Date(run.finishedAt).getTime() - new Date(run.startedAt).getTime();
+    return ms > 0 ? Math.round(ms / 6000) / 10 : "";
+  };
+  const cost = (run: Run | null): number | string => (!run ? "" : run.usd === null ? "unknown" : cents(run.usd));
+
+  heading(sheet, "1 · Engine runs");
+  sheet.addRow([
+    "Engine",
+    "Provider / model name",
+    `Start (hh:mm, ${LIVE_TEST_TIME_ZONE})`,
+    `End (hh:mm, ${LIVE_TEST_TIME_ZONE})`,
+    "Elapsed (min)",
+    "Cost (US$)",
+    "Run id",
+  ]).font = BOLD;
+  const passes: [string, EnginePass][] = [
+    ["Engine A — first pass", passA],
+    ["Engine B — second pass", passB],
+  ];
+  for (const [label, pass] of passes) {
+    sheet.addRow([
+      label,
+      pass.run?.model ?? "",
+      clockAt(pass.run?.startedAt),
+      clockAt(pass.run?.finishedAt),
+      minutes(pass.run),
+      cost(pass.run),
+      pass.run?.id ?? "",
+    ]);
+  }
+  // A total over an unknown is unknown, not the sum of what happens to be known.
+  const known = passes.map(([, p]) => p.run).filter((r): r is Run => r !== null);
+  const total = known.some((r) => r.usd === null)
+    ? "unknown"
+    : cents(known.reduce((t, r) => t + (r.usd ?? 0), 0));
+  sheet.addRow(["Total cost for the hour (US$)", "", "", "", "", total]).font = BOLD;
+  sheet.addRow([]);
+
+  heading(sheet, "2 · Every document downloaded during the hour");
+  sheet.addRow([
+    "#",
+    "Source URL",
+    "Fetched during",
+    `Time (hh:mm, ${LIVE_TEST_TIME_ZONE})`,
+    "Size (KB)",
+    "File type",
+  ]).font = BOLD;
+  const during = (runId: string): string =>
+    runId === passA.run?.id ? "Engine A pass" : runId === passB.run?.id ? "Engine B pass" : runId;
+  documents.forEach((d, i) => {
+    sheet.addRow([
+      i + 1,
+      d.url,
+      during(d.runId),
+      clockAt(d.at),
+      d.bytes === null ? "" : Math.max(1, Math.round(d.bytes / 1024)),
+      fileType(d.mediaType, d.url),
+    ]);
+  });
+  if (documents.length === 0) sheet.addRow(["", "No document was taken over the network by either pass."]);
+  const fromA = documents.filter((d) => passA.run && d.runId === passA.run.id).length;
+  const fromB = documents.filter((d) => passB.run && d.runId === passB.run.id).length;
+  sheet.addRow(["Documents fetched during the hour (Engine A):", "", "", "", fromA]).font = BOLD;
+  const zero = sheet.addRow(["Documents fetched by Engine B — must be zero:", "", "", "", passB.run ? fromB : ""]);
+  zero.font = { bold: true, color: { argb: passB.run && fromB === 0 ? "FF1B5E20" : "FFB71C1C" } };
+  sheet.addRow([]);
+
+  heading(sheet, "3 · Short note");
+  // Headings, and only the two answers the record holds. The rest is a person's account of the
+  // hour, and the machine is whichever one the steward watched, not whichever opens the file.
+  for (const h of [
+    "What worked",
+    "What broke",
+    "What a human should check first",
+    "Headline cost for the hour (US$)",
+    "Machine used (make, RAM, GPU if any)",
+    "The two engines used",
+  ]) {
+    const value =
+      h === "Headline cost for the hour (US$)"
+        ? total
+        : h === "The two engines used"
+          ? [passA.run?.model, passB.run?.model].filter(Boolean).join(" and ")
+          : "";
+    sheet.addRow([h, value]);
+  }
+
+  sheet.columns.forEach((c, i) => (c.width = [30, 70, 18, 18, 14, 12, 38][i] ?? 16));
   sheet.getColumn(2).alignment = { wrapText: true, vertical: "top" };
 }
 
@@ -452,7 +617,8 @@ export function addInstructions(book: ExcelJS.Workbook): void {
     ["Rejected rows", "Rows a reviewer rejected are not in this file. Rows a reviewer corrected are here as corrected."],
     ["Indicator Reference", "Every indicator in the framework with its pillar, category and the criterion text it is scored against."],
     ["Coverage Matrix", "How many rows each economy produced for each indicator. A zero is a cell that produced no evidence row, which is different from a cell nobody asked."],
-    ["Run Record", "What produced this file: the engine, the model, the code revision, the source mode, and the measured cost."],
+    ["Run Record", "The live hour's two passes, every document downloaded during it, and the short note's headings, as the template lays them out."],
+    ["Run Log", "What produced this file: the engine, the model, the code revision, the source mode, and the measured cost."],
     ["Engine Comparison", "Every provision either declared engine produced, and how the two differ. The second engine's document count is counted from the run's own fetch log."],
     ["Submission Checklist", "Answered from the record where the record can answer, blank where only a person can."],
   ];

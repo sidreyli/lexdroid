@@ -10,7 +10,7 @@
 import "server-only";
 import { existsSync, readFileSync } from "node:fs";
 import { ENGINES_PATH } from "./paths";
-import { queryWith, storeIsLive } from "./store";
+import { hasColumn, queryWith, storeIsLive } from "./store";
 
 export interface DeclaredEngine {
   label: string;
@@ -72,4 +72,32 @@ export function zeroFetchDemonstrated(): boolean {
     [],
   );
   return (rows[0]?.n ?? 0) > 0;
+}
+
+export interface DownloadedDocument {
+  runId: string;
+  url: string;
+  at: string;
+  bytes: number | null;
+  /** From the stored document where there is one; register pages and robots.txt have none. */
+  mediaType: string | null;
+}
+
+/**
+ * Every document the runs took over the network, in the order they were taken: the Run Record's
+ * second section, which is the check C5a is marked on. Counted from the same rows, and by the same
+ * rule, as `documentsFetchedBy`, so the list and the count on the sheet cannot disagree.
+ */
+export function documentsFetchedIn(runIds: readonly string[]): DownloadedDocument[] {
+  if (runIds.length === 0 || !storeIsLive()) return [];
+  // What the server said it sent, where the fetch logged it; before that, the stored document's.
+  const logged = hasColumn("fetch_log", "media_type") ? "f.media_type" : "NULL";
+  return queryWith<DownloadedDocument>(
+    `SELECT f.run_id AS runId, f.url, f.requested_at AS at, f.bytes,
+            COALESCE(${logged}, (SELECT MAX(d.media_type) FROM document d WHERE d.url = f.url)) AS mediaType
+       FROM fetch_log f
+      WHERE f.run_id IN (${runIds.map(() => "?").join(", ")}) AND f.outcome = 'ok'
+      ORDER BY f.requested_at, f.id`,
+    [...runIds],
+  );
 }
