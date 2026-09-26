@@ -1336,7 +1336,7 @@ const DURATION =
 
 /** Whether the words copied from a provision state how long something lasts. */
 export function statesDuration(...words: (string | null | undefined)[]): boolean {
-  return words.some((w) => !!w && DURATION.test(w));
+  return words.some((w) => !!w && (DURATION.test(w) || DURATION_LOCAL.test(w)));
 }
 
 function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
@@ -1850,7 +1850,7 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     // here in the way a patent is: a legal system may call it data, a record, a document or
     // particulars, but none of them calls it a payment. Placed after the structural tests, which
     // need no view about what the words mean and so should have their say first.
-    if (locational(indicatorId, e.finding.measure) && !INFORMATION.test(e.finding.informationWords ?? '')) {
+    if (locational(indicatorId, e.finding.measure) && !INFORMATION.test(e.finding.informationWords ?? '') && !INFORMATION_LOCAL.test(e.finding.informationWords ?? '')) {
       excludeOnWords(`the provision calls the thing "${e.finding.informationWords}", which is not information`);
       continue;
     }
@@ -2109,8 +2109,29 @@ function inDomain(indicatorId: string, measure: string | null): RegExp | null {
 const NATIONALITY =
   /\b(foreign(er|ers|ly)?|non-?residents?|non-?citizens?|non-?nationals?|overseas|aliens?|citizens?|nationals?|nationality|residents?|residency|domestic|local(ly)?|indigenous|bumiputera|malaysian|singaporean|australian|incorporated in)\b/i;
 
+/**
+ * The same categories in Russian, Mongolian and Lao. Stems, matched as substrings: `\b` is ASCII-only
+ * in JavaScript and never bounds a Cyrillic or Lao word, and these languages inflect. Every term is
+ * in Cyrillic or Lao script, so no English word can match one -- the English economies are tested
+ * exactly as before.
+ *
+ * Measured on Russia's pillar 6: Article 12 of 152-ФЗ, the cross-border transfer article itself,
+ * was held because the data it governs, "персональных данных", is not an English word for
+ * information; Article 13 of 149-ФЗ was held for "баз данных". A held finding scores nothing, so
+ * the cells defaulted to "no restriction" on the laws that impose one.
+ */
+const NATIONALITY_LOCAL = /(иностран|нерезидент|резидент|граждан|подданств|гадаад|иргэн|харьяат|ຕ່າງປະເທດ|ຄົນຕ່າງດ້າວ|ພົນລະເມືອງ|ສັນຊາດ)/i;
+const FOREIGN_PARTY_LOCAL = /(иностран|нерезидент|гадаад|ຕ່າງປະເທດ|ຄົນຕ່າງດ້າວ)/i;
+// "данны"/"данных", not "данн": "данного Федерального закона" means "of this Federal Law".
+const INFORMATION_LOCAL =
+  /(информаци|сведени|данны[ехйм]|данные|документ|запис|реестр|архив|мэдээл|өгөгдөл|баримт|бүртгэл|ຂໍ້ມູນ|ເອກະສານ|ບັນທຶກ|ທະບຽນ)/i;
+// Not "государств" or "улсын": "государственной информационной системы" is a state system, not a place.
+const PLACE_LOCAL = /(территори|пределами|за рубеж|иностранн|нутаг дэвсгэр|гадаад|ສປປ|ລາວ|ປະເທດ|ດິນແດນ)/i;
+const DURATION_LOCAL =
+  /(\d+|одного|двух|тр[её]х|четырех|пяти|шести|десяти|нэг|хоёр|гурав|тав|ຫນຶ່ງ|ໜຶ່ງ|ສອງ|ສາມ|ຫ້າ|ສິບ)\s*(лет|год|месяц|дн|жил|сар|хоног|ປີ|ເດືອນ|ມື້)/i;
+
 function namesNationality(f: Finding): boolean {
-  return [f.dutyBearer, f.definingWords, f.subjectWords, f.quote].some((w) => w && NATIONALITY.test(w));
+  return [f.dutyBearer, f.definingWords, f.subjectWords, f.quote].some((w) => w && (NATIONALITY.test(w) || NATIONALITY_LOCAL.test(w)));
 }
 
 /** Words that make a party foreign to the economy, as opposed to merely naming a nationality. */
@@ -2135,7 +2156,8 @@ const FOREIGN_PARTY = /\b(foreign(er|ers|ly|-owned|-ownership)?|non-?residents?|
  * practice -- so requiring the holder to be the foreign one keeps those and drops these.
  */
 function foreignIsTheHeld(f: Finding): boolean {
-  return FOREIGN_PARTY.test(f.subjectWords ?? '') && !FOREIGN_PARTY.test(f.dutyBearer ?? '');
+  const foreign = (w: string | null): boolean => !!w && (FOREIGN_PARTY.test(w) || FOREIGN_PARTY_LOCAL.test(w));
+  return foreign(f.subjectWords) && !foreign(f.dutyBearer);
 }
 
 /**
@@ -2164,7 +2186,7 @@ const PLACE_KIND =
 const PLACE_NAME = /\p{Lu}\p{L}{2,}/u;
 
 function namesAPlace(words: string | null): boolean {
-  return !!words && (PLACE_KIND.test(words) || PLACE_NAME.test(words));
+  return !!words && (PLACE_KIND.test(words) || PLACE_NAME.test(words) || PLACE_LOCAL.test(words));
 }
 
 /**

@@ -78,14 +78,31 @@ const coverage = { sectionsRead: 40, sectionsIndexed: 900, instrumentsConsidered
 const score = (e: Evidence) => decide({ indicator: storage, economy: 'RUS', evidence: [e], surfaced, coverage });
 
 describe('an English-word gate on a provision in another language', () => {
-  it('holds a Russian finding whose information word is Russian', () => {
-    const d = score(ev({ placeWords: 'на территории Российской Федерации' }, 'ru'));
-    expect(d.excluded.map((x) => x.reason).join()).not.toContain('not information');
-    expect(d.held.map((x) => x.reason).join()).toContain('not information -- but the provision is in ru');
+  const reasons = (d: ReturnType<typeof score>) => [...d.held, ...d.excluded].map((x) => x.reason).join();
+
+  it('recognises the Russian word for information, and scores on it', () => {
+    // "сведения" -- and "персональных данных", which held Article 12 of 152-ФЗ on Russia's pillar 6.
+    for (const informationWords of ['сведения', 'персональных данных']) {
+      const d = score(ev({ placeWords: 'на территории Российской Федерации', informationWords }, 'ru'));
+      expect(reasons(d)).not.toContain('not information');
+    }
   });
 
-  it('holds a Lao finding whose place has no capital letter to find', () => {
-    const d = score(ev({ placeWords: 'ພາຍໃນ ສປປ ລາວ', informationWords: 'ຂໍ້ມູນ data' }, 'lo'));
+  it('recognises a Lao place, which has no capital letter to find', () => {
+    const d = score(ev({ placeWords: 'ພາຍໃນ ສປປ ລາວ', informationWords: 'ຂໍ້ມູນ' }, 'lo'));
+    expect(reasons(d)).not.toContain('names no country, territory or jurisdiction');
+  });
+
+  it('does not take "of this Federal Law" for information, or a state system for a place', () => {
+    // "данного" shares its first letters with "данные" (data); "государственной" is a state, not somewhere.
+    const notData = score(ev({ placeWords: 'на территории Российской Федерации', informationWords: 'данного Федерального закона' }, 'ru'));
+    expect(reasons(notData)).toContain('not information -- but the provision is in ru');
+    const notPlace = score(ev({ placeWords: 'в государственной информационной системе', informationWords: 'сведения' }, 'ru'));
+    expect(reasons(notPlace)).toContain('names no country, territory or jurisdiction -- but the provision is in ru');
+  });
+
+  it('still holds a finding whose words it cannot place in any language it knows', () => {
+    const d = score(ev({ placeWords: 'ບ່ອນນັ້ນ', informationWords: 'ຂໍ້ມູນ' }, 'lo'));
     expect(d.held.map((x) => x.reason).join()).toContain('names no country, territory or jurisdiction -- but the provision is in lo');
   });
 
