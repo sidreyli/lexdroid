@@ -40,6 +40,7 @@ import { buildExportRows } from '../src/export/index.js';
 import { verifyRun } from '../src/verify/index.js';
 import { tagRun } from '../src/baseline/tag.js';
 import { defaultEngine, findEngine, type Engine } from '../src/engines/registry.js';
+import { podFor, podStatus } from '../src/gpu/runpod.js';
 
 // Before any engine is chosen: a hosted engine needs its key from .env, and the workers this
 // process spawns inherit whatever it loads here.
@@ -67,6 +68,8 @@ interface Args {
   skipPrepare: boolean;
   /** Stop after the cells are answered, without confirming, exporting or verifying them. */
   skipFinish: boolean;
+  /** Where the engine runs: its own hosts, or the GPU the interface rented for it. */
+  on: 'local' | 'runpod';
   /** How many instruments each of the run's questions may pull into the corpus. */
   top: number;
 }
@@ -113,6 +116,11 @@ function parseArgs(argv: string[]): Args {
     skipPrepare: argv.includes('--skip-prepare'),
     skipFinish: argv.includes('--skip-finish'),
     top: get('top') !== null ? Number(get('top')) : 15,
+    // An engine declared with no hosts of its own is only ever served from a rented GPU.
+    on:
+      get('on') === 'runpod' || (get('on') === null && get('hosts') === null && engine?.rented && engine.hosts.length === 0)
+        ? 'runpod'
+        : 'local',
   };
 }
 
@@ -215,6 +223,35 @@ async function main(): Promise<void> {
   if (args.fanOut && args.perEconomy) {
     console.error('\n--fan-out and --per-economy ask for opposite shapes: one engine per economy,');
     console.error('or every engine on each pillar. Pick one.\n');
+    process.exit(1);
+  }
+
+  // The rented GPU is found by the engine's name, and its address, token and price come from
+  // RunPod's record of it. The token goes to the workers through the environment and nowhere else.
+  if (args.on === 'runpod') {
+    if (!args.engine) throw new Error('--on runpod needs an --engine');
+    const pod = await podFor(args.engine.id);
+    if (!pod) {
+      console.error(`\nNo GPU is rented for ${args.engine.label}. Start one from the interface first.\n`);
+      process.exit(1);
+    }
+    const ready = await podStatus(pod);
+    if (ready.stage !== 'ready') {
+      console.error(`\n${args.engine.label}'s GPU is not ready: ${ready.stage}${ready.detail ? ` (${ready.detail})` : ''}.\n`);
+      process.exit(1);
+    }
+    args.hosts = [pod.url];
+    process.env['LEXDROID_ENGINE_TOKEN'] = pod.token;
+    if (!args.usdPerHour) args.usdPerHour = pod.usdPerHour;
+    if (replayingWhilePaying(cacheEnabled(), args.usdPerHour)) {
+      console.error('\nThe engine cache is on and this GPU is being paid for by the hour.');
+      console.error('A replayed run is not a measurement; unset LEXDROID_ENGINE_CACHE.\n');
+      process.exit(1);
+    }
+    console.log(`\n${args.engine.label} on a rented ${pod.gpu || ready.gpu} at $${pod.usdPerHour}/hr (${pod.id})`);
+  }
+  if (args.hosts.length === 0) {
+    console.error('\nNo engine to run on: pass --hosts, or --on runpod for a rented GPU.\n');
     process.exit(1);
   }
 

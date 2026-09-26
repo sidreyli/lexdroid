@@ -5,6 +5,7 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import type { Rental } from '../gpu/runpod.js';
 
 export interface Engine {
   id: string;
@@ -15,6 +16,11 @@ export interface Engine {
   checkpoint: string;
   hosted: boolean;
   hosts: string[];
+  /**
+   * Where it can be rented, and what it needs there. An engine with no hosts of its own is served
+   * only from a rented GPU, which the interface starts and the fleet finds by the engine's id.
+   */
+  rented?: Rental;
   declared: boolean;
   weaknesses: string;
   notes: string;

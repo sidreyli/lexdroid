@@ -1,0 +1,74 @@
+import { spawn } from "node:child_process";
+import { NextResponse } from "next/server";
+import { BACKEND, TSX_CLI } from "@/lib/data/paths";
+
+export const dynamic = "force-dynamic";
+
+const ACTIONS = ["load", "unload", "start", "stop"] as const;
+type Action = (typeof ACTIONS)[number];
+
+/**
+ * The backend's `gpu` command, run and read. It prints one line of JSON and never a key or a
+ * token, so what it prints can go straight to the browser.
+ */
+function gpu(args: string[], timeoutMs = 90_000): Promise<{ ok: boolean; body: unknown }> {
+  return new Promise((resolve) => {
+    const child = spawn(process.execPath, [TSX_CLI, "scripts/gpu.ts", ...args], {
+      cwd: BACKEND,
+      shell: false,
+      env: process.env,
+    });
+    let out = "";
+    child.stdout.on("data", (c: Buffer) => (out += c.toString()));
+    const timer = setTimeout(() => child.kill(), timeoutMs);
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      const line = out.trim().split("\n").at(-1) ?? "";
+      try {
+        resolve({ ok: code === 0, body: JSON.parse(line) });
+      } catch {
+        resolve({ ok: false, body: { ok: false, error: "The GPU command printed nothing readable" } });
+      }
+    });
+  });
+}
+
+export async function GET(request: Request) {
+  const offers = new URL(request.url).searchParams.get("offers") === "1";
+  const { ok, body } = await gpu(offers ? ["status", "--offers"] : ["status"]);
+  return NextResponse.json(body, { status: ok ? 200 : 502 });
+}
+
+export async function POST(request: Request) {
+  let body: { action?: string; engine?: string };
+  try {
+    body = (await request.json()) as { action?: string; engine?: string };
+  } catch {
+    return NextResponse.json({ error: "Send a JSON body with an action and an engine" }, { status: 400 });
+  }
+  const action = body.action as Action;
+  if (!ACTIONS.includes(action)) {
+    return NextResponse.json({ error: `No action ${body.action}` }, { status: 400 });
+  }
+  // Goes to a child process as one argument, never through a shell; still stated, not assumed.
+  if (!body.engine || !/^[a-z0-9-]{1,40}$/.test(body.engine)) {
+    return NextResponse.json({ error: "Name an engine" }, { status: 400 });
+  }
+
+  if (action === "load") {
+    // Pulling a model takes minutes. It runs on by itself and writes its progress where the
+    // status call finds it.
+    const child = spawn(process.execPath, [TSX_CLI, "scripts/gpu.ts", "load", "--engine", body.engine], {
+      cwd: BACKEND,
+      shell: false,
+      detached: true,
+      stdio: "ignore",
+      env: process.env,
+    });
+    child.unref();
+    return NextResponse.json({ ok: true, started: true });
+  }
+
+  const { ok, body: result } = await gpu([action, "--engine", body.engine], 120_000);
+  return NextResponse.json(result, { status: ok ? 200 : 502 });
+}

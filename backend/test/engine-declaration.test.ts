@@ -14,12 +14,16 @@
  *                        count. A hosted open-weights API is acceptable"
  *   output checklist    item 20, "one commercial hosted, one open weights"
  *
- * A locally-run open-weights engine against a commercially hosted open-weights engine satisfies
- * every one of them at once, which is why that is what is declared.
+ * Engine B was first a hosted API (Qwen on Groq), which answered the checklist's wording most
+ * literally. It is now the same kind of open-weights model served by the same Ollama, on a GPU
+ * rented by the hour from a commercial cloud: open weights end to end, on someone else's hardware,
+ * from a different vendor's model family, at more than twice the size. Nothing about it needs a key
+ * that a clean machine does not have except the one that rents the GPU.
  */
 import { describe, expect, it } from 'vitest';
 import { loadEngines } from '../src/engines/registry.js';
 import { hostedConfig } from '../src/engines/hosted.js';
+import { modelfileFor } from '../src/gpu/runpod.js';
 
 const registry = loadEngines();
 const declared = registry.engines.filter((e) => e.declared);
@@ -35,7 +39,8 @@ describe('the engine declaration', () => {
       expect(e.provider, `${e.id} provider`).not.toBe('');
       expect(e.model, `${e.id} model`).not.toBe('');
       expect(e.checkpoint, `${e.id} checkpoint`).not.toBe('');
-      expect(e.hosts.length, `${e.id} has nowhere to send a request`).toBeGreaterThan(0);
+      // Somewhere to send a request: a host of its own, or a GPU the interface can rent for it.
+      expect(e.hosts.length > 0 || e.rented !== undefined, `${e.id} has nowhere to send a request`).toBe(true);
     }
   });
 
@@ -43,10 +48,27 @@ describe('the engine declaration', () => {
     expect(declared.some((e) => e.kind === 'open-weights')).toBe(true);
   });
 
-  it('declares one that runs locally and one that is hosted', () => {
+  it('declares one that runs on this machine and one that runs on commercial hardware', () => {
     // "Differ in kind", and the checklist's "one commercial hosted, one open weights".
-    expect(declared.some((e) => !e.hosted)).toBe(true);
-    expect(declared.some((e) => e.hosted)).toBe(true);
+    expect(declared.some((e) => !e.hosted && e.hosts.length > 0)).toBe(true);
+    expect(declared.some((e) => e.hosted || (e.rented !== undefined && e.hosts.length === 0))).toBe(true);
+  });
+
+  it('builds every Ollama engine from a Modelfile in this repository', () => {
+    // What a rented pod serves is built on the pod from this file, so there is one definition.
+    for (const e of declared.filter((x) => !x.hosted)) {
+      expect(() => modelfileFor(e), e.id).not.toThrow();
+    }
+  });
+
+  it('pins every checkpoint to a quantisation, not to a tag the library moves', () => {
+    for (const e of declared) expect(e.checkpoint, e.id).not.toMatch(/:latest$|^[^:]+$/);
+  });
+
+  it('caps what a rented GPU may cost', () => {
+    for (const e of declared.filter((x) => x.rented)) {
+      expect(e.rented!.maxUsdPerHour ?? 0.34, e.id).toBeLessThanOrEqual(0.34);
+    }
   });
 
   it('does not declare two versions of the same vendor\'s model', () => {

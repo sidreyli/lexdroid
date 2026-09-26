@@ -54,3 +54,4 @@ backend/data/fx-rates.json
 
 # Throwaway diagnostic probes, written to measure one thing and answer one question.
 backend/scripts/zz-*.ts
+backend/data/gpu/

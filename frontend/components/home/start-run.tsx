@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { Loader2, Play } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
+import { EngineTarget, type Target } from "./engine-target";
 
 export interface RunFormPillar {
   id: number;
@@ -48,6 +49,9 @@ export function StartRun({
   const [fetchNew, setFetchNew] = useState(true);
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [target, setTarget] = useState<Target>("local");
+  const [targetReady, setTargetReady] = useState<{ ready: boolean; why: string }>({ ready: false, why: "" });
+  const onReady = useCallback((ready: boolean, why: string) => setTargetReady({ ready, why }), []);
 
   const toggle = (code: string) => {
     setError(null);
@@ -57,7 +61,7 @@ export function StartRun({
   };
 
   const chosen = engines.find((e) => e.id === engine);
-  const ready = picked.length > 0 && !!chosen?.declared && !starting;
+  const ready = picked.length > 0 && !!chosen?.declared && targetReady.ready && !starting;
 
   const start = async () => {
     setStarting(true);
@@ -77,6 +81,7 @@ export function StartRun({
           pillars: pillar === ALL ? undefined : [Number(pillar)],
           engine,
           cacheOnly: !fetchNew,
+          on: target,
         }),
       });
       const body = (await response.json()) as { runId?: string; error?: string };
@@ -172,6 +177,13 @@ export function StartRun({
           </div>
         </div>
 
+        {chosen?.declared ? (
+          <div className="flex flex-col gap-2">
+            <Label className="text-[12.5px] font-medium text-navy-deep">Runs on</Label>
+            <EngineTarget engineId={engine} target={target} onTarget={setTarget} onReady={onReady} />
+          </div>
+        ) : null}
+
         <div className="flex flex-col gap-2">
           <Label className="text-[12.5px] font-medium text-navy-deep">Sources</Label>
           <div className="flex h-10 items-center justify-between rounded-xl bg-inset px-3.5">
@@ -194,6 +206,9 @@ export function StartRun({
         <p className="mt-5 text-[12.5px] leading-snug text-muted-foreground">
           {chosen.label} has no provider, model or checkpoint declared yet, so nothing can run on it.
         </p>
+      ) : null}
+      {chosen?.declared && !targetReady.ready && targetReady.why ? (
+        <p className="mt-5 text-[12.5px] leading-snug text-muted-foreground">{targetReady.why}.</p>
       ) : null}
       {error ? (
         <p className="mt-5 text-[12.5px] leading-snug text-destructive" role="alert">

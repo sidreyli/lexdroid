@@ -12,6 +12,8 @@ interface StartRun {
   pillars?: number[];
   engine?: string;
   cacheOnly?: boolean;
+  /** Where the engine runs: this machine, or the GPU rented for it from the engine panel. */
+  on?: "local" | "runpod";
 }
 
 const ALL_PILLARS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
@@ -96,6 +98,10 @@ export async function POST(request: Request) {
     engine.id,
   ];
   if (body.cacheOnly) args.push("--cache-only");
+  if (body.on === "runpod") args.push("--on", "runpod");
+  else if (body.on !== undefined && body.on !== "local") {
+    return NextResponse.json({ error: `Nowhere called ${body.on} to run` }, { status: 400 });
+  }
 
   const logDir = join(BACKEND, "data", "runs");
   mkdirSync(logDir, { recursive: true });

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { RunMonitor } from "@/components/runs/run-monitor";
+import { RescoreButton } from "@/components/runs/rescore-button";
 import { getEconomies, getExportRows, getRubric, getRun, getRunEvents } from "@/lib/data";
 import { Download } from "lucide-react";
 
@@ -33,6 +34,7 @@ export default async function RunPage({ params }: PageProps<"/runs/[id]">) {
             on build {run.codeRevision}.
           </p>
         </div>
+        {run.status === "complete" ? <RescoreButton runId={run.id} /> : null}
         {rows > 0 ? (
           <a
             href={`/api/export?run=${run.id}`}

@@ -5,6 +5,30 @@ independent, so N pods finish roughly N times sooner. Nothing about the corpus m
 store, the run record and every decision stay on the machine that launches the run, and only
 prompts and answers cross the wire.
 
+## From the interface (the usual way)
+
+*Start a run* → **Runs on** → *Rented GPU* → *Rent GPU*. The interface creates the pod through
+RunPod's API with `pod.py` in its environment and nothing else to do:
+
+- It rents the cheapest card with the engine's declared GPU memory (`rented` in
+  `backend/data/engines.json`) under its price cap, community tier first and secure if none is
+  free, and deletes the pod at once if the price it got is over the cap.
+- The pod installs `pciutils` before Ollama. Without `lspci` the Ollama installer cannot see the
+  card, fetches the CPU build, and a 27B engine then runs forty times slower on a GPU it never
+  uses. `pod.py` also checks the loaded model is entirely in GPU memory before it says ready, and
+  `/lex/log` returns `nvidia-smi` and Ollama's GPU lines when it is not.
+- It answers on port 8000 through RunPod's HTTPS proxy, behind a random token that exists only in
+  the pod's environment and is read back from the RunPod API when needed. Ollama stays on the
+  pod's localhost. The proxy drops a request that has sent nothing for 100 seconds, so a long read
+  gets a 200 at once, a space every 20 seconds, then the answer.
+- *Stop GPU* deletes the pod. The pod is named `lexdroid-<engine id>`, and nothing else on the
+  account is touched.
+
+The command line does the same: `npm run -w backend gpu -- status --offers`, `start --engine
+engine-b`, `stop --engine engine-b`; and `fleet --on runpod` runs against the engine's pod.
+
+The rest of this page is the manual route: an SSH tunnel to a pod you set up by hand.
+
 ## Choosing a pod
 
 The reading engine is `gemma4:12b` at Q4_K_M -- about 7.6 GB of weights, and roughly 8.5 GB of VRAM
