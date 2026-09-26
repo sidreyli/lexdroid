@@ -523,10 +523,16 @@ function distinctSectors(evidence: Evidence[]): number {
  * Whether the figure is stated from the foreign end or the local end is deliberately not decided
  * here -- "not more than 30% foreign" and "at least 70% local" are one rule, and a reading that
  * took the number alone would put them on opposite rungs. All this says is that a figure is there.
+ *
+ * The quote is asked one question, where the defining words are a bare prohibition: whether what
+ * is not permitted is foreign investment itself. "Foreign investment is not permitted in inventory
+ * based model of e-commerce" states the top rung as plainly as "no shares", and its reader copied
+ * out "not permitted" as the defining words, which alone name no proportion.
  */
-export function statedProportion(words: string | null): 'none' | 'some' | null {
+export function statedProportion(words: string | null, quote: string | null = null): 'none' | 'some' | null {
   if (!words) return null;
   const t = words.toLowerCase().replace(/\s+/g, ' ');
+  const q = (quote ?? '').toLowerCase().replace(/\s+/g, ' ');
 
   const figure =
     /\b\d{1,3}(\.\d+)?\s*(%|per ?cent)/.test(t) ||
@@ -540,7 +546,9 @@ export function statedProportion(words: string | null): 'none' | 'some' | null {
     /\bno (shares?|equity|stake|interest|shareholding)\b/.test(t) ||
     /\b(wholly|entirely|fully) (owned|held)\b/.test(t) ||
     /\b100\s*(%|per ?cent)\b/.test(t) ||
-    /\b(shall|must|may) not\b[^.]{0,40}\bany (shares?|equity|stake|interest)\b/.test(t);
+    /\b(shall|must|may) not\b[^.]{0,40}\bany (shares?|equity|stake|interest)\b/.test(t) ||
+    (/\b(not (be )?(permitted|allowed)|prohibited)\b/.test(t) &&
+      /\b(foreign (direct )?investment|fdi|foreign (equity|ownership|shareholding))\b[^.;]{0,20}\b(not (be )?(permitted|allowed)|prohibited)\b/.test(q));
 
   if (total && !figure) return 'none';
   if (figure) return 'some';
@@ -578,7 +586,7 @@ function equityLadder(
     // be held. Which of the two rungs below it is not decided here, because the figure alone does
     // not say -- "not more than 30% foreign" and "at least 70% local" are one rule read from two
     // ends. So the finding is put back to the reader rather than guessed at.
-    const bans = of(t.ban).filter((e) => statedProportion(e.finding.definingWords) !== 'some');
+    const bans = of(t.ban).filter((e) => statedProportion(e.finding.definingWords, e.finding.quote) !== 'some');
     const minority = of(t.minority);
     const controlling = of(t.controlling);
     const stateOwned = of(t.stateOwnedOnly);
@@ -1743,7 +1751,7 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     // financial services licence", "limitation on ownership of certain licensees", "The
     // shareholding of the company shall comply with relevant Malaysian foreign investment
     // restrictions" -- a cross-reference to a rule kept somewhere else.
-    if (proportional(indicatorId, e.finding.measure) && statedProportion(e.finding.definingWords) === null) {
+    if (proportional(indicatorId, e.finding.measure) && statedProportion(e.finding.definingWords, e.finding.quote) === null) {
       held.push({
         evidence: e,
         reason: 'the provision states no proportion, and every band of this indicator is a proportion',

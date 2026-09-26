@@ -80,6 +80,21 @@ describe('reading a proportion out of the provision', () => {
     expect(statedProportion('a foreign person must not hold any shares in the licensee')).toBe('none');
   });
 
+  it('finds one where what is not permitted is foreign investment itself', () => {
+    // The reader copied "not permitted" as the defining words; the quote says what is not.
+    const quote = 'Foreign investment is not permitted in inventory based model of e-commerce.';
+    expect(statedProportion('not permitted', quote)).toBe('none');
+    expect(statedProportion('FDI is not permitted', 'FDI is not permitted in inventory-based model of e-commerce.')).toBe('none');
+    // A prohibition on something else, in a provision that mentions foreign investment, is not.
+    expect(
+      statedProportion(
+        'shall not be permitted',
+        'An entity having equity participation by a foreign marketplace entity shall not be permitted to sell its products on the platform.',
+      ),
+    ).toBeNull();
+    expect(statedProportion('not permitted')).toBeNull();
+  });
+
   it('finds a figure, from either end', () => {
     expect(statedProportion('not more than 30% of the shares')).toBe('some');
     expect(statedProportion('at least 70 per cent must be held by citizens')).toBe('some');
