@@ -26,6 +26,8 @@ import { loadProfile, applyProfile } from '../profile/index.js';
 import { register, materialise } from '../discover/index.js';
 import { buildDenseIndex } from '../index/index.js';
 import { buildInstrumentIndex, shortlistInstruments } from '../shortlist/index.js';
+import { followCitations } from '../discover/follow.js';
+import { embedContents, recordParsedContents } from '../contents/index.js';
 import { indicatorsOfPillar, loadRubric } from '../rubric/index.js';
 import { queriesFor } from '../retrieve/index.js';
 import { EMBEDDING_MODEL, haveModel, OllamaUnavailable } from '../engines/ollama.js';
@@ -45,6 +47,11 @@ export interface PrepareOptions {
   runId?: string;
   /** How many instruments each question may pull into the corpus. */
   top?: number;
+  /**
+   * How many more the ones read may pull in by naming them: the Act a rule is made under, the Act
+   * a provision cites. Zero turns the hop off.
+   */
+  follow?: number;
   minDelayMs?: number;
   emit?: Emit;
   log?: (line: string) => void;
@@ -56,6 +63,8 @@ export interface PrepareResult {
   registered: number;
   /** Instruments the run's own questions asked for. */
   shortlisted: number;
+  /** Instruments read because what was shortlisted names them, not because a title matched. */
+  followed: number;
   parsed: number;
   unread: number;
   failed: number;
@@ -73,6 +82,7 @@ const EMPTY = (economy: string): PrepareResult => ({
   economy,
   registered: 0,
   shortlisted: 0,
+  followed: 0,
   parsed: 0,
   unread: 0,
   failed: 0,
@@ -174,6 +184,31 @@ export async function prepareCorpus(db: Db, opts: PrepareOptions): Promise<Prepa
   // 3. Fetch and parse exactly those.
   emit({ stage: 'fetch', kind: 'started', economy, detail: `${wanted.size} instrument(s)`, total: wanted.size });
   const results = await materialise(db, profile, fetcher, { instrumentIds: [...wanted], log });
+
+  // 3b. One hop from what was read. A title shortlist cannot see the Act whose name shares no word
+  // with the question, but the rules made under it and the provisions citing it name it outright.
+  const followLimit = opts.follow ?? 10;
+  if (followLimit > 0) {
+    const read = results.filter((r) => r.outcome === 'parsed').map((r) => r.instrumentId);
+    const leads = followCitations(db, { economy, from: read, exclude: wanted, limit: followLimit });
+    out.followed = leads.length;
+    if (leads.length > 0) {
+      emit({
+        stage: 'fetch',
+        kind: 'started',
+        economy,
+        detail: `${leads.length} instrument(s) named by what was read`,
+        total: leads.length,
+      });
+      for (const l of leads) {
+        log?.(`  follow: ${l.title} (parent of ${l.children}, cited by ${l.citedBy})`);
+        wanted.add(l.instrumentId);
+      }
+      results.push(
+        ...(await materialise(db, profile, fetcher, { instrumentIds: leads.map((l) => l.instrumentId), log })),
+      );
+    }
+  }
   const by = (outcome: string) => results.filter((r) => r.outcome === outcome).length;
   out.parsed = by('parsed');
   out.unread = by('unread');
@@ -201,6 +236,13 @@ export async function prepareCorpus(db: Db, opts: PrepareOptions): Promise<Prepa
     } else {
       const built = await buildDenseIndex(db, { economy, log });
       out.embedded = built.embedded;
+      // What was read, as contents: the framework indicators rank Acts by their headings, and an
+      // Act read in this run has no contents unless they are taken from its own sections here.
+      const withContents = recordParsedContents(db, { economy });
+      if (withContents.size > 0) {
+        const headings = await embedContents(db, { economy, log });
+        log(`  contents for ${withContents.size} instrument(s) read, ${headings.embedded} heading(s) embedded`);
+      }
       emit({
         stage: 'index',
         kind: 'finished',
@@ -225,6 +267,6 @@ export function describePrepare(r: PrepareResult): string {
   if (r.notes.some((n) => n.startsWith('cache-only'))) return `  ${r.economy}: cache-only, 0 fetched`;
   return (
     `  ${r.economy}: ${r.registered} registered, ${r.shortlisted} shortlisted, ` +
-    `${r.parsed} parsed, ${r.embedded} embedded, ${r.fetched} fetched over the network`
+    `${r.followed} followed, ${r.parsed} parsed, ${r.embedded} embedded, ${r.fetched} fetched over the network`
   );
 }

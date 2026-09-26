@@ -647,7 +647,7 @@ function measureTokens(indicators: readonly Indicator[]): string[] {
 export const MAX_FINDINGS_PER_PROVISION = 12;
 
 /** The response shape, declared to the engine so decoding is constrained rather than hoped for. */
-const schemaFor = (indicators: readonly Indicator[]) => ({
+export const schemaFor = (indicators: readonly Indicator[]) => ({
   type: 'object',
   properties: {
     findings: {
@@ -674,7 +674,12 @@ const schemaFor = (indicators: readonly Indicator[]) => ({
           dutyBearerKind: { type: 'string', enum: ['government', 'organisation', 'individual'] },
           indicatorId: { type: 'string' },
           subjectWords: { type: ['string', 'null'] },
-          measure: { type: 'string', enum: measureTokens(indicators) },
+          // A pillar of frameworks (8.1 and 8.2 are safe harbours) recognises no measure, and an
+          // empty enum is a grammar llama.cpp refuses to compile: HTTP 400 on every read. The claim
+          // is checked against the indicator's measures afterwards, so an open string costs nothing.
+          measure: measureTokens(indicators).length > 0
+            ? { type: 'string', enum: measureTokens(indicators) }
+            : { type: 'string' },
           definingWords: { type: ['string', 'null'] },
           borderWords: { type: ['string', 'null'] },
           imposingWords: { type: ['string', 'null'] },
@@ -1499,7 +1504,14 @@ const SUBJECT_NAMES: Record<FrameworkSubject, string[]> = {
   // anything about intermediaries. The term of art they were standing in for is the one the
   // statutes actually use, and it is shared by Singapore's Electronic Transactions Act Part 6 and
   // Malaysia's Communications and Multimedia Act.
-  'copyright-safe-harbour': ['copyright', 'safe harbour', 'safe harbor', 'network service provider', 'service provider'],
+  //
+  // "intermediary" is the other one, and 8.2's list had it while this one did not. Where the shield
+  // is horizontal it is written about intermediaries and never says "copyright", so asked only for
+  // copyright and safe harbours the sections found were Maritime Safety and telephone quality
+  // standards, and India's Information Technology Act s.79 -- "Exemption from liability of
+  // intermediary" -- was not among the five examined for 8.1. With the word it is the second
+  // section found.
+  'copyright-safe-harbour': ['copyright', 'intermediary', 'safe harbour', 'safe harbor', 'network service provider', 'service provider'],
   'intermediary-liability': [
     'intermediary',
     'network service provider',
