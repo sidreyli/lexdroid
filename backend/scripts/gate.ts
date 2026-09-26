@@ -25,6 +25,11 @@ import type { RunEvent } from '../src/run/events.js';
 import { existsSync } from 'node:fs';
 import { reaches, type Decision } from '../src/decide/index.js';
 import { loadProfile } from '../src/profile/index.js';
+import { loadEnv } from '../src/env.js';
+
+// The hosted engine's key lives in .env. A gate started by the fleet is handed it (or handed a
+// blank, for a local pod, which this does not overwrite); a gate started by hand needs it read.
+loadEnv();
 
 /** A read slower than this is said out loud while it is still happening, not after the pillar. */
 const SLOW_READ_SECONDS = 30;
