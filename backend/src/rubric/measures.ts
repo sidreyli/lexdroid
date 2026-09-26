@@ -1748,6 +1748,21 @@ const RADIO_EMC = new RegExp(
   'i',
 );
 
+/**
+ * The medium an advertising rule governs, which is what 9.3's subject asks the advertising to be
+ * carried by. A ban on advertising one product -- narcotics, tobacco, alcohol, cosmetics -- binds
+ * in print as much as online and is a rule about the product; Thailand's cell was decided on the
+ * narcotics code. Bare "media" and "digital" are left out: an Act that limits "สื่อโฆษณา" for a
+ * product limits advertising media, and "สินทรัพย์ดิจิทัล" is a digital asset, not a medium.
+ */
+const ADVERTISING_MEDIUM = new RegExp(
+  [
+    /\b(internet|online|on-line|web\w*|e-?commerce|platform\w*|social media|electronic media|search engine\w*|broadcast\w*|television|radio|cable|multimedia|telecom\w*|communications|content (code|service\w*|provider\w*))\b/.source,
+    'ออนไลน์|อินเทอร์เน็ต|แพลตฟอร์ม|เว็บไซต์|สื่ออิเล็กทรอนิกส์|กระจายเสียง|โทรทัศน์|โทรคมนาคม|วิทยุ',
+  ].join('|'),
+  'i',
+);
+
 export const SUBJECT_DOMAIN: Readonly<Record<string, RegExp>> = {
   ...PILLAR_12_DOMAINS,
   // 1.4 counts duties charged on ICT goods, and a duty is charged on goods it names: a notice
@@ -1774,6 +1789,8 @@ export const SUBJECT_DOMAIN: Readonly<Record<string, RegExp>> = {
   '5.4': COMMUNICATIONS,
   // See RADIO_EMC above.
   '11.2': RADIO_EMC,
+  // See ADVERTISING_MEDIUM above.
+  '9.3': ADVERTISING_MEDIUM,
   // Terms of art: a patent is a patent, a copyright a copyright, a trade secret a trade secret and
   // an encryption standard an encryption standard, in every one of these legal systems. The sector
   // domains that were here with them are gone -- see the note above.
@@ -1844,7 +1861,7 @@ export const FRAMEWORK_TITLE_DOMAIN: Readonly<Record<string, { must?: RegExp; no
  * commission answered the telecom-regulator question. The rule is for a domain the provisions
  * inside a document stop repeating, not for one they were never going to state.
  */
-export const SECTOR_DOMAINS: ReadonlySet<string> = new Set(['5.5', '5.2', '5.1', '5.4', '11.2', '4.01', '4.2', '4.3']);
+export const SECTOR_DOMAINS: ReadonlySet<string> = new Set(['5.5', '5.2', '5.1', '5.4', '11.2', '9.3', '4.01', '4.2', '4.3']);
 
 /**
  * Measures whose domain the instrument's title may carry, as a sector's is, though the indicator's

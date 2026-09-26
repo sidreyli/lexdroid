@@ -1560,7 +1560,24 @@ function namesSubject(words: string, subject: FrameworkSubject): boolean {
 
 /** Whether the words said to make the framework are a rule in the instrument, naming the subject. */
 export function frameworkWordsShown(words: string | null, subject: FrameworkSubject, text: string): boolean {
-  return words !== null && quoteIsInSection(words, text, MIN_RULE_CHARS) && namesSubject(words, subject);
+  if (words === null || !quoteIsInSection(words, text, MIN_RULE_CHARS)) return false;
+  if (namesSubject(words, subject)) return true;
+  // A reader copies the operative clause and leaves the purpose that opens its sentence. India's
+  // Consumer Protection Act s.94 came back as "the Central Government may take such measures in the
+  // manner as may be prescribed", from a sentence that begins "For the purposes of preventing unfair
+  // trade practices in e-commerce ... and also to protect the interest and rights of consumers".
+  // The rule is the whole sentence, so the whole sentence is what names its subject.
+  const sentence = sentenceAround(words, text);
+  return sentence !== null && namesSubject(sentence, subject);
+}
+
+/** The sentence of `text` that quoted words sit in, or null where they are not found whole. */
+export function sentenceAround(words: string, text: string): string | null {
+  const needle = normaliseForQuoteCheck(words);
+  if (!needle) return null;
+  // Split before normalising, which folds the semicolons and line breaks a sentence ends on.
+  const sentences = text.split(/\.\s+|;|\n+/);
+  return sentences.find((s) => normaliseForQuoteCheck(s).includes(needle)) ?? null;
 }
 
 /** Whether the words said to show what the instrument is for are in its opening, naming the subject. */

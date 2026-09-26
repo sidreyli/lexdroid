@@ -9,7 +9,9 @@ Written 27 September 2026 over the latest full run of each economy:
 | Thailand | `f8848a01` | 26 Sep, branch `feat/thailand-run` |
 
 Agreement with ESCAP was 215 of 305 cells as run, rose to 231 with today's fixes, and is 223 after the rules
-that stopped eight agreements resting on the wrong law (below). 217 of those are earned. This document
+that stopped eight agreements resting on the wrong law (below). 217 of those are earned. The fixes after that
+(IND 12.01, IND 12.9, THA 4.3, THA 9.3) bring it to **227 agreements, 221 earned, and 233 of 305 right with the
+finds (76%)**. This document
 sorts the disagreements by **who is right**, because agreement measures the reader, not the law (see `aus-sgp-disagreements.md` for the
 same exercise on an earlier Australia and Singapore run).
 
@@ -78,7 +80,9 @@ Weak but kept: SGP 8.1 (the Electronic Transactions Act's safe harbour covers li
 and a horizontal safe harbour is the band 8.1 clears on, though the Copyright Act's own is the better citation), MYS 3.4 (land and bank-transfer approvals as screening), SGP 4.01 (the agent rule is in the UK-patent
 registration regulations), AUS 12.7 (the quote does not itself show the presence rule), THA 9.4 (a notification
 scheme counted as licensing), THA 11.3 (general industrial product standards, though they include IT equipment),
-and MYS 12.8 (a PDPA representative as local presence).
+and MYS 12.8 (a PDPA representative as local presence). Since the fixes below, THA 9.3 too: "no restriction on
+online advertising" is witnessed by the 1950 loudspeaker advertising Act, where ESCAP reads the Consumer
+Protection Act.
 
 **So 217 agreements are earned.** With the 12 finds, **229 of 305 (75%) are right**, down from 243.
 
@@ -182,7 +186,7 @@ testing (IND 11.3).
 - AUS 3.1, 11.3
 - SGP 4.1, 9.4, 10.2, 10.4
 - IND 10.1, 10.2, 11.3
-- THA 3.4, 4.3, 9.3, 12.4.3
+- THA 3.4, 12.4.3 (THA 4.3 and 9.3 are fixed below)
 - MYS 10.1: the ICT import-ban rule below took away an agreement that rested on trademark-infringing goods and
   the strategic items list. ESCAP's evidence is the Customs (Prohibition of Imports) Order 2023, which the reader
   reached for 10.2 but not 10.1.
@@ -223,6 +227,9 @@ evaluated": no figure stated, a definition, or a code of practice issued under a
 | A cyber security service licence is not an online content licence | MYS 9.4 | −1 unearned |
 | A commercial presence opened abroad is not one required here | THA 3.5 | −1 unearned |
 | Where the defining words are a bare prohibition, "foreign investment is not permitted" in the quote is a proportion of nought | IND 12.01 | +1, earned: the inventory-model ban ESCAP scores, from the FEMA regulations that carry it |
+| A framework rule quoted without the purpose that opens its sentence names its subject by that sentence. Applied to banked readings with `repair-framework-shown` | IND 12.9 | +1, earned: the Consumer Protection Act 2019, whose s.94 had been refused for quoting only "the Central Government may take such measures" |
+| A limit on the terms a patentee may put in a licence is not a restriction on enforcing the patent | THA 4.3 | +1, earned: the Patent Act, as ESCAP |
+| 9.3 advertising is advertising carried by a medium (online, broadcast, telecom) that the provision or its instrument's title names, not a ban on advertising one product in every medium | THA 9.3 | +1, weak (above); AUS, MYS, IND 9.3 still stand on broadcast and online rules |
 
 Tried and reverted, because each lost more than it won:
 - Scoring a licence-lifted import prohibition as a licence, not a ban: −2. ESCAP counts approval-gated bans on named telecom equipment.

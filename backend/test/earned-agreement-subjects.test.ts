@@ -9,7 +9,8 @@
  * content licence, and a bank's branch abroad as a presence required here.
  */
 import { describe, expect, it } from 'vitest';
-import { decide, presenceAbroad, type FrameworkEvidence } from '../src/decide/index.js';
+import { decide, limitsLicenceTerms, presenceAbroad, type FrameworkEvidence } from '../src/decide/index.js';
+import { frameworkWordsShown, sentenceAround } from '../src/read/index.js';
 import { FRAMEWORK_TITLE_DOMAIN, SECTOR_DOMAINS, SUBJECT_DOMAIN } from '../src/rubric/measures.js';
 import type { Indicator } from '../src/rubric/types.js';
 
@@ -117,5 +118,53 @@ describe('a commercial presence', () => {
   it('but an overseas company is a foreign company, which is who the rule binds', () => {
     expect(presenceAbroad('overseas company')).toBe(false);
     expect(presenceAbroad('foreign company')).toBe(false);
+  });
+});
+
+describe('a framework rule quoted without the words that open its sentence', () => {
+  const s94 =
+    'Section 94 — Measures to prevent unfair trade practices in e-commerce, direct selling, etc.\n' +
+    'For the purposes of preventing unfair trade practices in e-commerce, direct selling and also to protect the ' +
+    'interest and rights of consumers, the Central Government may take such measures in the manner as may be prescribed.';
+  const clause = 'the Central Government may take such measures in the manner as may be prescribed';
+  it('names its subject in the sentence it was cut from', () => {
+    expect(sentenceAround(clause, s94)).toContain('rights of consumers');
+    expect(frameworkWordsShown(clause, 'consumer-protection', s94)).toBe(true);
+  });
+  it('but not from a neighbouring sentence', () => {
+    const apart = 'This Part protects consumers.\nThe Central Government may take such measures in the manner as may be prescribed.';
+    expect(frameworkWordsShown(clause, 'consumer-protection', apart)).toBe(false);
+  });
+});
+
+describe('a restriction on enforcing a patent', () => {
+  it('is not a limit on the terms of a licence the patentee grants', () => {
+    expect(
+      limitsLicenceTerms({
+        quote: 'ผู้ทรงสิทธิบัตรจะกำหนดเงื่อนไข ข้อจำกัดสิทธิหรือค่าตอบแทนในลักษณะที่เป็นการจำกัดการแข่งขันโดยไม่ชอบธรรมไม่ได้',
+        definingWords: null,
+      }),
+    ).toBe(true);
+    expect(limitsLicenceTerms({ quote: 'a condition in a licence agreement that restricts competition is void', definingWords: null })).toBe(true);
+  });
+  it('and a compulsory licence still is one', () => {
+    expect(limitsLicenceTerms({ quote: 'The Controller may grant a compulsory licence on terms he deems fit', definingWords: null })).toBe(false);
+  });
+});
+
+describe('an online advertising restriction', () => {
+  const medium = SUBJECT_DOMAIN['9.3']!;
+  it('is about the medium the advertising is carried by, which the title may name', () => {
+    expect(SECTOR_DOMAINS.has('9.3')).toBe(true);
+    expect(medium.test('Broadcasting Services Act 1992')).toBe(true);
+    expect(medium.test('The Cable Television Networks (Regulation) Act, 1995')).toBe(true);
+    expect(medium.test('advertisement offered by an online marketplace supplier')).toBe(true);
+    expect(medium.test('พระราชบัญญัติการประกอบกิจการกระจายเสียงและกิจการโทรทัศน์ พ.ศ. 2551')).toBe(true);
+  });
+  it('not a ban on advertising one product in any medium', () => {
+    expect(medium.test('ประมวลกฎหมายยาเสพติด')).toBe(false);
+    expect(medium.test('Tobacco Product Control Act')).toBe(false);
+    expect(medium.test('จำกัดการใช้สื่อโฆษณาสำหรับสินค้านั้น')).toBe(false);
+    expect(medium.test('พระราชกำหนดการประกอบธุรกิจสินทรัพย์ดิจิทัล พ.ศ. 2561')).toBe(false);
   });
 });

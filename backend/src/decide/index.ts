@@ -1791,6 +1791,16 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
       });
       continue;
     }
+    // A patentee barred from putting anti-competitive terms in a licence it grants is limited as a
+    // licensor, not as a patentee enforcing against an infringer. Thailand's Patent Act s.39 was
+    // counted as a restriction on enforcing patents in every sector.
+    if (e.finding.measure === 'patent-enforcement-restriction' && limitsLicenceTerms(e.finding)) {
+      ruledOut.push({
+        evidence: e,
+        reason: 'the provision limits the terms of a licence the patentee grants, not the enforcement of the patent',
+      });
+      continue;
+    }
     // And the direction of it: the foreign party has to be the one holding, not the one held.
     if (proportional(indicatorId, e.finding.measure) && foreignIsTheHeld(e.finding)) {
       ruledOut.push({
@@ -2356,6 +2366,12 @@ function restrictsForeigners(indicatorId: string, measure: string | null): boole
  * Is this establishment one opened outside the economy? "Overseas" alone is not enough: several
  * systems call a foreign company an "overseas company", and that is exactly who a presence rule binds.
  */
+/** Whether a finding restricts what a licence may say, as competition law does, rather than enforcement. */
+export function limitsLicenceTerms(f: Pick<Finding, 'quote' | 'definingWords'>): boolean {
+  const words = `${f.quote ?? ''} ${f.definingWords ?? ''}`;
+  return /\b(restrict\w* (of )?competition|anti-?competitive|licen[cs]e (terms|conditions|agreements?)|licensing (terms|conditions))\b|จำกัดการแข่งขัน/i.test(words);
+}
+
 export function presenceAbroad(subject: string | null): boolean {
   return /\b(overseas|offshore) (branch|office|subsidiar)\w*|\b(branch|office|subsidiar\w*)\w* (abroad|overseas|outside)\b|สาขาในต่างประเทศ/i.test(subject ?? '');
 }
