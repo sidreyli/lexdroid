@@ -1,10 +1,11 @@
 /**
  * Translate retrieval's questions into an economy's language, once, with a declared engine.
  *
- *   npm run -w backend translate-queries -- --economy MNG                 engine-b (Groq), missing only
+ *   npm run -w backend translate-queries -- --economy MNG                 engine-b, missing only
  *   npm run -w backend translate-queries -- --economy RUS --engine engine-a    the local engine
  *   npm run -w backend translate-queries -- --economy LAO --all            redo every query
  *   npm run -w backend translate-queries -- --economy MNG --report         coverage and hits, no engine
+ *   npm run -w backend translate-queries -- --economy RUS --wording        the second phrasing: as a provision says it
  *
  * Writes backend/data/query-translations/<CODE>.json, which retrieval reads (src/retrieve/
  * translations.ts). The engine is one of the two declared in data/engines.json, so no proprietary
@@ -36,6 +37,8 @@ const economy = arg('--economy');
 if (!economy) throw new Error('--economy <CODE> is required');
 const engineId = arg('--engine') ?? 'engine-b';
 const redoAll = process.argv.includes('--all');
+// The second phrasing, kept beside the plain translation rather than in place of it.
+const wording = process.argv.includes('--wording');
 const reportOnly = process.argv.includes('--report');
 const BATCH = Number(arg('--batch') ?? 10);
 
@@ -68,9 +71,12 @@ const english = [
 ];
 
 const existing = loadTranslations(economy);
-const table: QueryTranslations = existing && !redoAll
+const table: QueryTranslations = existing && !(redoAll && !wording)
   ? existing
   : { economy, language, engine: engineId, model: '', generatedAt: '', queries: {} };
+if (wording) table.wording = redoAll ? {} : (table.wording ?? {});
+/** The field this pass fills. */
+const target = (): Record<string, string> => (wording ? table.wording! : table.queries);
 
 if (!reportOnly) {
   const engine = findEngine(engineId);
@@ -87,13 +93,23 @@ if (!reportOnly) {
     delete process.env['LEXDROID_HOSTED_MODEL'];
   }
 
-  const missing = english.filter((q) => !table.queries[q]);
+  const missing = english.filter((q) => !target()[q]);
   console.log(`${economy}: ${english.length} English queries, ${missing.length} to translate into ${lang.name} with ${engineId} (${engine.model})`);
 
   const system =
     `You translate short search queries for a database of ${profile.name}'s legislation into ${lang.name}. ` +
     'Each query describes a legal requirement or policy measure. Translate its meaning into the wording a statute, ' +
     'decree or regulation of that country would actually use, so that the query matches the text of the law. ' +
+    // With --wording, the second phrasing. Measured on Russia's 6.2: the plain translation of a
+    // category label ("Требования к локальному хранению...") never reached Article 18(5) of 152-ФЗ;
+    // the words of the duty itself ("хранение персональных данных ... с использованием баз данных,
+    // находящихся на территории Российской Федерации") did. Each alone lost an indicator the other
+    // found, so both are kept and both are asked.
+    (wording
+      ? 'Write it as the words the operative provision itself would contain -- who must do what, to what, and where -- ' +
+        'not as the name of a policy category. Leave out headings and labels such as "Local storage requirements." ' +
+        'and descriptions of scoring bands. '
+      : '') +
     `${lang.note} Keep numbers and proper names. Do not explain, do not add anything, do not leave English words in. ` +
     'Return exactly one translation per query, in the same order.';
   const schema = {
@@ -104,9 +120,11 @@ if (!reportOnly) {
 
   /** Written after every batch, so a rate limit or a dropped connection costs one batch, not the run. */
   const save = (): void => {
-    table.engine = engineId;
+    if (wording) table.wordingEngine = engineId;
+    else table.engine = engineId;
     table.generatedAt = new Date().toISOString();
     table.queries = Object.fromEntries(english.filter((q) => table.queries[q]).map((q) => [q, table.queries[q]!]));
+    if (table.wording) table.wording = Object.fromEntries(english.filter((q) => table.wording![q]).map((q) => [q, table.wording![q]!]));
     mkdirSync(dirname(translationsPath(economy)), { recursive: true });
     writeFileSync(translationsPath(economy), JSON.stringify(table, null, 1) + '\n');
   };
@@ -154,7 +172,8 @@ ${JSON.stringify(batch, null, 1)}`;
     let out: string[] | null = null;
     try {
       const answer = await ask(prompt);
-      table.model = answer.model;
+      if (wording) table.wordingModel = answer.model;
+      else table.model = answer.model;
       const parsed = JSON.parse(answer.text) as { translations?: string[] };
       out = Array.isArray(parsed.translations) && parsed.translations.length === batch.length ? parsed.translations : null;
     } catch (err) {
@@ -172,7 +191,7 @@ ${JSON.stringify(batch, null, 1)}`;
     batch.forEach((q, k) => {
       const t = (out![k] ?? '').replace(/ໍາ/g, 'ຳ').replace(/\s+/g, ' ').trim();
       if (accept(t)) {
-        table.queries[q] = t;
+        target()[q] = t;
         kept += 1;
       } else if (rejected++ < 5) {
         console.log(`  rejected: "${q.slice(0, 60)}" -> "${t.slice(0, 80)}"`);

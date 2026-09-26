@@ -28,6 +28,16 @@ export interface QueryTranslations {
   generatedAt: string;
   /** English query → the same question in the economy's language. */
   queries: Record<string, string>;
+  /**
+   * The same question again, worded as the operative provision itself would say it -- who must do
+   * what, to what, and where -- rather than as the rubric names the category. Asked beside the plain
+   * translation because each finds what the other misses: on Russia's pillars 6-7 the plain one
+   * alone never reached Article 18(5) of 152-ФЗ for 6.2, and the worded one alone lost 7.2.
+   */
+  wording?: Record<string, string>;
+  /** Which declared engine and model produced the second phrasing, where it differs. */
+  wordingEngine?: string;
+  wordingModel?: string;
 }
 
 const DIR = join(fileURLToPath(new URL('.', import.meta.url)), '..', '..', 'data', 'query-translations');
@@ -58,8 +68,9 @@ export function translatedQueries(economy: string, english: readonly string[]): 
   if (!table) return [];
   const out: string[] = [];
   for (const q of english) {
-    const t = table.queries[q]?.trim();
-    if (t && !out.includes(t) && !english.includes(t)) out.push(t);
+    for (const t of [table.queries[q]?.trim(), table.wording?.[q]?.trim()]) {
+      if (t && !out.includes(t) && !english.includes(t)) out.push(t);
+    }
   }
   return out;
 }

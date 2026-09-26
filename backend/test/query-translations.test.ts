@@ -53,3 +53,22 @@ describe('queries in the economy\'s language', () => {
     expect(queriesFor(indicator, 'Mongolia')).toEqual(englishQueriesFor(indicator, 'Mongolia'));
   });
 });
+
+describe('a second phrasing, as a provision says it', () => {
+  it('is asked after the plain translation of the same question, and a repeat is asked once', () => {
+    writeFileSync(
+      join(dir, 'RUS.json'),
+      JSON.stringify({
+        economy: 'RUS', language: 'ru', engine: 'engine-b', model: 'test', generatedAt: '2026-09-26',
+        queries: { a: 'требования к локальному хранению', b: 'трансграничная передача' },
+        wording: { a: 'хранение персональных данных на территории Российской Федерации', b: 'трансграничная передача' },
+      }),
+    );
+    clearTranslations();
+    expect(translatedQueries('RUS', ['a', 'b'])).toEqual([
+      'требования к локальному хранению',
+      'хранение персональных данных на территории Российской Федерации',
+      'трансграничная передача',
+    ]);
+  });
+});
