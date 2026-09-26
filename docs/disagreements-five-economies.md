@@ -222,6 +222,7 @@ evaluated": no figure stated, a definition, or a code of practice issued under a
 | 11.2 is radio and electrical equipment or products generally, not medical devices or signature authorities | MYS 11.2, THA 11.2 | −2 unearned; IND 11.2's general conformity regulations still count |
 | A cyber security service licence is not an online content licence | MYS 9.4 | −1 unearned |
 | A commercial presence opened abroad is not one required here | THA 3.5 | −1 unearned |
+| Where the defining words are a bare prohibition, "foreign investment is not permitted" in the quote is a proportion of nought | IND 12.01 | +1, earned: the inventory-model ban ESCAP scores, from the FEMA regulations that carry it |
 
 Tried and reverted, because each lost more than it won:
 - Scoring a licence-lifted import prohibition as a licence, not a ban: −2. ESCAP counts approval-gated bans on named telecom equipment.
