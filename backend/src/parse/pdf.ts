@@ -119,6 +119,16 @@ const provisionAt = (line: string): RegExpExecArray | null => {
   const found = numberedAt(line);
   return found && TARIFF_LABEL.test(found[1]!) ? null : found;
 };
+/**
+ * A clause of a Thai notification or regulation, "ข้อ ๘". The OCS parser splits the same clauses out
+ * of the text its service returns; a notification published only as a PDF came out as one section of
+ * 33,000 characters, the clause a cell turns on buried at character 6,322 of it.
+ */
+const THAI_CLAUSE_LINE = /^\s*ข้อ\s*([๐-๙]+(?:\/[๐-๙]+)?)(?=\s|$)/;
+const thaiClauseAt = (line: string): string | null => {
+  const m = THAI_CLAUSE_LINE.exec(line);
+  return m ? `ข้อ ${m[1]!.replace(/[๐-๙]/g, (d) => String('๐๑๒๓๔๕๖๗๘๙'.indexOf(d)))}` : null;
+};
 /** The label a numbered line carries when that label is a tariff code and not a provision. */
 const tariffLabelAt = (line: string): string | null => {
   const found = numberedAt(line);
@@ -482,9 +492,10 @@ export function sectionise(pages: PageText[]): SectionBuilder {
       const tariff = tariffLabelAt(line);
       if (tariff !== null && tariff.includes('.')) dotted.add(tariff.slice(0, tariff.indexOf('.')));
       const provMatch = provisionAt(line);
-      if (provMatch) {
+      const clause = provMatch ? null : thaiClauseAt(line);
+      if (provMatch || clause) {
         open = {
-          label: provMatch[1]!, heading: line.slice(0, 120), part, page: p.page,
+          label: provMatch ? provMatch[1]! : clause, heading: line.slice(0, 120), part, page: p.page,
           lines: [line], language: p.language ?? null,
         };
         items.push(open);

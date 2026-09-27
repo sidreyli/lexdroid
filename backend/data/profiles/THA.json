@@ -150,6 +150,16 @@
       "adapter": null,
       "adapterConfig": {},
       "notes": "No robots.txt restriction, but client-side-rendered Next.js (CSR) -- the /law page's dispatched Redux action was traced to an unresolvable chunk ID (its handling code isn't in any chunk already confirmed loaded by the page). Full trace: docs/thailand-integration-plan.md, section \"Three more portals checked, each stopped on its own real signal (17 September 2026)\"."
+    },
+    {
+      "name": "Ministry of Digital Economy and Society (กระทรวงดิจิทัลเพื่อเศรษฐกิจและสังคม)",
+      "url": "https://www.mdes.go.th",
+      "kind": "regulator",
+      "authority": "Ministry of Digital Economy and Society",
+      "pillars": [7, 8, 9],
+      "adapter": null,
+      "adapterConfig": {},
+      "notes": "Issues the ministerial notifications made under the Computer-Related Crime Act B.E. 2550, among them the criteria for service providers to retain computer traffic data. Its law pages (www.mdes.go.th/law/detail/<id>) serve the notification PDF directly. robots.txt allows everything (checked 27 September 2026). No adapter: documents are registered by URL."
     }
   ],
   "commitments": [
