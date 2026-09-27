@@ -8,7 +8,10 @@
  *
  * The packs (scripts/bench-pack.ts) sit in ../bench-pack unless --packs says otherwise. A run named
  * by --use must be in the pack the manifest gives that economy; a re-read made with
- * `gate --retrieval-from` on that pack is.
+ * `gate --retrieval-from` on that pack is. A fresh run is cut into a pack of its own and named with
+ * `--use AUS:7=<run>@<file>`: re-cutting the old pack from the working database would carry any
+ * re-parse made since into the runs it already held, and a reading on a section that no longer
+ * exists leaves with the section.
  *
  * Every run is rescored under the current rules inside a transaction that is rolled back, so a
  * rule change is measured without a re-read and nothing in a pack is changed. Each cell is then
@@ -68,17 +71,18 @@ const manifest = JSON.parse(readFileSync(join(BENCH, 'manifest.json'), 'utf8')) 
 const shipped = join(packsDir, 'baseline.db');
 const baseline = existsSync(shipped) ? shipped : undefined;
 
-// --use ECO=<run> or ECO:p,q=<run>: the named pillars (or all) of an economy come from that run.
+// --use ECO=<run> or ECO:p,q=<run>: the named pillars (or all) of an economy come from that run,
+// found in the economy's pack or, after an @, in the pack file named.
 const sources: Source[] = [...manifest.sources];
 for (const use of all('use')) {
-  const m = /^([A-Z]{3})(?::([\d,]+))?=(\S+)$/.exec(use);
+  const m = /^([A-Z]{3})(?::([\d,]+))?=([^@\s]+)(?:@(\S+))?$/.exec(use);
   if (!m) {
-    console.error(`--use ${use}: expected ECO=<run> or ECO:12,8=<run>`);
+    console.error(`--use ${use}: expected ECO=<run>, ECO:12,8=<run> or ECO:12=<run>@<pack file>`);
     process.exit(2);
   }
-  const [, economy, pillarList, run] = m as unknown as [string, string, string | undefined, string];
+  const [, economy, pillarList, run, file] = m as unknown as [string, string, string | undefined, string, string | undefined];
   const pillars = pillarList ? pillarList.split(',').map(Number) : null;
-  const pack = sources.find((s) => s.economy === economy)?.pack;
+  const pack = file ?? sources.find((s) => s.economy === economy)?.pack;
   if (!pack) {
     console.error(`--use ${use}: ${economy} is not in the benchmark`);
     process.exit(2);
@@ -93,7 +97,7 @@ for (const use of all('use')) {
 }
 
 function grade(source: Source): Cell[] {
-  const path = join(packsDir, manifest.packs[source.pack]!);
+  const path = join(packsDir, manifest.packs[source.pack] ?? source.pack);
   const db = openDb(path);
   try {
     const run = db.prepare('SELECT id FROM run WHERE id LIKE ?').get(`${source.run}%`) as { id: string } | undefined;
