@@ -2035,7 +2035,12 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     // "administered by a trustee company in Singapore" -- a place, a duty, and nothing to do with
     // data. These measures are all about where data has to be, so a provision that never names
     // the data has not made one out however locational its language is.
-    if (locational(indicatorId, e.finding.measure) && !e.finding.locatedData) {
+    //
+    // The data may be named as the provision's subject rather than in the field asked for it. Section
+    // 12 of a credit information statute forbids processing "ข้อมูล" outside the Kingdom; the reader
+    // gave the data as the subject and left the located data empty. Where the subject is called
+    // information in the quote's own words, it is the data the place holds.
+    if (locational(indicatorId, e.finding.measure) && !e.finding.locatedData && !subjectIsTheData(e.finding)) {
       ruledOut.push({
         evidence: e,
         reason: 'the provision names a place but no data that has to be there',
@@ -2047,7 +2052,7 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     // secure": a duty, a place, and a thing that must be there, all genuinely in the provision.
     // The thing is a virus. Every measure marked locational is about where *data* has to be, so
     // a provision whose own words never call the located thing information has not made one out.
-    if (locational(indicatorId, e.finding.measure) && !e.finding.informationWords) {
+    if (locational(indicatorId, e.finding.measure) && !e.finding.informationWords && !subjectIsTheData(e.finding)) {
       ruledOut.push({
         evidence: e,
         reason: 'the provision says where something must be, but never calls that thing information',
@@ -2091,10 +2096,11 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     // here in the way a patent is: a legal system may call it data, a record, a document or
     // particulars, but none of them calls it a payment. Placed after the structural tests, which
     // need no view about what the words mean and so should have their say first.
-    if (locational(indicatorId, e.finding.measure) && !INFORMATION.test(e.finding.informationWords ?? '')) {
+    const informationWords = e.finding.informationWords ?? (subjectIsTheData(e.finding) ? e.finding.subjectWords : null);
+    if (locational(indicatorId, e.finding.measure) && !callsItInformation(informationWords)) {
       ruledOut.push({
         evidence: e,
-        reason: `the provision calls the thing "${e.finding.informationWords}", which is not information`,
+        reason: `the provision calls the thing "${informationWords}", which is not information`,
       });
       continue;
     }
@@ -2459,6 +2465,23 @@ function foreignIsTheHeld(f: Finding): boolean {
  * a document or particulars, and it words each of those its own way, but the category itself is
  * one every one of them has. It is not a list of the data we want to find.
  */
+/** The subject is information by its own words, and those words are in the quote: see `hold`. */
+function subjectIsTheData(f: Finding): boolean {
+  const subject = (f.subjectWords ?? '').trim();
+  return (
+    subject.length > 0 &&
+    callsItInformation(subject) &&
+    (f.quote ?? '').toLowerCase().includes(subject.toLowerCase())
+  );
+}
+
+function callsItInformation(words: string | null | undefined): boolean {
+  return INFORMATION.test(words ?? '') || INFORMATION_TH.test(words ?? '');
+}
+
+/** INFORMATION in Thai, which has no word boundaries for it to test. */
+const INFORMATION_TH = /ข้อมูล|สารสนเทศ|เอกสาร|บันทึก|ทะเบียน|บัญชี|รายงาน/;
+
 const INFORMATION =
   /\b(information|data|dataset\w*|records?|recorded|documents?|particulars?|details?|registers?|books?|accounts?|files?|communications?|messages?|contents?|statements?|reports?|copies|copy|logs?|databases?|credentials?|personal\w*)\b/i;
 
@@ -2478,8 +2501,14 @@ const PLACE_KIND =
 const PLACE_NAME = /\p{Lu}\p{L}{2,}/u;
 
 function namesAPlace(words: string | null): boolean {
-  return !!words && (PLACE_KIND.test(words) || PLACE_NAME.test(words));
+  return !!words && (PLACE_KIND.test(words) || PLACE_KIND_TH.test(words) || PLACE_NAME.test(words));
 }
+
+/**
+ * PLACE_KIND in Thai. Thai has no capitals, so a place's name cannot be told by its case, and the
+ * common nouns carry the whole test: a kingdom, a country, abroad, a territory, a jurisdiction.
+ */
+const PLACE_KIND_TH = /ราชอาณาจักร|ประเทศ|ต่างประเทศ|นอกประเทศ|ดินแดน|เขตอำนาจ|ต่างแดน/;
 
 /**
  * Does this proportion say how much must be held, rather than how much may be?

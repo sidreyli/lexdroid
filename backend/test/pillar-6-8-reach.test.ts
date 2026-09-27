@@ -105,3 +105,29 @@ describe('the online domains read Thai', () => {
     expect(MEASURE_DOMAIN['user-monitoring']!.test('ธนาคารพาณิชย์')).toBe(false);
   });
 });
+
+describe('a Thai ban on processing data outside the Kingdom', () => {
+  const quote = 'ห้ามมิให้บริษัทข้อมูลเครดิตประมวลผลข้อมูลภายนอกราชอาณาจักร';
+  const ban = evidence(4, 4, 'พระราชบัญญัติการประกอบธุรกิจข้อมูลเครดิต', {
+    indicatorId: '6.1',
+    measure: 'transfer-ban',
+    quote,
+    dutyBearer: 'บริษัทข้อมูลเครดิต',
+    dutyAct: 'ห้ามมิให้...ประมวลผลข้อมูล',
+    dutyForce: 'forbids',
+    placeWords: 'ภายนอกราชอาณาจักร',
+    definingWords: 'ภายนอกราชอาณาจักร',
+    borderWords: 'ภายนอกราชอาณาจักร',
+    keepingWords: 'ภายนอกราชอาณาจักร',
+    imposingWords: 'ห้ามมิให้',
+    locatedData: null,
+    informationWords: null,
+    subjectWords: 'ข้อมูล',
+    sector: 'บริษัทข้อมูลเครดิต',
+    dataScope: 'all',
+  });
+
+  it('names its data as the subject, calls it information in Thai, and names the Kingdom', () => {
+    expect(decide({ indicator: indicator('6.1'), economy: 'THA', evidence: [ban], coverage }).score).toBe(0.5);
+  });
+});
