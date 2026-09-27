@@ -499,11 +499,26 @@ function absent(what: string): Rule {
       : { ordinal: 1, reason: `nothing read establishes ${what}` };
 }
 
+/**
+ * An injunction against an infringement that has not yet happened: "restraining the defendant from
+ * any apprehended act of infringement", "to prevent infringement". A provisional measure is one "to
+ * prevent an infringement from occurring" (TRIPS art. 50), and the same words were read as a
+ * provisional measure in one Patents Act and as an ordinary procedure in another.
+ */
+export const PREVENTIVE_INJUNCTION =
+  /\binjunction\b[^.;]{0,80}\b(?:apprehended|threatened|anticipated|prevent\w*)\b[^.;]{0,40}\binfring|\binjunction\b[^.;]{0,40}\bto\s+prevent\b/i;
+
 /** "Absence of both" / "one of them" / "both" -- 4.2 and 4.6, over their own two components. */
 function bothOrOne(what: string, procedureToken: string, provisionalToken: string): Rule {
   return (_indicator, qualifying) => {
     const procedures = qualifying.filter((e) => e.finding.measure === procedureToken);
-    const provisional = qualifying.filter((e) => e.finding.measure === provisionalToken);
+    // A procedure that grants an injunction against an infringement only apprehended is also the
+    // measure that prevents one.
+    const provisional = qualifying.filter(
+      (e) =>
+        e.finding.measure === provisionalToken ||
+        (e.finding.measure === procedureToken && PREVENTIVE_INJUNCTION.test(e.finding.quote)),
+    );
     if (procedures.length > 0 && provisional.length > 0) {
       return { ordinal: 3, reason: `${what} procedures and provisional measures both exist`, counted: [...procedures, ...provisional] };
     }
