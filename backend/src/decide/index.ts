@@ -22,6 +22,7 @@ import { FRAMEWORK_TITLE_DOMAIN, MEASURES, MEASURE_DOMAIN, MEASURE_NAMES, SECTOR
 import { tallyConfirmations, type ConfirmationTally } from '../read/confirmations.js';
 import { inUsd, moneyIn, type FxRates } from './currency.js';
 import { determinesAParticularCase } from '../discover/titles.js';
+import { REPLACEABLE_FIGURE } from '../parse/identity.js';
 
 /** One finding, with enough of its origin to cite it. */
 export interface Evidence {
@@ -36,6 +37,8 @@ export interface Evidence {
   citation: string;
   /** Whether the provision only instructs an amendment to some other Act. */
   amendsAnotherAct: boolean;
+  /** Whether the provision goes on to let another instrument replace the figure the finding states. */
+  figureReplaceable?: boolean;
   /**
    * Whether the quoted words are words the amending provision sets out for insertion.
    *
@@ -649,8 +652,6 @@ const MANDATES = /\b(?:shall|must|is required to|are required to|hendaklah|mesti
 const WAIVES = /\b(?:need not|not be required|not required|tidak perlu)\b|ไม่ต้อง/i;
 /** Words that leave the content of a duty to something specified, prescribed or imposed elsewhere. */
 const DEFERS = /\b(?:in accordance with|specified|prescribed|determined|imposed|issued|conditions of (?:the|a|its) licen[cs]e)\b|กำหนด|ตามหลักเกณฑ์/i;
-/** A figure stated as the default a regulation may replace: "$250 or such other amount as is prescribed". */
-const REPLACEABLE_FIGURE = /\bor\s+(?:such\s+)?(?:other|another|a\s+different)\s+(?:amount|sum|value|figure)\s+(?:as\s+)?(?:is|may\s+be|that\s+is)\s+(?:prescribed|specified|determined)\b/i;
 
 /** Measures that are a body being established, whose defining words are the body's own name. */
 const BODY_CREATED = new Set(['independent-telecom-authority']);
@@ -1188,7 +1189,14 @@ const RULES: Record<string, Rule> = {
     // Act's "$250 or such other amount as is prescribed" is the law only until a regulation says
     // otherwise, and the Customs Regulation does: "For subparagraph 68(1)(f)(iii) of the Act, the
     // amount is $1 000". The lowest of the two would have scored a threshold no goods clear under.
-    const firm = thresholds.filter((t) => !REPLACEABLE_FIGURE.test(`${t.evidence.finding.definingWords ?? ''} ${t.evidence.finding.quote}`));
+    // The allowance can sit just past the words the reader copied: "have a value not exceeding $250"
+    // was quoted from a regulation that goes on "or such other amount as is prescribed", and read
+    // alone it looked firm and led. So the provision's own text after the figure is asked as well.
+    const firm = thresholds.filter(
+      (t) =>
+        !REPLACEABLE_FIGURE.test(`${t.evidence.finding.definingWords ?? ''} ${t.evidence.finding.quote}`) &&
+        !t.evidence.figureReplaceable,
+    );
     const lowest = (firm.length > 0 ? firm : thresholds).reduce((a, b) => (b.usd < a.usd ? b : a));
     const assumed = lowest.money.assumedCurrency ? ', the provision using a bare symbol' : '';
     const on = ctx?.rates ? ` on the ${ctx.rates.asOf} reference rate` : '';

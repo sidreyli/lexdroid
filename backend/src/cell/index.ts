@@ -15,7 +15,7 @@ import type { Db } from '../db/index.js';
 import type { Emit } from '../run/events.js';
 import { citationUrl } from '../export/index.js';
 import { enginePool } from '../engines/pool.js';
-import { amendsAnotherAct, citesADefinition, inheritsAPower, insertsTheQuotedWords } from '../parse/identity.js';
+import { amendsAnotherAct, citesADefinition, figureReplaceable, inheritsAPower, insertsTheQuotedWords } from '../parse/identity.js';
 import { loadProfile } from '../profile/index.js';
 import type { InstrumentType } from '../profile/types.js';
 import type { Indicator } from '../rubric/types.js';
@@ -397,6 +397,7 @@ export async function answerPillar(
         headingPath: row.heading_path,
         citation: citationFor(row),
         amendsAnotherAct: amendsAnotherAct(row.text),
+        figureReplaceable: figureReplaceable(row.text, finding.definingWords ?? finding.quote),
         ...citedUnder(row, insertsTheQuotedWords(row.text, finding.quote)),
         definesATerm: citesADefinition(row.text, finding.definingWords ?? finding.quote),
         inheritsAPower: inheritsAPower(row.text, finding.quote),

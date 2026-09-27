@@ -18,6 +18,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { MEASURES } from '../src/rubric/measures.js';
+import { figureReplaceable } from '../src/parse/identity.js';
 import { queriesFor } from '../src/retrieve/index.js';
 import type { Indicator } from '../src/rubric/types.js';
 
@@ -63,5 +64,23 @@ describe('the de minimis measure', () => {
 
   it('still asks the thing itself, not only the two shapes of it', () => {
     expect(queriesFor(indicator)).toContain(deMinimis.gloss.replace(/\s+/g, ' ').trim());
+  });
+});
+
+describe('a figure the provision goes on to make replaceable', () => {
+  const paragraph =
+    '(f) goods that: (i) are exempt from duties; and (ii) have a value not exceeding $250 or such other amount as is prescribed for subparagraph 68(1)(f)(iii) of the Act.';
+
+  it('is replaceable although the words copied out stop at the figure', () => {
+    expect(figureReplaceable(paragraph, 'have a value not exceeding $250')).toBe(true);
+  });
+
+  it('is firm where the provision states it and stops', () => {
+    expect(figureReplaceable('For subparagraph 68(1)(f)(iii) of the Act, the amount is $1 000.', 'the amount is $1 000')).toBe(false);
+  });
+
+  it('does not borrow an allowance attached to another figure in the section', () => {
+    const two = 'A fee of $50 applies. Goods not exceeding $1,000 or such other amount as is prescribed are exempt.';
+    expect(figureReplaceable(two, 'a fee of $50')).toBe(false);
   });
 });
