@@ -99,13 +99,37 @@ export function ipsRows(html: string): IpsRow[] {
     .filter((r) => r.nd && r.heading);
 }
 
+/**
+ * A decree or resolution that states policy rather than law: it approves a doctrine, a strategy, a
+ * concept or the foundations of state policy, or proposes that a treaty be signed. Its act type is
+ * a Presidential decree or a Government resolution, which the register rightly calls binding, but
+ * what it binds is nobody: a doctrine sets direction, and a proposal to sign is a step toward a
+ * treaty that is not yet law. Measured on Russia's 7.2, where the Doctrine of Information Security,
+ * the Foundations of State Policy on international information security and a proposal to sign the
+ * UN Convention against Cybercrime all cleared as the country's dedicated cybersecurity framework.
+ */
+const POLICY_TITLE =
+  /(об утверждении (доктрин|стратеги|концепци|основ государственной политики)|о представлении [^"]*предложения о подписании)/iu;
+
+/** The kind a row is registered as: advisory where its title shows it states policy, not law. */
+export function kindFor(title: string, kind: InstrumentKind): { kind: InstrumentKind; kindBasis?: string } {
+  if ((kind === 'order' || kind === 'regulation') && POLICY_TITLE.test(title)) {
+    return {
+      kind: 'guideline',
+      kindBasis: 'the title approves a doctrine, strategy, concept or foundations of policy, or proposes signing a treaty: it states policy and imposes no duty',
+    };
+  }
+  return { kind };
+}
+
 /** A row as an instrument of the register. */
 export function instrumentFrom(row: IpsRow, kind: InstrumentKind, base: string): DiscoveredInstrument {
   const repealed = /утратил/iu.test(row.standing);
+  const title = row.name ? `${row.heading} "${row.name}"` : row.heading;
   return {
-    title: row.name ? `${row.heading} "${row.name}"` : row.heading,
+    title,
     url: `${base}/proxy/ips/?doc_itself=&nd=${row.nd}&page=all`,
-    kind,
+    ...kindFor(title, kind),
     officialNumber: /№\s*(\S+)/.exec(row.heading)?.[1] ?? null,
     status: repealed ? 'repealed' : 'in-force',
     statusBasis: `IPS (pravo.gov.ru) lists it as "${row.standing}"`,
