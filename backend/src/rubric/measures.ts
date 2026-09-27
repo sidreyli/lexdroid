@@ -305,6 +305,9 @@ export const MEASURES: Record<string, Measure[]> = {
       defines: 'the words requiring the licence, permit or registration',
       gloss:
         'a requirement to hold a licence, permit or registration in order to provide online content, applications or platform services',
+      alsoAsked: [
+        'no person shall provide a content service, applications service or computer online service unless that person holds a licence',
+      ],
       actor: 'the provider of the online content or application',
     },
   ],
@@ -351,7 +354,7 @@ export const MEASURES: Record<string, Measure[]> = {
     },
     {
       token: 'import-compliance',
-      defines: 'the words requiring the licence, permit, registration or label before it may be brought in',
+      defines: 'the words requiring the licence, permit, approval, registration, prior notification or label before it may be brought in',
       crossesBorder: true,
       gloss:
         'a licence, permit, authorisation, registration, labelling or import-control requirement that must be met before ICT goods or online services may be imported',
@@ -1674,6 +1677,19 @@ const ONLINE_CONTENT = new RegExp(
   [ONLINE_SERVICE.source.replace('cyber\\w*|', ''), /\b(applications? services?|content applications?|apps?|online games?|news websites?)\b/.source, 'ออนไลน์|อินเทอร์เน็ต|แพลตฟอร์ม|เว็บไซต์|แอปพลิเคชัน'].join('|'),
   'i',
 );
+
+/**
+ * What a subject that only points at its own heading has to be, once the heading is read in.
+ *
+ * Import-compliance takes no domain, because a duty on every importer is a cost every ICT import
+ * bears. A duty on "goods included in a class of goods to which this Division applies" is not one:
+ * the class is the Division's, and the Division says what it is in its heading. Read that way a
+ * permit for animal products is a permit for animal products, and it counted as a second ICT
+ * compliance requirement only because the sentence left the class to its heading.
+ */
+export const HEADING_CLASS_DOMAIN: Readonly<Record<string, RegExp>> = {
+  'import-compliance': ICT_GOODS,
+};
 
 export const MEASURE_DOMAIN: Readonly<Record<string, RegExp>> = {
   // 8.3's two bands are two subjects: identity to reach a service online, and identity for the

@@ -159,7 +159,7 @@
       "pillars": [7, 8, 9],
       "adapter": null,
       "adapterConfig": {},
-      "notes": "Issues the ministerial notifications made under the Computer-Related Crime Act B.E. 2550, among them the criteria for service providers to retain computer traffic data. Its law pages (www.mdes.go.th/law/detail/<id>) serve the notification PDF directly. robots.txt allows everything (checked 27 September 2026). No adapter: documents are registered by URL."
+      "notes": "Issues the ministerial notifications under the Computer-Related Crime Act B.E. 2550, among them the traffic-data retention criteria. No adapter: its law pages serve the notification PDF, registered by URL. Full trace: docs/thailand-integration-plan.md, \"MDES notifications\"."
     }
   ],
   "commitments": [

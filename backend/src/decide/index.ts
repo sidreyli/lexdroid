@@ -18,7 +18,7 @@
  */
 import type { Indicator, ScoreBand } from '../rubric/types.js';
 import type { Finding } from '../read/index.js';
-import { FRAMEWORK_TITLE_DOMAIN, MEASURES, MEASURE_DOMAIN, MEASURE_NAMES, SECTOR_DOMAINS, SUBJECTS, TITLE_CARRIES_DOMAIN, SUBJECT_DOMAIN } from '../rubric/measures.js';
+import { FRAMEWORK_TITLE_DOMAIN, HEADING_CLASS_DOMAIN, MEASURES, MEASURE_DOMAIN, MEASURE_NAMES, SECTOR_DOMAINS, SUBJECTS, TITLE_CARRIES_DOMAIN, SUBJECT_DOMAIN } from '../rubric/measures.js';
 import { tallyConfirmations, type ConfirmationTally } from '../read/confirmations.js';
 import { inUsd, moneyIn, type FxRates } from './currency.js';
 import { determinesAParticularCase } from '../discover/titles.js';
@@ -1816,6 +1816,19 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
       });
       continue;
     }
+    // And a subject that is only a pointer to the class its own Division, Part or Schedule applies
+    // to, for a measure that takes no domain of its own: the class is the heading's, so the heading
+    // answers for it -- see HEADING_CLASS_DOMAIN.
+    const classDomain = HEADING_CLASS_DOMAIN[e.finding.measure ?? ''];
+    const unit = classDomain ? headingUnitPointedAt(e.finding.subjectWords) : null;
+    const heading = unit ? headingOf(e.headingPath, unit) : null;
+    if (classDomain && heading && !classDomain.test(heading)) {
+      ruledOut.push({
+        evidence: e,
+        reason: `"${e.finding.subjectWords}" is the class of goods "${heading}" names, and that is not ${subject ?? "this indicator's subject"}`,
+      });
+      continue;
+    }
     // And the other way round for a sector: the words name no sector and neither does the Act they
     // were read in, so the provision is about some other trade. Ruled out for the reason the
     // subject test is -- the provision was read and what it is about belongs elsewhere.
@@ -2077,7 +2090,10 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     }
     // A measure defined by a border crossing is not made out by a provision where nothing crosses.
     // A consumer-goods safety ban and a power to detain goods already here are not import measures.
-    if (crossing(indicatorId, e.finding.measure) && !e.finding.borderWords) {
+    // Nor by words that cross some other line: a product standard's licence "before taking the
+    // product out of the place of production" was copied as the border and scored an import
+    // requirement, and the only frontier it names is the factory gate.
+    if (crossing(indicatorId, e.finding.measure) && !namesTheFrontier(e.finding.borderWords)) {
       ruledOut.push({
         evidence: e,
         reason: 'nothing in the provision enters or leaves the economy, and this measure is a restriction on trade across the border',
@@ -2502,6 +2518,24 @@ function commanded(indicatorId: string, measure: string | null): boolean {
   return (MEASURES[indicatorId] ?? []).some((m) => m.token === measure && m.commands === true);
 }
 
+/**
+ * Do the words said to cross the border name the economy's frontier -- goods or data coming in,
+ * going out, passing through, or held to be foreign -- rather than some other line?
+ */
+const FRONTIER = new RegExp(
+  [
+    /\b(bring\w*|brought|land(?:ed|ing)?|enter\w*|entry|leav\w*|customs|borders?|boundar\w*|frontiers?|territor\w*|countr\w*|abroad|overseas|offshore|foreign\w*|international\w*|transit\w*|tranship\w*|transship\w*|ship(?:ped|ping|ment\w*)?|unship\w*|consign\w*|cross\w*|inbound|outbound|inward|outward|outside|beyond|out of|out from|into|origin\w*|jurisdiction)\b/.source,
+    // Import and export inside other words as well: "reimported", and Malay's "pengimportan",
+    // "diimport" and "pengeksportan".
+    /import|export|eksport/.source,
+    'นำเข้า|ส่งออก|นำ\\S*เข้า|ส่ง\\S*ออก|นำออก|ราชอาณาจักร|ศุลกากร|ผ่านแดน|นำผ่าน|ถ่ายลำ|ประเทศ|ตางประเทศ|ภายนอก',
+  ].join('|'),
+  'i',
+);
+function namesTheFrontier(borderWords: string | null | undefined): boolean {
+  return !!borderWords && FRONTIER.test(borderWords);
+}
+
 /** Is this measure one of the ones defined by something crossing the border? */
 function crossing(indicatorId: string, measure: string | null): boolean {
   if (!measure) return false;
@@ -2606,6 +2640,18 @@ const POINTS_AT_A_PROVISION =
 /** Words that carry no subject of their own, so a phrase of nothing else has named none. */
 const CARRIES_NO_SUBJECT =
   /^(?:the|a|an|any|all|each|every|such|other|those|these|same|following|of|doing|and|or|acts?|matters?|things?|provisions?|requirements?|purposes?|types?|kinds?|classes?|cases?)$/i;
+/** The unit -- Division, Part, Schedule, Chapter -- a subject defers to as "this Division", if it does. */
+function headingUnitPointedAt(subjectWords: string | null | undefined): string | null {
+  const m = /\bclass(?:es)? of goods to which this (Division|Subdivision|Part|Chapter|Schedule)\b/i.exec(subjectWords ?? '');
+  return m ? m[1]! : null;
+}
+
+/** The innermost heading of that unit on the provision's heading path. */
+function headingOf(headingPath: string | null | undefined, unit: string): string | null {
+  const segments = (headingPath ?? '').split(' > ').reverse();
+  return segments.find((h) => new RegExp(`^${unit}\\b`, 'i').test(h.trim())) ?? null;
+}
+
 function statesASubject(subjectWords: string): boolean {
   const at = subjectWords.search(POINTS_AT_A_PROVISION);
   if (at < 0) return true;
