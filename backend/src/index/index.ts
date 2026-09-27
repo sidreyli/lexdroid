@@ -13,7 +13,7 @@
  */
 import type { Db } from '../db/index.js';
 import { MIN_TRIGRAM_TERM } from '../db/index.js';
-import { embed, EMBEDDING_MODEL } from '../engines/ollama.js';
+import { embed, EMBEDDING_MODEL, embedQueries } from '../engines/ollama.js';
 import { canonicalizeThai } from '../util/thai.js';
 
 /**
@@ -329,7 +329,7 @@ export async function searchDense(
 ): Promise<SearchHit[]> {
   if (vectors.ids.length === 0) return [];
   const limit = opts.limit ?? 50;
-  const [raw] = await embed([query], opts.model ?? EMBEDDING_MODEL);
+  const [raw] = await embedQueries([query], opts.model ?? EMBEDDING_MODEL);
   const q = normalise(raw!);
   if (q.length !== vectors.dims) {
     throw new Error(`the query embedded to ${q.length} dimensions but the index holds ${vectors.dims}. Rebuild the index after changing model.`);

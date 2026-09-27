@@ -289,6 +289,28 @@ export async function embed(texts: string[], model: string = EMBEDDING_MODEL): P
   });
 }
 
+/**
+ * Questions embedded once per process, and in one request where they arrive together.
+ *
+ * Retrieval and the shortlist each ask thirty-odd questions a cell and embedded them one request at
+ * a time. Against a rented GPU through an SSH tunnel the model takes 11 ms and the round trip one to
+ * two seconds, measured 27 September, so a sweep of the register spent its time on the wire and the
+ * GPU sat at 0%. A caller that knows its questions hands them over together; each is embedded once,
+ * and asked again it is answered from here. The vectors are the model's own, so a question embedded
+ * alone or in a batch is compared by the same function either way.
+ */
+const queryVectors = new Map<string, Float32Array>();
+
+export async function embedQueries(texts: readonly string[], model: string = EMBEDDING_MODEL): Promise<Float32Array[]> {
+  const key = (t: string) => `${model}\u0000${t}`;
+  const missing = [...new Set(texts.filter((t) => !queryVectors.has(key(t))))];
+  if (missing.length) {
+    const vectors = await embed(missing, model);
+    missing.forEach((t, i) => queryVectors.set(key(t), vectors[i]!));
+  }
+  return texts.map((t) => queryVectors.get(key(t))!);
+}
+
 export interface GenerateOptions {
   model?: string;
   /** A JSON Schema the response must satisfy. Ollama constrains decoding to it. */

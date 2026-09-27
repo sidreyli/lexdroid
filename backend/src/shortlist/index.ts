@@ -26,7 +26,7 @@
  * it.
  */
 import type { Db } from '../db/index.js';
-import { embed, EMBEDDING_MODEL } from '../engines/ollama.js';
+import { embed, embedQueries, EMBEDDING_MODEL } from '../engines/ollama.js';
 import { ftsQuery, fuse, type SearchHit } from '../index/index.js';
 
 const EMBED_BATCH = 32;
@@ -58,6 +58,35 @@ export interface InstrumentCandidate {
 
 function toBlob(v: Float32Array): Buffer {
   return Buffer.from(v.buffer, v.byteOffset, v.byteLength);
+}
+
+/**
+ * What a channel reads off the register, read once per process rather than once per question.
+ *
+ * A cell asks thirty-odd questions and a pillar sweep a thousand, and every channel used to fetch
+ * and decode its whole slice of the register for each one: every title lower-cased, every table of
+ * contents JSON-parsed, every vector copied out of its row. On Russia that was about 1.5 s a
+ * question on the laptop while the rented GPU that answers the embedding sat at 0%, measured
+ * 27 September. The scan over what is loaded still happens per question; only the loading is kept.
+ *
+ * Kept only while it is still true. The stamp is a count, a largest id and a size over the same
+ * rows, so a title registered, renamed or re-kinded, a table of contents recorded, or a vector
+ * embedded mid-process makes the next question load afresh.
+ */
+const loaded = new WeakMap<Db, Map<string, { stamp: string; value: unknown }>>();
+
+function onceLoaded<T>(db: Db, key: string, stamp: string, load: () => T): T {
+  let byKey = loaded.get(db);
+  if (!byKey) loaded.set(db, (byKey = new Map()));
+  const held = byKey.get(key);
+  if (held && held.stamp === stamp) return held.value as T;
+  const value = load();
+  byKey.set(key, { stamp, value });
+  return value;
+}
+
+function stampOf(db: Db, sql: string, params: unknown[]): string {
+  return Object.values(db.prepare(sql).get(...params) as Record<string, unknown>).join(':');
 }
 
 function normalise(v: ArrayLike<number>): Float32Array {
@@ -248,14 +277,17 @@ function titleLexical(
 
   // The register is thousands of rows, not millions, so a scan costs nothing and avoids a second
   // index that could drift out of step with the section index.
-  const rows = db
-    .prepare(
-      `SELECT id, title FROM instrument WHERE economy_code = ?${kind ? ' AND kind = ?' : ''} ORDER BY id`,
-    )
-    .all(...(kind ? [economy, kind] : [economy])) as { id: number; title: string }[];
-  if (!rows.length) return [];
-
-  const lower = rows.map((r) => ({ id: r.id, t: r.title.toLowerCase() }));
+  const params = kind ? [economy, kind] : [economy];
+  const where = `economy_code = ?${kind ? ' AND kind = ?' : ''}`;
+  const lower = onceLoaded(
+    db,
+    `title-lexical/${economy}/${kind ?? ''}`,
+    stampOf(db, `SELECT COUNT(*) n, MAX(id) top, SUM(LENGTH(title)) size FROM instrument WHERE ${where}`, params),
+    () =>
+      (db.prepare(`SELECT id, title FROM instrument WHERE ${where} ORDER BY id`).all(...params) as { id: number; title: string }[])
+        .map((r) => ({ id: r.id, t: r.title.toLowerCase() })),
+  );
+  if (!lower.length) return [];
   const idf = new Map<string, number>();
   for (const term of terms) {
     const df = lower.reduce((n, r) => n + (r.t.includes(term) ? 1 : 0), 0);
@@ -301,26 +333,33 @@ async function headingDense(
   model: string,
   kind?: string,
 ): Promise<SearchHit[]> {
-  const rows = db
-    .prepare(
-      `SELECT h.instrument_id id, h.heading, h.vector FROM heading_embedding h
-         JOIN instrument i ON i.id = h.instrument_id
-        WHERE i.economy_code = ? AND h.model = ?${kind ? ' AND i.kind = ?' : ''}`,
-    )
-    .all(...(kind ? [economy, model, kind] : [economy, model])) as {
-    id: number;
-    heading: string;
-    vector: Buffer;
-  }[];
+  const params = kind ? [economy, model, kind] : [economy, model];
+  const from = `FROM heading_embedding h JOIN instrument i ON i.id = h.instrument_id
+        WHERE i.economy_code = ? AND h.model = ?${kind ? ' AND i.kind = ?' : ''}`;
+  const rows = onceLoaded(
+    db,
+    `heading-dense/${economy}/${model}/${kind ?? ''}`,
+    stampOf(db, `SELECT COUNT(*) n, MAX(h.id) top ${from}`, params),
+    () =>
+      (db.prepare(`SELECT h.instrument_id id, h.heading, h.vector ${from}`).all(...params) as {
+        id: number;
+        heading: string;
+        vector: Buffer;
+      }[]).map((r) => ({
+        id: r.id,
+        heading: r.heading,
+        v: new Float32Array(r.vector.buffer, r.vector.byteOffset, r.vector.byteLength / 4),
+      })),
+  );
   if (!rows.length) return [];
 
-  const [qv] = await embed([query], model);
+  const [qv] = await embedQueries([query], model);
   if (!qv) return [];
   const q = normalise(qv);
 
   const best = new Map<number, { score: number; heading: string }>();
   for (const r of rows) {
-    const v = new Float32Array(r.vector.buffer, r.vector.byteOffset, r.vector.byteLength / 4);
+    const v = r.v;
     let dot = 0;
     for (let i = 0; i < q.length && i < v.length; i += 1) dot += q[i]! * v[i]!;
     const cur = best.get(r.id);
@@ -360,18 +399,20 @@ function headingLexical(
   ];
   if (!terms.length) return [];
 
-  const rows = db
-    .prepare(
-      `SELECT c.instrument_id id, c.headings FROM instrument_contents c
-         JOIN instrument i ON i.id = c.instrument_id
-        WHERE i.economy_code = ?${kind ? ' AND i.kind = ?' : ''}`,
-    )
-    .all(...(kind ? [economy, kind] : [economy])) as { id: number; headings: string }[];
-  if (!rows.length) return [];
-
+  const params = kind ? [economy, kind] : [economy];
+  const from = `FROM instrument_contents c JOIN instrument i ON i.id = c.instrument_id
+        WHERE i.economy_code = ?${kind ? ' AND i.kind = ?' : ''}`;
   // Document frequency over instruments, not over headings: a term appearing in forty headings of
   // one Act says that Act is about it, and should not be discounted as if it were everywhere.
-  const parsed = rows.map((r) => ({ id: r.id, hs: (JSON.parse(r.headings) as string[]).map((h) => h.toLowerCase()) }));
+  const parsed = onceLoaded(
+    db,
+    `heading-lexical/${economy}/${kind ?? ''}`,
+    stampOf(db, `SELECT COUNT(*) n, MAX(c.instrument_id) top, SUM(c.heading_count) size, MAX(c.fetched_at) at ${from}`, params),
+    () =>
+      (db.prepare(`SELECT c.instrument_id id, c.headings ${from}`).all(...params) as { id: number; headings: string }[])
+        .map((r) => ({ id: r.id, hs: (JSON.parse(r.headings) as string[]).map((h) => h.toLowerCase()) })),
+  );
+  if (!parsed.length) return [];
   const idf = new Map<string, number>();
   for (const term of terms) {
     const df = parsed.reduce((n, r) => n + (r.hs.some((h) => h.includes(term)) ? 1 : 0), 0);
@@ -416,21 +457,25 @@ async function titleDense(
   // The kind filter belongs in the query, not after it. Applied afterwards it spends the whole
   // retrieval depth on subsidiary legislation -- 5,841 of Singapore's 6,365 instruments -- and then
   // discards nearly all of it, so a search restricted to Acts came back with two candidates.
-  const rows = db
-    .prepare(
-      `SELECT e.instrument_id id, e.vector FROM instrument_embedding e
-       JOIN instrument i ON i.id = e.instrument_id
-       WHERE i.economy_code = ? AND e.model = ?${kind ? ' AND i.kind = ?' : ''}`,
-    )
-    .all(...(kind ? [economy, model, kind] : [economy, model])) as { id: number; vector: Buffer }[];
+  const params = kind ? [economy, model, kind] : [economy, model];
+  const from = `FROM instrument_embedding e JOIN instrument i ON i.id = e.instrument_id
+       WHERE i.economy_code = ? AND e.model = ?${kind ? ' AND i.kind = ?' : ''}`;
+  const rows = onceLoaded(
+    db,
+    `title-dense/${economy}/${model}/${kind ?? ''}`,
+    stampOf(db, `SELECT COUNT(*) n, MAX(e.instrument_id) top ${from}`, params),
+    () =>
+      (db.prepare(`SELECT e.instrument_id id, e.vector ${from}`).all(...params) as { id: number; vector: Buffer }[])
+        .map((r) => ({ id: r.id, v: new Float32Array(r.vector.buffer, r.vector.byteOffset, r.vector.byteLength / 4) })),
+  );
   if (!rows.length) return [];
 
-  const [qv] = await embed([query], model);
+  const [qv] = await embedQueries([query], model);
   if (!qv) return [];
   const q = normalise(qv);
 
   const scored = rows.map((r) => {
-    const v = new Float32Array(r.vector.buffer, r.vector.byteOffset, r.vector.byteLength / 4);
+    const v = r.v;
     let dot = 0;
     for (let i = 0; i < q.length && i < v.length; i += 1) dot += q[i]! * v[i]!;
     return { id: r.id, score: dot };
@@ -477,6 +522,17 @@ export async function shortlistInstruments(
   // must keep its own ranking -- flattening them first would make rank 1 of a weak query
   // indistinguishable from rank 1 of a strong one.
   const runs: SearchHit[][] = [];
+  // Every question embedded in one request, so the loop below reads each vector locally -- where
+  // there is anything to compare them with. A register with no vectors for this model never asked
+  // the model anything, and must not start now.
+  const hasVectors = db
+    .prepare(
+      `SELECT 1 FROM instrument i WHERE i.economy_code = ? AND (
+         EXISTS (SELECT 1 FROM instrument_embedding e WHERE e.instrument_id = i.id AND e.model = ?)
+         OR EXISTS (SELECT 1 FROM heading_embedding h WHERE h.instrument_id = i.id AND h.model = ?)) LIMIT 1`,
+    )
+    .get(opts.economy, model, model);
+  if (hasVectors) await embedQueries(opts.queries, model);
   for (const query of opts.queries) {
     const lex = titleLexical(db, query, opts.economy, depth, opts.kind);
     if (lex.length) runs.push(lex);

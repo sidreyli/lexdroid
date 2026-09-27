@@ -18,6 +18,7 @@
  * an auditable one; lowering it silently is how a system quietly stops looking.
  */
 import type { Db } from '../db/index.js';
+import { embedQueries, EMBEDDING_MODEL } from '../engines/ollama.js';
 import type { Indicator } from '../rubric/types.js';
 import { MEASURES } from '../rubric/measures.js';
 import { THAI } from './queries-th.js';
@@ -442,6 +443,8 @@ async function seatFor(
   fused: number[];
 }> {
   const runs: SearchHit[][] = [];
+  // Every question embedded in one request, so the loop below reads each vector locally.
+  if (vectors.ids.length) await embedQueries(queries, opts.model ?? EMBEDDING_MODEL);
   for (const query of queries) {
     const lex = lexical
       ? searchLexical(db, query, { limit: perQueryDepth, economy: opts.economy }).filter((h) => !skip(h.sectionId))
