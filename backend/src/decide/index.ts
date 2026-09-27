@@ -18,7 +18,7 @@
  */
 import type { Indicator, ScoreBand } from '../rubric/types.js';
 import type { Finding } from '../read/index.js';
-import { FRAMEWORK_TITLE_DOMAIN, HEADING_CLASS_DOMAIN, MEASURES, MEASURE_DOMAIN, MEASURE_NAMES, SECTOR_DOMAINS, SUBJECTS, TITLE_CARRIES_DOMAIN, SUBJECT_DOMAIN } from '../rubric/measures.js';
+import { FRAMEWORK_TITLE_DOMAIN, HEADING_CLASS_DOMAIN, MEASURES, MEASURE_DOMAIN, MEASURE_NAMES, SECTOR_DOMAINS, SUBJECTS, TITLE_CARRIES_DOMAIN, SUBJECT_DOMAIN, TARIFF_CODED_DOMAIN } from '../rubric/measures.js';
 import { tallyConfirmations, type ConfirmationTally } from '../read/confirmations.js';
 import { inUsd, moneyIn, type FxRates } from './currency.js';
 import { determinesAParticularCase } from '../discover/titles.js';
@@ -106,6 +106,12 @@ export interface Evidence {
   instrumentKind?: string | null;
   /** The language the provision is written in. Absent where the corpus predates the field. */
   sectionLanguage?: string | null;
+  /**
+   * The ICT tariff codes the provision states -- see ict-goods.ts. A customs instrument names the
+   * goods it charges by code, so this is what the goods are, whatever the words call them. Absent
+   * for evidence recorded before the field, which reads as none.
+   */
+  ictTariffCodes?: string[];
   /** The parser read the provision itself as repealed or deleted, whatever the instrument's status. */
   sectionRepealed?: boolean;
 }
@@ -1520,7 +1526,12 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     // exceeding RM500 per user" -- which is the answer ESCAP gives for that cell and is a
     // declaration by grammar. The reader was right about the verb; the gate was asking the wrong
     // measures for one.
-    if (e.finding.dutyForce === 'declares' && !permits(indicatorId, e.finding.measure) && !confinesPermission(e.finding)) {
+    if (
+      e.finding.dutyForce === 'declares' &&
+      !permits(indicatorId, e.finding.measure) &&
+      !confinesPermission(e.finding) &&
+      !laysTheCharge(indicatorId, e.finding)
+    ) {
       ruledOut.push({
         evidence: e,
         reason: `the provision declares what is the case -- "${e.finding.dutyAct}" -- rather than requiring anyone to do anything`,
@@ -1779,10 +1790,13 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     const domain = inDomain(indicatorId, e.finding.measure);
     // A sector is named by the document, not by every sentence in it -- see SECTOR_DOMAINS. The
     // instrument's title answers the domain for those, and the words answer it for the rest.
+    // And goods are named by their tariff code where the indicator's goods are defined by one --
+    // see TARIFF_CODED_DOMAIN.
     const namesDomain =
       domain !== null &&
-      (SECTOR_DOMAINS.has(indicatorId) || TITLE_CARRIES_DOMAIN.has(e.finding.measure ?? '')) &&
-      (domain.test(e.instrumentTitle) || domain.test(e.finding.subjectWords ?? ''));
+      (((SECTOR_DOMAINS.has(indicatorId) || TITLE_CARRIES_DOMAIN.has(e.finding.measure ?? '')) &&
+        (domain.test(e.instrumentTitle) || domain.test(e.finding.subjectWords ?? ''))) ||
+        (TARIFF_CODED_DOMAIN.has(indicatorId) && (e.ictTariffCodes?.length ?? 0) > 0));
     if (domain && !namesDomain && e.finding.subjectWords && !domain.test(e.finding.subjectWords) && otherLanguage(e)) {
       held.push({
         evidence: e,
@@ -2119,7 +2133,8 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     // Each measure says which side it binds, and this checks the side the reader read out.
     if (
       actorKindOf(indicatorId, e.finding.measure) === 'private' &&
-      e.finding.dutyBearerKind === 'government'
+      e.finding.dutyBearerKind === 'government' &&
+      !laysTheCharge(indicatorId, e.finding)
     ) {
       ruledOut.push({
         evidence: e,
@@ -2156,7 +2171,7 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     }
     // A power is not a duty, and two measures in the rubric are written as powers: government
     // access, and a power to impose customs duties on an electronic transmission.
-    if (!isRequirement(e.finding) && !permits(indicatorId, e.finding.measure)) {
+    if (!isRequirement(e.finding) && !permits(indicatorId, e.finding.measure) && !laysTheCharge(indicatorId, e.finding)) {
       ruledOut.push({ evidence: e, reason: 'the provision permits rather than requires' });
       continue;
     }
@@ -2642,6 +2657,20 @@ function statesASubject(subjectWords: string): boolean {
 }
 
 /** Is this measure one the rubric describes as a permission or a limit rather than a command? */
+/**
+ * Whether the finding is the words laying a charge on goods, for a measure that is one -- see
+ * `laidOnGoods`. The act has to lay it now: "imposes", "levies". A charge the provision only
+ * refers to as laid already -- "had imposed", "has been imposed" -- is laid somewhere else, and
+ * counting it here would count that instrument twice.
+ */
+function laysTheCharge(indicatorId: string, f: Pick<Finding, 'measure' | 'dutyAct'>): boolean {
+  const laid = (MEASURES[indicatorId] ?? []).some((m) => m.token === f.measure && m.laidOnGoods === true);
+  const act = f.dutyAct ?? '';
+  return laid && LAYS_A_CHARGE.test(act) && !REFERS_TO_A_CHARGE_LAID.test(act);
+}
+const LAYS_A_CHARGE = /\b(impos|levi|levy|charg)\w*/i;
+const REFERS_TO_A_CHARGE_LAID = /\b(had|has|have|was|were|been|to be|shall be|may)\b/i;
+
 function permits(indicatorId: string, measure: string | null): boolean {
   if (!measure) return false;
   return (MEASURES[indicatorId] ?? []).some((m) => m.token === measure && m.permits === true);

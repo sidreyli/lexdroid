@@ -82,6 +82,18 @@ export interface Measure {
    * says why the exemption exists, and lets a power to impose customs duties use the same one.
    */
   permits?: boolean;
+  /**
+   * Whether this measure is a charge an authority lays on goods.
+   *
+   * A duty on goods is borne by whoever brings them in, and the instrument that lays it is written
+   * by the authority in the present tense: "the Central Government hereby imposes on the subject
+   * goods ... an anti-dumping duty". The reader rightly reads that as a declaration by the State,
+   * and two gates then ruled out every such notice -- one for declaring rather than requiring, one
+   * for binding the State -- so a measure actually in force could never be counted. The words
+   * laying the charge make it out, whoever says them; a charge only referred to as already laid
+   * does not.
+   */
+  laidOnGoods?: boolean;
   /** Whether this measure is defined by something crossing the economy's border. */
   crossesBorder?: boolean;
   /**
@@ -635,6 +647,7 @@ export const MEASURES: Record<string, Measure[]> = {
       gloss:
         'an anti-dumping duty, countervailing duty or safeguard measure imposed on imported ICT or electronic goods',
       actor: 'the importer of the goods',
+      laidOnGoods: true,
       // A duty is charged on whoever brings the goods in. Every finding this indicator collected in
       // all three economies binds the Minister, the Government or the court instead -- the sections
       // of the enabling Act that say when and how a duty may be imposed, which are the procedure
@@ -1810,6 +1823,28 @@ const DATA_SUBJECT = new RegExp(
   [/\b(data|information|records?|databases?|documents?|files?)\b/.source, 'ข้อมูล|สารสนเทศ'].join('|'),
   'i',
 );
+
+/**
+ * The words that make out a tariff-coded indicator's measure, which is what a provision stating an
+ * ICT code must also say before retrieval seats it. A tariff schedule states every code there is,
+ * and states no duty against any of them.
+ */
+export const TARIFF_CODED_MEASURE: Readonly<Record<string, RegExp>> = {
+  '1.4': /\b(anti-?dumping|countervailing|safeguard)\b/i,
+};
+
+/**
+ * The indicators whose goods ESCAP defines by tariff code, where a provision that states an ICT
+ * tariff code has named its subject whatever words it uses for the goods.
+ *
+ * 1.4 counts duties charged on ICT goods, and the guide says which goods those are: the WTO ITA I
+ * and II lists and the proposed ITA III, all by HS code (ict-goods.ts). A duty notice names the
+ * goods it charges by code and by a trade name, and a word list cannot know every trade name --
+ * India's duty on "industrial laser machines" and its duty on "digital offset printing plates"
+ * both failed the words above and both carry codes on the list. Pillar 10 is left out for the
+ * reason its SUBJECT_DOMAIN entry is.
+ */
+export const TARIFF_CODED_DOMAIN: ReadonlySet<string> = new Set(Object.keys(TARIFF_CODED_MEASURE));
 
 export const SUBJECT_DOMAIN: Readonly<Record<string, RegExp>> = {
   // See DATA_SUBJECT above.

@@ -11,6 +11,7 @@
  * record it returns is what a reviewer sees: which provisions were looked at, what each was found
  * to say, which of those the score rests on, and which were found and deliberately not counted.
  */
+import { tariffCodesOf } from '../rubric/ict-goods.js';
 import type { Db } from '../db/index.js';
 import type { Emit } from '../run/events.js';
 import { citationUrl } from '../export/index.js';
@@ -420,6 +421,7 @@ export async function answerPillar(
         definesATerm: citesADefinition(row.text, finding.definingWords ?? finding.quote),
         inheritsAPower: inheritsAPower(row.text, finding.quote),
         sectionLanguage: row.language,
+        ...tariffCodesOf(row.text),
         instrumentKind: row.instrument_kind,
         ...(row.repealed ? { sectionRepealed: true } : {}),
         ...(row.instrument_status ? { instrumentStatus: row.instrument_status } : {}),

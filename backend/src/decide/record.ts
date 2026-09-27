@@ -8,6 +8,7 @@
  *
  * Nothing here searches or reads: it rebuilds Zone 3's input out of Zone 1 and Zone 2's records.
  */
+import { tariffCodesOf } from '../rubric/ict-goods.js';
 import type { Db } from '../db/index.js';
 import { citationUrl } from '../export/index.js';
 import { prescribedFor } from '../cell/index.js';
@@ -180,6 +181,7 @@ export function recordedDecider(
             definesATerm: citesADefinition(r.text, finding.definingWords ?? finding.quote),
             inheritsAPower: inheritsAPower(r.text, finding.quote),
             sectionLanguage: r.language,
+            ...tariffCodesOf(r.text),
             instrumentKind: r.instrument_kind,
             ...(r.repealed ? { sectionRepealed: true } : {}),
             citation: citationUrl(r.doc_url, r.anchor, { page: r.page, mediaType: r.media_type }),
