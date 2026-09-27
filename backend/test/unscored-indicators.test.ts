@@ -66,31 +66,39 @@ describe('every indicator can now be answered or says why not', () => {
 });
 
 describe('the foreign-equity ladder', () => {
+  // 3.1's subject is a sector relevant to digital trade, which the words or the title must name.
+  const e31 = (measure: string, over: Partial<Finding> = {}, n = 1) =>
+    ev('3.1', measure, { subjectWords: over.sector ?? 'broadcasting', ...over }, n);
+
   it('scores a ban at the top of 3.1', () => {
-    expect(score('3.1', [ev('3.1', 'foreign-equity-ban', { definingWords: 'no shares may be held by a foreign person' })])).toBe(1);
+    expect(score('3.1', [e31('foreign-equity-ban', { definingWords: 'no shares may be held by a foreign person' })])).toBe(1);
   });
 
   it('scores one minority limit in one sector at 0.8', () => {
-    expect(score('3.1', [ev('3.1', 'foreign-equity-minority')])).toBe(0.8);
+    expect(score('3.1', [e31('foreign-equity-minority')])).toBe(0.8);
   });
 
   it('promotes minority limits in two sectors to the top band, as 3.1 counts sectors', () => {
-    const two = [ev('3.1', 'foreign-equity-minority', { sector: 'broadcasting' }, 1), ev('3.1', 'foreign-equity-minority', { sector: 'aviation' }, 2)];
+    const two = [e31('foreign-equity-minority', { sector: 'broadcasting' }, 1), e31('foreign-equity-minority', { sector: 'banking' }, 2)];
     expect(score('3.1', two)).toBe(1);
   });
 
   it('leaves two minority limits in the same sector at 0.8', () => {
-    const same = [ev('3.1', 'foreign-equity-minority', { sector: 'broadcasting' }, 1), ev('3.1', 'foreign-equity-minority', { sector: 'broadcasting' }, 2)];
+    const same = [e31('foreign-equity-minority', { sector: 'broadcasting' }, 1), e31('foreign-equity-minority', { sector: 'broadcasting' }, 2)];
     expect(score('3.1', same)).toBe(0.8);
   });
 
   it('scores a controlling stake, and a limit that bites only on state-owned firms, at 0.5', () => {
-    expect(score('3.1', [ev('3.1', 'foreign-equity-controlling')])).toBe(0.5);
-    expect(score('3.1', [ev('3.1', 'foreign-equity-state-owned-only')])).toBe(0.5);
+    expect(score('3.1', [e31('foreign-equity-controlling')])).toBe(0.5);
+    expect(score('3.1', [e31('foreign-equity-state-owned-only')])).toBe(0.5);
   });
 
   it('scores nothing found at zero', () => {
     expect(score('3.1', [])).toBe(0);
+  });
+
+  it('does not count a cap in a sector unrelated to digital trade', () => {
+    expect(score('3.1', [e31('foreign-equity-minority', { sector: 'airports', subjectWords: 'an airport-operator company' })])).toBe(0);
   });
 
   it('counts measures rather than sectors for 5.2, which is one sector already', () => {

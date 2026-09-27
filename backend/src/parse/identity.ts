@@ -375,8 +375,16 @@ export function amendsAnotherAct(text: string): boolean {
  */
 const DEFINITION_ENTRY = /["“]([^"”]{1,90})["”]\s{0,4}(?:means|includes|has the (?:same )?meaning)/gi;
 
-/** Where one definition entry stops: the drafting break between them, or a blank line. */
-const ENTRY_END = /[;.]\s*\n|\n\s*\n/;
+/**
+ * Where one definition entry stops: the drafting break between them, or a blank line.
+ *
+ * Not a break that opens a lettered paragraph. "“intellectual property right” means — (a) a
+ * patent; (b) a trade mark; ... (h) a right in confidential information, trade secret or know-how"
+ * is one entry, and stopping at the first semicolon read paragraph (h) as operative: an
+ * arbitration Act's list of what counts as an IP right answered a trade-secret question. Numbered
+ * paragraphs still end it, because "(2)" is the next subsection, not the definition's list.
+ */
+const ENTRY_END = /(?:[;.]\s*\n|\n\s*\n)(?!\s*\([a-z]{1,4}\))/;
 
 export function citesADefinition(text: string, words: string | null): boolean {
   const quote = words?.trim();

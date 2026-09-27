@@ -33,8 +33,8 @@ finds, the contestable cells and the ones law can't answer.
 npm run -w backend bench-diff
 ```
 
-It should print "No cell moved", then 227 agree, 221 earned and 233 right of 305. The declarable
-pillars should be AUS 8, MYS 7, SGP 8, IND 6 and THA 9.
+It should print "No cell moved", then 229 agree, 223 earned and 235 right of 305. The declarable
+pillars should be AUS 9, MYS 7, SGP 8, IND 6 and THA 9.
 
 - **agree:** our score matches ESCAP's.
 - **earned:** an agreement that rests on the right law.

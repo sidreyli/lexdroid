@@ -1763,7 +1763,26 @@ const ADVERTISING_MEDIUM = new RegExp(
   'i',
 );
 
+/**
+ * The sectors 3.1 asks about, in the words of its own measure: "computing, data services, media,
+ * logistics, finance". The band caps foreign shares "in a sector relevant to digital trade", and
+ * every economy caps foreign shares in something -- an airport, a law firm, a shipping line. Read
+ * without a domain, 3.1 scored the top band in one economy on an airports Act's 49% and in another
+ * on the share of a law corporation a foreign lawyer may hold. Telecommunications and e-commerce
+ * are 5.2's and 12.01's, and the exception already takes them out.
+ */
+const DIGITAL_TRADE_SECTOR = new RegExp(
+  [
+    ONLINE.source,
+    /\b(comput\w*|information technology|information services?|software|data\w*|media|broadcast\w*|publish\w*|newspaper\w*|press|television|film\w*|logistic\w*|postal|post office|courier\w*|freight|warehous\w*|bank\w*|financ\w*|insur\w*|takaful|securities|capital markets?|fund\w*|payment\w*|credit|money)\b/.source,
+    'คอมพิวเตอร์|ข้อมูล|สื่อ|กระจายเสียง|โทรทัศน์|ไปรษณีย์|โลจิสติกส์|ธนาคาร|การเงิน|สถาบันการเงิน|ประกัน|หลักทรัพย์|การชำระเงิน|สินเชื่อ',
+  ].join('|'),
+  'i',
+);
+
 export const SUBJECT_DOMAIN: Readonly<Record<string, RegExp>> = {
+  // See DIGITAL_TRADE_SECTOR above. A sector, so the instrument's title may carry it.
+  '3.1': DIGITAL_TRADE_SECTOR,
   ...PILLAR_12_DOMAINS,
   // 1.4 counts duties charged on ICT goods, and a duty is charged on goods it names: a notice
   // imposing anti-dumping duty names newsprint or handsets, and the Act that sets up the regime
@@ -1861,7 +1880,7 @@ export const FRAMEWORK_TITLE_DOMAIN: Readonly<Record<string, { must?: RegExp; no
  * commission answered the telecom-regulator question. The rule is for a domain the provisions
  * inside a document stop repeating, not for one they were never going to state.
  */
-export const SECTOR_DOMAINS: ReadonlySet<string> = new Set(['5.5', '5.2', '5.1', '5.4', '11.2', '9.3', '4.01', '4.2', '4.3']);
+export const SECTOR_DOMAINS: ReadonlySet<string> = new Set(['5.5', '5.2', '5.1', '5.4', '11.2', '9.3', '4.01', '4.2', '4.3', '3.1']);
 
 /**
  * Measures whose domain the instrument's title may carry, as a sector's is, though the indicator's

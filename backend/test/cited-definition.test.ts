@@ -50,6 +50,22 @@ describe('words that define a term', () => {
   it('says no where the words are not in the provision at all, rather than guessing', () => {
     expect(citesADefinition(INTERPRETATION, 'a duty to appoint a data protection officer')).toBe(false);
   });
+
+  it('runs through the lettered paragraphs of the entry, not only its first', () => {
+    const list = [
+      '52A.—(1) In this Part, unless the context otherwise requires, “intellectual property right” or “IPR” means —',
+      '',
+      '(a) a patent;',
+      '',
+      '(b) a trade mark;',
+      '',
+      '(h) a right in confidential information, trade secret or know‑how;',
+      '',
+      '(2) Every IPR dispute is capable of settlement by arbitration.',
+    ].join('\n');
+    expect(citesADefinition(list, 'a right in confidential information, trade secret or know‑how')).toBe(true);
+    expect(citesADefinition(list, 'Every IPR dispute is capable of settlement')).toBe(false);
+  });
 });
 
 const rubric = loadRubric();

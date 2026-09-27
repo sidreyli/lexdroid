@@ -168,3 +168,18 @@ describe('an online advertising restriction', () => {
     expect(medium.test('พระราชกำหนดการประกอบธุรกิจสินทรัพย์ดิจิทัล พ.ศ. 2561')).toBe(false);
   });
 });
+
+describe('a foreign equity cap under 3.1', () => {
+  const domain = SUBJECT_DOMAIN['3.1']!;
+  it('is in a sector relevant to digital trade, which the title may name', () => {
+    expect(SECTOR_DOMAINS.has('3.1')).toBe(true);
+    expect(domain.test('Indian Insurance Companies (Foreign Investment) Rules, 2015')).toBe(true);
+    expect(domain.test('Financial Holding Companies Act 2013')).toBe(true);
+    expect(domain.test('Broadcasting Act 1942')).toBe(true);
+    expect(domain.test('ประกาศธนาคารแห่งประเทศไทย')).toBe(true);
+  });
+  it('not an airport or a law firm', () => {
+    expect(domain.test('Airports Act 1996')).toBe(false);
+    expect(domain.test('Legal Profession (Law Practice Entities) Rules 2015')).toBe(false);
+  });
+});

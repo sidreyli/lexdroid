@@ -10,8 +10,8 @@ Written 27 September 2026 over the latest full run of each economy:
 
 Agreement with ESCAP was 215 of 305 cells as run, rose to 231 with today's fixes, and is 223 after the rules
 that stopped eight agreements resting on the wrong law (below). 217 of those are earned. The fixes after that
-(IND 12.01, IND 12.9, THA 4.3, THA 9.3) bring it to **227 agreements, 221 earned, and 233 of 305 right with the
-finds (76%)**. This document
+(IND 12.01, IND 12.9, THA 4.3, THA 9.3) bring it to 227 agreements, 221 earned and 233 right. The 3.1 sector rule
+(AUS 3.1, SGP 3.1) brings it to **229 agreements, 223 earned, and 235 of 305 right with the finds (77%)**. This document
 sorts the disagreements by **who is right**, because agreement measures the reader, not the law (see `aus-sgp-disagreements.md` for the
 same exercise on an earlier Australia and Singapore run).
 
@@ -150,7 +150,6 @@ is the highest band legislation can reach.
 | AUS 1.4 | 0 | 0.5 | ESCAP names no anti-dumping measure on an ICT good, only the Customs Act. |
 | AUS 2.1 | 0 | 0.5 | ESCAP's exclusions (TikTok on government devices, the 5G vendor guidance) are directions and guidance, not "legislative measures" as the band requires. |
 | MYS 2.1 | 0 | 1 | ESCAP scores the Treasury Instructions. The Government Procurement Act 2026 postdates them, and we read it and found no exclusion. |
-| SGP 3.1 | 0.8 | 0 | Our cap is on foreign lawyers in law corporations. It is real, but legal services are a doubtful "sector relevant to digital trade". |
 | SGP 6.2 | 1 | 0.5 | Two Companies Act record-keeping duties (s.199, s.379) as "more than one measure". Defensible either way. |
 | IND 12.4.4 | 1 | 0 | PSS Act s.4 requires authorisation. The band asks for *restrictive conditions*, and the quote shows none. |
 | IND 2.2 | 0 | 1 | ESCAP scores the OSS adoption policy (a policy, not law) as a source-code surrender condition. Our witness (Official Secrets Act) is wrong regardless. |
@@ -192,8 +191,14 @@ organisms as an ICT import ban (IND 10.1); a `.au` domain licence, a digital-tok
 telecom licence as online-content licences (AUS, SGP, THA 9.4); endangered species and food as ICT
 export controls (SGP 10.4); a maritime radio operator's personal certificate as accepted product
 testing (IND 11.3).
-- AUS 3.1, 11.3
+- AUS 11.3 (AUS 3.1 is fixed below)
 - SGP 4.1, 9.4, 10.2, 10.4
+
+SGP 10.4 is closer to a find than a miss. The Strategic Goods (Control) Act s.5 ("A person must not export ... any
+strategic goods") covers telecommunications and information security items, and ESCAP scores the same kind of
+law 1 for Australia and Malaysia. The reader read s.5 and said it did not apply, so our 1 rests on an anti-evasion
+offence and the endangered species permit instead. A reader fix, not a rule one.
+
 - IND 10.1, 10.2, 11.3
 - THA 3.4, 12.4.3 (THA 4.3 and 9.3 are fixed below)
 - MYS 10.1: the ICT import-ban rule below took away an agreement that rested on trademark-infringing goods and
@@ -238,6 +243,8 @@ evaluated": no figure stated, a definition, or a code of practice issued under a
 | Where the defining words are a bare prohibition, "foreign investment is not permitted" in the quote is a proportion of nought | IND 12.01 | +1, earned: the inventory-model ban ESCAP scores, from the FEMA regulations that carry it |
 | A framework rule quoted without the purpose that opens its sentence names its subject by that sentence. Applied to banked readings with `repair-framework-shown` | IND 12.9 | +1, earned: the Consumer Protection Act 2019, whose s.94 had been refused for quoting only "the Central Government may take such measures" |
 | A limit on the terms a patentee may put in a licence is not a restriction on enforcing the patent | THA 4.3 | +1, earned: the Patent Act, as ESCAP |
+| 3.1 counts a foreign equity cap only in a sector relevant to digital trade (computing, data, media, logistics, finance, as its own measure lists), named by the words or the instrument's title | AUS 3.1, SGP 3.1 | +2, nothing lost: an airports Act's 49% and a law corporation's one-third were the caps |
+| A definition entry runs through its lettered paragraphs, so "(h) a right in confidential information, trade secret or know-how" under "IPR means —" is a definition | SGP 4.1 | 0: now abstains (ESCAP 0) instead of 0.5 on an arbitration Act's list of IP rights |
 | 9.3 advertising is advertising carried by a medium (online, broadcast, telecom) that the provision or its instrument's title names, not a ban on advertising one product in every medium | THA 9.3 | +1, weak (above); AUS, MYS, IND 9.3 still stand on broadcast and online rules |
 
 Tried and reverted, because each lost more than it won:
