@@ -33,3 +33,9 @@ describe('an ICT import ban or quota', () => {
     expect(MEASURE_DOMAIN['import-quota']!.test('goods of the kind to which the order relates')).toBe(false);
   });
 });
+
+describe('radio communication written as two words', () => {
+  it('is ICT goods as the one word is', () => {
+    expect(MEASURE_DOMAIN['ict-import-ban']!.test('Broadcast receivers capable of receiving radio communication')).toBe(true);
+  });
+});

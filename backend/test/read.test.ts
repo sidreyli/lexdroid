@@ -109,6 +109,21 @@ describe('what a finding must be able to show', () => {
     expect(reason).toMatch(/shall appoint/);
   });
 
+  it("takes the act from a Schedule's caption, which the item it heads does not repeat", () => {
+    const item = '2. Broadcast receivers capable of receiving radio communication within the ranges (68-87) MHz';
+    const heading = 'FIRST SCHEDULE (Goods which is absolutely prohibited for import) > 2. Broadcast receivers';
+    const claim = finding({ indicatorId: '7.4', quote: 'Broadcast receivers capable of receiving radio communication', dutyBearer: null, dutyAct: 'prohibited' });
+    expect(rejectionFor(claim, item, pillar7)).toMatch(/prohibited/);
+    expect(rejectionFor(claim, item, pillar7, heading)).toBeNull();
+  });
+
+  it('does not take the quote from the heading', () => {
+    const claim = finding({ quote: 'Goods which is absolutely prohibited for import', dutyBearer: null });
+    expect(rejectionFor(claim, 'Broadcast receivers', pillar7, 'FIRST SCHEDULE (Goods which is absolutely prohibited for import)')).toBe(
+      'the quoted words are not in the provision',
+    );
+  });
+
   it('rejects a quote that is not in the provision at all', () => {
     const reason = rejectionFor(finding({ quote: 'The licensee shall appoint a data protection officer' }), SECTION, pillar7);
     expect(reason).toBe('the quoted words are not in the provision');

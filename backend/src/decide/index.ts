@@ -1488,7 +1488,11 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     // cell whose top band is "clear copyright exceptions following fair use or fair dealing".
     // Seventeen indicators declare a measure this way and the gate was asking all of them for a
     // party bound. The same exemption is already made two tests up, for 'declares'.
-    if (!e.finding.dutyBearer && !permits(indicatorId, e.finding.measure)) {
+    //
+    // Nor a ban on goods crossing the border. "Goods which is absolutely prohibited for import" names
+    // no importer because it binds every one; the party is whoever brings the goods in.
+    const bansTheCrossing = e.finding.dutyForce === 'forbids' && crossing(indicatorId, e.finding.measure) && !!e.finding.borderWords;
+    if (!e.finding.dutyBearer && !permits(indicatorId, e.finding.measure) && !bansTheCrossing) {
       held.push({
         evidence: e,
         reason: 'the provision names no party it binds, and every measure in the rubric is a duty on someone',

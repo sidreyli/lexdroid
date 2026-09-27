@@ -896,11 +896,19 @@ function quoteCarriesTheMeasure(f: Finding): boolean {
  * So this is not a loosening of what counts as evidence. The claim was always about the provision;
  * it was being checked against a smaller thing than the one it was a claim about.
  */
-export function rejectionFor(f: Finding, sectionText: string, allowed: Set<string>): string | null {
+/*
+ * The quote has to come from the provision's own text; the other fields may also come from its
+ * heading, since the reader is shown the heading as part of the provision. A Schedule item states
+ * only the goods -- "2. Broadcast receivers capable of receiving ..." -- and its caption, "Goods
+ * which is absolutely prohibited for import", states what is done to them, so a finding naming
+ * "prohibited" was refused for words the reader read in the provision it was given.
+ */
+export function rejectionFor(f: Finding, sectionText: string, allowed: Set<string>, heading = ''): string | null {
   if (!allowed.has(f.indicatorId)) return `${f.indicatorId} is not an indicator of this pillar`;
   if (!quoteIsInSection(f.quote, sectionText)) return 'the quoted words are not in the provision';
   if (!f.measure) return 'no measure this indicator recognises was named';
-  const inProvision = (phrase: string): boolean => quoteIsInSection(phrase, sectionText, MIN_PHRASE_CHARS);
+  const inProvision = (phrase: string): boolean =>
+    quoteIsInSection(phrase, sectionText, MIN_PHRASE_CHARS) || (heading !== '' && quoteIsInSection(phrase, heading, MIN_PHRASE_CHARS));
   // The party and the act have to be the provision's own words, not a summary of them.
   if (f.dutyBearer && !inProvision(f.dutyBearer)) {
     return `the party said to bear the duty, "${f.dutyBearer}", is not in the provision`;
@@ -1204,7 +1212,7 @@ async function readPart(
     }
     // Well formed and checked against the provision: a claim the provision does not bear out is a
     // verdict on the claim, and the reading stands.
-    const reason = rejectionFor(f, section.text, allowed);
+    const reason = rejectionFor(f, section.text, allowed, section.headingPath);
     if (reason) rejected.push({ finding: f, reason });
     else findings.push(f);
   }

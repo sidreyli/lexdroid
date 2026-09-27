@@ -1585,7 +1585,7 @@ export const MEASURE_NAMES: Readonly<Record<string, RegExp>> = {
 const ICT_GOODS = new RegExp(
   [
     ONLINE.source,
-    /\b(ict|telecom\w*|radiocommunication\w*|semiconductor\w*|hardware|server\w*|handset\w*|equipment|device\w*|component\w*|circuit\w*|encryption|technolog\w*|information technology)\b/.source,
+    /\b(ict|telecom\w*|radio[- ]?communication\w*|semiconductor\w*|hardware|server\w*|handset\w*|equipment|device\w*|component\w*|circuit\w*|encryption|technolog\w*|information technology)\b/.source,
   ].join('|'),
   'i',
 );
