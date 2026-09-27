@@ -10,6 +10,7 @@
  */
 import type { Db } from '../db/index.js';
 import { citationUrl } from '../export/index.js';
+import { prescribedFor } from '../cell/index.js';
 import { loadRubric } from '../rubric/index.js';
 import { decide, sameFinding, type Decision, type Evidence, type FrameworkEvidence, type SurfacedInstrument } from './index.js';
 import type { FxRates } from './currency.js';
@@ -174,6 +175,7 @@ export function recordedDecider(
             headingPath: r.heading_path,
             amendsAnotherAct: amendsAnotherAct(r.text),
             figureReplaceable: figureReplaceable(r.text, finding.definingWords ?? finding.quote),
+            ...prescribedFor(db, cell.economy_code, finding, { sectionId: r.section_id, instrumentId: r.instrument_id, instrumentTitle: r.title, text: r.text }),
             insertsTheQuotedWords: insertsTheQuotedWords(r.text, finding.quote),
             definesATerm: citesADefinition(r.text, finding.definingWords ?? finding.quote),
             inheritsAPower: inheritsAPower(r.text, finding.quote),

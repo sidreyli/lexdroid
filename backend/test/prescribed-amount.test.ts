@@ -5,7 +5,10 @@
 import { describe, expect, it } from 'vitest';
 import { indexSections, openDb } from '../src/db/index.js';
 import { moneyIn, wordedSums } from '../src/decide/currency.js';
-import { prescribingSections } from '../src/retrieve/index.js';
+import { decide, type Evidence } from '../src/decide/index.js';
+import type { Finding } from '../src/read/index.js';
+import type { Indicator } from '../src/rubric/types.js';
+import { prescribedAmount, prescribingSections } from '../src/retrieve/index.js';
 
 function corpus() {
   const db = openDb(':memory:');
@@ -70,5 +73,73 @@ describe('a sum written in words', () => {
 
   it('leaves number words alone where no currency follows', () => {
     expect(wordedSums('consigned by one person to another')).toBe('consigned by one person to another');
+  });
+});
+
+const indicator125: Indicator = {
+  id: '12.5',
+  pillarId: 12,
+  pillarName: 'Online Sales and Transactions',
+  category: 'Low De Minimis',
+  exception: null,
+  criteriaText: '...',
+  bands: [
+    { score: 1, criterion: 'No De Minimis', ordinal: 1 },
+    { score: 0.5, criterion: 'De Minimis below < 200 USD', ordinal: 2 },
+    { score: 0, criterion: 'De Minimis ≥ 200 USD', ordinal: 3 },
+  ],
+  shape: 'provision',
+  shapeBasis: 'test',
+  provenance: { document: 'test', locator: 'test' },
+};
+
+function pointing(words: string, prescribed?: Evidence['prescribed']): Evidence {
+  const finding = {
+    indicatorId: '12.5', measure: 'de-minimis-threshold', dutyBearer: null, dutyAct: null, dutyForce: 'declares',
+    roleWords: null, definingWords: words, subjectWords: 'low value goods brought into Malaysia', borderWords: 'brought into Malaysia', imposingWords: null,
+    prescribingWords: null, dutyBearerKind: null, scopeUnstated: false, placeWords: null, exceptionWords: null,
+    locatedData: null, informationWords: null, keepingWords: null, authorisingWords: null, quote: words,
+    requirement: 'A de minimis.', sectorScope: 'all', sector: null, dataScope: null, dataDescription: null,
+    appliesOnlyToGovernmentData: false, mandatory: true, countriesNamed: [], statedPeriod: null, authorisation: 'unstated',
+  } as unknown as Finding;
+  return {
+    finding, sectionId: 10, instrumentId: 1, instrumentTitle: 'Sales Tax Act', headingPath: '11A',
+    citation: 'https://example.gov/act#11A', amendsAnotherAct: false, figureReplaceable: false,
+    ...(prescribed ? { prescribed } : {}),
+  };
+}
+
+describe('an amount left to be prescribed is scored where it is prescribed', () => {
+  const rates = { base: 'USD' as const, asOf: '2026-01-01', source: 'test', fetchedAt: '2026-01-01', usdPer: { MYR: 0.22 } };
+  const order = {
+    sectionId: 99, instrumentId: 2, instrumentTitle: 'Low Value Goods Order', headingPath: '2',
+    citation: 'https://example.gov/order#2', words: 'sold at a price not exceeding five hundred ringgit',
+  };
+  const coverage = { sectionsRead: 1, sectionsIndexed: 1, instrumentsConsidered: 1 };
+
+  it('takes the figure, and the citation, from the provision that prescribes it', () => {
+    const d = decide({
+      indicator: indicator125, economy: 'MYS', rates, surfaced: [], coverage,
+      evidence: [pointing('low value goods brought into Malaysia and sold at a price not more than a prescribed amount', order)],
+    });
+    expect(d.score).toBe(0.5);
+    expect(d.rationale).toContain('MYR 500');
+    expect(JSON.stringify(d)).toContain('https://example.gov/order#2');
+  });
+
+  it('holds a pointer whose amount was never found, as before', () => {
+    const d = decide({
+      indicator: indicator125, economy: 'MYS', rates, surfaced: [], coverage,
+      evidence: [pointing('low value goods brought into Malaysia and sold at a price not more than a prescribed amount')],
+    });
+    expect(d.score).not.toBe(0.5);
+  });
+
+  it('is found from the pointing provision against the corpus', () => {
+    const { db, pointer, prescribing } = corpus();
+    const text = (db.prepare('SELECT text FROM section WHERE id = ?').get(pointer) as { text: string }).text;
+    const p = prescribedAmount(db, 'XXX', { sectionId: pointer, instrumentId: 1, instrumentTitle: 'Goods Entry Act 1901', text });
+    expect(p?.sectionId).toBe(prescribing);
+    expect(p?.words).toBe('For subparagraph 68(1)(f)(iii) of the Act, the amount is $1 000.');
   });
 });

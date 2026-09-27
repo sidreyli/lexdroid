@@ -1151,3 +1151,64 @@ export function prescribingSections(
   }
   return out;
 }
+
+/** The provision that prescribes an amount another leaves to be prescribed, and its own words. */
+export interface PrescribedAmount {
+  sectionId: number;
+  instrumentId: number;
+  instrumentTitle: string;
+  headingPath: string;
+  docUrl: string;
+  anchor: string | null;
+  page: number | null;
+  mediaType: string | null;
+  /** The words around the amount, copied out of the prescribing provision. */
+  words: string;
+}
+
+/**
+ * Where the amount a provision leaves to be prescribed is prescribed, or null.
+ *
+ * The follow at retrieval puts the prescribing provision in front of the reader, but the reader
+ * reads one provision at a time, and "For subparagraph 68(1)(f)(iii) of the Act, the amount is
+ * $1 000" says nothing about goods or duty on its own -- it was read, and found to apply to
+ * nothing. The join is between two provisions, so it is made here, where both are in hand.
+ */
+export function prescribedAmount(
+  db: Db,
+  economy: string,
+  pointer: { sectionId: number; instrumentId: number; instrumentTitle: string; text: string },
+): PrescribedAmount | null {
+  if (!LEAVES_AMOUNT.test(pointer.text)) return null;
+  const [first] = prescribingSections(db, economy, [pointer]).get(pointer.sectionId) ?? [];
+  if (first === undefined) return null;
+  const row = db
+    .prepare(
+      `SELECT s.id, s.heading_path, s.text, s.anchor, s.page, d.url AS doc_url, d.media_type,
+              i.id AS instrument_id, i.title
+         FROM section s JOIN document d ON d.id = s.document_id JOIN instrument i ON i.id = d.instrument_id
+        WHERE s.id = ?`,
+    )
+    .get(first) as
+    | { id: number; heading_path: string; text: string; anchor: string | null; page: number | null;
+        doc_url: string; media_type: string | null; instrument_id: number; title: string }
+    | undefined;
+  if (!row) return null;
+  const at = row.text.search(STATES_AMOUNT);
+  if (at < 0) return null;
+  // The sentence the amount sits in, so the words cited are the words that state it.
+  const start = Math.max(row.text.lastIndexOf('.', at - 2) + 1, at - 200, 0);
+  const end = row.text.slice(at).search(/[.;](?:\s|$)/);
+  const words = row.text.slice(start, end < 0 ? Math.min(row.text.length, at + 120) : at + end + 1).trim();
+  return {
+    sectionId: row.id,
+    instrumentId: row.instrument_id,
+    instrumentTitle: row.title,
+    headingPath: row.heading_path,
+    docUrl: row.doc_url,
+    anchor: row.anchor,
+    page: row.page,
+    mediaType: row.media_type,
+    words,
+  };
+}

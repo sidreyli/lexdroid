@@ -15,6 +15,9 @@
  *   - every provision those rows name, the documents they sit in and those documents' full text
  *     (quote offsets index into it), and the opening provisions of each instrument examined as a
  *     framework, which is what a framework reading is shown
+ *   - the opening provisions of every instrument a provision was read from, where a regulation
+ *     names the Act it is made under -- which is how decide follows an amount left to be prescribed
+ *     to the provision that prescribes it
  *   - the banked second-reading verdicts for those provisions, which scoring consults
  *   - the whole register for the runs' economies, because decide asks it about instruments no
  *     provision was read from (currency dates, kinds, the parent Act of a regulation)
@@ -96,6 +99,15 @@ db.transaction(() => {
         SELECT s.id, ROW_NUMBER() OVER (PARTITION BY d.instrument_id ORDER BY d.id, s.ordinal) AS n
           FROM src.section s JOIN src.document d ON d.id = s.document_id
          WHERE d.instrument_id IN (SELECT instrument_id FROM src.framework_reading WHERE cell_id IN (SELECT id FROM pack_cell))
+      ) WHERE n <= 6;
+    INSERT OR IGNORE INTO pack_section
+      SELECT id FROM (
+        SELECT s.id, ROW_NUMBER() OVER (PARTITION BY d.instrument_id ORDER BY d.id, s.ordinal) AS n
+          FROM src.section s JOIN src.document d ON d.id = s.document_id
+         WHERE d.instrument_id IN (
+           SELECT DISTINCT d2.instrument_id FROM src.reading r
+             JOIN src.section s2 ON s2.id = r.section_id JOIN src.document d2 ON d2.id = s2.document_id
+            WHERE r.cell_id IN (SELECT id FROM pack_cell))
       ) WHERE n <= 6;
     CREATE TEMP TABLE pack_document AS
       SELECT DISTINCT document_id AS id FROM src.section WHERE id IN (SELECT id FROM pack_section);

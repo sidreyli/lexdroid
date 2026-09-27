@@ -40,6 +40,11 @@ export interface Evidence {
   /** Whether the provision goes on to let another instrument replace the figure the finding states. */
   figureReplaceable?: boolean;
   /**
+   * Where the amount this provision leaves to be prescribed is prescribed: the provision that
+   * states it, its words, and the deep link to it. Looked for only where a figure is scored.
+   */
+  prescribed?: { sectionId: number; instrumentId: number; instrumentTitle: string; headingPath: string; citation: string; words: string };
+  /**
    * Whether the quoted words are words the amending provision sets out for insertion.
    *
    * An amending section holds an instruction and the text that instruction enacts, and only the
@@ -1178,6 +1183,28 @@ const RULES: Record<string, Rule> = {
    */
   '12.5': (indicator, qualifying, ctx) => {
     const thresholds = qualifying.flatMap((e) => {
+      // A figure left to be prescribed is the figure where it is prescribed, cited there: "such other
+      // amount as is prescribed" and "a prescribed amount" state the law only with the provision that
+      // prescribes it.
+      const p = e.prescribed;
+      const followed = p ? moneyIn(p.words, ctx?.economy ?? '') : null;
+      if (p && followed) {
+        const usd = inUsd(followed, ctx?.rates ?? null);
+        if (usd !== null) {
+          const { prescribed: _followed, ...pointer } = e;
+          const at: Evidence = {
+            ...pointer,
+            sectionId: p.sectionId,
+            instrumentId: p.instrumentId,
+            instrumentTitle: p.instrumentTitle,
+            headingPath: p.headingPath,
+            citation: p.citation,
+            finding: { ...e.finding, quote: p.words, definingWords: p.words },
+            figureReplaceable: false,
+          };
+          return [{ evidence: at, money: followed, usd }];
+        }
+      }
       const money = moneyIn(e.finding.definingWords, ctx?.economy ?? '');
       const usd = money ? inUsd(money, ctx?.rates ?? null) : null;
       return money && usd !== null ? [{ evidence: e, money, usd }] : [];
@@ -2120,7 +2147,8 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     // A de minimis is a figure in a currency, and one that states none -- or states one in money
     // the pinned rate table does not carry -- cannot be compared with the 200 USD line.
     if (indicatorId === '12.5') {
-      const money = moneyIn(e.finding.definingWords, ctx.economy);
+      const followed = e.prescribed ? moneyIn(e.prescribed.words, ctx.economy) : null;
+      const money = followed && inUsd(followed, ctx.rates) !== null ? followed : moneyIn(e.finding.definingWords, ctx.economy);
       if (!money || inUsd(money, ctx.rates) === null) {
         held.push({
           evidence: e,

@@ -21,7 +21,7 @@ import type { InstrumentType } from '../profile/types.js';
 import type { Indicator } from '../rubric/types.js';
 import { chosenIndicators, loadRubric } from '../rubric/index.js';
 import { fuse, loadVectors, searchLexical, type LoadedVectors } from '../index/index.js';
-import { retrieveForIndicator, type RetrievalRecord } from '../retrieve/index.js';
+import { prescribedAmount, retrieveForIndicator, type RetrievalRecord } from '../retrieve/index.js';
 import { storedFrameworkCandidates, storedRetrieval } from '../retrieve/replay.js';
 import { shortlistInstruments } from '../shortlist/index.js';
 import {
@@ -212,6 +212,23 @@ function citedUnder(
   };
 }
 
+/**
+ * Where a scored figure the provision leaves to be prescribed is prescribed, for the one indicator
+ * that scores a figure. Shared with the rebuild in ../decide/record.ts, so the two cannot differ.
+ */
+export function prescribedFor(
+  db: Db,
+  economy: string,
+  finding: { indicatorId: string },
+  pointer: { sectionId: number; instrumentId: number; instrumentTitle: string; text: string },
+): Pick<Evidence, 'prescribed'> {
+  if (finding.indicatorId !== '12.5') return {};
+  const p = prescribedAmount(db, economy, pointer);
+  if (!p) return {};
+  const { docUrl, anchor, page, mediaType, ...rest } = p;
+  return { prescribed: { ...rest, citation: citationUrl(docUrl, anchor, { page, mediaType }) } };
+}
+
 function citationFor(row: {
   source_url: string;
   anchor: string | null;
@@ -398,6 +415,7 @@ export async function answerPillar(
         citation: citationFor(row),
         amendsAnotherAct: amendsAnotherAct(row.text),
         figureReplaceable: figureReplaceable(row.text, finding.definingWords ?? finding.quote),
+        ...prescribedFor(db, economy, finding, { sectionId: row.id, instrumentId: row.instrument_id, instrumentTitle: row.instrument_title, text: row.text }),
         ...citedUnder(row, insertsTheQuotedWords(row.text, finding.quote)),
         definesATerm: citesADefinition(row.text, finding.definingWords ?? finding.quote),
         inheritsAPower: inheritsAPower(row.text, finding.quote),
