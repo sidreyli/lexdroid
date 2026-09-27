@@ -15,13 +15,14 @@ import type { Db } from '../db/index.js';
 import type { Emit } from '../run/events.js';
 import { citationUrl } from '../export/index.js';
 import { enginePool } from '../engines/pool.js';
-import { amendsAnotherAct, citesADefinition, inheritsAPower, insertsTheQuotedWords } from '../parse/identity.js';
+import { amendsAnotherAct, citesADefinition, figureReplaceable, inheritsAPower, insertsTheQuotedWords } from '../parse/identity.js';
 import { loadProfile } from '../profile/index.js';
 import type { InstrumentType } from '../profile/types.js';
 import type { Indicator } from '../rubric/types.js';
 import { chosenIndicators, loadRubric } from '../rubric/index.js';
 import { fuse, loadVectors, searchLexical, type LoadedVectors } from '../index/index.js';
-import { retrieveForIndicator, type RetrievalRecord } from '../retrieve/index.js';
+import { prescribedAmount, retrieveForIndicator, type RetrievalRecord } from '../retrieve/index.js';
+import { storedFrameworkCandidates, storedRetrieval } from '../retrieve/replay.js';
 import { shortlistInstruments } from '../shortlist/index.js';
 import {
   openingOf,
@@ -160,6 +161,12 @@ export interface AnswerOptions {
    * examined as a framework and scored is then only what these ask.
    */
   indicators?: readonly string[];
+  /**
+   * A run whose recorded retrieval this pillar reads instead of searching again. For measuring a
+   * reader change on a database that holds a run's provisions but not the indexes that found them
+   * (a benchmark pack); see retrieve/replay.ts.
+   */
+  retrievalFrom?: string;
 }
 
 interface SectionRow {
@@ -203,6 +210,23 @@ function citedUnder(
     insertsTheQuotedWords: true,
     citedAs: `${row.principal_title}, as amended by ${row.instrument_title}`,
   };
+}
+
+/**
+ * Where a scored figure the provision leaves to be prescribed is prescribed, for the one indicator
+ * that scores a figure. Shared with the rebuild in ../decide/record.ts, so the two cannot differ.
+ */
+export function prescribedFor(
+  db: Db,
+  economy: string,
+  finding: { indicatorId: string },
+  pointer: { sectionId: number; instrumentId: number; instrumentTitle: string; text: string },
+): Pick<Evidence, 'prescribed'> {
+  if (finding.indicatorId !== '12.5') return {};
+  const p = prescribedAmount(db, economy, pointer);
+  if (!p) return {};
+  const { docUrl, anchor, page, mediaType, ...rest } = p;
+  return { prescribed: { ...rest, citation: citationUrl(docUrl, anchor, { page, mediaType }) } };
 }
 
 function citationFor(row: {
@@ -271,9 +295,11 @@ export async function answerPillar(
   }
   const pillarName = indicators[0]!.pillarName;
 
-  const vectors =
-    opts.vectors ??
-    loadVectors(db, { economy, ...(opts.embeddingModel ? { model: opts.embeddingModel } : {}) });
+  const replayFrom = opts.retrievalFrom;
+  const vectors = replayFrom
+    ? null
+    : (opts.vectors ??
+      loadVectors(db, { economy, ...(opts.embeddingModel ? { model: opts.embeddingModel } : {}) }));
 
   const stages: StageTiming[] = [];
   let mark = Date.now();
@@ -285,15 +311,21 @@ export async function answerPillar(
   // 1. Retrieve, per indicator, and keep each record: it is the evidence behind a zero.
   const retrieval: RetrievalRecord[] = [];
   for (const indicator of indicators) {
-    const record = await retrieveForIndicator(db, indicator, {
-      economy,
-      vectors,
-      languages: loadProfile(economy).officialLanguages,
-      ...(opts.depth ? { depth: opts.depth } : {}),
-      ...(opts.embeddingModel ? { model: opts.embeddingModel } : {}),
-    });
+    const record = replayFrom
+      ? storedRetrieval(db, replayFrom, economy, indicator.id)
+      : await retrieveForIndicator(db, indicator, {
+          economy,
+          vectors: vectors!,
+          languages: loadProfile(economy).officialLanguages,
+          ...(opts.depth ? { depth: opts.depth } : {}),
+          ...(opts.embeddingModel ? { model: opts.embeddingModel } : {}),
+        });
+    if (!record) {
+      log(`  ${indicator.id}: run ${replayFrom!.slice(0, 8)} recorded no cell for it, so nothing is replayed`);
+      continue;
+    }
     retrieval.push(record);
-    log(`  ${indicator.id}: ${record.sections.length} of ${record.surfaced} surfaced provision(s)`);
+    log(`  ${indicator.id}: ${record.sections.length} of ${record.surfaced} surfaced provision(s)${replayFrom ? ' (replayed)' : ''}`);
     emit({
       stage: 'retrieve',
       kind: 'finished',
@@ -382,6 +414,8 @@ export async function answerPillar(
         headingPath: row.heading_path,
         citation: citationFor(row),
         amendsAnotherAct: amendsAnotherAct(row.text),
+        figureReplaceable: figureReplaceable(row.text, finding.definingWords ?? finding.quote),
+        ...prescribedFor(db, economy, finding, { sectionId: row.id, instrumentId: row.instrument_id, instrumentTitle: row.instrument_title, text: row.text }),
         ...citedUnder(row, insertsTheQuotedWords(row.text, finding.quote)),
         definesATerm: citesADefinition(row.text, finding.definingWords ?? finding.quote),
         inheritsAPower: inheritsAPower(row.text, finding.quote),
@@ -422,7 +456,9 @@ export async function answerPillar(
     if (!subject) continue;
     const record = retrieval.find((r) => r.indicatorId === indicator.id);
     const candidates = (
-      await frameworkCandidates(db, economy, subject, record, byId, opts.embeddingModel)
+      replayFrom
+        ? storedFrameworkCandidates(db, replayFrom, economy, indicator.id)
+        : await frameworkCandidates(db, economy, subject, record, byId, opts.embeddingModel)
     ).slice(0, FRAMEWORK_CANDIDATES);
     log(`  ${indicator.id}: examining ${candidates.length} instrument(s) as a possible framework`);
 

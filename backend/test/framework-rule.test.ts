@@ -187,4 +187,14 @@ describe('what the decision does with a framework that was only claimed', () => 
     // every framework cell in the benchmark without an engine ever running.
     expect(at(null)).toBe(0);
   });
+
+  it('counts an instrument whose own opening is shown to be for the subject, though its rule does not repeat it', () => {
+    // Australia's Privacy Act: APP 1.2 is quoted and does not say "personal information"; the
+    // opening does. An Act that says it is for the subject is not an Act touching it in passing.
+    const f = { ...evidence(false), instrumentTitle: 'Privacy Act 1988', dedicated: true, dedicatedShown: true };
+    expect(decide({ indicator: i81, economy: 'AUS', evidence: [], frameworkEvidence: [f], coverage }).score).toBe(0);
+    // A dedication claimed but not shown in the opening is still only a claim.
+    const g = { ...f, dedicatedShown: false };
+    expect(decide({ indicator: i81, economy: 'AUS', evidence: [], frameworkEvidence: [g], coverage }).score).toBe(1);
+  });
 });

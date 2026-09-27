@@ -919,11 +919,55 @@ function quoteCarriesTheMeasure(f: Finding): boolean {
  * So this is not a loosening of what counts as evidence. The claim was always about the provision;
  * it was being checked against a smaller thing than the one it was a claim about.
  */
-export function rejectionFor(f: Finding, sectionText: string, allowed: Set<string>): string | null {
+/*
+ * The quote has to come from the provision's own text; the other fields may also come from its
+ * heading, since the reader is shown the heading as part of the provision. A Schedule item states
+ * only the goods -- "2. Broadcast receivers capable of receiving ..." -- and its caption, "Goods
+ * which is absolutely prohibited for import", states what is done to them, so a finding naming
+ * "prohibited" was refused for words the reader read in the provision it was given.
+ */
+/**
+ * Whether the act is the verified quote's own words, copied with a slip or two per fragment.
+ *
+ * The quote is checked verbatim first, so what this admits is a second copy of words already shown
+ * to be in the provision. Section 12 of a credit information statute -- a ban on processing credit
+ * data outside the Kingdom -- was quoted exactly and refused because the act copied beside it
+ * dropped one character of "ประมวลผล". A slip in the copy is not a claim about the provision; an
+ * act the quote does not carry, or carries only loosely, is still refused.
+ */
+export function copiedFromTheQuote(act: string, quote: string): boolean {
+  const q = normaliseForQuoteCheck(quote);
+  const parts = fragmentsOf(act);
+  // A short fragment is one edit from too many words to say anything, so it has to be exact.
+  return (
+    parts.length > 0 &&
+    parts.every((p) => p.length >= MIN_FRAGMENT_CHARS && (q.includes(p) || (p.length >= MIN_ANCHOR_CHARS && withinEdits(p, q, Math.max(1, Math.floor(p.length / 20))))))
+  );
+}
+
+/** Is `needle` in `hay` with at most `k` characters inserted, dropped or changed? */
+function withinEdits(needle: string, hay: string, k: number): boolean {
+  if (hay.includes(needle)) return true;
+  // Approximate substring match: the edit distance of needle against the best-matching span of hay.
+  let prev = new Array<number>(needle.length + 1).fill(0).map((_, i) => i);
+  for (let j = 1; j <= hay.length; j++) {
+    const cur = [0];
+    for (let i = 1; i <= needle.length; i++) {
+      const same = needle[i - 1] === hay[j - 1] ? 0 : 1;
+      cur[i] = Math.min(prev[i]! + 1, cur[i - 1]! + 1, prev[i - 1]! + same);
+    }
+    if (cur[needle.length]! <= k) return true;
+    prev = cur;
+  }
+  return false;
+}
+
+export function rejectionFor(f: Finding, sectionText: string, allowed: Set<string>, heading = ''): string | null {
   if (!allowed.has(f.indicatorId)) return `${f.indicatorId} is not an indicator of this pillar`;
   if (!quoteIsInSection(f.quote, sectionText)) return 'the quoted words are not in the provision';
   if (!f.measure) return 'no measure this indicator recognises was named';
-  const inProvision = (phrase: string): boolean => quoteIsInSection(phrase, sectionText, MIN_PHRASE_CHARS);
+  const inProvision = (phrase: string): boolean =>
+    quoteIsInSection(phrase, sectionText, MIN_PHRASE_CHARS) || (heading !== '' && quoteIsInSection(phrase, heading, MIN_PHRASE_CHARS));
   // The party and the act have to be the provision's own words, not a summary of them.
   if (f.dutyBearer && !inProvision(f.dutyBearer)) {
     return `the party said to bear the duty, "${f.dutyBearer}", is not in the provision`;
@@ -942,7 +986,12 @@ export function rejectionFor(f: Finding, sectionText: string, allowed: Set<strin
   // one and for the same reason: it makes no claim this stage can test. Whether a measure may go
   // without an act is Zone 3's question, and nothing there turns on the field -- `dutyForce` and
   // `permits` carry that, and the quote, the measure and the defining words are still checked here.
-  if (f.dutyAct && f.dutyAct.trim().length >= MIN_PHRASE_CHARS && !inProvision(f.dutyAct)) {
+  if (
+    f.dutyAct &&
+    f.dutyAct.trim().length >= MIN_PHRASE_CHARS &&
+    !inProvision(f.dutyAct) &&
+    !copiedFromTheQuote(f.dutyAct, f.quote)
+  ) {
     return `the act said to be imposed, "${f.dutyAct}", is not in the provision`;
   }
   // Where a place is claimed it has to be in the provision, for the same reason the party and the
@@ -1227,7 +1276,7 @@ async function readPart(
     }
     // Well formed and checked against the provision: a claim the provision does not bear out is a
     // verdict on the claim, and the reading stands.
-    const reason = rejectionFor(f, section.text, allowed);
+    const reason = rejectionFor(f, section.text, allowed, section.headingPath);
     if (reason) rejected.push({ finding: f, reason });
     else findings.push(f);
   }

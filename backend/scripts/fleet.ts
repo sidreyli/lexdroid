@@ -55,6 +55,8 @@ interface Args {
   model: string;
   depth: number | null;
   carryFrom: string | null;
+  /** A run whose recorded retrieval each unit replays; see answerPillar's retrievalFrom. */
+  retrievalFrom: string | null;
   /** Provisions read afresh although carried; see answerPillar's reread. */
   reread: string | null;
   joinRunId: string | null;
@@ -106,6 +108,7 @@ function parseArgs(argv: string[]): Args {
     model: engine?.hosted ? engine.model : (get('model') ?? engine?.model ?? READING_MODEL),
     depth: get('depth') !== null ? Number(get('depth')) : null,
     carryFrom: get('carry'),
+    retrievalFrom: get('retrieval-from'),
     reread: get('reread'),
     joinRunId: get('run'),
     compare: !argv.includes('--no-compare'),
@@ -154,6 +157,7 @@ function runUnit(unit: Unit, hosts: string[], runId: string, logDir: string, arg
   if (mine.length) argv.push('--indicators', mine.join(','));
   if (args.depth) argv.push('--depth', String(args.depth));
   if (args.carryFrom) argv.push('--carry', args.carryFrom);
+  if (args.retrievalFrom) argv.push('--retrieval-from', args.retrievalFrom);
   if (args.reread) argv.push('--reread', args.reread);
   if (!args.compare) argv.push('--no-compare');
 

@@ -41,6 +41,8 @@ interface Args {
   indicators: string[];
   depth: number | null;
   carryFrom: string | null;
+  /** A run whose recorded retrieval is replayed instead of searching; see answerPillar. */
+  retrievalFrom: string | null;
   reread: Set<number>;
   model: string | null;
   compare: boolean;
@@ -66,6 +68,7 @@ function parseArgs(argv: string[]): Args {
     indicators: (get('indicators') ?? '').split(',').map((i) => i.trim()).filter(Boolean),
     depth: get('depth') !== null ? Number(get('depth')) : null,
     carryFrom: get('carry'),
+    retrievalFrom: get('retrieval-from'),
     reread: new Set((get('reread') ?? '').split(',').filter(Boolean).map(Number)),
     model: get('model'),
     compare: !argv.includes('--no-compare'),
@@ -216,6 +219,18 @@ async function main(): Promise<void> {
     console.error(`\nNo run ${args.carryFrom} to carry readings from.`);
     process.exit(1);
   }
+  // Resolved the same way and for the same reason: a prefix that names no run would replay nothing.
+  const retrievalFrom = args.retrievalFrom
+    ? (
+        db.prepare('SELECT id FROM run WHERE id LIKE ?').get(`${args.retrievalFrom}%`) as
+          | { id: string }
+          | undefined
+      )?.id
+    : undefined;
+  if (args.retrievalFrom && !retrievalFrom) {
+    console.error(`\nNo run ${args.retrievalFrom} to replay retrieval from.`);
+    process.exit(1);
+  }
 
   const rubric = loadRubric();
   const all: Decision[] = [];
@@ -270,6 +285,7 @@ async function main(): Promise<void> {
     const answer = await answerPillar(db, pillarId, args.economy, {
       ...(args.depth ? { depth: args.depth } : {}),
       ...(carryFrom ? { carryFrom } : {}),
+      ...(retrievalFrom ? { retrievalFrom } : {}),
       ...(args.reread.size ? { reread: args.reread } : {}),
       ...(args.indicators.length ? { indicators: args.indicators } : {}),
       model,

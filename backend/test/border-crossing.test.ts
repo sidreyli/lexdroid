@@ -141,3 +141,19 @@ describe('a restriction on other goods has somewhere true to go', () => {
     expect(p).toContain('ict-import-ban');
   });
 });
+
+describe('a ban on goods crossing the border, stated of the goods', () => {
+  // "Goods which is absolutely prohibited for import" names no importer because it binds every one.
+  const passive = { dutyBearer: null, dutyAct: 'prohibited', quote: SECTION, definingWords: 'must not import into Australia' };
+
+  it('is not held for want of a party', () => {
+    const d = at('10.1', [evidence(passive)]);
+    expect(d.held).toHaveLength(0);
+    expect(d.score).toBeGreaterThan(0);
+  });
+
+  it('still is when it does not forbid', () => {
+    const d = at('10.1', [evidence({ ...passive, dutyForce: 'requires' })]);
+    expect(d.held[0]?.reason).toContain('names no party');
+  });
+});

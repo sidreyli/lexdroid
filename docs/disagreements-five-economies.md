@@ -10,8 +10,9 @@ Written 27 September 2026 over the latest full run of each economy:
 
 Agreement with ESCAP was 215 of 305 cells as run, rose to 231 with today's fixes, and is 223 after the rules
 that stopped eight agreements resting on the wrong law (below). 217 of those are earned. The fixes after that
-(IND 12.01, IND 12.9, THA 4.3, THA 9.3) bring it to **227 agreements, 221 earned, and 233 of 305 right with the
-finds (76%)**. This document
+(IND 12.01, IND 12.9, THA 4.3, THA 9.3) bring it to 227 agreements, 221 earned and 233 right. The 3.1 sector rule
+(AUS 3.1, SGP 3.1) brings it to 229 agreements, 223 earned and 235 right, and auditing AUS 10.3 as unearned (below) leaves
+**229 agreements, 222 earned, and 234 of 305 right with the finds (77%)**. This document
 sorts the disagreements by **who is right**, because agreement measures the reader, not the law (see `aus-sgp-disagreements.md` for the
 same exercise on an earlier Australia and Singapore run).
 
@@ -75,6 +76,11 @@ they differed.
 - MYS 9.4 (1): the applications service provider licence is right, but the second "scheme" is the cyber-security service provider licence. Alone, the licence gives 0.5.
 - MYS 10.2 (1): SIRIM approval of radio equipment is right, but the second measure is a CITES permit. Alone, it gives 0.5.
 - MYS 11.3 (0.5): the testing duty is right (certification of communications modules), but the acceptance of third-party results comes from reference materials under the National Measurement System Act.
+
+**Scored only on verdicts never asked (1):**
+- AUS 10.3 (1): the local-content findings are Broadcasting Services Act "local significance" rules, which the measure's own
+  description excludes. They score because the confirmation question was reworded after they were asked, and a new
+  run asks it again and refuses them. Counted unearned so the benchmark says what a live run would.
 
 Weak but kept: SGP 8.1 (the Electronic Transactions Act's safe harbour covers liability "under any rule of law",
 and a horizontal safe harbour is the band 8.1 clears on, though the Copyright Act's own is the better citation), MYS 3.4 (land and bank-transfer approvals as screening), SGP 4.01 (the agent rule is in the UK-patent
@@ -150,7 +156,6 @@ is the highest band legislation can reach.
 | AUS 1.4 | 0 | 0.5 | ESCAP names no anti-dumping measure on an ICT good, only the Customs Act. |
 | AUS 2.1 | 0 | 0.5 | ESCAP's exclusions (TikTok on government devices, the 5G vendor guidance) are directions and guidance, not "legislative measures" as the band requires. |
 | MYS 2.1 | 0 | 1 | ESCAP scores the Treasury Instructions. The Government Procurement Act 2026 postdates them, and we read it and found no exclusion. |
-| SGP 3.1 | 0.8 | 0 | Our cap is on foreign lawyers in law corporations. It is real, but legal services are a doubtful "sector relevant to digital trade". |
 | SGP 6.2 | 1 | 0.5 | Two Companies Act record-keeping duties (s.199, s.379) as "more than one measure". Defensible either way. |
 | IND 12.4.4 | 1 | 0 | PSS Act s.4 requires authorisation. The band asks for *restrictive conditions*, and the quote shows none. |
 | IND 2.2 | 0 | 1 | ESCAP scores the OSS adoption policy (a policy, not law) as a source-code surrender condition. Our witness (Official Secrets Act) is wrong regardless. |
@@ -192,13 +197,27 @@ organisms as an ICT import ban (IND 10.1); a `.au` domain licence, a digital-tok
 telecom licence as online-content licences (AUS, SGP, THA 9.4); endangered species and food as ICT
 export controls (SGP 10.4); a maritime radio operator's personal certificate as accepted product
 testing (IND 11.3).
-- AUS 3.1, 11.3
+- AUS 11.3 (AUS 3.1 is fixed below)
 - SGP 4.1, 9.4, 10.2, 10.4
-- IND 10.1, 10.2, 11.3
+
+SGP 10.4 is closer to a find than a miss. The Strategic Goods (Control) Act s.5 ("A person must not export ... any
+strategic goods") covers telecommunications and information security items, and ESCAP scores the same kind of
+law 1 for Australia and Malaysia. The reader read s.5 and said it did not apply, so our 1 rests on an anti-evasion
+offence and the endangered species permit instead. A reader fix, not a rule one.
+
+- IND 10.1, 10.2, 11.3. IND 10.1 now scores 0.5 on the right kind of law, the DGFT ban on GSM handsets with a duplicate
+  or fake IMEI, once a ban stated of the goods ("is prohibited", no importer named) stopped being held for want of a party.
+  ESCAP scores 1, so it is still an under-claim.
 - THA 3.4, 12.4.3 (THA 4.3 and 9.3 are fixed below)
 - MYS 10.1: the ICT import-ban rule below took away an agreement that rested on trademark-infringing goods and
   the strategic items list. ESCAP's evidence is the Customs (Prohibition of Imports) Order 2023, which the reader
   reached for 10.2 but not 10.1.
+  The cause was the parse: the Order's bilingual Schedule heading ("JADUAL PERTAMA/FIRST SCHEDULE") was not read as a
+  Schedule, so its items were never sections. Fixed and re-read (run `1891f213`, not in the benchmark): the reader files
+  item 2, broadcast receivers, as an ICT import ban and it scores 0.5, "a ban on one product". ESCAP's 1 also counts item
+  5, obscene material on any medium including computer diskettes, which bans content rather than ICT goods, so the cell
+  is contestable. The same re-read lost the Strategic Trade Act finding that earns MYS 10.4, so the benchmark keeps
+  `a74d0fca` for this pillar.
 
 SGP 9.4, IND 10.1, IND 10.2 and SGP 10.2 lost their wrong witness to the rules below and are still wrong: ESCAP's
 evidence is the Broadcasting Act class licence and the DGFT and IMDA import schedules, which were never registered or
@@ -238,6 +257,8 @@ evaluated": no figure stated, a definition, or a code of practice issued under a
 | Where the defining words are a bare prohibition, "foreign investment is not permitted" in the quote is a proportion of nought | IND 12.01 | +1, earned: the inventory-model ban ESCAP scores, from the FEMA regulations that carry it |
 | A framework rule quoted without the purpose that opens its sentence names its subject by that sentence. Applied to banked readings with `repair-framework-shown` | IND 12.9 | +1, earned: the Consumer Protection Act 2019, whose s.94 had been refused for quoting only "the Central Government may take such measures" |
 | A limit on the terms a patentee may put in a licence is not a restriction on enforcing the patent | THA 4.3 | +1, earned: the Patent Act, as ESCAP |
+| 3.1 counts a foreign equity cap only in a sector relevant to digital trade (computing, data, media, logistics, finance, as its own measure lists), named by the words or the instrument's title | AUS 3.1, SGP 3.1 | +2, nothing lost: an airports Act's 49% and a law corporation's one-third were the caps |
+| A definition entry runs through its lettered paragraphs, so "(h) a right in confidential information, trade secret or know-how" under "IPR means —" is a definition | SGP 4.1 | 0: now abstains (ESCAP 0) instead of 0.5 on an arbitration Act's list of IP rights |
 | 9.3 advertising is advertising carried by a medium (online, broadcast, telecom) that the provision or its instrument's title names, not a ban on advertising one product in every medium | THA 9.3 | +1, weak (above); AUS, MYS, IND 9.3 still stand on broadcast and online rules |
 
 Tried and reverted, because each lost more than it won:

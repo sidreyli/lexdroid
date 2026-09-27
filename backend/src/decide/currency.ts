@@ -117,6 +117,44 @@ function asciiDigits(words: string): string {
   });
 }
 
+const UNITS: Readonly<Record<string, number>> = {
+  one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10,
+  eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16, seventeen: 17,
+  eighteen: 18, nineteen: 19, twenty: 20, thirty: 30, forty: 40, fifty: 50, sixty: 60,
+  seventy: 70, eighty: 80, ninety: 90,
+};
+const SCALES: Readonly<Record<string, number>> = { hundred: 100, thousand: 1000, million: 1_000_000 };
+const NUMBER_WORD = `(?:${[...Object.keys(UNITS), ...Object.keys(SCALES)].join('|')})`;
+/** A sum written out in words and then a currency: "five hundred ringgit", "one thousand dollars". */
+const WORDED_SUM = new RegExp(
+  `\\b(${NUMBER_WORD}(?:(?:\\s+and\\s+|[\\s-]+)${NUMBER_WORD})*)(?=\\s+(?:(?:US|Australian|Singapore|Indian)\\s+)?(?:dollars?|ringgit|rupees?|baht|rupiah|yuan)\\b)`,
+  'gi',
+);
+
+/**
+ * A sum written out in words, as the digits it is, where a currency follows it.
+ *
+ * Malaysia's low-value-goods order states its line as "five hundred ringgit", with no digit in the
+ * provision, and a quote with no digit in it was read as stating no figure. Only a run of number
+ * words standing against a currency is rewritten: "one person to another" stays as it is.
+ */
+export function wordedSums(words: string): string {
+  return words.replace(WORDED_SUM, (run) => {
+    let total = 0;
+    let group = 0;
+    for (const w of run.toLowerCase().split(/[\s-]+/)) {
+      if (w === 'and') continue;
+      if (w in UNITS) group += UNITS[w]!;
+      else if (w === 'hundred') group = (group || 1) * 100;
+      else {
+        total += (group || 1) * SCALES[w]!;
+        group = 0;
+      }
+    }
+    return String(total + group);
+  });
+}
+
 /** The number a citation carries: "section 3", "s. 12", "regulation 4", "item 2". */
 const CITED = /\b(?:sections?|ss?|articles?|art|regulations?|regs?|rules?|paragraphs?|paras?|items?|clauses?|parts?|chapters?|schedules?|subsections?|divisions?|forms?|no)\.?\s*$/i;
 
@@ -139,7 +177,7 @@ const NOT_MONEY_AFTER = /^\s?(?:%|per\s?cent|percent|days?|weeks?|months?|years?
  */
 export function moneyIn(written: string | null, economy: string): Money | null {
   if (!written) return null;
-  const words = asciiDigits(written);
+  const words = wordedSums(asciiDigits(written));
   const fallback = CURRENCY_OF[economy.toUpperCase()];
   const currencyOf = (marker: string): string | undefined =>
     MARKERS.find(([re]) => re.test(marker))?.[1] ??

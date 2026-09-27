@@ -85,6 +85,43 @@ describe('a Schedule named with its ordinal after the noun', () => {
   });
 });
 
+describe('a Schedule named in both languages on one line', () => {
+  const built = sectionise([
+    { page: 1, language: 'en', lines: ['1. This Order may be cited as the Customs (Prohibition of Imports) Order 2023.', '2. In this Order, "licence" means an import licence.', '3. (1) The importation of goods specified in the First Schedule is absolutely prohibited.'] },
+    {
+      page: 2,
+      language: 'en',
+      lines: [
+        'JADUAL PERTAMA/FIRST SCHEDULE',
+        '(Goods which is absolutely prohibited for import)',
+        '[Perenggan 3/Paragraph 3]',
+        '(1)',
+        'Item No.',
+        '1. Any emblem or device prejudicial to the interest of Malaysia All countries',
+        '2. Broadcast receivers capable of receiving radio communication within the ranges (68-87) MHz',
+        'and (108-174) MHz',
+        'All countries',
+      ],
+    },
+  ]);
+
+  it("files the Schedule's items apart from the Order's own paragraphs, each with its first line", () => {
+    const item = built.sections.find((s) => s.text.startsWith('2. Broadcast receivers'));
+    expect(item?.text).toContain('(108-174) MHz');
+    expect(built.sections.some((s) => s.text.startsWith('2. In this Order'))).toBe(true);
+  });
+
+  it("carries the Schedule's caption to every item, since the item alone says nothing about the goods", () => {
+    const item = built.sections.find((s) => s.text.startsWith('2. Broadcast receivers'));
+    expect(item?.headingPath?.startsWith('JADUAL PERTAMA/FIRST SCHEDULE (Goods which is absolutely prohibited for import) > 2.')).toBe(true);
+  });
+
+  it('does not take a column number for a caption', () => {
+    const plain = sectionise([{ page: 1, language: 'en', lines: ['SECOND SCHEDULE', '(1)', 'Item No.', '1. A thing'] }]);
+    expect(plain.sections.find((s) => s.text.startsWith('1. A thing'))?.headingPath).toBe('SECOND SCHEDULE > 1. A thing');
+  });
+});
+
 const s = (text: string) => [{ text }];
 
 describe('the name a document gives itself, in each language', () => {

@@ -375,8 +375,16 @@ export function amendsAnotherAct(text: string): boolean {
  */
 const DEFINITION_ENTRY = /["“]([^"”]{1,90})["”]\s{0,4}(?:means|includes|has the (?:same )?meaning)/gi;
 
-/** Where one definition entry stops: the drafting break between them, or a blank line. */
-const ENTRY_END = /[;.]\s*\n|\n\s*\n/;
+/**
+ * Where one definition entry stops: the drafting break between them, or a blank line.
+ *
+ * Not a break that opens a lettered paragraph. "“intellectual property right” means — (a) a
+ * patent; (b) a trade mark; ... (h) a right in confidential information, trade secret or know-how"
+ * is one entry, and stopping at the first semicolon read paragraph (h) as operative: an
+ * arbitration Act's list of what counts as an IP right answered a trade-secret question. Numbered
+ * paragraphs still end it, because "(2)" is the next subsection, not the definition's list.
+ */
+const ENTRY_END = /(?:[;.]\s*\n|\n\s*\n)(?!\s*\([a-z]{1,4}\))/;
 
 export function citesADefinition(text: string, words: string | null): boolean {
   const quote = words?.trim();
@@ -419,6 +427,30 @@ export function citesADefinition(text: string, words: string | null): boolean {
  * A power to prohibit is a real and reportable fact about an economy. It is not a prohibition, and
  * the bands of pillar 6 count measures in force.
  */
+/** A figure stated as the default a regulation may replace: "$250 or such other amount as is prescribed". */
+export const REPLACEABLE_FIGURE = /\bor\s+(?:such\s+)?(?:other|another|a\s+different)\s+(?:amount|sum|value|figure)\s+(?:as\s+)?(?:is|may\s+be|that\s+is)\s+(?:prescribed|specified|determined)\b/i;
+
+/**
+ * Whether the provision states the figure in these words as a default another instrument may
+ * replace, reading on past the words themselves.
+ *
+ * The allowance follows the figure, and a reader that stops at the figure leaves it behind: "have
+ * a value not exceeding $250" was copied from a paragraph that goes on "or such other amount as is
+ * prescribed for subparagraph 68(1)(f)(iii) of the Act". Only the few words straight after the
+ * figure are read, so an allowance attached to some other figure in the section does not count.
+ */
+export function figureReplaceable(text: string, words: string | null): boolean {
+  const figure = words?.match(/\d[\d,.\s]*\d|\d/g)?.at(-1)?.trim();
+  if (!figure) return false;
+  const flat = text.replace(/\s+/g, ' ');
+  for (let at = flat.indexOf(figure); at >= 0; at = flat.indexOf(figure, at + 1)) {
+    const after = flat.slice(at + figure.length, at + figure.length + 100);
+    const allowance = REPLACEABLE_FIGURE.exec(after);
+    if (allowance && allowance.index <= 20) return true;
+  }
+  return false;
+}
+
 const LIST_MODAL = /\b(must not|shall not|may not|must|shall|may)\b/gi;
 /** Where the stem begins: the end of whatever sentence came before it. */
 const SENTENCE_END = /[.;]\s+(?=[A-Z(])|\n\s*\n/g;

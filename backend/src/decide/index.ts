@@ -22,6 +22,7 @@ import { FRAMEWORK_TITLE_DOMAIN, MEASURES, MEASURE_DOMAIN, MEASURE_NAMES, SECTOR
 import { tallyConfirmations, type ConfirmationTally } from '../read/confirmations.js';
 import { inUsd, moneyIn, type FxRates } from './currency.js';
 import { determinesAParticularCase } from '../discover/titles.js';
+import { REPLACEABLE_FIGURE } from '../parse/identity.js';
 
 /** One finding, with enough of its origin to cite it. */
 export interface Evidence {
@@ -36,6 +37,13 @@ export interface Evidence {
   citation: string;
   /** Whether the provision only instructs an amendment to some other Act. */
   amendsAnotherAct: boolean;
+  /** Whether the provision goes on to let another instrument replace the figure the finding states. */
+  figureReplaceable?: boolean;
+  /**
+   * Where the amount this provision leaves to be prescribed is prescribed: the provision that
+   * states it, its words, and the deep link to it. Looked for only where a figure is scored.
+   */
+  prescribed?: { sectionId: number; instrumentId: number; instrumentTitle: string; headingPath: string; citation: string; words: string };
   /**
    * Whether the quoted words are words the amending provision sets out for insertion.
    *
@@ -491,11 +499,26 @@ function absent(what: string): Rule {
       : { ordinal: 1, reason: `nothing read establishes ${what}` };
 }
 
+/**
+ * An injunction against an infringement that has not yet happened: "restraining the defendant from
+ * any apprehended act of infringement", "to prevent infringement". A provisional measure is one "to
+ * prevent an infringement from occurring" (TRIPS art. 50), and the same words were read as a
+ * provisional measure in one Patents Act and as an ordinary procedure in another.
+ */
+export const PREVENTIVE_INJUNCTION =
+  /\binjunction\b[^.;]{0,80}\b(?:apprehended|threatened|anticipated|prevent\w*)\b[^.;]{0,40}\binfring|\binjunction\b[^.;]{0,40}\bto\s+prevent\b/i;
+
 /** "Absence of both" / "one of them" / "both" -- 4.2 and 4.6, over their own two components. */
 function bothOrOne(what: string, procedureToken: string, provisionalToken: string): Rule {
   return (_indicator, qualifying) => {
     const procedures = qualifying.filter((e) => e.finding.measure === procedureToken);
-    const provisional = qualifying.filter((e) => e.finding.measure === provisionalToken);
+    // A procedure that grants an injunction against an infringement only apprehended is also the
+    // measure that prevents one.
+    const provisional = qualifying.filter(
+      (e) =>
+        e.finding.measure === provisionalToken ||
+        (e.finding.measure === procedureToken && PREVENTIVE_INJUNCTION.test(e.finding.quote)),
+    );
     if (procedures.length > 0 && provisional.length > 0) {
       return { ordinal: 3, reason: `${what} procedures and provisional measures both exist`, counted: [...procedures, ...provisional] };
     }
@@ -651,8 +674,6 @@ const MANDATES = /\b(?:shall|must|is required to|are required to|hendaklah|mesti
 const WAIVES = /\b(?:need not|not be required|not required|tidak perlu)\b|ไม่ต้อง/i;
 /** Words that leave the content of a duty to something specified, prescribed or imposed elsewhere. */
 const DEFERS = /\b(?:in accordance with|specified|prescribed|determined|imposed|issued|conditions of (?:the|a|its) licen[cs]e)\b|กำหนด|ตามหลักเกณฑ์/i;
-/** A figure stated as the default a regulation may replace: "$250 or such other amount as is prescribed". */
-const REPLACEABLE_FIGURE = /\bor\s+(?:such\s+)?(?:other|another|a\s+different)\s+(?:amount|sum|value|figure)\s+(?:as\s+)?(?:is|may\s+be|that\s+is)\s+(?:prescribed|specified|determined)\b/i;
 
 /** Measures that are a body being established, whose defining words are the body's own name. */
 const BODY_CREATED = new Set(['independent-telecom-authority']);
@@ -1179,6 +1200,28 @@ const RULES: Record<string, Rule> = {
    */
   '12.5': (indicator, qualifying, ctx) => {
     const thresholds = qualifying.flatMap((e) => {
+      // A figure left to be prescribed is the figure where it is prescribed, cited there: "such other
+      // amount as is prescribed" and "a prescribed amount" state the law only with the provision that
+      // prescribes it.
+      const p = e.prescribed;
+      const followed = p ? moneyIn(p.words, ctx?.economy ?? '') : null;
+      if (p && followed) {
+        const usd = inUsd(followed, ctx?.rates ?? null);
+        if (usd !== null) {
+          const { prescribed: _followed, ...pointer } = e;
+          const at: Evidence = {
+            ...pointer,
+            sectionId: p.sectionId,
+            instrumentId: p.instrumentId,
+            instrumentTitle: p.instrumentTitle,
+            headingPath: p.headingPath,
+            citation: p.citation,
+            finding: { ...e.finding, quote: p.words, definingWords: p.words },
+            figureReplaceable: false,
+          };
+          return [{ evidence: at, money: followed, usd }];
+        }
+      }
       const money = moneyIn(e.finding.definingWords, ctx?.economy ?? '');
       const usd = money ? inUsd(money, ctx?.rates ?? null) : null;
       return money && usd !== null ? [{ evidence: e, money, usd }] : [];
@@ -1190,7 +1233,14 @@ const RULES: Record<string, Rule> = {
     // Act's "$250 or such other amount as is prescribed" is the law only until a regulation says
     // otherwise, and the Customs Regulation does: "For subparagraph 68(1)(f)(iii) of the Act, the
     // amount is $1 000". The lowest of the two would have scored a threshold no goods clear under.
-    const firm = thresholds.filter((t) => !REPLACEABLE_FIGURE.test(`${t.evidence.finding.definingWords ?? ''} ${t.evidence.finding.quote}`));
+    // The allowance can sit just past the words the reader copied: "have a value not exceeding $250"
+    // was quoted from a regulation that goes on "or such other amount as is prescribed", and read
+    // alone it looked firm and led. So the provision's own text after the figure is asked as well.
+    const firm = thresholds.filter(
+      (t) =>
+        !REPLACEABLE_FIGURE.test(`${t.evidence.finding.definingWords ?? ''} ${t.evidence.finding.quote}`) &&
+        !t.evidence.figureReplaceable,
+    );
     const lowest = (firm.length > 0 ? firm : thresholds).reduce((a, b) => (b.usd < a.usd ? b : a));
     const assumed = lowest.money.assumedCurrency ? ', the provision using a bare symbol' : '';
     const on = ctx?.rates ? ` on the ${ctx.rates.asOf} reference rate` : '';
@@ -1406,14 +1456,22 @@ export function statesDuration(...words: (string | null | undefined)[]): boolean
 const CONFINED_PERMISSION = new RegExp(
   [
     /\b(?:permitted|allowed|authori[sz]ed|eligible|may)\b[^.;]{0,100}\b(?:only|solely|exclusively)\b/.source,
+    // Or confined to those who hold a licence: "their import would be allowed against a valid Licence
+    // for Restricted Imports" shuts out every importer without one, as "only" would.
+    /\b(?:permitted|allowed|authori[sz]ed)\b[^.;]{0,40}\b(?:against|subject to|on production of)\b[^.;]{0,30}\b(?:licen[cs]e|permit|authori[sz]ation|approval)\b/.source,
     /\b(?:only|solely|exclusively)\b[^.;]{0,100}\b(?:permitted|allowed|authori[sz]ed|eligible)\b/.source,
     '(?:อนุญาต|มีสิทธิ)[^.;]{0,100}เท่านั้น',
   ].join('|'),
   'i',
 );
 
-export function confinesPermission(f: Pick<Finding, 'dutyAct' | 'quote'>): boolean {
-  return [f.dutyAct, f.quote].some((w) => !!w && CONFINED_PERMISSION.test(w));
+// The permission and its confinement can be copied out as two fields: "may transfer" as the act and
+// "only if" as the words that make the measure out, when the provision reads "may transfer ... only
+// if it is necessary". Read apart, neither says "only" next to the permission, and a data transfer
+// rule of exactly that shape was ruled out as a bare power.
+export function confinesPermission(f: Pick<Finding, 'dutyAct' | 'quote'> & { definingWords?: string | null }): boolean {
+  const joined = f.dutyAct && f.definingWords ? `${f.dutyAct} ${f.definingWords}` : null;
+  return [f.dutyAct, f.quote, joined].some((w) => !!w && CONFINED_PERMISSION.test(w));
 }
 
 function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
@@ -1504,7 +1562,17 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     // cell whose top band is "clear copyright exceptions following fair use or fair dealing".
     // Seventeen indicators declare a measure this way and the gate was asking all of them for a
     // party bound. The same exemption is already made two tests up, for 'declares'.
-    if (!e.finding.dutyBearer && !permits(indicatorId, e.finding.measure)) {
+    //
+    // Nor a ban on goods crossing the border. "Goods which is absolutely prohibited for import" names
+    // no importer because it binds every one; the party is whoever brings the goods in. So does a
+    // crossing allowed only on a condition: "their import would be allowed against a valid Licence
+    // for Restricted Imports" binds every importer of the goods it names, and was held.
+    // Not for a measure that is itself a prohibition: goods allowed in against a licence are not banned.
+    const bansTheCrossing =
+      (e.finding.dutyForce === 'forbids' || (confinesPermission(e.finding) && !prohibits(indicatorId, e.finding.measure))) &&
+      crossing(indicatorId, e.finding.measure) &&
+      !!e.finding.borderWords;
+    if (!e.finding.dutyBearer && !permits(indicatorId, e.finding.measure) && !bansTheCrossing) {
       held.push({
         evidence: e,
         reason: 'the provision names no party it binds, and every measure in the rubric is a duty on someone',
@@ -2101,7 +2169,8 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     // A de minimis is a figure in a currency, and one that states none -- or states one in money
     // the pinned rate table does not carry -- cannot be compared with the 200 USD line.
     if (indicatorId === '12.5') {
-      const money = moneyIn(e.finding.definingWords, ctx.economy);
+      const followed = e.prescribed ? moneyIn(e.prescribed.words, ctx.economy) : null;
+      const money = followed && inUsd(followed, ctx.rates) !== null ? followed : moneyIn(e.finding.definingWords, ctx.economy);
       if (!money || inUsd(money, ctx.rates) === null) {
         held.push({
           evidence: e,
@@ -2116,6 +2185,11 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
   }
   return { kept, held, ruledOut };
 }
+
+/** The verbs of keeping something somewhere, as against doing something to it there. */
+const KEEPING = /\b(keep|kept|keeping|retain\w*|store\w*|storing|hold|held|holding|maintain\w*|preserv\w*)\b|เก็บ|จัดเก็บ|เก็บรักษา/i;
+/** The verbs of doing something to data, which make a locational duty 6.1's. */
+const PROCESSING = /\b(process\w*|handl\w*|analys\w*|comput\w*)\b|ประมวลผล/i;
 
 /**
  * Which indicator a finding actually belongs to, where the rubric draws a line the reader does not.
@@ -2147,6 +2221,26 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
  * next door, not nothing at all.
  */
 export function refile(f: Finding): Finding {
+  // And 6.1 and 6.2 the same way: a duty that says only where something must be *kept* is 6.2's,
+  // whose own measure asks for records "kept and retained within the economy". 6.1 asks where data
+  // is processed. The reader files "accounting records must be kept in Australia" under 6.1 because
+  // the provision is a locational duty on a data holder, and one economy's cell was scored at the
+  // top band on it -- an insurer's books counted as a second local processing measure beside the one
+  // provision that does say "process or handle ... outside Australia". A duty that names processing
+  // as well as keeping stays where it is.
+  if (
+    f.indicatorId === '6.1' &&
+    f.measure === 'local-processing' &&
+    KEEPING.test(f.dutyAct ?? '') &&
+    !PROCESSING.test(`${f.dutyAct ?? ''} ${f.quote ?? ''}`)
+  ) {
+    return {
+      ...f,
+      indicatorId: '6.2',
+      measure: 'local-storage',
+      refiledFrom: { indicatorId: f.indicatorId, measure: f.measure },
+    };
+  }
   if (f.indicatorId === '6.1' && f.measure === 'transfer-ban' && (f.exceptionWords || f.dutyForce === 'requires')) {
     return {
       ...f,
@@ -2412,6 +2506,12 @@ function commanded(indicatorId: string, measure: string | null): boolean {
 function crossing(indicatorId: string, measure: string | null): boolean {
   if (!measure) return false;
   return (MEASURES[indicatorId] ?? []).some((m) => m.token === measure && m.crossesBorder === true);
+}
+
+/** Is this measure a prohibition, by its own statement of what a provision must say to be it? */
+function prohibits(indicatorId: string, measure: string | null): boolean {
+  if (!measure) return false;
+  return (MEASURES[indicatorId] ?? []).some((m) => m.token === measure && /\bprohibit\w*/i.test(m.defines));
 }
 
 /** Is this measure one of the ones defined by someone being put in a role? */
@@ -2901,8 +3001,19 @@ function decideFramework(input: DecideInput): Decision {
   // cell today, which is luck rather than a rule. Excluded from candidacy altogether rather than
   // demoted to the sectoral band, because an advisory document is not a narrow framework, it is
   // not one at all.
+  //
+  // An instrument whose own opening is shown to be for the subject has said what it is, and needs
+  // no rule of its own naming the subject as well. The rule was asked to name it so that an Act
+  // touching the subject in passing could not pass as its framework; an Act built for the subject
+  // is not that Act. Australia's Privacy Act -- opening "to promote the protection of the privacy of
+  // individuals with respect to their personal information" -- was ruled out of 7.1 because the
+  // rule the reader quoted, APP 1.2's duty to implement practices, procedures and systems, does not
+  // repeat the words "personal information".
   const claimed = (input.frameworkEvidence ?? []).filter(
-    (f) => f.establishesFramework && f.frameworkShown !== false && f.bindingness !== 'advisory',
+    (f) =>
+      f.establishesFramework &&
+      (f.frameworkShown !== false || (f.dedicated && f.dedicatedShown)) &&
+      f.bindingness !== 'advisory',
   );
   // And it has to be a framework for this subject -- see FRAMEWORK_TITLE_DOMAIN.
   const domain = FRAMEWORK_TITLE_DOMAIN[indicator.id];

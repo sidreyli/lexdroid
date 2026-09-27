@@ -588,9 +588,10 @@ export function recordPillarAnswer(run: RunContext, answer: PillarAnswer): void 
       for (const r of reading.rejected) {
         recordDiscard(run, {
           stage: 'read',
-          subject: `section ${reading.sectionId} :: ${r.finding.indicatorId}`,
+          // A claim too malformed to coerce into a finding has none; it is still counted.
+          subject: `section ${reading.sectionId} :: ${r.finding?.indicatorId ?? '?'}`,
           reason: r.reason,
-          detail: r.finding.quote,
+          detail: r.finding?.quote ?? null,
         });
       }
     }
