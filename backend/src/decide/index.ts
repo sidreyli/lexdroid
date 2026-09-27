@@ -2923,8 +2923,19 @@ function decideFramework(input: DecideInput): Decision {
   // cell today, which is luck rather than a rule. Excluded from candidacy altogether rather than
   // demoted to the sectoral band, because an advisory document is not a narrow framework, it is
   // not one at all.
+  //
+  // An instrument whose own opening is shown to be for the subject has said what it is, and needs
+  // no rule of its own naming the subject as well. The rule was asked to name it so that an Act
+  // touching the subject in passing could not pass as its framework; an Act built for the subject
+  // is not that Act. Australia's Privacy Act -- opening "to promote the protection of the privacy of
+  // individuals with respect to their personal information" -- was ruled out of 7.1 because the
+  // rule the reader quoted, APP 1.2's duty to implement practices, procedures and systems, does not
+  // repeat the words "personal information".
   const claimed = (input.frameworkEvidence ?? []).filter(
-    (f) => f.establishesFramework && f.frameworkShown !== false && f.bindingness !== 'advisory',
+    (f) =>
+      f.establishesFramework &&
+      (f.frameworkShown !== false || (f.dedicated && f.dedicatedShown)) &&
+      f.bindingness !== 'advisory',
   );
   // And it has to be a framework for this subject -- see FRAMEWORK_TITLE_DOMAIN.
   const domain = FRAMEWORK_TITLE_DOMAIN[indicator.id];
