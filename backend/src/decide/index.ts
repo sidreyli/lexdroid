@@ -1454,6 +1454,9 @@ export function statesDuration(...words: (string | null | undefined)[]): boolean
 const CONFINED_PERMISSION = new RegExp(
   [
     /\b(?:permitted|allowed|authori[sz]ed|eligible|may)\b[^.;]{0,100}\b(?:only|solely|exclusively)\b/.source,
+    // Or confined to those who hold a licence: "their import would be allowed against a valid Licence
+    // for Restricted Imports" shuts out every importer without one, as "only" would.
+    /\b(?:permitted|allowed|authori[sz]ed)\b[^.;]{0,40}\b(?:against|subject to|on production of)\b[^.;]{0,30}\b(?:licen[cs]e|permit|authori[sz]ation|approval)\b/.source,
     /\b(?:only|solely|exclusively)\b[^.;]{0,100}\b(?:permitted|allowed|authori[sz]ed|eligible)\b/.source,
     '(?:อนุญาต|มีสิทธิ)[^.;]{0,100}เท่านั้น',
   ].join('|'),
@@ -1545,8 +1548,14 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     // party bound. The same exemption is already made two tests up, for 'declares'.
     //
     // Nor a ban on goods crossing the border. "Goods which is absolutely prohibited for import" names
-    // no importer because it binds every one; the party is whoever brings the goods in.
-    const bansTheCrossing = e.finding.dutyForce === 'forbids' && crossing(indicatorId, e.finding.measure) && !!e.finding.borderWords;
+    // no importer because it binds every one; the party is whoever brings the goods in. So does a
+    // crossing allowed only on a condition: "their import would be allowed against a valid Licence
+    // for Restricted Imports" binds every importer of the goods it names, and was held.
+    // Not for a measure that is itself a prohibition: goods allowed in against a licence are not banned.
+    const bansTheCrossing =
+      (e.finding.dutyForce === 'forbids' || (confinesPermission(e.finding) && !prohibits(indicatorId, e.finding.measure))) &&
+      crossing(indicatorId, e.finding.measure) &&
+      !!e.finding.borderWords;
     if (!e.finding.dutyBearer && !permits(indicatorId, e.finding.measure) && !bansTheCrossing) {
       held.push({
         evidence: e,
@@ -2477,6 +2486,12 @@ function commanded(indicatorId: string, measure: string | null): boolean {
 function crossing(indicatorId: string, measure: string | null): boolean {
   if (!measure) return false;
   return (MEASURES[indicatorId] ?? []).some((m) => m.token === measure && m.crossesBorder === true);
+}
+
+/** Is this measure a prohibition, by its own statement of what a provision must say to be it? */
+function prohibits(indicatorId: string, measure: string | null): boolean {
+  if (!measure) return false;
+  return (MEASURES[indicatorId] ?? []).some((m) => m.token === measure && /\bprohibit\w*/i.test(m.defines));
 }
 
 /** Is this measure one of the ones defined by someone being put in a role? */
