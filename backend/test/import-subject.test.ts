@@ -24,11 +24,11 @@ const indicator102: Indicator = {
   provenance: { document: 'test', locator: 'test' },
 };
 
-function permit(sectionId: number, subjectWords: string, headingPath: string, title: string): Evidence {
-  const quote = `${subjectWords} must not be brought or imported into the territory unless the goods are covered by an import permit`;
+function permit(sectionId: number, subjectWords: string, headingPath: string, title: string, borderWords = 'imported into the territory'): Evidence {
+  const quote = `${subjectWords} must not be brought or imported into the territory unless the goods are covered by an import permit ${borderWords}`;
   const finding = {
     indicatorId: '10.2', measure: 'import-compliance', dutyBearer: null, dutyAct: 'must not be brought or imported', dutyForce: 'forbids',
-    roleWords: null, definingWords: 'covered by an import permit', subjectWords, borderWords: 'imported into the territory',
+    roleWords: null, definingWords: 'covered by an import permit', subjectWords, borderWords,
     imposingWords: 'must not be brought or imported', prescribingWords: null, dutyBearerKind: null, scopeUnstated: false,
     placeWords: 'the territory', exceptionWords: null, locatedData: null, informationWords: null, keepingWords: null,
     authorisingWords: null, quote, requirement: 'import-compliance', sectorScope: 'all', sector: null, dataScope: 'non-personal',
@@ -56,5 +56,22 @@ describe('a class of goods left to its heading', () => {
     const equipment = permit(3, 'goods included in a class of goods to which this Division applies', 'Part 3 > Division 2—Radiocommunications equipment', 'Equipment Determination');
     const d = decide({ indicator: indicator102, economy: 'XXX', rates, surfaced: [], coverage, evidence: [everyImport, equipment] });
     expect(d.score).toBe(1);
+  });
+});
+
+describe('the words said to cross the border', () => {
+  const standard = (borderWords: string) =>
+    permit(4, 'ผลิตภัณฑ์อุตสาหกรรม', 'มาตรา 16', 'Industrial Product Standard Act', borderWords);
+
+  it('have to name the frontier, not the factory gate', () => {
+    const d = decide({ indicator: indicator102, economy: 'XXX', rates, surfaced: [], coverage, evidence: [everyImport, standard('ออกจากสถานที่ผลิต')] });
+    expect(d.score).toBe(0.5);
+  });
+
+  it('may name it in Thai, or in Malay, or as a transaction coming inward', () => {
+    for (const words of ['นำของเข้า ส่งของออก', 'Pengimportan ke dalam Malaysia', 'inward transactions']) {
+      const d = decide({ indicator: indicator102, economy: 'XXX', rates, surfaced: [], coverage, evidence: [everyImport, standard(words)] });
+      expect(d.score, words).toBe(1);
+    }
   });
 });

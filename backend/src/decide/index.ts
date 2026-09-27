@@ -2092,7 +2092,10 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     }
     // A measure defined by a border crossing is not made out by a provision where nothing crosses.
     // A consumer-goods safety ban and a power to detain goods already here are not import measures.
-    if (crossing(indicatorId, e.finding.measure) && !e.finding.borderWords) {
+    // Nor by words that cross some other line: a product standard's licence "before taking the
+    // product out of the place of production" was copied as the border and scored an import
+    // requirement, and the only frontier it names is the factory gate.
+    if (crossing(indicatorId, e.finding.measure) && !namesTheFrontier(e.finding.borderWords)) {
       ruledOut.push({
         evidence: e,
         reason: 'nothing in the provision enters or leaves the economy, and this measure is a restriction on trade across the border',
@@ -2493,6 +2496,24 @@ function actorOf(indicatorId: string, measure: string | null): string | null {
 function commanded(indicatorId: string, measure: string | null): boolean {
   if (!measure) return false;
   return (MEASURES[indicatorId] ?? []).some((m) => m.token === measure && m.commands === true);
+}
+
+/**
+ * Do the words said to cross the border name the economy's frontier -- goods or data coming in,
+ * going out, passing through, or held to be foreign -- rather than some other line?
+ */
+const FRONTIER = new RegExp(
+  [
+    /\b(bring\w*|brought|land(?:ed|ing)?|enter\w*|entry|leav\w*|customs|borders?|boundar\w*|frontiers?|territor\w*|countr\w*|abroad|overseas|offshore|foreign\w*|international\w*|transit\w*|tranship\w*|transship\w*|ship(?:ped|ping|ment\w*)?|unship\w*|consign\w*|cross\w*|inbound|outbound|inward|outward|outside|beyond|out of|out from|into|origin\w*|jurisdiction)\b/.source,
+    // Import and export inside other words as well: "reimported", and Malay's "pengimportan",
+    // "diimport" and "pengeksportan".
+    /import|export|eksport/.source,
+    'นำเข้า|ส่งออก|นำ\\S*เข้า|ส่ง\\S*ออก|นำออก|ราชอาณาจักร|ศุลกากร|ผ่านแดน|นำผ่าน|ถ่ายลำ|ประเทศ|ตางประเทศ|ภายนอก',
+  ].join('|'),
+  'i',
+);
+function namesTheFrontier(borderWords: string | null | undefined): boolean {
+  return !!borderWords && FRONTIER.test(borderWords);
 }
 
 /** Is this measure one of the ones defined by something crossing the border? */

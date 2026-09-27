@@ -354,7 +354,7 @@ export const MEASURES: Record<string, Measure[]> = {
     },
     {
       token: 'import-compliance',
-      defines: 'the words requiring the licence, permit, registration or label before it may be brought in',
+      defines: 'the words requiring the licence, permit, approval, registration, prior notification or label before it may be brought in',
       crossesBorder: true,
       gloss:
         'a licence, permit, authorisation, registration, labelling or import-control requirement that must be met before ICT goods or online services may be imported',
