@@ -8,11 +8,25 @@
 import { readdirSync, readFileSync, existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { EconomyProfile } from './types.js';
+import { EconomyProfile, type JurisdictionScope } from './types.js';
 import type { Db } from '../db/index.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 export const PROFILE_DIR = join(here, '..', '..', 'data', 'profiles');
+
+/**
+ * The instruments of an unheld tier that a text cites, by tier. Empty where the scope is undeclared
+ * or holds every tier.
+ */
+export function unheldCitations(scope: JurisdictionScope | null, text: string): { tier: string; cited: string }[] {
+  const out: { tier: string; cited: string }[] = [];
+  for (const t of scope?.notHeld ?? []) {
+    for (const p of t.citedAs) {
+      for (const m of text.matchAll(new RegExp(p, 'g'))) out.push({ tier: t.tier, cited: m[0].trim() });
+    }
+  }
+  return out;
+}
 
 export function profilePath(code: string): string {
   return join(PROFILE_DIR, `${code.toUpperCase()}.json`);
@@ -44,6 +58,26 @@ export function availableProfiles(): string[] {
     .filter((f) => f.endsWith('.json'))
     .map((f) => f.slice(0, -5))
     .sort();
+}
+
+/**
+ * Every profiled economy's code against its name.
+ *
+ * ESCAP's sheets are keyed by name and ours by code, so something has to translate. Listing the
+ * pairs by hand is how an economy goes quietly ungraded: it falls through to its own code, matches
+ * no baseline row, and the result reads as "nothing to compare" rather than "never compared". The
+ * profile already states the name, so adding a profile is all adding an economy takes.
+ */
+export function economyNames(): Map<string, string> {
+  const names = new Map<string, string>();
+  for (const code of availableProfiles()) {
+    try {
+      names.set(code.toUpperCase(), loadProfile(code).name);
+    } catch {
+      // A profile that does not parse is Zone 0's problem to report, not a caller's.
+    }
+  }
+  return names;
 }
 
 /**

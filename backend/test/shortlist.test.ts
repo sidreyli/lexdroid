@@ -59,4 +59,65 @@ describe('shortlisting the register', () => {
     expect(out.some((c) => c.title === 'Cybersecurity Act 2018')).toBe(true);
     db.close();
   });
+  it('does not let having headings outrank a better title', async () => {
+    // Fusion adds a vote per channel, so an instrument carrying contents scored in twice as many
+    // runs as one without. Contents exist almost only for instruments already read, so summing gave
+    // "already read" a two-to-one advantage unrelated to relevance: measured at nought unread
+    // instruments in the shortlist for all three economies.
+    const db = openDb(':memory:');
+    seed(db);
+    db.prepare(
+      `INSERT INTO instrument (economy_code, title, kind, status, language, source_url, discovered_via, discovered_at)
+       VALUES ('XXX', 'Cybersecurity Advisory Council Act 2015', 'act', 'in-force', 'en', 'https://x/9', 'test', '2026-09-06')`,
+    ).run();
+    const withHeadings = db
+      .prepare("SELECT id FROM instrument WHERE title = 'Cybersecurity Advisory Council Act 2015'")
+      .get() as { id: number };
+    db.prepare(
+      `INSERT INTO instrument_contents (instrument_id, headings, heading_count, source_url, extractor, fetched_at)
+       VALUES (?, ?, 2, 'https://x/9', 'test', '2026-09-12')`,
+    ).run(withHeadings.id, JSON.stringify(['Cybersecurity duties of the Council', 'Cybersecurity reporting']));
+
+    const out = await shortlistInstruments(db, {
+      economy: 'XXX',
+      queries: ['cybersecurity'],
+      limit: 4,
+      kind: 'act',
+      model: 'none',
+    });
+    expect(out[0]!.title).toBe('Cybersecurity Act 2018');
+    db.close();
+  });
+});
+
+describe('the share of the list held for Acts', () => {
+  it('keeps an Act on a list its own subsidiary legislation would fill', async () => {
+    // Singapore's Payment Services Act 2019 ranked 111th for "a licence to provide payment
+    // services" while its own Regulations ranked 4th, and 5,841 subsidiary instruments took the
+    // rest. ESCAP's bands turn on what binds, so an Act and a notification made under it are not
+    // interchangeable candidates.
+    const db = openDb(':memory:');
+    db.prepare(`INSERT INTO economy (code, name, official_languages) VALUES ('XXX', 'Test', '["en"]')`).run();
+    const ins = db.prepare(
+      `INSERT INTO instrument (economy_code, title, kind, status, language, source_url, discovered_via, discovered_at)
+       VALUES ('XXX', ?, ?, 'in-force', 'en', ?, 'test', '2026-09-06')`,
+    );
+    ins.run('Payment Services Act 2019', 'act', 'https://x/act');
+    // Each carries one more of the query's words than the Act does, which is why they outrank it.
+    for (let i = 0; i < 40; i += 1) {
+      ins.run(`Payment Services Licence (Exemption No ${i}) Regulations 2019`, 'regulation', `https://x/r${i}`);
+    }
+
+    const asOnePool = await shortlistInstruments(db, {
+      economy: 'XXX', queries: ['payment services licence'], limit: 6, primaryShare: 0, model: 'none',
+    });
+    expect(asOnePool.every((c) => c.kind === 'regulation')).toBe(true);
+
+    const held = await shortlistInstruments(db, {
+      economy: 'XXX', queries: ['payment services licence'], limit: 6, model: 'none',
+    });
+    expect(held[0]?.title).toBe('Payment Services Act 2019');
+    // And the rest of the list is still whatever ranked, not padded with Acts that did not.
+    expect(held.filter((c) => c.kind === 'regulation').length).toBe(5);
+  });
 });

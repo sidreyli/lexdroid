@@ -1,6 +1,6 @@
 {
   "version": "2.1",
-  "derivedAt": "2026-09-07T12:04:14.114Z",
+  "derivedAt": "2026-09-24T14:31:05.365Z",
   "pillars": [
     {
       "id": 1,
@@ -458,11 +458,11 @@
       "pillarName": "Intellectual Property Rights",
       "category": "Patent enforcement issues: civil and administrative procedures and remedies; and provisional measures",
       "exception": null,
-      "criteriaText": "1) Abesence of civil and administrative procedures and remedies, and provisional measures 2) Adopt civil and administrative procedures and remedies, or provisional measures 3) Adopt civil and administrative procedures and remedies, and provisional measures",
+      "criteriaText": "1) Absence of civil and administrative procedures and remedies, and provisional measures 2) Adopt civil and administrative procedures and remedies, or provisional measures 3) Adopt civil and administrative procedures and remedies, and provisional measures",
       "bands": [
         {
           "score": 1,
-          "criterion": "Abesence of civil and administrative procedures and remedies, and provisional measures",
+          "criterion": "Absence of civil and administrative procedures and remedies, and provisional measures",
           "ordinal": 1
         },
         {
@@ -551,11 +551,11 @@
       "pillarName": "Intellectual Property Rights",
       "category": "Online copyright enforcement issues: civil and administrative procedures and remedies; and provisional measures",
       "exception": null,
-      "criteriaText": "1) Abesence of civil and administrative procedures and remedies, and provisional measures 2) Adopt civil and administrative procedures and remedies, or provisional measures 3) Adopt civil and administrative procedures and remedies, and provisional measures",
+      "criteriaText": "1) Absence of civil and administrative procedures and remedies, and provisional measures 2) Adopt civil and administrative procedures and remedies, or provisional measures 3) Adopt civil and administrative procedures and remedies, and provisional measures",
       "bands": [
         {
           "score": 1,
-          "criterion": "Abesence of civil and administrative procedures and remedies, and provisional measures",
+          "criterion": "Absence of civil and administrative procedures and remedies, and provisional measures",
           "ordinal": 1
         },
         {
@@ -742,11 +742,11 @@
       "pillarName": "Telecom Regulations & Competition",
       "category": "Lack of functional/accounting separation",
       "exception": null,
-      "criteriaText": "1) No funcation/accounting separation is mandated 2) Only accounting separation is mandated 3) Only functional seperation is mandated 4) Both accounting and functional separations are mandated",
+      "criteriaText": "1) No functional/accounting separation is mandated 2) Only accounting separation is mandated 3) Only functional separation is mandated 4) Both accounting and functional separations are mandated",
       "bands": [
         {
           "score": 1,
-          "criterion": "No funcation/accounting separation is mandated",
+          "criterion": "No functional/accounting separation is mandated",
           "ordinal": 1
         },
         {
@@ -756,7 +756,7 @@
         },
         {
           "score": 0.25,
-          "criterion": "Only functional seperation is mandated",
+          "criterion": "Only functional separation is mandated",
           "ordinal": 3
         },
         {
@@ -829,7 +829,7 @@
       "pillarId": 6,
       "pillarName": "Cross-border Data Policies",
       "category": "Ban and local processing requirements",
-      "exception": "Not score data localization measure applied to government data.",
+      "exception": "Not score data localisation measure applied to government data.",
       "criteriaText": "1) Ban and/or local processing requirement for all sectors or personal data, OR more than one measure in category (2) 2) Ban and/or local processing requirement applied to specific sector, specific data, non-personal data, or transfer is prohibited to one country 3) No requirement",
       "bands": [
         {
@@ -860,7 +860,7 @@
       "pillarId": 6,
       "pillarName": "Cross-border Data Policies",
       "category": "Local storage requirements",
-      "exception": "Not score data localization measure applied to government data.",
+      "exception": "Not score data localisation measure applied to government data.",
       "criteriaText": "1) Local storage requirement for all sectors or personal data, OR more than one measure in category (2) 2) Local storage requirement applied to specific sector, specific data or non-personal data 3) No requirement",
       "bands": [
         {
@@ -891,7 +891,7 @@
       "pillarId": 6,
       "pillarName": "Cross-border Data Policies",
       "category": "Infrastructure requirements",
-      "exception": "Not score data localization measure applied to government data.",
+      "exception": "Not score data localisation measure applied to government data.",
       "criteriaText": "1) Infrastructure requirement 2) No requirement",
       "bands": [
         {
@@ -917,7 +917,7 @@
       "pillarId": 6,
       "pillarName": "Cross-border Data Policies",
       "category": "Conditional flow regimes",
-      "exception": "Not score data localization measure applied to government data.",
+      "exception": "Not score data localisation measure applied to government data.",
       "criteriaText": "1) Conditions for all sectors or personal data 2) Conditions for specific data or non-personal data 3) No condition",
       "bands": [
         {
@@ -1094,7 +1094,7 @@
       "pillarName": "Internet Intermediary Liability",
       "category": "Lack of safe harbour for copyright infringements",
       "exception": null,
-      "criteriaText": "1) No intermediary liability framework in place 2) Sectoral framework in place that limits liablity for intermediaries 3) Hoirzontal framework in place that limits liability for intermediaries",
+      "criteriaText": "1) No intermediary liability framework in place 2) Sectoral framework in place that limits liability for intermediaries 3) Horizontal framework in place that limits liability for intermediaries",
       "bands": [
         {
           "score": 1,
@@ -1103,12 +1103,12 @@
         },
         {
           "score": 0.5,
-          "criterion": "Sectoral framework in place that limits liablity for intermediaries",
+          "criterion": "Sectoral framework in place that limits liability for intermediaries",
           "ordinal": 2
         },
         {
           "score": 0,
-          "criterion": "Hoirzontal framework in place that limits liability for intermediaries",
+          "criterion": "Horizontal framework in place that limits liability for intermediaries",
           "ordinal": 3
         }
       ],
@@ -1125,7 +1125,7 @@
       "pillarName": "Internet Intermediary Liability",
       "category": "Lack of safe harbour for other illegal activities",
       "exception": null,
-      "criteriaText": "1) No intermediary liability framework in place 2) Sectoral framework in place that limits liablity for intermediaries 3) Hoirzontal framework in place that limits liability for intermediaries",
+      "criteriaText": "1) No intermediary liability framework in place 2) Sectoral framework in place that limits liability for intermediaries 3) Horizontal framework in place that limits liability for intermediaries",
       "bands": [
         {
           "score": 1,
@@ -1134,12 +1134,12 @@
         },
         {
           "score": 0.5,
-          "criterion": "Sectoral framework in place that limits liablity for intermediaries",
+          "criterion": "Sectoral framework in place that limits liability for intermediaries",
           "ordinal": 2
         },
         {
           "score": 0,
-          "criterion": "Hoirzontal framework in place that limits liability for intermediaries",
+          "criterion": "Horizontal framework in place that limits liability for intermediaries",
           "ordinal": 3
         }
       ],
@@ -1273,7 +1273,7 @@
       "id": "9.4",
       "pillarId": 9,
       "pillarName": "Content Access",
-      "category": "Licensing requirements for online content providers and applications (social media platforms, new providers, VPN, cloud servics, etc.)",
+      "category": "Licensing requirements for online content providers and applications (social media platforms, new providers, VPN, cloud services, etc.)",
       "exception": "Not cover license for telecommunication facilities and service providers (captured under Pillar 5), License for e-commerce platform (captured under Pillar 12)",
       "criteriaText": "1) Any strict licence requirement/ cases of more than one measure in category (2) 2) Any licensing scheme 3) No restriction",
       "bands": [
@@ -1397,7 +1397,7 @@
       "id": "10.4",
       "pillarId": 10,
       "pillarName": "Non-technical NTMs",
-      "category": "Export restrictions on ICTgoods and online services",
+      "category": "Export restrictions on ICT goods and online services",
       "exception": null,
       "criteriaText": "1) Export restriction 2) No restriction",
       "bands": [
@@ -1595,7 +1595,7 @@
       "pillarId": 12,
       "pillarName": "Online Sales and Transactions",
       "category": "Licensing scheme for e-commerce providers (B2B and B2C)",
-      "exception": "Licenses pertiaining to other aspects of e-commerce businesses, such as license to operate online payment services and delivery are not captured.",
+      "exception": "Licenses pertaining to other aspects of e-commerce businesses, such as license to operate online payment services and delivery are not captured.",
       "criteriaText": "1) Any license for e-commerce providers 2) No license",
       "bands": [
         {
@@ -1778,11 +1778,11 @@
       "pillarName": "Online Sales and Transactions",
       "category": "Online payment limitations: others restrictions",
       "exception": null,
-      "criteriaText": "1) Other restrctions 2) No restriction",
+      "criteriaText": "1) Other restrictions 2) No restriction",
       "bands": [
         {
           "score": 1,
-          "criterion": "Other restrctions",
+          "criterion": "Other restrictions",
           "ordinal": 1
         },
         {
@@ -1866,11 +1866,11 @@
       "pillarName": "Online Sales and Transactions",
       "category": "Domain name requirements",
       "exception": null,
-      "criteriaText": "1) Physical presence required, requirements to the registrater a local domain name to conduct electronic retail 2) Local representative required 3) No restriction",
+      "criteriaText": "1) Physical presence required, requirements to the register a local domain name to conduct electronic retail 2) Local representative required 3) No restriction",
       "bands": [
         {
           "score": 1,
-          "criterion": "Physical presence required, requirements to the registrater a local domain name to conduct electronic retail",
+          "criterion": "Physical presence required, requirements to the register a local domain name to conduct electronic retail",
           "ordinal": 1
         },
         {

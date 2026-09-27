@@ -12,10 +12,11 @@
  * pipeline so much as imports the module.
  */
 import { openDb } from '../src/db/index.js';
-import { loadRubric, indicatorsOfPillar } from '../src/rubric/index.js';
+import { loadRubric, chosenIndicators } from '../src/rubric/index.js';
 import type { Indicator } from '../src/rubric/types.js';
 import { answerPillar } from '../src/cell/index.js';
-import { haveModel, OllamaUnavailable, READING_MODEL } from '../src/engines/ollama.js';
+import { engineReconnects, haveModel, OllamaUnavailable, READING_MODEL } from '../src/engines/ollama.js';
+import { hostedConfig, probeHosted } from '../src/engines/hosted.js';
 import { cacheEnabled, cacheSize } from '../src/engines/cache.js';
 import { openBaseline, BASELINE_DB_PATH, sameInstrument, escapScore } from '../src/baseline/index.js';
 import { openRun, joinRun, recordPillarAnswer, recordStage, recordEvent, finishRun, codeRevision, settleRates } from '../src/run/index.js';
@@ -23,6 +24,7 @@ import { loadRates } from '../src/decide/currency.js';
 import type { RunEvent } from '../src/run/events.js';
 import { existsSync } from 'node:fs';
 import { reaches, type Decision } from '../src/decide/index.js';
+import { loadProfile } from '../src/profile/index.js';
 
 /** A read slower than this is said out loud while it is still happening, not after the pillar. */
 const SLOW_READ_SECONDS = 30;
@@ -30,7 +32,13 @@ const SLOW_READ_SECONDS = 30;
 interface Args {
   economy: string;
   pillars: number[];
+  /** Only these indicators of the pillars; empty is all of them. */
+  indicators: string[];
   depth: number | null;
+  carryFrom: string | null;
+  /** A run whose recorded retrieval is replayed instead of searching; see answerPillar. */
+  retrievalFrom: string | null;
+  reread: Set<number>;
   model: string | null;
   compare: boolean;
   verbose: boolean;
@@ -52,7 +60,11 @@ function parseArgs(argv: string[]): Args {
   return {
     economy: (get('economy') ?? 'SGP').toUpperCase(),
     pillars,
+    indicators: (get('indicators') ?? '').split(',').map((i) => i.trim()).filter(Boolean),
     depth: get('depth') !== null ? Number(get('depth')) : null,
+    carryFrom: get('carry'),
+    retrievalFrom: get('retrieval-from'),
+    reread: new Set((get('reread') ?? '').split(',').filter(Boolean).map(Number)),
     model: get('model'),
     compare: !argv.includes('--no-compare'),
     verbose: argv.includes('--verbose'),
@@ -109,11 +121,11 @@ function baselineScores(economy: string, indicators: Indicator[]): Map<string, T
   if (!existsSync(BASELINE_DB_PATH)) return out;
 
   const db = openBaseline();
-  const like = economy === 'SGP' ? '%ingapore%' : economy === 'MYS' ? '%alaysia%' : '%ustralia%';
+  const baselineEconomy = loadProfile(economy).name;
   for (const indicator of indicators) {
     const rows = db
-      .prepare('SELECT raw_score, act_or_practice FROM baseline_row WHERE economy LIKE ? AND indicator_id = ?')
-      .all(like, indicator.id) as { raw_score: number | null; act_or_practice: string | null }[];
+      .prepare('SELECT raw_score, act_or_practice FROM baseline_row WHERE economy = ? AND indicator_id = ?')
+      .all(baselineEconomy, indicator.id) as { raw_score: number | null; act_or_practice: string | null }[];
     if (rows.length === 0) continue;
 
     // One row per measure, so the rows resolve to one answer by the indicator's own ladder rather
@@ -159,7 +171,16 @@ async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   const model = args.model ?? READING_MODEL;
 
-  if (!(await haveModel(model))) {
+  // A hosted engine is asked whether it answers; Ollama is asked whether it has the model. Asking
+  // a hosted engine's URL for Ollama's model list fails on the protocol, not on the model.
+  const hosted = hostedConfig();
+  if (hosted) {
+    const probe = await probeHosted();
+    if (!probe.ok) {
+      console.error(`\n${hosted.provider} / ${hosted.model} did not answer: ${probe.detail}\n`);
+      process.exit(1);
+    }
+  } else if (!(await haveModel(model))) {
     console.error(`\n${model} is not installed. Run: ollama pull ${model}\n`);
     process.exit(1);
   }
@@ -176,6 +197,36 @@ async function main(): Promise<void> {
   }
 
   const db = openDb();
+
+  // --carry takes a run id and carriedReadings matches it exactly, so a prefix -- which is what
+  // every other script here accepts, and what a person reads off a log line -- silently carried
+  // nothing, printed "0 carried", and re-read the whole pillar at full engine cost. Resolved the
+  // way grade, misses, rescore and benchmark resolve one, and refused outright when it names no
+  // run: carrying nothing is never what was asked for, and it costs hours to discover.
+  const carryFrom = args.carryFrom
+    ? (
+        db.prepare('SELECT id FROM run WHERE id LIKE ?').get(`${args.carryFrom}%`) as
+          | { id: string }
+          | undefined
+      )?.id
+    : undefined;
+  if (args.carryFrom && !carryFrom) {
+    console.error(`\nNo run ${args.carryFrom} to carry readings from.`);
+    process.exit(1);
+  }
+  // Resolved the same way and for the same reason: a prefix that names no run would replay nothing.
+  const retrievalFrom = args.retrievalFrom
+    ? (
+        db.prepare('SELECT id FROM run WHERE id LIKE ?').get(`${args.retrievalFrom}%`) as
+          | { id: string }
+          | undefined
+      )?.id
+    : undefined;
+  if (args.retrievalFrom && !retrievalFrom) {
+    console.error(`\nNo run ${args.retrievalFrom} to replay retrieval from.`);
+    process.exit(1);
+  }
+
   const rubric = loadRubric();
   const all: Decision[] = [];
   let engineMs = 0;
@@ -188,7 +239,13 @@ async function main(): Promise<void> {
     ? null
     : args.joinRunId
       ? joinRun(db, args.joinRunId)
-      : openRun(db, { economies: [args.economy], pillars: args.pillars, model, notes: 'gate' });
+      : openRun(db, {
+          economies: [args.economy],
+          pillars: args.pillars,
+          ...(args.indicators.length ? { indicators: args.indicators } : {}),
+          model,
+          notes: 'gate',
+        });
   if (run) console.log(`run ${run.id}  (code ${codeRevision()})`);
 
   // One indicator compares a customs threshold with 200 USD, so the run settles on a rate once and
@@ -217,11 +274,15 @@ async function main(): Promise<void> {
   emit({ stage: 'run', kind: 'started', economy: args.economy, detail: `pillars ${args.pillars.join(', ')} on ${model}` });
 
   for (const pillarId of args.pillars) {
-    const indicators = indicatorsOfPillar(pillarId, rubric);
+    const indicators = chosenIndicators(pillarId, args.indicators, rubric);
     console.log(`\n=== Pillar ${pillarId}: ${indicators[0]?.pillarName ?? ''} (${args.economy}) ===`);
 
     const answer = await answerPillar(db, pillarId, args.economy, {
       ...(args.depth ? { depth: args.depth } : {}),
+      ...(carryFrom ? { carryFrom } : {}),
+      ...(retrievalFrom ? { retrievalFrom } : {}),
+      ...(args.reread.size ? { reread: args.reread } : {}),
+      ...(args.indicators.length ? { indicators: args.indicators } : {}),
       model,
       log: (l) => console.log(l),
       emit,
@@ -266,6 +327,10 @@ async function main(): Promise<void> {
       `${rejected} refused finding(s), ${refusedQuotes} of them on the quote check ===`,
   );
   console.log(`    model: ${model}`);
+  // An engine that went away and came back is a fact about the run, not a detail of the transport.
+  if (engineReconnects() > 0) {
+    console.log(`    engine was briefly unreachable ${engineReconnects()} time(s) and was waited for`);
+  }
   if (run) {
     emit({ stage: 'run', kind: 'finished', economy: args.economy, detail: `${all.length} cells` });
     if (cacheEnabled()) console.log('    REPLAYED FROM CACHE -- this run is not a measurement');

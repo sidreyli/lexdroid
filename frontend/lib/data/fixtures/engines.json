@@ -1,0 +1,17 @@
+{
+  "default": "engine-a",
+  "engines": [
+    {
+      "id": "engine-a",
+      "label": "Engine A",
+      "model": "gemma4-lex-16k",
+      "declared": true
+    },
+    {
+      "id": "engine-b",
+      "label": "Engine B",
+      "model": "qwen3.8-lex-16k",
+      "declared": true
+    }
+  ]
+}

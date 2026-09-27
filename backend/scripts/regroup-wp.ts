@@ -25,7 +25,7 @@ if (!portal) throw new Error(`${code} has no WordPress portal`);
 const fetcher = new Fetcher({ db, sourceMode: 'fetch' });
 const via = `portal:${portalId(db, code, portal.url)}`;
 
-const listed = await wpAdapter.discover({ portal, fetcher, log: (l) => console.log(l) });
+const listed = await wpAdapter.discover({ portal, fetcher, log: (l) => console.log(l), setAside: () => {} });
 const primary = new Map(listed.map((f) => [f.url, f.title]));
 
 interface Row { id: number; title: string; source_url: string }

@@ -12,6 +12,7 @@
  * the shape and works on any portal that advertises the same link -- the register is never a
  * list of documents somebody typed in.
  */
+import { instrumentTitle } from './titles.js';
 import type { Adapter, DiscoveredInstrument } from './types.js';
 
 /** WordPress advertises its API root in the page head. No link, no adapter. */
@@ -113,6 +114,8 @@ export const wpAdapter: Adapter = {
     // Malay and in English is one instrument with two documents, and so one row.
     const pages = new Map<string, { files: string[]; names: string[] }>();
     const seen = new Set<string>();
+    /** Uploads no page publishes, whose own title names an instrument. */
+    const unpublished: DiscoveredInstrument[] = [];
     let orphans = 0;
     for (let page = 1; page <= MAX_PAGES; page += 1) {
       const url = `${root}wp/v2/media?per_page=${PER_PAGE}&media_type=application&page=${page}`;
@@ -136,11 +139,17 @@ export const wpAdapter: Adapter = {
         if (!src || item.mime_type !== 'application/pdf') continue;
         if (seen.has(src)) continue;
         seen.add(src);
-        // An upload no page publishes is a file the library happens to hold. Registering those
-        // turned a ministry's media library into 180 instruments, most of them tender notices.
+        // An upload no page publishes is usually a file the library happens to hold. Registering
+        // those turned a ministry's media library into 180 instruments, most of them tender
+        // notices -- but at the Bureau of Indian Standards the library *is* the publication, and
+        // the rule dropped 1,843 files including every Quality Control Order. So the orphan is
+        // kept when its own title names an instrument, which is the same test a regulator's
+        // sitemap and crawl are already judged by, and which still refuses the tender notices.
         const publisher = item.post ? publishedOn(item.link ?? '', ctx.portal.url) : null;
         if (!publisher) {
           orphans += 1;
+          const named = instrumentTitle(decode(item.title?.rendered ?? '') || titleFromUrl(src));
+          if (named) unpublished.push({ title: named.title, url: src, kind: named.kind });
           continue;
         }
         const group = pages.get(publisher) ?? { files: [], names: [] };
@@ -163,10 +172,15 @@ export const wpAdapter: Adapter = {
       found.push(entry);
     }
 
+    // After the pages, so a file a page publishes wins the title its publisher gave it.
+    const already = new Set(found.flatMap((f) => [f.url, ...(f.alsoAt ?? [])]));
+    const loose = unpublished.filter((f) => !already.has(f.url));
+    found.push(...loose);
+
     const codes = found.filter((f) => f.kind === 'rule').length;
     ctx.log(
       `  ${found.length} document(s) published across the portal, ${codes} of them codes of practice; ` +
-        `${orphans} upload(s) no page publishes`,
+        `${orphans} upload(s) no page publishes, ${loose.length} of those named as instruments`,
     );
     return found;
   },

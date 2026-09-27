@@ -51,6 +51,7 @@ export function FindingView({
   total,
   prevId,
   nextId,
+  readOnly = false,
 }: {
   row: ExportRow;
   indicator: Indicator | undefined;
@@ -59,6 +60,7 @@ export function FindingView({
   total: number;
   prevId: number | null;
   nextId: number | null;
+  readOnly?: boolean;
 }) {
   const base = baseline(row);
   const [draft, setDraft] = useState<FindingEdit>(base);
@@ -88,6 +90,7 @@ export function FindingView({
       row={row}
       quote={{ start: draft.quoteCharStart, end: draft.quoteCharEnd }}
       onCite={(span, text) => {
+        if (readOnly) return;
         patch({
           quoteCharStart: span.start,
           quoteCharEnd: span.end,
@@ -117,6 +120,7 @@ export function FindingView({
         editing={editing}
         setEditing={setEditing}
         nextHref={nextId ? `/workbench/${nextId}` : null}
+        readOnly={readOnly}
       />
     </div>
   );

@@ -14,6 +14,7 @@ import { describe, expect, it } from 'vitest';
 import {
   decide,
   refile,
+  confinesPermission,
   type Evidence,
   type FrameworkEvidence,
   type SurfacedInstrument,
@@ -88,6 +89,7 @@ function finding(over: Partial<Finding> = {}): Finding {
     dutyForce: 'forbids',
     roleWords: null,
     definingWords: 'outside Singapore',
+    subjectWords: null,
     borderWords: 'outside Singapore',
     imposingWords: 'must not transfer',
     prescribingWords: null,
@@ -151,6 +153,44 @@ describe('a cell that scores zero', () => {
     expect(d.absence?.instrumentTitle).toBe('Personal Data Protection Act 2012');
     expect(d.rationale).toContain('Personal Data Protection Act 2012 regulates this area');
     expect(d.rationale).toContain('imposes no local storage requirements');
+  });
+
+  it('prefers an instrument that bears on this indicator over one that bears on the pillar', () => {
+    // A pillar is not always one subject. Australia's content-safety Act genuinely regulates part
+    // of pillar 12 and so passed a pillar-wide test for all of it, standing as the instrument
+    // governing payment-security standards while the reader had found no provision of it bearing
+    // on that question and had found provisions in eight other instruments that did.
+    const d = decide({
+      indicator: indicator62,
+      economy: 'SGP',
+      evidence: [
+        evidence(9, 'Maintenance of Parents Act 1995', { indicatorId: '6.1', measure: 'transfer-ban' }),
+        evidence(9, 'Maintenance of Parents Act 1995', { indicatorId: '6.1', measure: 'transfer-ban' }),
+        // Bears on the indicator, and did not survive the second reading -- which is how a cell
+        // with evidence for its own question still scores zero.
+        { ...evidence(1, 'Personal Data Protection Act 2012', { indicatorId: '6.2' }), confirmed: false },
+      ],
+      surfaced,
+      coverage,
+    });
+    // Ranked first in the search and holding twice the pillar evidence, and still not it.
+    expect(d.absence?.basis).toBe('governing');
+    expect(d.absence?.instrumentTitle).toBe('Personal Data Protection Act 2012');
+  });
+
+  it('falls back to the pillar when nothing bears on the indicator itself', () => {
+    // The weaker signal is still worth more than a title match, so it is ordered behind the
+    // indicator's own evidence rather than discarded.
+    const d = decide({
+      indicator: indicator62,
+      economy: 'SGP',
+      evidence: [evidence(1, 'Personal Data Protection Act 2012', { indicatorId: '6.1', measure: 'transfer-ban' })],
+      // no finding bears on 6.2 itself, so the pillar's evidence decides
+      surfaced,
+      coverage,
+    });
+    expect(d.absence?.basis).toBe('governing');
+    expect(d.absence?.instrumentTitle).toBe('Personal Data Protection Act 2012');
   });
 
   it('will not call the top search result the governing instrument', () => {
@@ -283,6 +323,28 @@ describe('a prohibition that carries a way through', () => {
     expect(decideWith(i64).score).toBe(1);
   });
 
+  it('is a requirement where the words imposing it are a mandate, though the quote only sets the scene', () => {
+    // Thailand's PDPA s.28, as the reader filed it: quoted from the clause that describes the
+    // transfer, which permits, with "ต้องมี" -- must have -- as the words imposing the duty.
+    const scene = evidence(1, 'พระราชบัญญัติคุ้มครองข้อมูลส่วนบุคคล พ.ศ. 2562', {
+      indicatorId: '6.4',
+      measure: 'transfer-condition',
+      quote: 'ในกรณีที่ผู้ควบคุมข้อมูลส่วนบุคคลส่งหรือโอนข้อมูลส่วนบุคคลไปยังต่างประเทศ',
+      dutyAct: 'ส่งหรือโอน',
+      dutyForce: 'permits',
+      imposingWords: 'ต้องมี',
+      definingWords: 'ต้องมีมาตรฐานการคุ้มครองข้อมูลส่วนบุคคลที่เพียงพอ',
+      placeWords: 'ต่างประเทศ',
+      borderWords: 'ต่างประเทศ',
+    });
+    expect(decide({ indicator: i64, economy: 'THA', evidence: [scene], surfaced, coverage }).score).toBe(1);
+    // And not where the mandate is waived, or belongs to some other duty than the one defined.
+    const waived = { ...scene, finding: { ...scene.finding, imposingWords: 'ไม่ต้อง', definingWords: 'ไม่ต้องมี' } };
+    expect(decide({ indicator: i64, economy: 'THA', evidence: [waived], surfaced, coverage }).score).toBe(0);
+    const elsewhere = { ...scene, finding: { ...scene.finding, definingWords: 'มาตรฐานที่เพียงพอ' } };
+    expect(decide({ indicator: i64, economy: 'THA', evidence: [elsewhere], surfaced, coverage }).score).toBe(0);
+  });
+
   it('stays a ban when nothing lets the transfer happen', () => {
     const outright = {
       ...section26,
@@ -314,7 +376,7 @@ describe('what makes a transfer conditional', () => {
   it('holds a finding whose condition is only the place the data goes', () => {
     const d = conditional({ definingWords: 'outside Singapore', placeWords: 'outside Singapore', exceptionWords: null });
     expect(d.score).toBe(0);
-    expect(d.held.map((h) => h.reason)).toContain(
+    expect(d.excluded.map((h) => h.reason)).toContain(
       'the words said to state the condition only name where the data goes, which is no condition',
     );
   });
@@ -326,7 +388,7 @@ describe('what makes a transfer conditional', () => {
       exceptionWords: 'except in accordance with requirements prescribed under this Act',
     });
     expect(d.score).toBe(1);
-    expect(d.held).toHaveLength(0);
+    expect(d.excluded).toHaveLength(0);
   });
 
   it('takes a condition worded around the place, rather than reading the overlap as a repeat', () => {
@@ -440,7 +502,7 @@ describe('what counts as reaching broadly, which is not one test', () => {
       coverage,
     });
     expect(d.score).toBe(0.5);
-    expect(d.held).toHaveLength(0);
+    expect(d.excluded).toHaveLength(0);
   });
 
   // The mirror on the other axis. Australia's motor-vehicle repair scheme binds only its own
@@ -574,8 +636,8 @@ describe('a measure about where data must be', () => {
       coverage,
     });
     expect(d.score).toBe(0);
-    expect(d.held).toHaveLength(1);
-    expect(d.held[0]?.reason).toContain('names no place');
+    expect(d.excluded).toHaveLength(1);
+    expect(d.excluded[0]?.reason).toContain('names no place');
   });
 
   // Section 13N of the Income Tax Act, verbatim. It names a place and a duty, and what has to be
@@ -600,7 +662,7 @@ describe('a measure about where data must be', () => {
       coverage,
     });
     expect(d.score).toBe(0);
-    expect(d.held[0]?.reason).toContain('no data that has to be there');
+    expect(d.excluded[0]?.reason).toContain('no data that has to be there');
   });
 
   // Section 10 of the Biological Agents and Toxins Act, verbatim. A duty, a place, and a thing
@@ -628,7 +690,7 @@ describe('a measure about where data must be', () => {
       coverage,
     });
     expect(d.score).toBe(0);
-    expect(d.held[0]?.reason).toContain('never calls that thing information');
+    expect(d.excluded[0]?.reason).toContain('never calls that thing information');
   });
 
   // Section 47A of the Banking Act, verbatim. A place, data, and a word for information -- and the
@@ -657,7 +719,7 @@ describe('a measure about where data must be', () => {
       coverage,
     });
     expect(d.score).toBe(0);
-    expect(d.held[0]?.reason).toContain('never says the data has to be there');
+    expect(d.excluded[0]?.reason).toContain('never says the data has to be there');
   });
 
   // Section 13N of the Income Tax Act, verbatim, as the reader returned it: "any income" bound by
@@ -682,7 +744,7 @@ describe('a measure about where data must be', () => {
       coverage,
     });
     expect(d.score).toBe(0);
-    expect(d.held[0]?.reason).toContain('binds no one');
+    expect(d.excluded[0]?.reason).toContain('binds no one');
   });
 
   // Section 82A(5) of Malaysia's Income Tax Act: "All documents that relate to any income in
@@ -709,7 +771,7 @@ describe('a measure about where data must be', () => {
       surfaced,
       coverage,
     });
-    expect(d.held).toHaveLength(0);
+    expect(d.excluded).toHaveLength(0);
     expect(d.score).toBeGreaterThan(0);
   });
 
@@ -814,7 +876,7 @@ describe('a measure about where data must be', () => {
       coverage,
     });
     expect(d.score).toBe(1);
-    expect(d.held).toHaveLength(0);
+    expect(d.excluded).toHaveLength(0);
   });
 });
 
@@ -902,7 +964,7 @@ describe('a prohibition, and the two things that are not one', () => {
       coverage,
     });
     expect(d.score).toBe(0);
-    expect(d.held[0]?.reason).toContain('rather than requiring anyone to do anything');
+    expect(d.excluded[0]?.reason).toContain('rather than requiring anyone to do anything');
   });
 
   // The rule is not about pillar 6. Section 16P of the Electronic Transactions Act is the same
@@ -960,7 +1022,7 @@ describe('a prohibition, and the two things that are not one', () => {
       coverage,
     });
     expect(d.score).toBe(0);
-    expect(d.held[0]?.reason).toContain('enters or leaves the economy');
+    expect(d.excluded[0]?.reason).toContain('enters or leaves the economy');
   });
 
   // The record has to hold the decision's own inputs, or the score cannot be re-derived from it
@@ -985,6 +1047,58 @@ describe('a prohibition, and the two things that are not one', () => {
     const plain = finding({ indicatorId: '6.2', measure: 'local-storage' });
     expect(refile(plain)).toBe(plain);
     expect(refile(plain).refiledFrom).toBeUndefined();
+  });
+
+  // A duty that says only where records must be kept is storage, and 6.2's own measure asks for
+  // exactly that. An insurer's accounting records "must be kept ... in Australia" scored 6.1's top
+  // band as a second local processing measure.
+  it('files a duty only to keep something in the economy as storage, not processing', () => {
+    const kept = refile(
+      finding({ indicatorId: '6.1', measure: 'local-processing', dutyAct: 'must be kept', quote: 'must be kept: ... in Australia' }),
+    );
+    expect(kept.indicatorId).toBe('6.2');
+    expect(kept.measure).toBe('local-storage');
+    expect(kept.refiledFrom).toEqual({ indicatorId: '6.1', measure: 'local-processing' });
+    // One that names processing as well as holding stays a processing measure.
+    const both = finding({
+      indicatorId: '6.1',
+      measure: 'local-processing',
+      dutyAct: 'must not hold the records, or process or handle the information relating to the records, outside Australia',
+    });
+    expect(refile(both)).toBe(both);
+  });
+
+  // A condition on moving currency is a condition on a transfer, and not on a transfer of data.
+  it('does not count a condition on a transfer of something other than data', () => {
+    const d = decide({
+      indicator: indicator64,
+      economy: 'IND',
+      evidence: [
+        evidence(6, 'A Hypothetical Currency Regulation', {
+          indicatorId: '6.4',
+          measure: 'transfer-condition',
+          quote: 'no person shall, without the general or special permission of the Reserve Bank, export or send out of India any foreign currency',
+          dutyBearer: 'person',
+          dutyAct: 'shall not export',
+          dutyForce: 'forbids',
+          subjectWords: 'foreign currency',
+          placeWords: 'out of India',
+          borderWords: 'out of India',
+          exceptionWords: 'without the general or special permission of the Reserve Bank',
+          definingWords: 'without the general or special permission of the Reserve Bank',
+        }),
+      ],
+      surfaced,
+      coverage,
+    });
+    expect(d.score).toBe(0);
+  });
+
+  // "May transfer" is the permission, "only if" the words the reader copied as the condition. Apart,
+  // neither shows "only" beside the permission, and the rule was ruled out as a bare power.
+  it('reads a permission and the condition confining it together', () => {
+    expect(confinesPermission({ dutyAct: 'may transfer', quote: 'may transfer', definingWords: 'only if' })).toBe(true);
+    expect(confinesPermission({ dutyAct: 'may transfer', quote: 'may transfer', definingWords: null })).toBe(false);
   });
 
   // And the provision that genuinely is a ban still is one.
@@ -1041,6 +1155,7 @@ describe('which sentence the row leads with', () => {
   const retention = (over: Partial<Finding>): Partial<Finding> => ({
     indicatorId: '7.3',
     measure: 'minimum-retention',
+    definingWords: 'a period of not less than 5 years',
     placeWords: null,
     locatedData: null,
     informationWords: null,
@@ -1109,7 +1224,7 @@ describe('which sentence the row leads with', () => {
     expect(d.score).toBe(1);
     expect(d.basis).toHaveLength(1);
     expect(d.basis[0]!.finding.quote).toContain('must designate');
-    expect(d.held.map((h) => h.reason)).toContain('the provision permits rather than requires');
+    expect(d.excluded.map((h) => h.reason)).toContain('the provision permits rather than requires');
   });
 
   it('will not count a duty that appoints nobody', () => {
@@ -1142,8 +1257,8 @@ describe('which sentence the row leads with', () => {
     });
     expect(d.score).toBe(0);
     expect(d.basis).toHaveLength(0);
-    expect(d.held).toHaveLength(2);
-    expect(d.held[0]!.reason).toContain('appoints no one');
+    expect(d.excluded).toHaveLength(2);
+    expect(d.excluded[0]!.reason).toContain('appoints no one');
   });
 
   it('will not count the State appointing its own regulator', () => {
@@ -1171,7 +1286,7 @@ describe('which sentence the row leads with', () => {
     });
     expect(d.score).toBe(0);
     expect(d.basis).toHaveLength(0);
-    expect(d.held[0]!.reason).toContain('which is the State');
+    expect(d.excluded[0]!.reason).toContain('which is the State');
   });
 });
 
@@ -1195,7 +1310,9 @@ describe('a framework indicator, which asks about instruments rather than provis
     instrumentId: 1,
     instrumentTitle: 'Personal Data Protection Act 2010',
     citation: 'https://example.gov/act',
+    bindingness: null,
     establishesFramework: true,
+    frameworkShown: true,
     horizontal: true,
     dedicated: true,
     dedicatedShown: true,
@@ -1225,6 +1342,30 @@ describe('a framework indicator, which asks about instruments rather than provis
     });
     expect(d.decidingFact).toContain('Cyber Security Act 2024');
     expect(d.decidingFact).not.toContain('Personal Data Protection Act');
+  });
+
+  it('does not report a framework absent while a candidate for it went unread', () => {
+    const d = decide({
+      indicator: i72,
+      economy: 'MYS',
+      evidence: [],
+      frameworkEvidence: [instrument({ establishesFramework: false })],
+      coverage: { ...examined, instrumentsConsidered: 1, frameworkUnread: 1 },
+    });
+    expect(d.state).toBe('unresolved');
+    expect(d.score).toBeNull();
+    expect(d.decidingFact).toContain('could not be read');
+  });
+
+  it('still finds a framework when another candidate went unread', () => {
+    const d = decide({
+      indicator: i72,
+      economy: 'MYS',
+      evidence: [],
+      frameworkEvidence: [instrument({})],
+      coverage: { ...examined, instrumentsConsidered: 1, frameworkUnread: 1 },
+    });
+    expect(d.score).toBe(0);
   });
 
   it('falls to the middle band when no instrument is dedicated to the subject at all', () => {
@@ -1307,7 +1448,9 @@ describe('a framework indicator, which asks about instruments rather than provis
       indicator: i129,
       economy: 'SGP',
       evidence: [],
-      frameworkEvidence: [instrument({ horizontal: false, sectoralShown: true })],
+      frameworkEvidence: [
+        instrument({ instrumentTitle: 'Consumer Protection (Fair Trading) Act 2003', horizontal: false, sectoralShown: true }),
+      ],
       coverage: examined,
     });
     expect(d.score).toBe(0);
@@ -1366,18 +1509,35 @@ const indicator127 = indicator12('12.7', [
 ]);
 
 /** A pillar-12 finding: none of these measures is locational or appointing unless it says so. */
+/** Words that make each measure out, as the provision would put them. The catalogue checks these. */
+const DEFINING: Record<string, string> = {
+  'transmission-duty': 'a duty of customs on the transmission',
+  'transmission-duty-power': 'may impose a duty of customs',
+  'local-representative': 'a representative resident in Singapore',
+  'local-domain-or-presence': 'a registered office in Singapore',
+  'local-presence': 'a place of business in Singapore',
+  // 12.2's two measures are gated on a word that restricts something, so the fixture has to state
+  // one. Without these they fell back to 'outside Singapore', which names a place and forbids
+  // nothing -- and the band that requires both was being satisfied by evidence that restricts
+  // neither.
+  'online-purchase-limit': 'alcohol and tobacco may not be sold online',
+  'online-delivery-limit': 'goods bought online must not be delivered to a residential address',
+};
+
 function p12(indicatorId: string, measure: string, over: Partial<Finding> = {}): Evidence {
   return {
     ...evidence(1, 'Electronic Commerce Act'),
     finding: finding({
       indicatorId,
       measure,
+      ...(DEFINING[measure] ? { definingWords: DEFINING[measure] } : {}),
       placeWords: null,
       locatedData: null,
       informationWords: null,
       dutyForce: 'requires',
       dutyAct: 'shall not sell',
       mandatory: true,
+      subjectWords: 'goods sold online',
       ...over,
     }),
   };
@@ -1459,7 +1619,7 @@ describe('12.7, where being here and sending someone here are different burdens'
       coverage,
     });
     expect(d.score).toBe(0);
-    expect(d.held[0]?.reason).toContain('appoints no one');
+    expect(d.excluded[0]?.reason).toContain('appoints no one');
   });
 });
 
@@ -1479,7 +1639,9 @@ describe('an indicator whose top band is an absence', () => {
       ...evidence(1, 'Telecommunications Act'),
       finding: finding({
         indicatorId, measure, placeWords: null, locatedData: null, informationWords: null,
-        dutyForce: 'requires', dutyAct: 'shall keep separate accounts', mandatory: true, ...over,
+        dutyForce: 'requires', dutyAct: 'shall keep separate accounts', mandatory: true,
+        definingWords: measure === 'trade-defence-measure' ? 'a dumping duty' : 'separate accounts',
+        subjectWords: 'a public telecommunications licensee', ...over,
       }),
     };
   }
@@ -1508,11 +1670,17 @@ describe('an indicator whose top band is an absence', () => {
   const governing: SurfacedInstrument[] = [{ instrumentId: 1, instrumentTitle: 'Telecommunications Act', rank: 1 }];
   const alsoInPillar = [p5('5.5', 'strict-licence')];
 
-  it('scores the top band when nothing was found in an instrument that governs', () => {
+  it('says nothing when no provision was ever evaluated against the missing measure', () => {
+    // A pillar is a dozen questions and the witness qualifies on any of them, so an Act read for
+    // its licensing rules can carry a claim about separation that nobody ever asked about.
+    // Singapore's "no de minimis threshold" scored the rubric's maximum that way, with not one
+    // provision in the corpus ever evaluated for a threshold.
     const d = decide({
       indicator: i54, economy: 'SGP', evidence: alsoInPillar, surfaced: governing, coverage: read,
     });
-    expect(d.score).toBe(1);
+    expect(d.state).toBe('unresolved');
+    expect(d.score).toBeNull();
+    expect(d.decidingFact).toContain('evaluated against the measure');
   });
 
   it('says nothing when the absence rests on no instrument that governs the subject', () => {
@@ -1522,6 +1690,28 @@ describe('an indicator whose top band is an absence', () => {
     expect(d.state).toBe('unresolved');
     expect(d.score).toBeNull();
     expect(d.decidingFact).toContain('governs the subject');
+  });
+
+  it('says nothing when a provision of the kind was set aside before the reader was asked', () => {
+    // Australia's independent-regulator cell claimed the maximum after our own test discarded a
+    // provision the reader had confirmed. A silence our machinery made is not the statute's.
+    const confirmed = { ...p5('5.4', 'accounting-separation', { dutyForce: 'declares' }), confirmed: true };
+    const d = decide({
+      indicator: i54, economy: 'SGP', evidence: [...alsoInPillar, confirmed], surfaced: governing, coverage: read,
+    });
+    expect(d.state).toBe('unresolved');
+    expect(d.score).toBeNull();
+    expect(d.decidingFact).toContain('before the reader was asked');
+  });
+
+  it('still scores the absence when the reader itself ruled the provision out', () => {
+    // The reader, asked about the measure alone, found no words for it. That is a ruling about the
+    // provision and it is what this band is entitled to count.
+    const ruled = { ...p5('5.4', 'accounting-separation', { dutyForce: 'declares' }), confirmed: false };
+    const d = decide({
+      indicator: i54, economy: 'SGP', evidence: [...alsoInPillar, ruled], surfaced: governing, coverage: read,
+    });
+    expect(d.score).toBe(1);
   });
 
   it('will not take a merely surfaced instrument as the witness for an absence', () => {
@@ -1551,13 +1741,60 @@ describe('an indicator whose top band is an absence', () => {
       { score: 0.25, criterion: 'One measure' },
       { score: 0, criterion: 'No measure' },
     ]);
-    const m = () => p5('1.4', 'trade-defence-measure', { dutyForce: 'permits', dutyAct: 'may impose a duty' });
+    // Distinct provisions, because the band counts measures. Reading one anti-dumping Act section
+    // by section is how Australia reported ten and Singapore eleven, against ESCAP's nought.
+    let n = 0;
+    const m = () => {
+      n += 1;
+      return {
+        ...p5('1.4', 'trade-defence-measure', { dutyAct: 'shall be charged a dumping duty' }),
+        sectionId: n,
+        instrumentId: n,
+      };
+    };
     expect(at(i14, []).score).toBe(0);
     expect(at(i14, [m()]).score).toBe(0.25);
     expect(at(i14, [m(), m()]).score).toBe(0.5);
     expect(at(i14, [m(), m(), m()]).score).toBe(0.75);
     expect(at(i14, [m(), m(), m(), m()]).score).toBe(1);
     expect(at(i14, [m(), m(), m(), m(), m()]).score).toBe(1);
+  });
+
+  it('counts one provision once, however many times it is read', () => {
+    const i14 = indicator12('1.4', [
+      { score: 1, criterion: 'More than three measures' },
+      { score: 0.75, criterion: 'Three measures' },
+      { score: 0.5, criterion: 'Two measures' },
+      { score: 0.25, criterion: 'One measure' },
+      { score: 0, criterion: 'No measure' },
+    ]);
+    // Four sections of one Act, read separately. That is one measure, however many provisions
+    // carry it -- which is the count Australia got wrong.
+    const same = (sectionId: number) => ({
+      ...p5('1.4', 'trade-defence-measure', { dutyAct: 'shall be charged a dumping duty' }),
+      sectionId,
+    });
+    expect(at(i14, [same(1), same(2), same(3), same(4)]).score).toBe(0.25);
+  });
+
+  it('does not count a power to impose a duty as a duty in force', () => {
+    const i14 = indicator12('1.4', [
+      { score: 1, criterion: 'More than three measures' },
+      { score: 0.75, criterion: 'Three measures' },
+      { score: 0.5, criterion: 'Two measures' },
+      { score: 0.25, criterion: 'One measure' },
+      { score: 0, criterion: 'No measure' },
+    ]);
+    const power = p5('1.4', 'trade-defence-measure', {
+      dutyForce: 'permits',
+      dutyAct: 'may impose a duty',
+      mandatory: false,
+      imposingWords: null,
+      prescribingWords: 'the Minister may by notice impose a dumping duty',
+    });
+    const d = at(i14, [power]);
+    expect(d.score).toBe(0);
+    expect(d.excluded).toHaveLength(1);
   });
 });
 
@@ -1649,6 +1886,7 @@ describe('a measure only a command can make out', () => {
           borderWords: null,
           locatedData: null,
           keepingWords: null,
+          subjectWords: 'a trade secret',
           ...over,
         }),
       ],
@@ -1666,8 +1904,8 @@ describe('a measure only a command can make out', () => {
       imposingWords: 'must not',
     });
     expect(d.score).toBe(0);
-    expect(d.held[0]?.reason).toContain('forbids the act');
-    expect(d.held[0]?.reason).toContain('must not... be required to disclose');
+    expect(d.excluded[0]?.reason).toContain('forbids the act');
+    expect(d.excluded[0]?.reason).toContain('must not... be required to disclose');
   });
 
   it('takes the same provision when it commands the disclosure instead', () => {
@@ -1681,7 +1919,7 @@ describe('a measure only a command can make out', () => {
       sectorScope: 'all',
     });
     expect(d.score).toBe(1);
-    expect(d.held).toHaveLength(0);
+    expect(d.excluded).toHaveLength(0);
   });
 
   it('leaves a measure the rubric writes as a prohibition alone', () => {
@@ -1727,6 +1965,6 @@ describe('a finding the rubric moves into 6.4', () => {
       coverage,
     });
     expect(d.score).toBe(1);
-    expect(d.held).toHaveLength(0);
+    expect(d.excluded).toHaveLength(0);
   });
 });

@@ -20,11 +20,14 @@ import { execSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import type { Db } from '../db/index.js';
 import { loadRubric } from '../rubric/index.js';
-import type { PillarAnswer } from '../cell/index.js';
+import { FRAMEWORK_OF, type PillarAnswer } from '../cell/index.js';
+import { readInFull } from '../read/index.js';
 import { refile, type Decision, type Evidence } from '../decide/index.js';
 import type { FxRates } from '../decide/currency.js';
 import { locateQuote } from '../util/locate.js';
+import type { RetrievalRecord } from '../retrieve/index.js';
 import type { RunEvent } from './events.js';
+import { hostedConfig } from '../engines/hosted.js';
 
 /** The name a run answers to. Local engines cost nothing, and that is recorded rather than assumed. */
 export const DEFAULT_ENGINE = 'engine-a';
@@ -41,6 +44,8 @@ export interface OpenRunOptions {
   economies: string[];
   /** Pillar ids, or 'all'. Recorded verbatim so a partial run is never mistaken for a full one. */
   pillars: number[] | 'all';
+  /** Only these indicators of those pillars. Absent or empty is all of them. */
+  indicators?: readonly string[];
   model: string;
   engine?: string;
   sourceMode?: 'fetch' | 'cache-only';
@@ -69,8 +74,8 @@ export function openRun(db: Db, opts: OpenRunOptions): RunContext {
   const engine = opts.engine ?? DEFAULT_ENGINE;
   db.prepare(
     `INSERT INTO run (id, started_at, economies, pillars, engine, engine_model, source_mode,
-                      code_revision, rubric_derived_at, status, notes)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?)`,
+                      code_revision, rubric_derived_at, status, notes, indicators)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?)`,
   ).run(
     id,
     new Date().toISOString(),
@@ -82,6 +87,7 @@ export function openRun(db: Db, opts: OpenRunOptions): RunContext {
     codeRevision(),
     loadRubric().derivedAt,
     opts.notes ?? null,
+    opts.indicators?.length ? JSON.stringify(opts.indicators) : null,
   );
   return { id, db, engine, sourceMode: opts.sourceMode ?? 'fetch' };
 }
@@ -263,8 +269,9 @@ export function recordPillarAnswer(run: RunContext, answer: PillarAnswer): void 
 
   const insertCell = db.prepare(
     `INSERT INTO cell (run_id, economy_code, indicator_id, state, unresolved_reason, answered_at,
-                       queries, depth, surfaced, sections_indexed, sections_read)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                       queries, depth, surfaced, sections_indexed, sections_read, governing,
+                       surfaced_instruments, framework_failed)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   );
   const insertShortlist = db.prepare(
     `INSERT OR IGNORE INTO shortlist_entry (cell_id, section_id, channel, query, rank, score, read_at)
@@ -273,28 +280,85 @@ export function recordPillarAnswer(run: RunContext, answer: PillarAnswer): void 
   const insertReading = db.prepare(
     `INSERT OR REPLACE INTO reading
        (cell_id, section_id, engine, model, applies, quote, quote_char_start, quote_char_end,
-        subclause, attributes, reasoning, prompt_tokens, output_tokens, latency_ms, engine_call, read_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        subclause, attributes, reasoning, prompt_tokens, output_tokens, latency_ms, engine_call, read_at,
+        rejected, unreadable)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   );
   const insertFrameworkReading = db.prepare(
     `INSERT OR REPLACE INTO framework_reading
-       (cell_id, instrument_id, engine, model, establishes_framework, horizontal, dedicated,
+       (cell_id, instrument_id, engine, model, establishes_framework, framework_words,
+        framework_shown, horizontal, dedicated,
         dedicated_words, dedicated_shown, sector_words, sectoral_shown, sector, quote,
         quote_verified, reasoning, prompt_tokens, output_tokens, latency_ms, read_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  );
+  const insertBasis = db.prepare(
+    `INSERT OR IGNORE INTO answer_basis (cell_id, ordinal, instrument_id, section_id, measure, quote)
+     VALUES (?, ?, ?, ?, ?, ?)`,
   );
   const insertAnswer = db.prepare(
     `INSERT OR REPLACE INTO cell_answer
        (cell_id, score, band_ordinal, band_criterion, deciding_fact, controlling_instrument_id,
-        rationale, computed_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        absence_basis, rationale, confirmations_asked, confirmations_applied, computed_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   );
+  const cellIdentity = db.prepare('SELECT run_id, economy_code, indicator_id FROM cell WHERE id = ?');
+  const currentTo = new Map(
+    (
+      db
+        .prepare(
+          `SELECT id, COALESCE(current_to, last_amended_on) AS current_to FROM instrument
+            WHERE economy_code = ?`,
+        )
+        .all(answer.economy) as { id: number; current_to: string | null }[]
+    ).map((r) => [r.id, r.current_to]),
+  );
+
+  /** One entry per instrument the cell's search returned, best rank first, as the decision saw it. */
+  const surfacedOf = (record: RetrievalRecord | undefined) => {
+    const out: { instrumentId: number; instrumentTitle: string; rank: number; currentTo: string | null }[] = [];
+    for (const s of record?.sections ?? []) {
+      if (out.some((x) => x.instrumentId === s.instrumentId)) continue;
+      out.push({
+        instrumentId: s.instrumentId,
+        instrumentTitle: s.instrumentTitle,
+        rank: s.rank,
+        currentTo: currentTo.get(s.instrumentId) ?? null,
+      });
+    }
+    return out;
+  };
+
+  // Whether a provision belongs to this economy at all. A unit writes only its own corpus, so a
+  // section from elsewhere is not a finding about this cell but another unit's row landing on it.
+  const economyOf = db.prepare(
+    `SELECT i.economy_code AS economy FROM section s
+       JOIN document d ON d.id = s.document_id JOIN instrument i ON i.id = d.instrument_id
+      WHERE s.id = ?`,
+  );
+  const owned = new Map<number, boolean>();
+  const ownsSection = (sectionId: number): boolean => {
+    let own = owned.get(sectionId);
+    if (own === undefined) {
+      own = (economyOf.get(sectionId) as { economy: string } | undefined)?.economy === answer.economy;
+      owned.set(sectionId, own);
+    }
+    return own;
+  };
 
   const sectionMeta = sectionOffsets(
     db,
     answer.readings.map((r) => r.sectionId),
   );
-  const frameworkByInstrument = new Map(answer.frameworkReadings.map((r) => [r.instrumentId, r]));
+  // Keyed by subject as well as instrument. 8.1 and 8.2 examine the same instruments -- that is
+  // what interleaving the register and the retrieval gets them -- and ask a different question of
+  // each. Keyed by instrument alone the two readings of Singapore's Online Safety Act collapsed to
+  // whichever was taken last, so a row's words, quote and reasoning could be the other indicator's
+  // answer about the same Act while its booleans were its own. The columns disagreed and neither
+  // was marked wrong.
+  const frameworkByInstrument = new Map(
+    answer.frameworkReadings.map((r) => [`${r.subject}:${r.instrumentId}`, r]),
+  );
 
   db.transaction(() => {
     for (const decision of answer.decisions) {
@@ -312,21 +376,77 @@ export function recordPillarAnswer(run: RunContext, answer: PillarAnswer): void 
           record?.depth ?? null,
           record?.surfaced ?? null,
           record?.indexedSections ?? null,
-          answer.readings.length,
+          // Read, not sent: the live decision counts only the provisions the engine answered for,
+          // and a replay reading every attempt here decided over coverage the run never had.
+          answer.readings.filter(readInFull).length,
+          // The register's verdict on which instruments govern the question. Recorded because the
+          // score is derived from it, and a score that cannot be re-derived is not computed.
+          JSON.stringify((record?.governing ?? []).map((g) => g.instrumentId)),
+          // The instruments this cell's search surfaced, best first. A zero is cited against one
+          // of these, and a count cannot say which -- so a zero could not be reproduced from the
+          // record that was meant to evidence it.
+          JSON.stringify(surfacedOf(record)),
+          answer.frameworkUnread?.[decision.indicatorId] ?? null,
         ).lastInsertRowid,
       );
 
+      // That the row we are about to hang a cell's whole record on is the row we just made.
+      // Units run concurrently against one database, and in the twelve-pillar run one unit's
+      // readings landed on another's cell: 5,446 provisions of the wrong economy, scored.
+      const identity = cellIdentity.get(cellId) as
+        | { run_id: string; economy_code: string; indicator_id: string }
+        | undefined;
+      if (
+        !identity ||
+        identity.run_id !== run.id ||
+        identity.economy_code !== answer.economy ||
+        identity.indicator_id !== decision.indicatorId
+      ) {
+        throw new Error(
+          `cell ${cellId} is not the cell just created for ${answer.economy} ${decision.indicatorId}; ` +
+            'refusing to write another unit\'s record',
+        );
+      }
+
       // What this cell asked for, and what each question returned. The shortlist is the cell's own
       // retrieval; the readings below cover the pillar's whole union, which is larger by design.
+      // read_at is documented as NULL when a candidate never reached the model, and was being
+      // stamped on every row. It is the only record of whether retrieval's own pick was used.
+      const wasRead = new Set(answer.readings.map((r) => r.sectionId));
       for (const s of record?.sections ?? []) {
+        if (!ownsSection(s.sectionId)) continue;
         for (const f of s.found) {
-          insertShortlist.run(cellId, s.sectionId, f.channel, f.query, f.rank, f.score, now);
+          insertShortlist.run(cellId, s.sectionId, f.channel, f.query, f.rank, f.score,
+            wasRead.has(s.sectionId) ? now : null);
         }
       }
 
       // Every provision read against this cell, including -- especially -- the ones that said
       // nothing. A cell scoring zero is evidenced by these rows and by nothing else.
       for (const reading of answer.readings) {
+        // A provision of another economy is not evidence about this one, whatever it says.
+        if (!ownsSection(reading.sectionId)) {
+          recordDiscard(run, {
+            stage: 'read',
+            subject: `${decision.indicatorId} :: section ${reading.sectionId}`,
+            reason: `the provision is not in ${answer.economy}'s corpus`,
+
+          });
+          continue;
+        }
+        // A provision the engine did not answer on was not read. Written as a reading it became
+        // applies = 0 -- "read, and nothing applies" -- which is the evidence a zero is made of,
+        // made out of an engine failure. It goes on the discard record instead, where it is
+        // countable and says what went wrong.
+        if (reading.failure !== null) {
+          recordDiscard(run, {
+            stage: 'read',
+            subject: `${decision.indicatorId} :: section ${reading.sectionId}`,
+            reason: 'the engine gave no usable answer on this provision',
+            detail: reading.failure,
+          });
+          continue;
+        }
         // Filed the way the decision filed it, not the way the reader did. These rows are what a
         // later verification re-derives the score from, and a finding the rubric moved between two
         // indicators used to be written under the one the reader named -- so the cell that acted
@@ -350,19 +470,39 @@ export function recordPillarAnswer(run: RunContext, answer: PillarAnswer): void 
           reading.promptTokens,
           reading.completionTokens,
           reading.durationMs,
-          `${run.id}:p${answer.pillarId}:s${reading.sectionId}`,
+          `${reading.carriedFrom ?? run.id}:p${answer.pillarId}:s${reading.sectionId}`,
           now,
+          // What the answer held that did not become a finding, so a replay can tell a clean
+          // negative from a reading whose claims were all thrown away. The call's, repeated on each
+          // of its rows like the tokens are.
+          reading.rejected.length,
+          reading.unreadable ?? 0,
         );
       }
 
-      for (const f of decision.frameworkBasis) {
-        const reading = frameworkByInstrument.get(f.instrumentId);
+      // Every instrument examined for a framework, not only the ones that became a basis. A cell
+      // saying "none of the 5 instruments examined establishes such a framework" held no rows at
+      // all for those five, so the strongest claim in the rubric had no record behind it.
+      //
+      // Which is what this line said and did not do: preferring the basis whenever there was one
+      // kept the negatives only for cells that found nothing, and dropped them exactly where they
+      // are most worth having -- beside a positive, saying what was rejected in its favour.
+      // Singapore's pillar 8 examined ten instruments on 17 September and recorded two. The basis
+      // is the fallback now, for a decision that named instruments the examined list somehow did
+      // not carry; the examined list leads.
+      const examined =
+        answer.frameworkExamined[decision.indicatorId] ?? decision.frameworkBasis;
+      const subject = FRAMEWORK_OF[decision.indicatorId];
+      for (const f of examined) {
+        const reading = subject ? frameworkByInstrument.get(`${subject}:${f.instrumentId}`) : undefined;
         insertFrameworkReading.run(
           cellId,
           f.instrumentId,
           run.engine,
           reading?.model ?? answer.model,
           f.establishesFramework ? 1 : 0,
+          reading?.frameworkWords ?? null,
+          f.frameworkShown ? 1 : 0,
           f.horizontal ? 1 : 0,
           f.dedicated ? 1 : 0,
           reading?.dedicatedWords ?? null,
@@ -380,6 +520,19 @@ export function recordPillarAnswer(run: RunContext, answer: PillarAnswer): void 
         );
       }
 
+      // What the score stood on, in the decision's order. The export shows these and nothing
+      // else, so a finding Zone 3 set aside cannot reappear as a measure in the deliverable.
+      let ordinal = 0;
+      for (const e of decision.basis) {
+        if (!ownsSection(e.sectionId)) continue;
+        insertBasis.run(cellId, (ordinal += 1), e.instrumentId, e.sectionId, e.finding.measure, e.finding.quote);
+      }
+      // A framework is one measure however many instruments carry it, so the leading instrument is
+      // the basis and the rest are corroboration the row names in its notes. `frameworkBasis`
+      // otherwise holds what was examined and found wanting, which is a record, not a basis.
+      const framework = decision.state === 'restricted' ? decision.frameworkBasis[0] : undefined;
+      if (framework) insertBasis.run(cellId, (ordinal += 1), framework.instrumentId, null, null, null);
+
       insertAnswer.run(
         cellId,
         decision.score,
@@ -387,7 +540,12 @@ export function recordPillarAnswer(run: RunContext, answer: PillarAnswer): void 
         decision.band?.criterion ?? null,
         decision.decidingFact,
         controllingInstrument(decision),
+        // Whether the zero stands on an instrument read to govern the subject or one the search
+        // merely returned. Only the first sustains a band that scores for an absence.
+        decision.absence?.basis ?? null,
         decision.rationale,
+        decision.confirmations?.asked ?? null,
+        decision.confirmations?.applied ?? null,
         now,
       );
 
@@ -430,9 +588,10 @@ export function recordPillarAnswer(run: RunContext, answer: PillarAnswer): void 
       for (const r of reading.rejected) {
         recordDiscard(run, {
           stage: 'read',
-          subject: `section ${reading.sectionId} :: ${r.finding.indicatorId}`,
+          // A claim too malformed to coerce into a finding has none; it is still counted.
+          subject: `section ${reading.sectionId} :: ${r.finding?.indicatorId ?? '?'}`,
           reason: r.reason,
-          detail: r.finding.quote,
+          detail: r.finding?.quote ?? null,
         });
       }
     }
@@ -450,13 +609,41 @@ export function recordPillarAnswer(run: RunContext, answer: PillarAnswer): void 
     }
 
     addCost(db, run, answer);
-  })();
+    // Immediate, not deferred: a deferred transaction reads first and asks for the write lock
+    // later, so two units can interleave between a cell being made and its record being written.
+  }).immediate();
 }
 
 /**
  * What the run cost to rent, which is not what it cost to compute.
  * A hired GPU bills for the hour whether it is decoding or idle, so the launcher charges hours.
  */
+/**
+ * What a pass over a run's findings cost, added to the run's own record.
+ *
+ * The confirmation pass asks one question per finding and was billed nowhere, so a run's recorded
+ * cost was its first reading alone.
+ */
+export function recordPassCost(
+  db: Db,
+  runId: string,
+  model: string,
+  cost: { calls: number; promptTokens: number; outputTokens: number; seconds: number },
+): void {
+  const run = db.prepare('SELECT engine FROM run WHERE id = ?').get(runId) as { engine: string } | undefined;
+  if (!run) return;
+  db.prepare(
+    `INSERT INTO run_cost (run_id, engine, model, calls, prompt_tokens, output_tokens, wall_seconds, usd, usd_unknown)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)
+     ON CONFLICT (run_id, engine, model) DO UPDATE SET
+       calls = calls + excluded.calls,
+       prompt_tokens = prompt_tokens + excluded.prompt_tokens,
+       output_tokens = output_tokens + excluded.output_tokens,
+       wall_seconds = wall_seconds + excluded.wall_seconds,
+       usd_unknown = MAX(usd_unknown, excluded.usd_unknown)`,
+  ).run(runId, run.engine, model, cost.calls, cost.promptTokens, cost.outputTokens, cost.seconds, hostedConfig() ? 1 : 0);
+}
+
 export function recordRent(db: Db, runId: string, engine: string, model: string, usd: number): void {
   db.prepare(
     `INSERT INTO run_cost (run_id, engine, model, usd) VALUES (?, ?, ?, ?)
@@ -472,19 +659,41 @@ export function recordRent(db: Db, runId: string, engine: string, model: string,
  */
 export const CACHED_RUN_NOTE = 'SERVED FROM THE DEVELOPMENT CACHE -- not a measurement, not quotable as a result';
 
-function markCached(db: Db, run: RunContext): void {
+/**
+ * What a run says when a unit was killed and picked up where it stopped.
+ *
+ * Not the note above and not the same claim. Every reading here was asked for once and answered
+ * once by this run's own engine; what the restart avoided was paying a second time for provisions
+ * already read. Wall-clock for that pillar is no longer a measurement, and engine time still is.
+ */
+export const RESUMED_RUN_NOTE =
+  'RESUMED AFTER AN INTERRUPTION -- every reading was performed by this run; per-pillar wall-clock is not a measurement';
+
+/**
+ * What a run says when it reused an earlier run's readings.
+ *
+ * Neither of the two above. Nothing here was replayed from a cache and nothing was asked twice:
+ * the provisions this run added were read by its own engine, and the provisions the named run had
+ * already read keep that run's answers and that run's call ids. It is a valid measurement of a
+ * retrieval change against the run it names, and it is not a fresh reading of the whole corpus.
+ */
+export const CARRIED_RUN_NOTE =
+  'CARRIED READINGS FROM AN EARLIER RUN -- only the provisions this change added were read afresh; compare against that run, not as a standalone corpus read';
+
+function note(db: Db, run: RunContext, text: string): void {
   db.prepare(
     `UPDATE run SET notes = CASE
        WHEN notes IS NULL OR notes = '' THEN ?
        WHEN notes LIKE ? THEN notes
        ELSE notes || ' | ' || ? END
      WHERE id = ?`,
-  ).run(CACHED_RUN_NOTE, `%${CACHED_RUN_NOTE}%`, CACHED_RUN_NOTE, run.id);
+  ).run(text, `%${text}%`, text, run.id);
 }
 
 /** One engine call per provision per pillar, plus one per framework candidate. */
 function addCost(db: Db, run: RunContext, answer: PillarAnswer): void {
-  const calls = answer.readings.length + answer.frameworkReadings.length;
+  // Calls made, not provisions read: a long provision is read in parts, one call each.
+  const calls = answer.readings.reduce((n, r) => n + (r.calls ?? 1), 0) + answer.frameworkReadings.length;
   const prompt =
     answer.readings.reduce((n, r) => n + r.promptTokens, 0) +
     answer.frameworkReadings.reduce((n, r) => n + r.promptTokens, 0);
@@ -493,19 +702,33 @@ function addCost(db: Db, run: RunContext, answer: PillarAnswer): void {
     answer.frameworkReadings.reduce((n, r) => n + r.completionTokens, 0);
 
   db.prepare(
-    `INSERT INTO run_cost (run_id, engine, model, calls, prompt_tokens, output_tokens, cached_calls, wall_seconds, usd)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)
+    `INSERT INTO run_cost (run_id, engine, model, calls, prompt_tokens, output_tokens, cached_calls, wall_seconds, usd, usd_unknown)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
      ON CONFLICT (run_id, engine, model) DO UPDATE SET
        calls = calls + excluded.calls,
        prompt_tokens = prompt_tokens + excluded.prompt_tokens,
        output_tokens = output_tokens + excluded.output_tokens,
        cached_calls = cached_calls + excluded.cached_calls,
-       wall_seconds = wall_seconds + excluded.wall_seconds`,
-  ).run(run.id, run.engine, answer.model, calls, prompt, output, answer.cachedCalls, answer.engineMs / 1000);
+       wall_seconds = wall_seconds + excluded.wall_seconds,
+       usd_unknown = MAX(usd_unknown, excluded.usd_unknown)`,
+  ).run(
+    run.id,
+    run.engine,
+    answer.model,
+    calls,
+    prompt,
+    output,
+    answer.cachedCalls + answer.carriedCalls,
+    answer.engineMs / 1000,
+    // A hosted engine bills by the token at a price this run was never told.
+    hostedConfig() ? 1 : 0,
+  );
 
   // A run that replayed even one answer says so on its own record, not only in a column someone
   // has to know to look at.
-  if (answer.cachedCalls > 0) markCached(db, run);
+  if (answer.cachedCalls > 0) note(db, run, CACHED_RUN_NOTE);
+  if (answer.resumedCalls > 0) note(db, run, RESUMED_RUN_NOTE);
+  if (answer.carriedCalls > 0) note(db, run, CARRIED_RUN_NOTE);
 }
 
 /**

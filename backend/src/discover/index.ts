@@ -17,11 +17,21 @@ import type { Db } from '../db/index.js';
 import type { Fetcher } from '../fetch/index.js';
 import { RobotsDisallowed, CacheMiss, HostSuspended } from '../fetch/index.js';
 import { parseDocument, storeDocument, verifyOffsets } from '../parse/index.js';
+import { namedDocumentLink, pointedDocumentLink, soleDocumentLink } from '../parse/html.js';
+import { namesAnInstrument, ownName, statedKind } from '../parse/identity.js';
+import { registeredKind } from './titles.js';
 import type { EconomyProfile } from '../profile/types.js';
 import { portalId } from '../profile/index.js';
+import { crawlAdapter } from './crawl.js';
+import { drupalAdapter } from './drupal.js';
 import { flkAdapter } from './flk.js';
 import { frlAdapter } from './frl.js';
+import { indiaCodeAdapter } from './indiacode.js';
+import { ocsAdapter } from './ocs.js';
+import { fipcsAdapter } from './fipcs.js';
 import { lomAdapter } from './lom.js';
+import { lomSubsidAdapter } from './lom-subsid.js';
+import { sitemapAdapter } from './sitemap.js';
 import { ssoAdapter } from './sso.js';
 import { wpAdapter } from './wp.js';
 import type { Adapter, DiscoveredInstrument } from './types.js';
@@ -29,9 +39,16 @@ import type { Adapter, DiscoveredInstrument } from './types.js';
 export * from './types.js';
 
 const ADAPTERS: Record<string, Adapter> = {
+  crawl: crawlAdapter,
+  drupal: drupalAdapter,
+  fipcs: fipcsAdapter,
   flk: flkAdapter,
   frl: frlAdapter,
+  indiacode: indiaCodeAdapter,
   lom: lomAdapter,
+  'lom-subsid': lomSubsidAdapter,
+  ocs: ocsAdapter,
+  sitemap: sitemapAdapter,
   sso: ssoAdapter,
   wp: wpAdapter,
 };
@@ -43,31 +60,66 @@ export interface RegisterResult {
   error?: string;
 }
 
+export interface RegisterOptions {
+  /**
+   * Walk only the portals whose name or URL contains this, case-insensitively.
+   *
+   * Fixing one portal's adapter and re-walking the whole profile to see whether it worked costs
+   * every other portal a crawl it did not need, and Malaysia's three Laws of Malaysia listings
+   * are sixteen thousand instruments between them. A repair is scoped to the thing repaired.
+   */
+  portalLike?: string;
+}
+
 export async function register(
   db: Db,
   profile: EconomyProfile,
   fetcher: Fetcher,
   log: (line: string) => void = () => {},
+  opts: RegisterOptions = {},
 ): Promise<RegisterResult[]> {
   const results: RegisterResult[] = [];
   const now = new Date().toISOString();
 
   const insert = db.prepare(
     `INSERT INTO instrument (economy_code, title, official_number, kind, status, status_basis,
-                             last_amended_on, timeframe_basis, source_url, discovered_via, discovered_at,
-                             title_provisional, also_at)
-     VALUES (?, ?, ?, ?, COALESCE(?, 'unknown'), ?, ?, ?, ?, ?, ?, ?, ?)
+                             commenced_on, last_amended_on, current_to, timeframe_basis,
+                             made_under_name, source_url,
+                             discovered_via, discovered_at, title_provisional, also_at)
+     VALUES (?, ?, ?, ?, COALESCE(?, 'unknown'), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(economy_code, source_url) DO UPDATE SET
+       made_under_name = COALESCE(excluded.made_under_name, instrument.made_under_name),
        status = CASE WHEN excluded.status_basis IS NOT NULL THEN excluded.status ELSE instrument.status END,
        status_basis = COALESCE(excluded.status_basis, instrument.status_basis),
+       commenced_on = COALESCE(excluded.commenced_on, instrument.commenced_on),
        last_amended_on = COALESCE(excluded.last_amended_on, instrument.last_amended_on),
+       current_to = COALESCE(excluded.current_to, instrument.current_to),
        timeframe_basis = COALESCE(excluded.timeframe_basis, instrument.timeframe_basis),
        also_at = COALESCE(excluded.also_at, instrument.also_at)
      WHERE excluded.status_basis IS NOT NULL OR excluded.also_at IS NOT NULL`,
   );
 
-  for (const portal of profile.portals) {
-    if (!portal.adapter) continue;
+  const want = opts.portalLike?.toLowerCase();
+  const portals = want
+    ? profile.portals.filter((p) => `${p.name} ${p.url}`.toLowerCase().includes(want))
+    : profile.portals;
+  if (want && portals.length === 0) {
+    throw new Error(`No portal of ${profile.code} has "${opts.portalLike}" in its name or URL.`);
+  }
+
+  for (const portal of portals) {
+    // A declared portal nothing can read is a hole in the corpus, and it was skipped in silence.
+    // Malaysia declares its customs department, its communications commission and seven more
+    // regulators, and registers not one document from any of them -- so the orders, guidelines and
+    // codes those bodies publish are absent, and a cell reads that absence as "no requirement".
+    // Recorded here so the shortfall is a number on the run rather than a thing nobody said.
+    if (!portal.adapter) {
+      results.push({ portal: portal.name, found: 0, added: 0, error: 'no adapter reads this portal' });
+      db.prepare('INSERT INTO discard (stage, subject, reason, detail, recorded_at) VALUES (?, ?, ?, ?, ?)')
+        .run('discover', portal.url, 'portal-unread', `${portal.name} (${portal.kind}) has no adapter`, now);
+      log(`${portal.name} (${portal.url}) -- no adapter reads this portal`);
+      continue;
+    }
     const adapter = ADAPTERS[portal.adapter];
     if (!adapter) {
       results.push({ portal: portal.name, found: 0, added: 0, error: `no adapter named "${portal.adapter}"` });
@@ -76,9 +128,16 @@ export async function register(
     log(`${portal.name} (${portal.url})`);
     const id = portalId(db, profile.code, portal.url);
 
+    // Rewritten per walk, not appended to: the question this answers is what the listing looks
+    // like now, and a ledger that keeps every walk's answer cannot be read against a threshold.
+    const setAsideRows: { subject: string; reason: string; detail: string | null }[] = [];
+    const setAside = (entry: { subject: string; reason: string; detail?: string }) => {
+      setAsideRows.push({ subject: entry.subject, reason: entry.reason, detail: entry.detail ?? null });
+    };
+
     let found: DiscoveredInstrument[] = [];
     try {
-      found = await adapter.discover({ portal, fetcher, log });
+      found = await adapter.discover({ portal, fetcher, log, setAside });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       results.push({ portal: portal.name, found: 0, added: 0, error: message });
@@ -89,27 +148,135 @@ export async function register(
     }
 
     let added = 0;
+    let publications = 0;
     db.transaction(() => {
       for (const item of found) {
         // A re-walk re-asserts what the listing says: an instrument stays in the register, and
         // its standing is refreshed from the listing it was found on this time.
         const before = db.prepare('SELECT 1 FROM instrument WHERE economy_code = ? AND source_url = ?')
           .get(profile.code, item.url);
+        // What the listing corroborates, not what the title claims. `kindOf` reads the title, and
+        // a paper named after the Act it discusses reads as that Act -- which is how a regulator's
+        // consultation papers came to hold seats in the reserve the shortlist keeps for statutes.
+        const kind = registeredKind(item.kind, item);
+        if (kind !== item.kind) publications += 1;
         insert.run(
-          profile.code, item.title, item.officialNumber ?? null, item.kind,
-          item.status ?? null, item.statusBasis ?? null, item.currentTo ?? null,
-          item.currentToBasis ?? null, item.url, `portal:${id}`, now,
+          profile.code, item.title, item.officialNumber ?? null, kind,
+          item.status ?? null, item.statusBasis ?? null, item.commencedOn ?? null,
+          item.lastAmendedOn ?? null, item.currentTo ?? null, item.currentToBasis ?? null,
+          item.madeUnder ?? null, item.url, `portal:${id}`, now,
           item.titleProvisional ? 1 : 0,
           item.alsoAt?.length ? JSON.stringify(item.alsoAt) : null,
         );
         if (!before) added += 1;
       }
     })();
-    log(`  ${found.length} instrument(s) listed, ${added} new to the register`);
+    if (setAsideRows.length > 0) {
+      const reasons = [...new Set(setAsideRows.map((r) => r.reason))];
+      db.transaction(() => {
+        const clear = db.prepare(
+          `DELETE FROM discard WHERE stage = 'discover' AND reason = ? AND detail LIKE ?`,
+        );
+        const write = db.prepare(
+          `INSERT INTO discard (stage, subject, reason, detail, recorded_at) VALUES ('discover', ?, ?, ?, ?)`,
+        );
+        for (const reason of reasons) clear.run(reason, `${portal.url}%`);
+        for (const r of setAsideRows) {
+          write.run(r.subject, r.reason, `${portal.url} -- ${r.detail ?? ''}`, now);
+        }
+      })();
+    }
+    log(
+      `  ${found.length} instrument(s) listed, ${added} new to the register` +
+        (publications > 0 ? `, ${publications} registered as publications about the law` : ''),
+    );
+    // A portal that was walked and yielded nothing is the same hole as a portal nothing can walk,
+    // and until now only the second was recorded. Seven of the thirty declared Australian,
+    // Malaysian and Singaporean sources are in this state -- the e-Gazette and MyIPO answer 403,
+    // the ACCC serves an API the adapter reads as empty, the Border Force publishes no index at
+    // all -- and every one of them looked, in the run's own output, exactly like a regulator that
+    // happens to publish no instruments. A cell reads that as "no requirement".
+    if (found.length === 0) {
+      db.prepare('INSERT INTO discard (stage, subject, reason, detail, recorded_at) VALUES (?, ?, ?, ?, ?)')
+        .run('discover', portal.url, 'portal-yielded-nothing',
+          `${portal.name} (${portal.kind}) was walked by the ${portal.adapter} adapter and listed no instruments`, now);
+      results.push({
+        portal: portal.name,
+        found: 0,
+        added: 0,
+        error: `walked by the ${portal.adapter} adapter and listed no instruments`,
+      });
+      continue;
+    }
     results.push({ portal: portal.name, found: found.length, added });
   }
 
+  const linked = linkStatedParents(db, profile.code);
+  if (linked.stated > 0) {
+    log(`Parentage -- ${linked.stated} instrument(s) name the Act they are made under, ${linked.linked} of those Acts are in the register`);
+  }
+
   return results;
+}
+
+export interface StatedParentage {
+  /** Instruments whose register names the Act they are made under. */
+  stated: number;
+  /** Of those, the ones whose named Act is an Act we have registered. */
+  linked: number;
+}
+
+/**
+ * Link each instrument to the Act its own register says it was made under.
+ *
+ * Australia's register answers this backwards -- ask an Act what it authorises -- and that is
+ * what `linkParents` walks. India's answers it forwards: every rule, regulation, notification and
+ * order carries the name of its enabling Act, and the adapter was putting that name in a sentence
+ * and throwing it away. Nothing else recovers it; a title is a drafting convention and the
+ * instruments that matter break it.
+ *
+ * Matched on the exact stated name, case-insensitively. A near match is not attempted: linking a
+ * rule to the wrong Act would put the wrong instrument at the head of a cell's evidence, and an
+ * unlinked rule still carries the name a reviewer can read.
+ */
+export function linkStatedParents(db: Db, economy: string): StatedParentage {
+  const stated = (
+    db.prepare(
+      `SELECT COUNT(*) n FROM instrument WHERE economy_code = ? AND made_under_name IS NOT NULL`,
+    ).get(economy) as { n: number }
+  ).n;
+  if (stated === 0) return { stated: 0, linked: 0 };
+
+  const acts = new Map<string, number>();
+  for (const row of db.prepare(
+    `SELECT id, title FROM instrument WHERE economy_code = ? AND kind = 'act'`,
+  ).all(economy) as { id: number; title: string }[]) {
+    acts.set(row.title.trim().toLowerCase(), row.id);
+  }
+
+  const update = db.prepare(
+    `UPDATE instrument SET made_under_instrument_id = ?, made_under_basis = ? WHERE id = ?`,
+  );
+  let linked = 0;
+  db.transaction(() => {
+    for (const row of db.prepare(
+      `SELECT id, made_under_name FROM instrument
+        WHERE economy_code = ? AND made_under_name IS NOT NULL AND made_under_instrument_id IS NULL`,
+    ).all(economy) as { id: number; made_under_name: string }[]) {
+      const parent = acts.get(row.made_under_name.trim().toLowerCase());
+      // An Act that names itself as its own parent is the register repeating the title, not a
+      // relation, and a row pointing at itself would make the contents walk cycle.
+      if (parent === undefined || parent === row.id) continue;
+      update.run(
+        parent,
+        `The register records this instrument as made under "${row.made_under_name}".`,
+        row.id,
+      );
+      linked += 1;
+    }
+  })();
+
+  return { stated, linked };
 }
 
 /** The other files one page publishes, as recorded at registration. */
@@ -127,7 +294,9 @@ function alsoAt(row: { also_at: string | null }): string[] {
  * Read one further edition into an instrument already materialised. Returns its section count, or
  * null when it could not be read -- which is recorded, never a silent absence.
  */
-async function readEdition(db: Db, fetcher: Fetcher, instrumentId: number, url: string): Promise<number | null> {
+async function readEdition(
+  db: Db, fetcher: Fetcher, instrumentId: number, url: string, languages: readonly string[],
+): Promise<number | null> {
   const now = () => new Date().toISOString();
   const discard = (reason: string, detail: string): null => {
     db.prepare('INSERT INTO discard (stage, subject, reason, detail, recorded_at) VALUES (?, ?, ?, ?, ?)')
@@ -138,7 +307,7 @@ async function readEdition(db: Db, fetcher: Fetcher, instrumentId: number, url: 
     const fetched = await fetcher.fetch(url);
     if (fetched.status !== 200) return discard('non-200-response', `HTTP ${fetched.status}`);
 
-    const parsed = await parseDocument(fetched);
+    const parsed = await parseDocument(fetched, { languages });
     const stored = storeDocument(db, { instrumentId, fetched, parsed });
     if (stored.unread) return null;
 
@@ -170,6 +339,8 @@ interface InstrumentRow {
   discovered_via: string;
   title_provisional: number;
   also_at: string | null;
+  official_number: string | null;
+  status: string;
 }
 
 export interface MaterialiseOptions {
@@ -187,6 +358,11 @@ export interface MaterialiseOptions {
    * only that stage.
    */
   reparse?: boolean;
+  /**
+   * Only the instruments nothing could be read out of. When the reason a document was unread is
+   * one the parser has since learned to handle, this retries exactly those and nothing else.
+   */
+  unreadOnly?: boolean;
   /** Only instruments whose title matches, case-insensitively. Used to prove a path quickly. */
   titleLike?: string;
   /**
@@ -206,6 +382,44 @@ export interface MaterialiseOptions {
   log?: (line: string) => void;
 }
 
+/**
+ * The adapter that stands behind an instrument's portal, if the portal declares one.
+ *
+ * Exported because reading a document is not the only thing that needs it: anything re-parsing the
+ * corpus has to resolve a document the way the read path resolves it, and for a long Act that means
+ * the adapter joining the EPUB volumes rather than the title page sitting at the document's URL.
+ */
+export function adapterFor(db: Db, profile: EconomyProfile, via: string): Adapter | null {
+  const id = Number(via.replace('portal:', ''));
+  const row = db.prepare('SELECT url FROM portal WHERE id = ?').get(id) as { url: string } | undefined;
+  const portal = row ? profile.portals.find((p) => p.url === row.url) : undefined;
+  return portal?.adapter ? ADAPTERS[portal.adapter] ?? null : null;
+}
+
+/**
+ * Why a document may read next time when it did not this time: an empty body, which is what a
+ * timeout or a rate limit's blank page looks like, and a parser that threw. Everything else -- a
+ * scan with no OCR, a landing page, another instrument's text, a type no parser handles -- is a
+ * fact about the document, and asking again gets the same answer.
+ */
+export const RETRYABLE = ['empty', 'parse-error'] as const;
+
+/** Three tries in all: the first, and two more. Past that it is the document, not the moment. */
+export const MAX_ATTEMPTS = 3;
+
+/**
+ * How much more a linked file must say before it is taken for the instrument the page names.
+ *
+ * Three, because a page that is publishing itself as a PDF cannot be under a third of its own
+ * length, and an announcement of a document always is.
+ */
+const WRAPPER_GAIN = 3;
+
+/** What a parse actually yielded to search, which is the only comparable measure of a document. */
+function textLength(parsed: { sections: { text: string }[] }): number {
+  return parsed.sections.reduce((n, s) => n + s.text.length, 0);
+}
+
 export async function materialise(
   db: Db,
   profile: EconomyProfile,
@@ -213,20 +427,29 @@ export async function materialise(
   opts: MaterialiseOptions = {},
 ): Promise<MaterialiseResult[]> {
   const log = opts.log ?? (() => {});
-  const adapterFor = (via: string): Adapter | null => {
-    const id = Number(via.replace('portal:', ''));
-    const row = db.prepare('SELECT url FROM portal WHERE id = ?').get(id) as { url: string } | undefined;
-    const portal = row ? profile.portals.find((p) => p.url === row.url) : undefined;
-    return portal?.adapter ? ADAPTERS[portal.adapter] ?? null : null;
-  };
 
-  const where = opts.reparse
+  const where = opts.unreadOnly
+    ? `i.economy_code = ? AND EXISTS (
+         SELECT 1 FROM document d JOIN unread_document u ON u.document_id = d.id
+          WHERE d.instrument_id = i.id)`
+    : opts.reparse
     ? `i.economy_code = ? AND EXISTS (SELECT 1 FROM document d WHERE d.instrument_id = i.id)`
     : opts.refresh
       ? 'i.economy_code = ?'
-      : `i.economy_code = ? AND NOT EXISTS (SELECT 1 FROM document d WHERE d.instrument_id = i.id)`;
+      : // Nothing fetched yet, or fetched and unreadable for a reason that may not recur. A row
+        // existing is not the instrument having been read: an empty page, a timeout's partial body
+        // or a parser error left one behind, and the default used to skip every instrument that had
+        // one, so a document shortlisted for an answer was never asked for a second time.
+        `i.economy_code = ? AND (
+           NOT EXISTS (SELECT 1 FROM document d WHERE d.instrument_id = i.id)
+           OR (NOT EXISTS (SELECT 1 FROM document d JOIN section s ON s.document_id = d.id WHERE d.instrument_id = i.id)
+               AND EXISTS (SELECT 1 FROM document d JOIN unread_document u ON u.document_id = d.id
+                            WHERE d.instrument_id = i.id
+                              AND u.reason IN (${RETRYABLE.map((r) => `'${r}'`).join(', ')})
+                              AND u.attempts < ${MAX_ATTEMPTS})))`;
   const params: unknown[] = [profile.code];
-  let sql = `SELECT i.id, i.title, i.source_url, i.discovered_via, i.title_provisional, i.also_at
+  let sql = `SELECT i.id, i.title, i.source_url, i.discovered_via, i.title_provisional, i.also_at,
+                    i.official_number, i.status
                FROM instrument i WHERE ${where}`;
   if (opts.titleLike) {
     sql += ' AND i.title LIKE ?';
@@ -256,10 +479,10 @@ export async function materialise(
 
   const results: MaterialiseResult[] = [];
   for (const [n, row] of rows.entries()) {
-    const adapter = adapterFor(row.discovered_via);
+    const adapter = adapterFor(db, profile, row.discovered_via);
     const base = { instrumentId: row.id, title: row.title, url: row.source_url };
     try {
-      const fetched = adapter?.resolveDocument
+      let fetched = adapter?.resolveDocument
         ? await adapter.resolveDocument(row.source_url, fetcher)
         : await fetcher.fetch(row.source_url);
 
@@ -273,7 +496,62 @@ export async function materialise(
         continue;
       }
 
-      const parsed = await parseDocument(fetched);
+      let parsed = await parseDocument(fetched, { languages: profile.officialLanguages });
+
+      // A page of menus that publishes exactly one file is not an index of leads; it is the
+      // instrument's own wrapper, and the file is the document to cite.
+      let adopted = false;
+      const wrapper = parsed.unread?.reason === 'landing-page' || parsed.unread?.reason === 'empty';
+      if (wrapper && /html/i.test(fetched.mediaType)) {
+        const only = soleDocumentLink(fetched.body.toString('utf8'), fetched.finalUrl);
+        if (only) {
+          const inner = await fetcher.fetch(only);
+          const reparsed = inner.status === 200 ? await parseDocument(inner, { languages: profile.officialLanguages }) : null;
+          if (reparsed && !reparsed.unread) {
+            fetched = inner;
+            parsed = reparsed;
+            adopted = true;
+            log(`  [${n + 1}/${rows.length}] the page wraps one document: ${only}`);
+          }
+        }
+      }
+
+      // The harder case, and the one a page of menus does not cover: a page that parses perfectly
+      // well and is still not the instrument. A regulator announces a policy document by posting
+      // the announcement, and the announcement has prose in it, so it is never unread and the
+      // block above never runs. Where exactly one linked file calls itself by the instrument's
+      // name and says several times more than the page does, the page was the notice.
+      //
+      // The gain test is the whole of the guard and it is not decoration. Without it the same
+      // rule replaces every ASD cyber-security guideline and a 210,437-character APRA guide for
+      // directors with the PDF each one offers of itself -- pages that ARE the instrument, which
+      // link their own file under their own name exactly as an announcement does. Measured over
+      // all three economies, that is the only thing separating the two: a page publishing itself
+      // as a PDF came back between 0.02 and 1.63 times its own length, and every announcement
+      // between 14 and 582 times. Nothing landed in between.
+      //
+      // A link naming the instrument is one of the two ways a page offers its own file. The other
+      // is a link naming nothing -- "downloaded here" -- which says which file without saying
+      // which document, and is why `pointedDocumentLink` stands beside the named one rather than
+      // inside it. Both answer the same question and both are weighed the same way.
+      if (!adopted && /html/i.test(fetched.mediaType)) {
+        const body = fetched.body.toString('utf8');
+        const named = namedDocumentLink(body, fetched.finalUrl, row.title) ?? pointedDocumentLink(body, fetched.finalUrl);
+        if (named && named !== fetched.finalUrl) {
+          const inner = await fetcher.fetch(named);
+          const reparsed = inner.status === 200 ? await parseDocument(inner, { languages: profile.officialLanguages }) : null;
+          const held = textLength(parsed);
+          const offered = reparsed ? textLength(reparsed) : 0;
+          if (reparsed && !reparsed.unread && offered > 0 && offered >= held * WRAPPER_GAIN) {
+            fetched = inner;
+            parsed = reparsed;
+            log(
+              `  [${n + 1}/${rows.length}] the page announces the document (${held} -> ${offered} chars): ${named}`,
+            );
+          }
+        }
+      }
+
       const stored = storeDocument(db, { instrumentId: row.id, fetched, parsed });
 
       // What the document says about itself, which is the only acceptable evidence for a date.
@@ -283,24 +561,58 @@ export async function materialise(
              official_number = COALESCE(?, official_number),
              commenced_on = COALESCE(?, commenced_on),
              last_amended_on = COALESCE(?, last_amended_on),
-             timeframe_basis = COALESCE(?, timeframe_basis),
-             language = COALESCE(?, language)
+             timeframe_basis = COALESCE(?, timeframe_basis)
            WHERE id = ?`,
         ).run(
           parsed.meta['officialNumber'] ?? null,
           parsed.meta['commencedOn'] ?? null,
           parsed.meta['lastAmendedOn'] ?? null,
           [parsed.meta['commencementBasis'], parsed.meta['lastAmendedBasis']].filter(Boolean).join(' | ') || null,
-          parsed.sections[0]?.language ?? null,
           row.id,
         );
       }
 
-      // A document registered under an upload slug takes the name it calls itself by.
-      if (row.title_provisional && parsed.title) {
+      // The language is what the document is written in, which the parser reads off the text and
+      // not off a date line. It used to be set inside the block above, so an instrument whose page
+      // published no number and no dates -- most of the Malay-language corpus -- stayed recorded as
+      // whatever language the register guessed, and the retrieval side then paired it wrongly.
+      const language = parsed.sections[0]?.language ?? null;
+      if (language) db.prepare('UPDATE instrument SET language = ? WHERE id = ?').run(language, row.id);
+
+      // A document registered under an upload slug, or under a title that names no instrument at
+      // all, takes the name it calls itself by.
+      // Its citation provision where the parser found no title: a portal that filed an Order under
+      // its own page theme still served a document whose section 1 says what the Order is.
+      //
+      // Asked only of a filed title that names no instrument, and no longer of every title a crawl
+      // marked provisional. `ownName` falls back to the page's own <title> where the document
+      // states no name in its provisions, and a page's <title> is the site's name for the page:
+      // walking the Commission's guidelines library registered twenty guidelines, each correctly
+      // named by the link it was listed under, and renamed every one of them to "Malaysian
+      // Communications And Multimedia Commission (MCMC) | ... - Guidelines", which ends in an
+      // instrument's noun and so passed the guard. A title that already names an instrument is
+      // not improved by a title that names the website. The templates and upload slugs this rule
+      // was built for -- "Compilations-Agency prepared template", "250312-LI-TSY_47_0757-Mergers"
+      // -- name no instrument either way, so all 48 of those renames stand.
+      const callsItself = ownName(parsed.sections, parsed.title);
+      if (!namesAnInstrument(row.title) && callsItself) {
         db.prepare('UPDATE instrument SET title = ?, title_provisional = 0 WHERE id = ?')
-          .run(parsed.title, row.id);
-        log(`  [${n + 1}/${rows.length}] names itself "${parsed.title}"`);
+          .run(callsItself, row.id);
+        log(`  [${n + 1}/${rows.length}] names itself "${callsItself}"`);
+      }
+
+      // And where the source said nothing about what the document is, the document's own opening
+      // provision does. Gated on the same silence `registeredKind` tests for, so a listing that
+      // stated an identifier or a standing keeps the kind it stated.
+      const sourceSaysNothing =
+        (row.official_number ?? '').trim() === '' && (row.status === 'unknown' || !row.status);
+      if (sourceSaysNothing) {
+        const callsItselfA = statedKind(parsed.sections, row.title);
+        const filed = (db.prepare('SELECT kind FROM instrument WHERE id = ?').get(row.id) as { kind: string | null }).kind;
+        if (callsItselfA && callsItselfA !== filed) {
+          db.prepare('UPDATE instrument SET kind = ? WHERE id = ?').run(callsItselfA, row.id);
+          log(`  [${n + 1}/${rows.length}] calls itself a ${callsItselfA}, filed as ${filed ?? 'nothing'}`);
+        }
       }
 
       if (parsed.meta['partial']) {
@@ -324,7 +636,7 @@ export async function materialise(
       // practice in two languages is one instrument citing two documents, not two instruments.
       let extra = 0;
       for (const url of alsoAt(row)) {
-        const more = await readEdition(db, fetcher, row.id, url);
+        const more = await readEdition(db, fetcher, row.id, url, profile.officialLanguages);
         if (more === null) log(`  [${n + 1}/${rows.length}] also at ${url}: not read`);
         else extra += more;
       }

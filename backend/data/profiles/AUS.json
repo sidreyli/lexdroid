@@ -5,8 +5,24 @@
     "family": "common-law",
     "note": "Federal common law system. The Commonwealth Parliament legislates for the matters this index measures, and the Federal Register of Legislation publishes an authorised consolidated compilation of every Act and legislative instrument in force. A compilation states its own compilation date on its first page, so the date a row reports is evidenced by the document rather than asserted. State and Territory law exists and is not on this register; where an indicator turns on it, that is a gap this profile does not close."
   },
-  "officialLanguages": ["en"],
+  "officialLanguages": [
+    "en"
+  ],
+  "authoritativeLanguage": "en",
   "languageNote": "Commonwealth law is enacted and published in English only.",
+  "jurisdictionScope": {
+    "held": "Commonwealth",
+    "note": "The Federal Register of Legislation publishes Commonwealth law only, and every portal this profile names is a Commonwealth body.",
+    "notHeld": [
+      {
+        "tier": "State and Territory law",
+        "note": "Each State and Territory legislates on the matters the Constitution leaves to it and publishes its own register. A Commonwealth instrument often borrows a term or a regime from a State Act, which is how one is cited here without being held.",
+        "citedAs": [
+          "\\b[A-Z][\\w'(),. -]{2,120}? (?:Act|Regulations?|Rules?) \\d{4} \\((?:NSW|Vic|Qld|WA|SA|Tas|ACT|NT)\\)"
+        ]
+      }
+    ]
+  },
   "instrumentTypes": [
     {
       "rank": 1,
@@ -17,10 +33,24 @@
     },
     {
       "rank": 2,
+      "kind": "order",
+      "localName": "Legislative instrument -- Orders",
+      "bindingness": "binding",
+      "note": "Orders made under an Act and registered on the Federal Register of Legislation. Same tier and same force as a Regulation."
+    },
+    {
+      "rank": 2,
       "kind": "regulation",
       "localName": "Legislative instrument (Regulations, Rules, Determinations, Declarations)",
       "bindingness": "binding",
       "note": "Made under an Act, registered on the Federal Register, and disallowable by Parliament. Where an Act says the regulations may prescribe something, the operative rule is here."
+    },
+    {
+      "rank": 2,
+      "kind": "rule",
+      "localName": "Legislative instrument -- Rules",
+      "bindingness": "binding",
+      "note": "Rules made under an Act and registered on the Federal Register of Legislation. The rank 2 tier already names them; only the kind code was absent."
     },
     {
       "rank": 3,
@@ -35,6 +65,13 @@
       "localName": "Regulator guidance",
       "bindingness": "advisory",
       "note": "OAIC Australian Privacy Principles guidelines, ACCC guidance and the like. Evidence of how a regulator reads a binding instrument, never the source of an obligation on their own."
+    },
+    {
+      "rank": 5,
+      "kind": "publication",
+      "localName": "Publication about the law",
+      "bindingness": "advisory",
+      "note": "A document a body published about the law rather than an instrument of it: a consultation paper, a media release, an FAQ, a landing page for an Act held in the statute book. Registered because it is real evidence of how a regulator reads an obligation, and never the source of one. Assigned where the source states neither an identifier nor a standing."
     }
   ],
   "portals": [
@@ -43,14 +80,39 @@
       "url": "https://www.legislation.gov.au",
       "kind": "legislation-database",
       "authority": "Office of Parliamentary Counsel",
-      "pillars": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+      "pillars": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12
+      ],
       "adapter": "frl",
       "adapterConfig": {
         "apiBase": "https://api.prod.legislation.gov.au/v1/",
         "collections": [
-          { "collection": "Act", "kind": "act", "listing": "Titles where collection is Act and isInForce is true" },
-          { "collection": "LegislativeInstrument", "kind": "regulation", "listing": "Titles where collection is LegislativeInstrument and isInForce is true" },
-          { "collection": "NotifiableInstrument", "kind": "notice", "listing": "Titles where collection is NotifiableInstrument and isInForce is true" }
+          {
+            "collection": "Act",
+            "kind": "act",
+            "listing": "Titles where collection is Act and isInForce is true"
+          },
+          {
+            "collection": "LegislativeInstrument",
+            "kind": "regulation",
+            "listing": "Titles where collection is LegislativeInstrument and isInForce is true"
+          },
+          {
+            "collection": "NotifiableInstrument",
+            "kind": "notice",
+            "listing": "Titles where collection is NotifiableInstrument and isInForce is true"
+          }
         ]
       },
       "notes": "Publishes a public OData v4 API, so the register is enumerated rather than scraped. The API host sets no robots rules and answers immediately; the www host asks for a 10 second crawl delay, and that is where the cost of reading a document sits. Two quirks measured on 7 September 2026: the API refuses a filter of three conjoined clauses, so isPrincipal is applied to the rows after they arrive; and the /latest/text page is a single-page-application shell whose only useful content is its links into the EPUB text, which is the authored XHTML the register's own table of contents links to."
@@ -60,8 +122,11 @@
       "url": "https://www.oaic.gov.au",
       "kind": "regulator",
       "authority": "OAIC",
-      "pillars": [6, 7],
-      "adapter": null,
+      "pillars": [
+        6,
+        7
+      ],
+      "adapter": "crawl",
       "adapterConfig": {},
       "notes": "Registered privacy codes, and the Australian Privacy Principles guidelines that state how the Privacy Act's principles are read. The codes register is the part that carries binding instruments."
     },
@@ -70,8 +135,13 @@
       "url": "https://www.acma.gov.au",
       "kind": "regulator",
       "authority": "ACMA",
-      "pillars": [7, 8, 10, 11],
-      "adapter": null,
+      "pillars": [
+        7,
+        8,
+        10,
+        11
+      ],
+      "adapter": "crawl",
       "adapterConfig": {},
       "notes": "The register of telecommunications industry codes and standards. A registered industry code binds carriers by force of the Telecommunications Act, so it is law even though it is not an Act."
     },
@@ -80,8 +150,11 @@
       "url": "https://www.apra.gov.au",
       "kind": "regulator",
       "authority": "APRA",
-      "pillars": [6, 7],
-      "adapter": null,
+      "pillars": [
+        6,
+        7
+      ],
+      "adapter": "sitemap",
       "adapterConfig": {},
       "notes": "Prudential standards, CPS 234 on information security among them, which bind regulated financial entities. Most are also registered as legislative instruments, so the Federal Register carries them too."
     },
@@ -90,8 +163,11 @@
       "url": "https://www.accc.gov.au",
       "kind": "regulator",
       "authority": "ACCC",
-      "pillars": [9, 11],
-      "adapter": null,
+      "pillars": [
+        9,
+        11
+      ],
+      "adapter": "crawl",
       "adapterConfig": {},
       "notes": "Competition and consumer enforcement, and the Consumer Data Right rules made under the Competition and Consumer Act."
     },
@@ -100,8 +176,10 @@
       "url": "https://www.ipaustralia.gov.au",
       "kind": "regulator",
       "authority": "IP Australia",
-      "pillars": [4],
-      "adapter": null,
+      "pillars": [
+        4
+      ],
+      "adapter": "sitemap",
       "adapterConfig": {},
       "notes": "Patents, trade marks and designs administration. The statutes themselves are on the Federal Register."
     },
@@ -110,8 +188,12 @@
       "url": "https://www.abf.gov.au",
       "kind": "regulator",
       "authority": "Australian Border Force",
-      "pillars": [1, 2, 12],
-      "adapter": null,
+      "pillars": [
+        1,
+        2,
+        12
+      ],
+      "adapter": "crawl",
       "adapterConfig": {},
       "notes": "Customs procedure and the electronic lodgement systems the trade facilitation pillars turn on."
     },
@@ -120,8 +202,12 @@
       "url": "https://foreigninvestment.gov.au",
       "kind": "regulator",
       "authority": "The Treasury",
-      "pillars": [3, 5, 12],
-      "adapter": null,
+      "pillars": [
+        3,
+        5,
+        12
+      ],
+      "adapter": "sitemap",
       "adapterConfig": {},
       "notes": "Guidance notes on the foreign investment screening regime. The Act and Regulations behind them are on the Federal Register."
     },
@@ -130,8 +216,10 @@
       "url": "https://www.cyber.gov.au",
       "kind": "regulator",
       "authority": "Australian Signals Directorate",
-      "pillars": [7],
-      "adapter": null,
+      "pillars": [
+        7
+      ],
+      "adapter": "sitemap",
       "adapterConfig": {},
       "notes": "The Information Security Manual and the Essential Eight. Advisory in form, but referenced by binding instruments made under the Security of Critical Infrastructure Act."
     },
@@ -140,19 +228,45 @@
       "url": "https://www.auda.org.au",
       "kind": "registry",
       "authority": "auDA",
-      "pillars": [12],
-      "adapter": null,
+      "pillars": [
+        12
+      ],
+      "adapter": "crawl",
       "adapterConfig": {},
       "notes": "The .au licensing rules, which are the eligibility requirements for a domain name. Not a government host, which is why it is recorded as a registry rather than a regulator: a row citing it has to say what makes it authoritative."
     }
   ],
   "commitments": [
-    { "name": "World Trade Organization", "status": "in-force", "sourceUrl": "https://www.wto.org/english/thewto_e/countries_e/australia_e.htm" },
-    { "name": "Comprehensive and Progressive Agreement for Trans-Pacific Partnership", "status": "in-force", "sourceUrl": "https://www.dfat.gov.au/trade/agreements/in-force/cptpp" },
-    { "name": "Regional Comprehensive Economic Partnership", "status": "in-force", "sourceUrl": "https://www.dfat.gov.au/trade/agreements/in-force/rcep" },
-    { "name": "Australia-Singapore Digital Economy Agreement", "status": "in-force", "sourceUrl": "https://www.dfat.gov.au/trade/agreements/in-force/asdea" },
-    { "name": "APEC Cross-Border Privacy Rules System", "status": "in-force", "sourceUrl": "https://www.oaic.gov.au/privacy/international-privacy-matters" },
-    { "name": "WTO Agreement on Trade Facilitation", "status": "in-force", "sourceUrl": "https://www.wto.org/english/tratop_e/tradfa_e/tradfa_e.htm" }
+    {
+      "name": "World Trade Organization",
+      "status": "in-force",
+      "sourceUrl": "https://www.wto.org/english/thewto_e/countries_e/australia_e.htm"
+    },
+    {
+      "name": "Comprehensive and Progressive Agreement for Trans-Pacific Partnership",
+      "status": "in-force",
+      "sourceUrl": "https://www.dfat.gov.au/trade/agreements/in-force/cptpp"
+    },
+    {
+      "name": "Regional Comprehensive Economic Partnership",
+      "status": "in-force",
+      "sourceUrl": "https://www.dfat.gov.au/trade/agreements/in-force/rcep"
+    },
+    {
+      "name": "Australia-Singapore Digital Economy Agreement",
+      "status": "in-force",
+      "sourceUrl": "https://www.dfat.gov.au/trade/agreements/in-force/asdea"
+    },
+    {
+      "name": "APEC Cross-Border Privacy Rules System",
+      "status": "in-force",
+      "sourceUrl": "https://www.oaic.gov.au/privacy/international-privacy-matters"
+    },
+    {
+      "name": "WTO Agreement on Trade Facilitation",
+      "status": "in-force",
+      "sourceUrl": "https://www.wto.org/english/tratop_e/tradfa_e/tradfa_e.htm"
+    }
   ],
   "notes": "Australia is the second economy built, and it is the easy one: the register enumerates itself through an API, the text is authored XHTML from one drafting template, and there is no non-English source path. It is the honest test of whether the pipeline is economy-generic, because nothing in it resembles Singapore's portal.",
   "authoredBy": "LexDroid team",

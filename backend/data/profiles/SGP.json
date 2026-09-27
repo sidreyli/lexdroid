@@ -5,8 +5,19 @@
     "family": "common-law",
     "note": "English common law tradition. Statute is consolidated and kept current on Singapore Statutes Online, so the in-force text of an Act is directly citable and no separate consolidation step is needed. Subsidiary legislation made under an Act is published alongside it. Regulators additionally issue Notices and Directions that bind their licensees and Advisory Guidelines that do not."
   },
-  "officialLanguages": ["en", "ms", "zh", "ta"],
+  "officialLanguages": [
+    "en",
+    "ms",
+    "zh",
+    "ta"
+  ],
+  "authoritativeLanguage": "en",
   "languageNote": "Malay is the national language, but legislation is enacted and published in English, and the English text is authoritative. A Singapore run therefore exercises no non-English source path; Malaysia is where that is tested.",
+  "jurisdictionScope": {
+    "held": "national",
+    "note": "Singapore is a unitary state, so all of its law is made at the one tier Singapore Statutes Online publishes.",
+    "notHeld": []
+  },
   "instrumentTypes": [
     {
       "rank": 1,
@@ -17,10 +28,24 @@
     },
     {
       "rank": 2,
+      "kind": "order",
+      "localName": "Subsidiary legislation -- Orders",
+      "bindingness": "binding",
+      "note": "Orders made under an Act, including commencement and exemption Orders."
+    },
+    {
+      "rank": 2,
       "kind": "regulation",
       "localName": "Subsidiary legislation (Regulations, Rules, Orders)",
       "bindingness": "binding",
       "note": "Made under an Act and published under it on SSO. Where the Act prescribes 'requirements prescribed under this Act', the operative rule usually lives here rather than in the Act."
+    },
+    {
+      "rank": 2,
+      "kind": "rule",
+      "localName": "Subsidiary legislation -- Rules",
+      "bindingness": "binding",
+      "note": "Rules made under an Act. The rank 2 tier already names Rules and Orders; only the kind codes were absent."
     },
     {
       "rank": 3,
@@ -35,6 +60,13 @@
       "localName": "Advisory Guidelines",
       "bindingness": "advisory",
       "note": "PDPC Advisory Guidelines and MAS Guidelines state how a regulator reads a binding instrument. Evidence of interpretation, never the source of an obligation on their own."
+    },
+    {
+      "rank": 5,
+      "kind": "publication",
+      "localName": "Publication about the law",
+      "bindingness": "advisory",
+      "note": "A document a body published about the law rather than an instrument of it: a consultation paper, a media release, an FAQ, a landing page for an Act held in the statute book. Registered because it is real evidence of how a regulator reads an obligation, and never the source of one. Assigned where the source states neither an identifier nor a standing."
     }
   ],
   "portals": [
@@ -43,12 +75,35 @@
       "url": "https://sso.agc.gov.sg",
       "kind": "legislation-database",
       "authority": "Attorney-General's Chambers, Legislation Division",
-      "pillars": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+      "pillars": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12
+      ],
       "adapter": "sso",
       "adapterConfig": {
         "browse": [
-          { "kind": "act", "path": "/Browse/Act/Current/All?PageSize=500&SortBy=Title&SortOrder=ASC", "status": "in-force", "listing": "Browse > Acts > Current" },
-          { "kind": "regulation", "path": "/Browse/SL/Current/All?PageSize=500&SortBy=Title&SortOrder=ASC", "status": "in-force", "listing": "Browse > Subsidiary Legislation > Current" }
+          {
+            "kind": "act",
+            "path": "/Browse/Act/Current/All?PageSize=500&SortBy=Title&SortOrder=ASC",
+            "status": "in-force",
+            "listing": "Browse > Acts > Current"
+          },
+          {
+            "kind": "regulation",
+            "path": "/Browse/SL/Current/All?PageSize=500&SortBy=Title&SortOrder=ASC",
+            "status": "in-force",
+            "listing": "Browse > Subsidiary Legislation > Current"
+          }
         ]
       },
       "notes": "Serves the in-force consolidated text. A document page carries only its first few provisions; the rest are requested by provision id, which the adapter does in one further request per instrument. robots.txt disallows /search and asks for a 6 second crawl delay; both are honoured, and discovery uses the browse listings rather than the search box."
@@ -59,7 +114,7 @@
       "kind": "gazette",
       "authority": "Government of Singapore",
       "pillars": [],
-      "adapter": null,
+      "adapter": "sitemap",
       "adapterConfig": {},
       "notes": "Where commencement notifications and instruments not yet consolidated into SSO appear. Not crawled: SSO already carries the in-force text, and the gazette is the place to check a commencement date rather than to discover an instrument."
     },
@@ -68,8 +123,11 @@
       "url": "https://www.pdpc.gov.sg",
       "kind": "regulator",
       "authority": "Personal Data Protection Commission Singapore",
-      "pillars": [6, 7],
-      "adapter": null,
+      "pillars": [
+        6,
+        7
+      ],
+      "adapter": "sitemap",
       "adapterConfig": {},
       "notes": "Advisory Guidelines on the PDPA, and the enforcement decisions that make pillar 7 answerable in practice rather than on paper."
     },
@@ -78,8 +136,13 @@
       "url": "https://www.imda.gov.sg",
       "kind": "regulator",
       "authority": "IMDA",
-      "pillars": [5, 7, 10, 11],
-      "adapter": null,
+      "pillars": [
+        5,
+        7,
+        10,
+        11
+      ],
+      "adapter": "sitemap",
       "adapterConfig": {},
       "notes": "Telecommunications and media licensing, the Telecom Competition Code, and the electronic transactions regime."
     },
@@ -88,8 +151,12 @@
       "url": "https://www.mas.gov.sg",
       "kind": "regulator",
       "authority": "MAS",
-      "pillars": [6, 7, 8],
-      "adapter": null,
+      "pillars": [
+        6,
+        7,
+        8
+      ],
+      "adapter": "sitemap",
       "adapterConfig": {},
       "notes": "MAS Notices bind financial institutions and are where sector-specific data and outsourcing requirements live. A cancelled Notice is a trap ESCAP's reviewers have flagged, so status must be read from the document."
     },
@@ -98,8 +165,10 @@
       "url": "https://www.csa.gov.sg",
       "kind": "regulator",
       "authority": "CSA",
-      "pillars": [7],
-      "adapter": null,
+      "pillars": [
+        7
+      ],
+      "adapter": "sitemap",
       "adapterConfig": {},
       "notes": "Codes of Practice for critical information infrastructure owners under the Cybersecurity Act 2018."
     },
@@ -108,8 +177,11 @@
       "url": "https://www.customs.gov.sg",
       "kind": "regulator",
       "authority": "Singapore Customs",
-      "pillars": [2, 3],
-      "adapter": null,
+      "pillars": [
+        2,
+        3
+      ],
+      "adapter": "sitemap",
       "adapterConfig": {},
       "notes": "Customs procedure, the Networked Trade Platform, and the paperless trade commitments pillar 3 turns on."
     },
@@ -118,8 +190,10 @@
       "url": "https://www.ipos.gov.sg",
       "kind": "regulator",
       "authority": "IPOS",
-      "pillars": [4],
-      "adapter": null,
+      "pillars": [
+        4
+      ],
+      "adapter": "sitemap",
       "adapterConfig": {},
       "notes": "Patents, trade marks, copyright and trade secrets administration."
     },
@@ -128,20 +202,72 @@
       "url": "https://www.cccs.gov.sg",
       "kind": "regulator",
       "authority": "CCCS",
-      "pillars": [9, 11],
-      "adapter": null,
+      "pillars": [
+        9,
+        11
+      ],
+      "adapter": "sitemap",
       "adapterConfig": {},
       "notes": "Competition enforcement and the consumer protection framework."
+    },
+    {
+      "name": "Singapore Network Information Centre",
+      "url": "https://www.sgnic.sg",
+      "kind": "registry",
+      "authority": "SGNIC",
+      "pillars": [
+        12
+      ],
+      "adapter": "crawl",
+      "adapterConfig": {
+        "seeds": [
+          "https://www.sgnic.sg/domain-registration/policies-agreements"
+        ],
+        "namedBy": [
+          "policy",
+          "agreement",
+          "rule"
+        ]
+      },
+      "notes": "The .sg registry, and the one source this profile had no counterpart to in the other two: Australia declares auDA and Malaysia declares MYNIC, and the eligibility requirements for a domain name are in a registry policy in all three. Rules of Registration, the Acceptable Use Policy, the Registration Agreement and the Code of Practice are PDFs on one page, which is where the walk is seeded. Not a government host, so a row citing it has to say what makes it authoritative."
     }
   ],
   "commitments": [
-    { "name": "World Trade Organization", "status": "in-force", "sourceUrl": "https://www.wto.org/english/thewto_e/countries_e/singapore_e.htm" },
-    { "name": "ASEAN", "status": "in-force", "sourceUrl": "https://asean.org/member-states/" },
-    { "name": "ASEAN Agreement on Electronic Commerce", "status": "in-force", "sourceUrl": "https://asean.org/book/asean-agreement-on-electronic-commerce/" },
-    { "name": "Comprehensive and Progressive Agreement for Trans-Pacific Partnership", "status": "in-force", "sourceUrl": "https://www.mti.gov.sg/Trade/Free-Trade-Agreements/CPTPP" },
-    { "name": "Regional Comprehensive Economic Partnership", "status": "in-force", "sourceUrl": "https://rcepsec.org/" },
-    { "name": "Digital Economy Partnership Agreement", "status": "in-force", "sourceUrl": "https://www.mti.gov.sg/Trade/Digital-Economy-Agreements" },
-    { "name": "APEC Cross-Border Privacy Rules System", "status": "in-force", "sourceUrl": "https://www.pdpc.gov.sg/overview-of-data-protection/business-owner/apec-cbpr-and-prp-certification" }
+    {
+      "name": "World Trade Organization",
+      "status": "in-force",
+      "sourceUrl": "https://www.wto.org/english/thewto_e/countries_e/singapore_e.htm"
+    },
+    {
+      "name": "ASEAN",
+      "status": "in-force",
+      "sourceUrl": "https://asean.org/member-states/"
+    },
+    {
+      "name": "ASEAN Agreement on Electronic Commerce",
+      "status": "in-force",
+      "sourceUrl": "https://asean.org/book/asean-agreement-on-electronic-commerce/"
+    },
+    {
+      "name": "Comprehensive and Progressive Agreement for Trans-Pacific Partnership",
+      "status": "in-force",
+      "sourceUrl": "https://www.mti.gov.sg/Trade/Free-Trade-Agreements/CPTPP"
+    },
+    {
+      "name": "Regional Comprehensive Economic Partnership",
+      "status": "in-force",
+      "sourceUrl": "https://rcepsec.org/"
+    },
+    {
+      "name": "Digital Economy Partnership Agreement",
+      "status": "in-force",
+      "sourceUrl": "https://www.mti.gov.sg/Trade/Digital-Economy-Agreements"
+    },
+    {
+      "name": "APEC Cross-Border Privacy Rules System",
+      "status": "in-force",
+      "sourceUrl": "https://www.pdpc.gov.sg/overview-of-data-protection/business-owner/apec-cbpr-and-prp-certification"
+    }
   ],
   "notes": "Singapore is the first economy built because ESCAP's own Round 1 database answers all 61 indicators for it, which makes the pillar 6 and 7 gate checkable against their sheet rather than against our own opinion.",
   "authoredBy": "LexDroid team",

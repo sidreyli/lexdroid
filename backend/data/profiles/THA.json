@@ -1,0 +1,190 @@
+{
+  "code": "THA",
+  "name": "Thailand",
+  "legalSystem": {
+    "family": "civil-law",
+    "note": "Unitary constitutional monarchy. An Act (พระราชบัญญัติ) is routinely a skeleton that delegates its operative detail to a Royal Decree (พระราชกฤษฎีกา), a Ministerial Regulation (กฎกระทรวง), or a Notification (ประกาศ) issued by the regulator the Act creates -- a citation of the Act alone is frequently the wrong instrument. Legislation only comes into force on publication in the Royal Gazette (ราชกิจจานุเบกษา); the Gazette date, not the Act's own date, is the commencement evidence. State/regional law is not a scope question here the way it is for India or China -- Thailand is unitary -- but the Act/Royal-Decree/Ministerial-Regulation/Notification delegation chain must be followed the same way China's profile follows its own delegation pattern."
+  },
+  "officialLanguages": [
+    "th"
+  ],
+  "languageNote": "Thai law is published in Thai only; this profile follows docs/architecture.md's rule against full-document translation and reads Thai source text as-is. Thai script has no spaces between words, which is a fact about search rather than about the law itself -- see backend/src/index/index.ts's SPACELESS handling (expand() and canonicalizeThai()) for how lexical search stays correct over Thai text.",
+  "instrumentTypes": [
+    {
+      "rank": 1,
+      "kind": "act",
+      "localName": "พระราชบัญญัติ (Act)",
+      "bindingness": "binding",
+      "note": "The principal instrument, cited by name and B.E. (Buddhist-calendar) year. Frequently a skeleton -- read the Royal Decree, Ministerial Regulation or Notification it delegates to before treating the Act's own text as the operative requirement."
+    },
+    {
+      "rank": 2,
+      "kind": "order",
+      "localName": "พระราชกฤษฎีกา (Royal Decree)",
+      "bindingness": "binding",
+      "note": "Issued under an enabling Act, commonly to bring provisions into force on a stated date or to fill in detail the Act leaves open. The enabling Act and the Royal Decree must both be retained."
+    },
+    {
+      "rank": 2,
+      "kind": "regulation",
+      "localName": "กฎกระทรวง (Ministerial Regulation)",
+      "bindingness": "binding",
+      "note": "Issued by the responsible Minister under an enabling Act. Binding in the same way as the Act itself, not merely advisory guidance."
+    },
+    {
+      "rank": 3,
+      "kind": "notice",
+      "localName": "ประกาศ (Notification)",
+      "bindingness": "binding-on-licensees",
+      "note": "Issued by the regulator an Act creates (e.g. the Bank of Thailand, the Personal Data Protection Committee, the NBTC). Binds the regulated sector; bindingness and commencement are established from the enabling provision and the Notification's own text, never inferred from the title alone."
+    },
+    {
+      "rank": 3,
+      "kind": "rule",
+      "localName": "ระเบียบ (Rabiab / Regulation)",
+      "bindingness": "binding",
+      "note": "Agency-issued procedural or administrative regulation, lower in the hierarchy than an Act, Royal Decree, or Ministerial Regulation. Declared here mainly so an undeclared kind does not silently default to binding without anyone having chosen that (see backend/test/bindingness.test.ts) -- the discovery pipeline's generic title classifier can tag a document 'rule' even though this profile did not design a distinct Thai category for it. Classified 'binding' as a judgment call, not a confirmed legal determination: a ระเบียบ generally binds regulated parties within its own scope, but this should be revisited if a specific Thai rule-classified document's actual legal force turns out to differ in practice."
+    },
+    {
+      "rank": 4,
+      "kind": "guideline",
+      "localName": "แนวปฏิบัติ / คำแนะนำ (Guideline or advisory)",
+      "bindingness": "advisory",
+      "note": "Evidence of regulator interpretation or expected practice, not itself the source of a legal obligation unless the guideline and its enabling authority say it binds the relevant entities."
+    },
+    {
+      "rank": 5,
+      "kind": "publication",
+      "localName": "Publication about the law",
+      "bindingness": "advisory",
+      "note": "A document a body published about the law rather than an instrument of it: a consultation paper, a media release, an FAQ, a landing page for an Act held in the statute book. Registered because it is real evidence of how a regulator reads an obligation, and never the source of one. Assigned where the source states neither an identifier nor a standing."
+    }
+  ],
+  "portals": [
+    {
+      "name": "Office of the Council of State -- Law Search (Krisdika)",
+      "url": "https://searchlaw.ocs.go.th",
+      "kind": "legislation-database",
+      "authority": "Office of the Council of State (สำนักงานคณะกรรมการกฤษฎีกา)",
+      "pillars": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+      "adapter": "ocs",
+      "adapterConfig": {},
+      "notes": "Primary legislation database (the SSO/India Code equivalent). Read through the requests the portal's own public pages send, captured from a browser on 26 September 2026 and replayed unchanged: the in-force listing is a paged form POST to www.ocs.go.th/searchlaw/indexs/list_table_search (each principal law row carries the Royal Decrees, Ministerial Regulations and Notifications made under it), and a law's consolidated text is a JSON POST to searchlaw.ocs.go.th/ocs-api/public/doc/getLawDoc, returned already divided into sections with Royal Gazette references as footnotes. No credential is sent or needed; robots.txt is absent on both hosts. See src/discover/ocs.ts."
+    },
+    {
+      "name": "Central Legal System (ระบบกลางทางกฎหมาย)",
+      "url": "https://law.go.th",
+      "kind": "legislation-database",
+      "authority": "Office of the Council of State, cross-agency legal portal",
+      "pillars": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+      "adapter": null,
+      "adapterConfig": {},
+      "notes": "A second, distinct government-wide legal portal (separate from OCS/krisdika above). robots.txt is fully permissive, but its own already-declared JS bundle returns a genuine CloudFront 403 ('Request blocked') -- a harder wall than a Cloudflare Managed Challenge, and reCAPTCHA loads unconditionally. Full trace: docs/thailand-integration-plan.md, section \"Three more portals checked, each stopped on its own real signal (17 September 2026)\"."
+    },
+    {
+      "name": "Royal Gazette (ราชกิจจานุเบกษา)",
+      "url": "https://ratchakitcha.soc.go.th",
+      "kind": "gazette",
+      "authority": "Secretariat of the Cabinet",
+      "pillars": [],
+      "adapter": null,
+      "adapterConfig": {},
+      "notes": "Thailand's actual commencement-date evidence (Gazette publication date, not the Act's own date). CLOSED: confirmed Cloudflare Managed Challenge, tested with both curl and the repo's own Fetcher class, not assumed. Full trace: docs/thailand-integration-plan.md, section \"Candidate sources — verified live, 15 September 2026\"."
+    },
+    {
+      "name": "Personal Data Protection Committee",
+      "url": "https://pdpc.or.th",
+      "kind": "regulator",
+      "authority": "PDPC",
+      "pillars": [6, 7],
+      "adapter": null,
+      "adapterConfig": {},
+      "notes": "Data-protection regulator, pillars 6/7. CLOSED: identical confirmed Cloudflare Managed Challenge as the Royal Gazette. Full trace: docs/thailand-integration-plan.md, section \"Candidate sources — verified live, 15 September 2026\"."
+    },
+    {
+      "name": "National Broadcasting and Telecommunications Commission",
+      "url": "https://nbtc.go.th",
+      "kind": "regulator",
+      "authority": "NBTC",
+      "pillars": [5, 7, 10, 11],
+      "adapter": null,
+      "adapterConfig": {},
+      "notes": "CLOSED despite a misleadingly permissive robots.txt -- the site's actual pages return the same confirmed Cloudflare Managed Challenge (curl + repo Fetcher, both hosts). broadcast.nbtc.go.th has the identical block, same authority, not a separate portal. Full trace: docs/thailand-integration-plan.md, section \"Candidate sources — verified live, 15 September 2026\"."
+    },
+    {
+      "name": "Bank of Thailand -- circulars and notifications database (FIPCS)",
+      "url": "https://app.bot.or.th/FIPCS",
+      "kind": "regulator",
+      "authority": "Bank of Thailand (ธนาคารแห่งประเทศไทย)",
+      "pillars": [6, 7, 8, 12],
+      "adapter": "fipcs",
+      "adapterConfig": {},
+      "notes": "The bank's own register of its notifications (ประกาศ ธปท.), which the sitemap of www.bot.or.th does not list. Read through the ASP.NET search form exactly as a reader uses it -- document type ประกาศ ธปท., standing ใช้อยู่ (in force) -- paging with the form's own postback. Each row links the notification's PDF on www.bot.or.th, in English as well as Thai for many; the English is read as the document and the Thai beside it. Checked 26 September 2026: 21 pages of about 30."
+    },
+    {
+      "name": "Bank of Thailand",
+      "url": "https://www.bot.or.th",
+      "kind": "regulator",
+      "authority": "Bank of Thailand",
+      "pillars": [6, 7, 8],
+      "adapter": "sitemap",
+      "adapterConfig": {},
+      "notes": "PERMITTED and sitemap-shaped: robots.txt disallows only three SharePoint admin paths (/_layouts/, /_vti_bin/, /_catalogs/) and declares Sitemap: en.sitemap.xml and th.sitemap.xml. The sitemap adapter applies directly, no new code needed."
+    },
+    {
+      "name": "Thai Customs Department",
+      "url": "https://www.customs.go.th",
+      "kind": "regulator",
+      "authority": "Customs Department, Ministry of Finance",
+      "pillars": [1, 2, 3, 12],
+      "adapter": null,
+      "adapterConfig": {},
+      "notes": "PERMITTED, real server-rendered PHP -- but the crawl adapter finds 0 instruments (formally re-confirmed twice). Root cause is not access: instrumentTitle()'s title-recognition grammar is English-trailing-noun-only, structurally backwards for Thai's leading-noun drafting convention, and a safe fix needs calibration data (ESCAP citations) this profile must keep quarantined. Full trace: docs/thailand-integration-plan.md, section \"Three more portals checked, each stopped on its own real signal (17 September 2026)\"."
+    },
+    {
+      "name": "Department of Business Development",
+      "url": "https://www.dbd.go.th",
+      "kind": "registry",
+      "authority": "Department of Business Development, Ministry of Commerce",
+      "pillars": [3, 12],
+      "adapter": null,
+      "adapterConfig": {},
+      "notes": "No robots.txt restriction, but client-side-rendered Next.js (CSR) -- the /law page's dispatched Redux action was traced to an unresolvable chunk ID (its handling code isn't in any chunk already confirmed loaded by the page). Full trace: docs/thailand-integration-plan.md, section \"Three more portals checked, each stopped on its own real signal (17 September 2026)\"."
+    },
+    {
+      "name": "Ministry of Digital Economy and Society (กระทรวงดิจิทัลเพื่อเศรษฐกิจและสังคม)",
+      "url": "https://www.mdes.go.th",
+      "kind": "regulator",
+      "authority": "Ministry of Digital Economy and Society",
+      "pillars": [7, 8, 9],
+      "adapter": null,
+      "adapterConfig": {},
+      "notes": "Issues the ministerial notifications under the Computer-Related Crime Act B.E. 2550, among them the traffic-data retention criteria. No adapter: its law pages serve the notification PDF, registered by URL. Full trace: docs/thailand-integration-plan.md, \"MDES notifications\"."
+    }
+  ],
+  "commitments": [
+    {
+      "name": "World Trade Organization",
+      "status": "in-force",
+      "sourceUrl": "https://www.wto.org/english/thewto_e/countries_e/thailand_e.htm"
+    },
+    {
+      "name": "WTO Trade Facilitation Agreement",
+      "status": "in-force",
+      "sourceUrl": "https://www.tfadatabase.org/en/members/thailand"
+    }
+  ],
+  "notes": "This profile was researched from current official Thai portals, live-checked on 15 September 2026 from an environment that could actually reach them (curl, and where relevant backend/src/fetch's own Fetcher class). ESCAP's completed Thailand Round 2 answer sheet remains quarantined in the isolated baseline store per docs/architecture.md §5 and docs/thailand-integration-plan.md, and was not read to write this profile. Coverage is genuinely narrower than India's or Malaysia's first slice: Thailand's primary legislation database and its Royal Gazette (the actual commencement-date evidence) are both currently unreadable by this codebase -- one is an API-backed SPA with no adapter yet, the other is confirmedly blocked by a Cloudflare Managed Challenge that survives even the repo's browser-shaped-TLS fetcher. Only two portals (Bank of Thailand, Thai Customs) are ready with existing adapters today.",
+  "authoredBy": "LexDroid team",
+  "authoredOn": "2026-09-15",
+  "sources": [
+    "docs/thailand-integration-plan.md -- the full rollout plan, its 14 Sep first draft and its 15 Sep corrections, all in this repo",
+    "https://www.bot.or.th/robots.txt -- read directly, 15 Sep 2026, sitemap declared",
+    "https://www.customs.go.th/ and its list_strc_download_with_docno_date.php-style listing pages -- read directly, 15 Sep 2026",
+    "https://www.ocs.go.th/, /sitemap.xml and https://searchlaw.ocs.go.th/ including its compiled main.js bundle -- read directly, 15 Sep 2026",
+    "https://law.go.th/ and its robots.txt -- read directly, 15 Sep 2026",
+    "https://ratchakitcha.soc.go.th/, https://pdpc.or.th/, https://nbtc.go.th/, https://broadcast.nbtc.go.th/ -- read directly with curl AND with backend/src/fetch's Fetcher class, 15 Sep 2026, both returning an identical Cloudflare Managed Challenge",
+    "https://www.dbd.go.th/law -- read directly, 15 Sep 2026, confirmed client-side-rendered",
+    "NOT ESCAP's Round 2 database or legal inventory for Thailand: those remain evaluation-only, per the isolation this profile is required to respect"
+  ]
+}

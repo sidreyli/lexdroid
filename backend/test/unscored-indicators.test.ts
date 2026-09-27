@@ -25,6 +25,7 @@ function finding(over: Partial<Finding>): Finding {
     indicatorId: '', measure: null, dutyBearer: 'a foreign person', dutyAct: 'may not hold',
     dutyForce: 'requires', placeWords: null, exceptionWords: null, locatedData: null,
     informationWords: null, keepingWords: null, roleWords: null, definingWords: 'not more than 30%',
+    subjectWords: 'the telecommunications sector',
     borderWords: null,
     imposingWords: 'may not hold', prescribingWords: null, dutyBearerKind: 'organisation',
     quote: 'a foreign person may not hold more than 30% of the shares', requirement: 'r',
@@ -65,31 +66,39 @@ describe('every indicator can now be answered or says why not', () => {
 });
 
 describe('the foreign-equity ladder', () => {
+  // 3.1's subject is a sector relevant to digital trade, which the words or the title must name.
+  const e31 = (measure: string, over: Partial<Finding> = {}, n = 1) =>
+    ev('3.1', measure, { subjectWords: over.sector ?? 'broadcasting', ...over }, n);
+
   it('scores a ban at the top of 3.1', () => {
-    expect(score('3.1', [ev('3.1', 'foreign-equity-ban', { definingWords: 'no shares may be held by a foreign person' })])).toBe(1);
+    expect(score('3.1', [e31('foreign-equity-ban', { definingWords: 'no shares may be held by a foreign person' })])).toBe(1);
   });
 
   it('scores one minority limit in one sector at 0.8', () => {
-    expect(score('3.1', [ev('3.1', 'foreign-equity-minority')])).toBe(0.8);
+    expect(score('3.1', [e31('foreign-equity-minority')])).toBe(0.8);
   });
 
   it('promotes minority limits in two sectors to the top band, as 3.1 counts sectors', () => {
-    const two = [ev('3.1', 'foreign-equity-minority', { sector: 'broadcasting' }, 1), ev('3.1', 'foreign-equity-minority', { sector: 'aviation' }, 2)];
+    const two = [e31('foreign-equity-minority', { sector: 'broadcasting' }, 1), e31('foreign-equity-minority', { sector: 'banking' }, 2)];
     expect(score('3.1', two)).toBe(1);
   });
 
   it('leaves two minority limits in the same sector at 0.8', () => {
-    const same = [ev('3.1', 'foreign-equity-minority', { sector: 'broadcasting' }, 1), ev('3.1', 'foreign-equity-minority', { sector: 'broadcasting' }, 2)];
+    const same = [e31('foreign-equity-minority', { sector: 'broadcasting' }, 1), e31('foreign-equity-minority', { sector: 'broadcasting' }, 2)];
     expect(score('3.1', same)).toBe(0.8);
   });
 
   it('scores a controlling stake, and a limit that bites only on state-owned firms, at 0.5', () => {
-    expect(score('3.1', [ev('3.1', 'foreign-equity-controlling')])).toBe(0.5);
-    expect(score('3.1', [ev('3.1', 'foreign-equity-state-owned-only')])).toBe(0.5);
+    expect(score('3.1', [e31('foreign-equity-controlling')])).toBe(0.5);
+    expect(score('3.1', [e31('foreign-equity-state-owned-only')])).toBe(0.5);
   });
 
   it('scores nothing found at zero', () => {
     expect(score('3.1', [])).toBe(0);
+  });
+
+  it('does not count a cap in a sector unrelated to digital trade', () => {
+    expect(score('3.1', [e31('foreign-equity-minority', { sector: 'airports', subjectWords: 'an airport-operator company' })])).toBe(0);
   });
 
   it('counts measures rather than sectors for 5.2, which is one sector already', () => {
@@ -102,10 +111,13 @@ describe('the foreign-equity ladder', () => {
     expect(score('5.2', two)).toBe(1);
   });
 
+  // The subject is given per call: 12.01 is the e-commerce rung of the same ladder, and the file's
+  // default names the telecommunications sector, which is 5.2's.
   it("puts a ban in 12.01's top band, whose ladder starts at a minority stake", () => {
-    expect(score('12.01', [ev('12.01', 'ecommerce-equity-ban', { definingWords: 'no shares may be held by a foreign person' })])).toBe(1);
-    expect(score('12.01', [ev('12.01', 'ecommerce-equity-minority')])).toBe(1);
-    expect(score('12.01', [ev('12.01', 'ecommerce-equity-controlling')])).toBe(0.5);
+    const online = { subjectWords: 'an online marketplace' };
+    expect(score('12.01', [ev('12.01', 'ecommerce-equity-ban', { ...online, definingWords: 'no shares may be held by a foreign person' })])).toBe(1);
+    expect(score('12.01', [ev('12.01', 'ecommerce-equity-minority', online)])).toBe(1);
+    expect(score('12.01', [ev('12.01', 'ecommerce-equity-controlling', online)])).toBe(0.5);
   });
 
   it("does not count a telecom cap under 3.1, which carves that sector out", () => {
@@ -125,8 +137,21 @@ describe('the foreign-equity ladder', () => {
 });
 
 describe('the de minimis, compared with 200 US dollars', () => {
+  // Every threshold below is one on goods arriving, which is what a de minimis is, so each carries
+  // the words that say so. The measure is declared `crossesBorder`, and a figure in a revenue
+  // statute with nothing crossing is a threshold but not this one.
   const threshold = (words: string, n = 1): Evidence =>
-    ev('12.5', 'de-minimis-threshold', { definingWords: words, dutyForce: 'permits', imposingWords: null }, n);
+    ev(
+      '12.5',
+      'de-minimis-threshold',
+      {
+        definingWords: words,
+        dutyForce: 'permits',
+        imposingWords: null,
+        borderWords: 'goods imported into the economy',
+      },
+      n,
+    );
 
   it('scores 0.5 for a threshold below the line', () => {
     expect(score('12.5', [threshold('goods not exceeding RM500 in value')], 'MYS')).toBe(0.5);
@@ -230,10 +255,37 @@ describe('money read out of a provision', () => {
   it('reads the figure and the currency the provision names', () => {
     expect(moneyIn('not exceeding S$400', 'SGP')).toEqual({ amount: 400, currency: 'SGD', assumedCurrency: false });
     expect(moneyIn('not exceeding RM500', 'MYS')).toEqual({ amount: 500, currency: 'MYR', assumedCurrency: false });
+    expect(moneyIn('goods valued at ₹5,000', 'IND')).toEqual({ amount: 5000, currency: 'INR', assumedCurrency: false });
+    expect(moneyIn('goods valued at 5,000 rupees', 'IND')).toEqual({ amount: 5000, currency: 'INR', assumedCurrency: false });
+  });
+
+  it('reads a sum a Thai provision states in Thai digits and the Thai word for baht', () => {
+    expect(moneyIn('ราคาไม่เกิน ๑,๕๐๐ บาท', 'THA')).toEqual({ amount: 1500, currency: 'THB', assumedCurrency: false });
+    expect(moneyIn('มูลค่าไม่เกิน 1,500บาท', 'THA')).toEqual({ amount: 1500, currency: 'THB', assumedCurrency: false });
+    expect(moneyIn('ภายใน ๓๐ วัน ตามมาตรา ๕', 'THA')).toBeNull();
   });
 
   it('falls back to the economy’s own currency for a bare symbol, and says it did', () => {
     expect(moneyIn('not exceeding $1,000', 'AUS')).toEqual({ amount: 1000, currency: 'AUD', assumedCurrency: true });
+    expect(moneyIn('not exceeding 5,000', 'IND')).toEqual({ amount: 5000, currency: 'INR', assumedCurrency: true });
+  });
+
+  // The first number anywhere, with a currency found anywhere else, read a citation as the sum.
+  it('reads the figure the currency is written against, not a citation', () => {
+    expect(moneyIn('Goods under section 3 with a value not exceeding S$400', 'SGP')).toEqual({
+      amount: 400,
+      currency: 'SGD',
+      assumedCurrency: false,
+    });
+    expect(moneyIn('under section 12(1), not exceeding 1,000 ringgit', 'MYS')).toMatchObject({ amount: 1000, currency: 'MYR' });
+    expect(moneyIn('within 30 days, goods not exceeding $1,000 under regulation 4', 'AUS')).toMatchObject({ amount: 1000 });
+    expect(moneyIn('not exceeding RM 500', 'MYS')).toMatchObject({ amount: 500, currency: 'MYR' });
+    expect(moneyIn('a $400 fine', 'SGP')).toEqual({ amount: 400, currency: 'SGD', assumedCurrency: true });
+  });
+
+  it('answers nothing where the quote states two different sums', () => {
+    expect(moneyIn('S$400, or S$1,000 for alcohol', 'SGP')).toBeNull();
+    expect(moneyIn('under section 3 and regulation 7', 'SGP')).toBeNull();
   });
 
   it('reads no figure where the provision states none', () => {

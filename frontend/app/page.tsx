@@ -3,6 +3,7 @@ import { Attention, type AttentionItem } from "@/components/home/attention";
 import { Coverage, type CoverageSquare } from "@/components/home/coverage";
 import { RecentRuns } from "@/components/home/recent-runs";
 import { StartRun } from "@/components/home/start-run";
+import { getEngines } from "@/lib/data/engines";
 import {
   getCoverage,
   getEconomies,
@@ -11,6 +12,7 @@ import {
   getRuns,
 } from "@/lib/data";
 import { clip } from "@/lib/format";
+import { isReadOnlyDeployment } from "@/lib/deployment";
 
 export default function Home() {
   const rubric = getRubric();
@@ -18,6 +20,8 @@ export default function Home() {
   const coverage = getCoverage();
   const rows = getExportRows();
   const runs = getRuns();
+  const { chosen, engines } = getEngines();
+  const readOnly = isReadOnlyDeployment();
 
   const names = new Map(economies.map((e) => [e.code, e.name]));
   const labels = new Map(rubric.indicators.map((i) => [i.id, clip(i.category, 150)]));
@@ -81,7 +85,13 @@ export default function Home() {
 
         <div className="grid gap-5 lg:grid-cols-2 xl:grid-cols-12">
           <div className="xl:col-span-5">
-            <StartRun economies={economies} pillars={[...rubric.pillars]} />
+            <StartRun
+              economies={economies}
+              pillars={[...rubric.pillars]}
+              engines={engines}
+              chosenEngine={chosen}
+              readOnly={readOnly}
+            />
           </div>
           <div className="xl:col-span-4">
             <Attention items={attention} />

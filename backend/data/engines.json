@@ -1,0 +1,45 @@
+{
+  "$comment": "The engines the interface can choose between. ESCAP requires two that differ in kind, at least one open-weights, declared before 30 September and unchanged after. The API key for a hosted engine is never written here: it is read from LEXDROID_HOSTED_API_KEY in the environment, because a key on disk is a key in a backup.",
+  "default": "engine-a",
+  "engines": [
+    {
+      "id": "engine-a",
+      "label": "Engine A",
+      "kind": "open-weights",
+      "provider": "Ollama",
+      "model": "gemma4-lex-16k",
+      "checkpoint": "gemma4:12b-it-q4_K_M",
+      "hosted": false,
+      "hosts": [
+        "http://127.0.0.1:11434"
+      ],
+      "declared": true,
+      "weaknesses": "Quantised to 4 bits. Reads a long provision in one pass at 16k context; a longer section is split, and a definition that sits outside the split is not seen.",
+      "notes": "Runs on this machine, or on a GPU the interface rents by the hour. The whole pipeline runs on it alone, which is the Section 3 claim: no proprietary API is called and the weights are open.",
+      "rented": {
+        "provider": "RunPod",
+        "minGpuMemoryGb": 16,
+        "maxUsdPerHour": 0.34
+      }
+    },
+    {
+      "id": "engine-b",
+      "label": "Engine B",
+      "kind": "open-weights",
+      "provider": "Ollama on a rented RunPod GPU",
+      "model": "qwen3.8-lex-16k",
+      "checkpoint": "qwen3.8:27b-q4_K_M",
+      "hosted": false,
+      "hosts": [],
+      "schema": "described",
+      "rented": {
+        "provider": "RunPod",
+        "minGpuMemoryGb": 24,
+        "maxUsdPerHour": 0.34
+      },
+      "declared": true,
+      "weaknesses": "Quantised to 4 bits, like Engine A, and read at the same 16k context, so a long section is split the same way. Served from a GPU rented by the hour: a run depends on RunPod placing a pod, and on that pod's download speed the first time it pulls the weights.",
+      "notes": "Differs from Engine A in kind on the axes ESCAP names: a different model family (Qwen against Gemma), more than twice the size (27B against 12B), and someone else's hardware. Open weights end to end, served by the same Ollama from the same kind of Modelfile (ollama/qwen3.8-lex-16k.Modelfile), so what differs between the two engines is the model and nothing in the pipeline. Started from the interface: it rents the cheapest 24 GB GPU listed under the ceiling, the pod builds this tag itself, and it answers behind a per-pod token on RunPod's HTTPS proxy."
+    }
+  ]
+}

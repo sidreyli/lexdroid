@@ -20,7 +20,9 @@ export type UnreadReason =
   | 'empty'
   | 'parse-error'
   | 'unsupported-media-type'
-  | 'another-instrument';
+  | 'another-instrument'
+  /** Published about an instrument -- a consultation, a release, a headline -- rather than one. */
+  | 'not-an-instrument';
 
 export interface ParsedSection {
   ordinal: number;

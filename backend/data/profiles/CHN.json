@@ -30,6 +30,13 @@
       "note": "Issued by a ministry such as the Cyberspace Administration of China or MIIT within its own remit. Binding, and in the data-governance pillars this is where the operative thresholds live: the cross-border data flow measures are CAC rules, not laws."
     },
     {
+      "rank": 3,
+      "kind": "order",
+      "localName": "令 (Order of the State Council or a ministry)",
+      "bindingness": "binding",
+      "note": "The numbered order (国务院令, 部令) by which an Administrative Regulation or Departmental Rule is promulgated, and which carries the instrument's text. Binding at the tier of what it promulgates. Declared so an order the register classifies does not silently default to binding without anyone having chosen that (see backend/test/bindingness.test.ts); a judgment call to revisit against a real 令 in the register."
+    },
+    {
       "rank": 4,
       "kind": "regulation",
       "localName": "地方性法规 (Local regulation of a provincial people's congress)",
@@ -37,11 +44,25 @@
       "note": "Binding within its province. Relevant because several data regimes were piloted provincially before national rules existed, so a provincial regulation can be the only instrument on point."
     },
     {
+      "rank": 4,
+      "kind": "notice",
+      "localName": "通知 / 公告 (Notice or announcement of a ministry or regulator)",
+      "bindingness": "binding-on-licensees",
+      "note": "Issued by a regulator such as CAC, MIIT or PBOC to the entities in its remit. Some carry binding requirements, many only announce or interpret; bindingness is established from the notice's own text and enabling authority, never inferred from the title. Declared as the other economies declare their regulator notices (see backend/test/bindingness.test.ts); a judgment call to revisit against a real 通知 in the register."
+    },
+    {
       "rank": 5,
       "kind": "guideline",
       "localName": "国家标准 / 规范性文件 (National standard or normative document)",
       "bindingness": "advisory",
       "note": "A GB/T recommended national standard states how a regulator expects a binding duty to be met. Evidence of interpretation, never the source of an obligation on its own — except where a binding instrument incorporates the standard by reference, which has to be shown rather than assumed."
+    },
+    {
+      "rank": 6,
+      "kind": "publication",
+      "localName": "Publication about the law",
+      "bindingness": "advisory",
+      "note": "A document a body published about the law rather than an instrument of it: a consultation paper, a media release, an FAQ, a landing page for an Act held in the statute book. Registered because it is real evidence of how a regulator reads an obligation, and never the source of one. Assigned where the source states neither an identifier nor a standing."
     }
   ],
   "portals": [

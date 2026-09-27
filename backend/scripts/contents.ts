@@ -4,6 +4,7 @@
  *   npm run -w backend contents -- --economy SGP
  *   npm run -w backend contents -- --economy SGP --budget-min 20
  *   npm run -w backend contents -- --economy SGP --kinds act,regulation
+ *   npm run -w backend contents -- --economy AUS --order register
  *
  * Discovery ranked titles, and titles do not say what an Act contains -- see src/contents for the
  * measurement that established it. This crawls each instrument's landing page, which is its table
@@ -25,7 +26,9 @@ function arg(name: string): string | null {
 }
 
 const economy = (arg('economy') ?? 'SGP').toUpperCase();
-const kinds = (arg('kinds') ?? 'act').split(',').map((k) => k.trim()).filter(Boolean);
+const kinds = (arg('kinds') ?? 'act,regulation,order,rule,notice,guideline')
+  .split(',').map((k) => k.trim()).filter(Boolean);
+const order = arg('order') === 'register' ? 'register' : 'rubric';
 const budgetMin = arg('budget-min') !== null ? Number(arg('budget-min')) : null;
 const embedOnly = process.argv.includes('--embed-only');
 const sourceMode = process.argv.includes('--cache-only') ? 'cache-only' : 'fetch';
@@ -40,6 +43,7 @@ async function main(): Promise<void> {
     const progress = await buildContents(db, fetcher, {
       economy,
       kinds,
+      order,
       ...(budgetMin ? { budgetMs: budgetMin * 60_000 } : {}),
       log,
     });

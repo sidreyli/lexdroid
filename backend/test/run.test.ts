@@ -51,6 +51,7 @@ function fixture() {
 const finding: Finding = {
   indicatorId: '7.3',
   measure: 'minimum-retention',
+  subjectWords: null,
   dutyBearer: 'Every company',
   dutyAct: 'shall retain the records',
   dutyForce: 'requires',
@@ -104,6 +105,7 @@ const readings: SectionReading[] = [
     completionTokens: 120,
     durationMs: 5200,
     fromCache: false,
+    fromResume: false,
   },
   {
     // Read, and it said nothing. This row is the whole evidence base for a cell scoring zero.
@@ -117,6 +119,7 @@ const readings: SectionReading[] = [
     completionTokens: 20,
     durationMs: 1100,
     fromCache: false,
+    fromResume: false,
   },
 ];
 
@@ -179,12 +182,15 @@ function answer(): PillarAnswer {
     retrieval: [retrieval('7.3'), retrieval('7.5')],
     readings,
     frameworkReadings: [],
+    frameworkExamined: {},
     rejectedFindings: 1,
     rejectedQuotes: 1,
     model: 'gemma4-lex-16k',
     durationMs: 9000,
     engineMs: 6300,
     cachedCalls: 0,
+    resumedCalls: 0,
+  carriedCalls: 0,
     stages: [
       { stage: 'retrieve', seconds: 1.5, items: 2 },
       { stage: 'read', seconds: 6.3, items: 2 },

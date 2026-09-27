@@ -8,7 +8,8 @@
 import { describe, expect, it } from 'vitest';
 import { openDb, type Db } from '../src/db/index.js';
 import {
-  buildExportRows, citationUrl, confidenceOf, mappingRationale, timeframe,
+  buildExportRows, cappedRationale, citationUrl, CONFIDENCE, confidenceOf, confidenceValue,
+  mappingRationale, noteWith, timeframe,
 } from '../src/export/index.js';
 import { isOfficialHost, quoteLeads, recomputeScores, verifyRun } from '../src/verify/index.js';
 
@@ -81,6 +82,7 @@ function storeWithOneAnswer(
         indicatorId: '7.3', measure: 'minimum-retention', quote,
         dutyBearer: 'A company', dutyAct: 'must keep', dutyForce: 'requires',
         definingWords: 'not less than 5 years',
+        subjectWords: null,
         imposingWords: 'must keep',
         prescribingWords: null,
         requirement: 'Accounting records must be kept for at least five years.',
@@ -96,23 +98,54 @@ function storeWithOneAnswer(
                               controlling_instrument_id, rationale, computed_at)
      VALUES (1, 1, 1, 'A minimum retention period is imposed', 'a stated period of 5 years', 1, 'x', ?)`,
   ).run(now);
+  // What the answer stood on. Rows come from here, not from everything the reader returned.
+  db.prepare(
+    `INSERT INTO answer_basis (cell_id, ordinal, instrument_id, section_id, measure)
+     VALUES (1, 1, 1, 1, 'minimum-retention')`,
+  ).run();
   return db;
 }
 
 describe('the export row', () => {
   it('makes one row per measure, not one per reading', () => {
     // "if the single entry includes multi measures, suggest to separate" -- a reviewer accepts or
-    // rejects one claim at a time, so two findings in one reading are two rows.
+    // rejects one claim at a time, so two measures in one reading are two rows.
     const db = storeWithOneAnswer();
     db.prepare('UPDATE reading SET attributes = ? WHERE id = 1').run(
       JSON.stringify([
         { indicatorId: '7.3', measure: 'minimum-retention', quote: QUOTE, requirement: 'Five years.', mandatory: true, dutyForce: 'requires' },
-        { indicatorId: '7.3', measure: 'minimum-retention', quote: QUOTE, requirement: 'Records kept.', mandatory: true, dutyForce: 'requires' },
+        { indicatorId: '7.3', measure: 'record-keeping', quote: QUOTE, requirement: 'Records kept.', mandatory: true, dutyForce: 'requires' },
       ]),
     );
+    db.prepare(
+      `INSERT INTO answer_basis (cell_id, ordinal, instrument_id, section_id, measure)
+       VALUES (1, 2, 1, 1, 'record-keeping')`,
+    ).run();
     const built = buildExportRows(db, 'r1');
     expect(built.rows).toBe(2);
     expect(built.cellsWithoutRow).toBe(0);
+    db.close();
+  });
+
+  it('leaves out a finding the decision set aside, and keeps it in the record', () => {
+    // Zone 3 held 4,310 of 5,268 findings on the twelve-pillar run -- a sentence that declares
+    // rather than obliges, a power to make a rule rather than the rule. The export was publishing
+    // all of them as measures.
+    const db = storeWithOneAnswer();
+    db.prepare('UPDATE reading SET attributes = ? WHERE id = 1').run(
+      JSON.stringify([
+        { indicatorId: '7.3', measure: 'minimum-retention', quote: QUOTE, requirement: 'Five years.', mandatory: true, dutyForce: 'requires' },
+        { indicatorId: '7.3', measure: 'deeming-rule', quote: QUOTE, requirement: 'Taken to be kept.', mandatory: false, dutyForce: 'declares' },
+      ]),
+    );
+    const built = buildExportRows(db, 'r1');
+    expect(built.rows).toBe(1);
+    const rows = db.prepare('SELECT notes FROM export_row').all() as { notes: string | null }[];
+    expect(rows[0]!.notes).toContain('minimum-retention');
+    // Still on the record: the export is a projection, not a filter that loses the reading.
+    expect(
+      (db.prepare('SELECT attributes FROM reading WHERE id = 1').get() as { attributes: string }).attributes,
+    ).toContain('deeming-rule');
     db.close();
   });
 
@@ -175,10 +208,50 @@ describe('the export row', () => {
   });
 
   it('states confidence from the evidence, not from a feeling', () => {
-    expect(confidenceOf({ quote: QUOTE, offsetsResolved: true, extraction: 'html' })).toContain('high');
-    expect(confidenceOf({ quote: QUOTE, offsetsResolved: false, extraction: 'html' })).toContain('medium');
-    expect(confidenceOf({ quote: QUOTE, offsetsResolved: true, extraction: 'ocr' })).toContain('OCR');
-    expect(confidenceOf({ quote: null, offsetsResolved: false, extraction: null })).toBe('no quotation');
+    const located = confidenceOf({ quote: QUOTE, offsetsResolved: true, extraction: 'html' });
+    const unlocated = confidenceOf({ quote: QUOTE, offsetsResolved: false, extraction: 'html' });
+    const ocr = confidenceOf({ quote: QUOTE, offsetsResolved: true, extraction: 'ocr' });
+    const confirmed = confidenceOf({
+      quote: QUOTE, offsetsResolved: true, extraction: 'html', confirmed: true,
+    });
+
+    // The ordering is the claim: a second reading beats none, clean text beats OCR, and words the
+    // source does not contain rank below words it does.
+    expect(confirmed.value).toBeGreaterThan(located.value);
+    expect(located.value).toBeGreaterThan(ocr.value);
+    expect(ocr.value).toBeGreaterThan(unlocated.value);
+
+    expect(located.because).toContain('located');
+    expect(ocr.because).toContain('OCR');
+    expect(confirmed.because).toContain('second reading');
+    expect(confidenceOf({ quote: null, offsetsResolved: false, extraction: null }).because)
+      .toBe('No quotation.');
+  });
+
+  it('writes confidence as a number between 0.00 and 1.00, as the template validates it', () => {
+    // Column L used to carry a sentence. The secretariat validates the column programmatically, so
+    // the number goes here and the sentence that earned it goes in Notes.
+    for (const value of Object.values(CONFIDENCE)) {
+      const written = confidenceValue({ value, because: '' });
+      expect(written).toMatch(/^[01]\.\d{2}$/);
+      expect(Number(written)).toBeGreaterThan(0);
+      expect(Number(written)).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it('puts the evidentiary sentence in front of whatever else the row had to say', () => {
+    expect(noteWith('Located.', 'Measure: LICENCE.')).toBe('Located. Measure: LICENCE.');
+    expect(noteWith('Located.', null)).toBe('Located.');
+  });
+
+  it('caps a rationale that never passed through the quotation path', () => {
+    // 78 of run 82673dbf's rows were over the template's 300 characters because a zero row states
+    // its reasoning in prose and so skipped the capping that mappingRationale does.
+    const long = `${'word '.repeat(100)}end`;
+    const capped = cappedRationale(long);
+    expect(capped.length).toBeLessThanOrEqual(300);
+    expect(capped.endsWith('...')).toBe(true);
+    expect(cappedRationale('short')).toBe('short');
   });
 });
 
@@ -335,6 +408,90 @@ describe('deriving the score again from the record', () => {
     const result = verifyRun(db, 'r1');
     expect(result.byGate['score-recomputes']!.failed).toBe(1);
     expect(result.held).toBe(1);
+    db.close();
+  });
+});
+
+/**
+ * A PDF has no anchors, and 183 of Malaysia's 225 rows cited the top of an Act because of it --
+ * every one held by the pinpoint gate, which exists for the reviewer comment "none of the reference
+ * links lead to the right document".
+ *
+ * `#page=` is the PDF viewer's own convention and every browser that renders a PDF honours it. The
+ * page was already recorded for 36,272 of 36,273 Malaysian sections and never used.
+ */
+describe('citing a provision inside a PDF', () => {
+  const PDF = 'https://lom.agc.gov.my/ilims/upload/portal/akta/LOM/EN/Act%20504.pdf';
+
+  it('cites the page when the PDF offers no anchor', () => {
+    expect(citationUrl(PDF, null, { page: 12, mediaType: 'application/pdf' })).toBe(`${PDF}#page=12`);
+  });
+
+  it('recognises a PDF by its extension when the server said nothing', () => {
+    expect(citationUrl(PDF, null, { page: 3 })).toBe(`${PDF}#page=3`);
+  });
+
+  it('prefers a real anchor to a page number', () => {
+    // An anchor names the provision; a page only narrows it to one page of several provisions.
+    expect(citationUrl(PDF, 'pr26-', { page: 12, mediaType: 'application/pdf' })).toBe(`${PDF}#pr26-`);
+  });
+
+  it('never puts a page fragment on an HTML page', () => {
+    // "#page=12" on HTML matches nothing: the reviewer lands where they started, and the gate is
+    // told the citation was pinpoint when it was not.
+    const html = 'https://sso.agc.gov.sg/Act/CoA1967';
+    expect(citationUrl(html, null, { page: 12, mediaType: 'text/html' })).toBe(html);
+    expect(citationUrl(html, null, { page: 12 })).toBe(html);
+  });
+
+  it('leaves a document that already carries a fragment alone', () => {
+    expect(citationUrl(`${PDF}#page=4`, null, { page: 12, mediaType: 'application/pdf' })).toBe(`${PDF}#page=4`);
+  });
+
+  it('says nothing where there is no page to say', () => {
+    expect(citationUrl(PDF, null, { page: null, mediaType: 'application/pdf' })).toBe(PDF);
+    expect(citationUrl(PDF, null, { page: 0, mediaType: 'application/pdf' })).toBe(PDF);
+    expect(citationUrl(PDF, null)).toBe(PDF);
+  });
+});
+
+describe('a row citing an instrument as a framework (F12)', () => {
+  // The framework rows went out with the host checked and nothing else: a quotation nobody found
+  // in the instrument, of an instrument nobody showed to be in force, passed every gate it met.
+  function frameworkRow(quote: string, quoteVerified: number): Db {
+    const db = storeWithOneAnswer();
+    const now = '2026-09-07T00:00:00.000Z';
+    db.exec(`INSERT INTO cell (id, run_id, economy_code, indicator_id, state) VALUES (9, 'r1', 'SGP', '7.1', 'restricted');
+             INSERT INTO cell_answer (cell_id, score, band_ordinal, band_criterion, computed_at) VALUES (9, 0, 2, 'framework', '${now}');
+             INSERT INTO answer_basis (cell_id, ordinal, instrument_id, section_id, measure) VALUES (9, 1, 1, NULL, NULL);`);
+    db.prepare(
+      `INSERT INTO framework_reading (cell_id, instrument_id, engine, model, establishes_framework, quote, quote_verified, read_at)
+       VALUES (9, 1, 'engine-a', 'm', 1, ?, ?, ?)`,
+    ).run(quote, quoteVerified, now);
+    db.prepare(
+      `INSERT INTO export_row (cell_id, economy, law_name, indicator_id, verbatim_snippet, source_url, created_at)
+       VALUES (9, 'SGP', 'Companies Act 1967', '7.1', ?, 'https://sso.agc.gov.sg/Act/CoA1967', ?)`,
+    ).run(quote, now);
+    return db;
+  }
+  const gatesOf = (db: Db) =>
+    Object.fromEntries(
+      (db.prepare(`SELECT gate, passed FROM gate_result g JOIN export_row e ON e.id = g.export_row_id WHERE e.cell_id = 9`).all() as {
+        gate: string; passed: number;
+      }[]).map((g) => [g.gate, g.passed]),
+    );
+
+  it('passes a quotation the instrument holds, of an instrument in force', () => {
+    const db = frameworkRow(QUOTE, 1);
+    verifyRun(db, 'r1');
+    expect(gatesOf(db)).toMatchObject({ 'quote-in-source': 1, 'framework-quote-verified': 1, 'in-force': 1 });
+    db.close();
+  });
+
+  it('fails a quotation the instrument does not hold', () => {
+    const db = frameworkRow('An Act to regulate the processing of personal data', 0);
+    verifyRun(db, 'r1');
+    expect(gatesOf(db)).toMatchObject({ 'quote-in-source': 0, 'framework-quote-verified': 0 });
     db.close();
   });
 });

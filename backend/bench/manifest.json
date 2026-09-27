@@ -1,0 +1,38 @@
+{
+  "about": "Which run answers each economy's pillars in the five-economy benchmark, which pack holds it, and the hand audit of docs/disagreements-five-economies.md. Read by scripts/bench-diff.ts.",
+  "packs": {
+    "aus-mys-sgp": "lexdroid.bench-aus-mys-sgp.db",
+    "ind": "lexdroid.bench-ind.db",
+    "tha": "lexdroid.bench-tha.db",
+    "12-follow": "lexdroid.bench-12-follow.db",
+    "p9-ams": "lexdroid.bench-p9-ams.db",
+    "mys81011": "lexdroid.bench-mys81011.db"
+  },
+  "sources": [
+    { "economy": "AUS", "pack": "aus-mys-sgp", "run": "a74d0fca-5362-4ee1-9194-983d70a66eab", "skip": [12] },
+    { "economy": "AUS", "pack": "12-follow", "run": "1550d25e-8695-431f-ad33-0716f05043f0", "pillars": [12] },
+    { "economy": "MYS", "pack": "aus-mys-sgp", "run": "a74d0fca-5362-4ee1-9194-983d70a66eab", "skip": [8, 10, 11, 12] },
+    { "economy": "MYS", "pack": "mys81011", "run": "880a2308-d908-41af-b83b-c2822fdad986", "pillars": [8, 10, 11] },
+    { "economy": "MYS", "pack": "12-follow", "run": "9dbd7d9c-6ce2-4fa3-b9fe-99112642fc56", "pillars": [12] },
+    { "economy": "SGP", "pack": "aus-mys-sgp", "run": "a74d0fca-5362-4ee1-9194-983d70a66eab", "skip": [9] },
+    { "economy": "SGP", "pack": "p9-ams", "run": "3ba611e1-0f69-4a34-9103-6ff5fe70e333", "pillars": [9] },
+    { "economy": "IND", "pack": "ind", "run": "283f457e-6b94-4cac-8d36-b79d329867c7", "skip": [8] },
+    { "economy": "IND", "pack": "ind", "run": "78642831-8bc7-4db0-a50b-d6dca7fb618c", "pillars": [8] },
+    { "economy": "THA", "pack": "tha", "run": "f8848a01-d776-42a3-8db2-afbcc3a25e8d" }
+  ],
+  "audit": {
+    "unearned": ["AUS 10.3", "MYS 10.2", "MYS 11.3", "THA 10.2", "THA 3.1", "IND 12.4.6"],
+    "finds": {
+      "AUS 5.1": 0, "AUS 6.2": 1, "AUS 9.1": 1,
+      "SGP 8.3": 1, "SGP 9.3": 1, "SGP 11.2": 0, "SGP 12.8": 1, "SGP 12.4.7": 1,
+      "IND 6.1": 0.5, "IND 6.3": 1, "IND 7.2": 0.5,
+      "THA 12.4.1": 1
+    },
+    "contestable": [
+      "AUS 1.4", "AUS 2.1", "MYS 2.1", "SGP 6.2",
+      "IND 2.2", "IND 3.2", "IND 4.1", "IND 4.9", "IND 12.4.4", "THA 8.4", "THA 12.3"
+    ],
+    "notAnswerable": ["AUS 5.3", "MYS 5.3", "SGP 5.3", "IND 5.3", "THA 5.3", "AUS 3.4", "IND 3.4"]
+  },
+  "declareAt": 0.75
+}

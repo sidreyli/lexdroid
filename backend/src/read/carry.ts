@@ -1,0 +1,97 @@
+/**
+ * Readings an earlier run already performed, reused instead of asked for again.
+ *
+ * The question put to the model is built from the provision text and the pillar's rubric and from
+ * nothing else -- no cell, no economy, no search record -- at temperature zero. So a provision
+ * already read against a pillar by the same model has already been asked this exact question, and
+ * asking it again buys a second copy of the answer at full price. A retrieval change that adds
+ * provisions is the case where that matters: the provisions it adds are new, and every other one
+ * in the pillar is a call the account has already paid for.
+ *
+ * What this is not: the development cache, which replays answers to questions a changed prompt is
+ * no longer asking. The prior run is named on the command line, its readings are matched on model,
+ * and each carried reading keeps the call id of the run that made it, so the record says which run
+ * read what. A run that carried anything says so on its own notes.
+ *
+ * The fidelity limit, stated: a reading the engine refused was stored as a provision with nothing
+ * in it, and comes back that way. That is what the earlier run decided on, which is what a
+ * comparison against it needs, but it means carried readings cannot be asked how many failed.
+ */
+import type { Db } from '../db/index.js';
+import type { Finding, SectionReading } from './index.js';
+
+interface Row {
+  section_id: number;
+  model: string;
+  attributes: string;
+  unreadable: number | null;
+}
+
+/**
+ * Every provision the prior run read against this pillar, as the reading it produced.
+ *
+ * One call is filed as several rows, one per cell of the pillar, each holding the findings that
+ * cell acted on. The call's own answer is their union, so the rows are gathered back up here.
+ */
+export function carriedReadings(
+  db: Db,
+  priorRunId: string,
+  pillarId: number,
+  indicatorIds: readonly string[],
+  model: string,
+): Map<number, SectionReading> {
+  const out = new Map<number, SectionReading>();
+  if (indicatorIds.length === 0) return out;
+
+  const rows = db
+    .prepare(
+      `SELECT r.section_id, r.model, r.attributes, r.unreadable
+         FROM reading r JOIN cell c ON c.id = r.cell_id
+        WHERE c.run_id = ? AND r.model = ?
+          AND c.indicator_id IN (${indicatorIds.map(() => '?').join(',')})`,
+    )
+    .all(priorRunId, model, ...indicatorIds) as Row[];
+
+  // The same finding reaches us once per cell that acted on it. Keyed on what makes a finding
+  // distinct to the decision -- its indicator, its measure and the words it rests on.
+  const seen = new Map<number, Set<string>>();
+  for (const row of rows) {
+    let reading = out.get(row.section_id);
+    if (!reading) {
+      reading = {
+        sectionId: row.section_id,
+        pillarId,
+        findings: [],
+        rejected: [],
+        failure: null,
+        model: row.model,
+        // Zero, because this run spent none of them. The tokens and the seconds this reading really
+        // cost are on the run that made the call, which its call id names.
+        promptTokens: 0,
+        completionTokens: 0,
+        durationMs: 0,
+        fromCache: false,
+        fromResume: false,
+        carriedFrom: priorRunId,
+        // A reading that was incomplete when it was made is incomplete when it is carried.
+        ...(row.unreadable ? { unreadable: row.unreadable } : {}),
+      };
+      out.set(row.section_id, reading);
+      seen.set(row.section_id, new Set());
+    }
+    const keys = seen.get(row.section_id)!;
+    let findings: Finding[];
+    try {
+      findings = JSON.parse(row.attributes) as Finding[];
+    } catch {
+      continue;
+    }
+    for (const f of findings) {
+      const key = `${f.indicatorId}\u0000${f.measure ?? ''}\u0000${f.quote ?? ''}`;
+      if (keys.has(key)) continue;
+      keys.add(key);
+      reading.findings.push(f);
+    }
+  }
+  return out;
+}

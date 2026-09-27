@@ -7,7 +7,7 @@
  * The measures named the restriction and left both facts -- ICT, and a border -- to a gloss.
  */
 import { describe, expect, it } from 'vitest';
-import { MEASURES } from '../src/rubric/measures.js';
+import { MEASURES, SUBJECTS } from '../src/rubric/measures.js';
 import { decide, type Evidence, type SurfacedInstrument } from '../src/decide/index.js';
 import { rejectionFor, __prompt, type Finding } from '../src/read/index.js';
 import { loadRubric } from '../src/rubric/index.js';
@@ -27,7 +27,8 @@ function finding(over: Partial<Finding> = {}): Finding {
     dutyAct: 'must not import',
     dutyForce: 'forbids',
     roleWords: null,
-    definingWords: 'telecommunications equipment',
+    definingWords: 'must not import into Australia',
+    subjectWords: 'telecommunications equipment',
     borderWords: 'import into Australia',
     imposingWords: 'must not import',
     prescribingWords: null,
@@ -85,14 +86,14 @@ describe('a trade measure is defined by the crossing', () => {
     // The Competition and Consumer Act's consumer-goods ban: a real prohibition, no border.
     const d = at('10.1', [evidence({ borderWords: null })]);
     expect(d.score).toBe(0);
-    expect(d.held).toHaveLength(1);
-    expect(d.held[0]?.reason).toContain('enters or leaves');
+    expect(d.excluded).toHaveLength(1);
+    expect(d.excluded[0]?.reason).toContain('enters or leaves');
   });
 
   it('scores when something does cross', () => {
     const d = at('10.1', [evidence()]);
     expect(d.score).toBe(0.5);
-    expect(d.held).toHaveLength(0);
+    expect(d.excluded).toHaveLength(0);
   });
 
   it('rejects a crossing the provision does not contain', () => {
@@ -102,9 +103,15 @@ describe('a trade measure is defined by the crossing', () => {
 });
 
 describe('the goods are the defining element', () => {
-  it('asks pillar 10 for the goods rather than for the restriction', () => {
+  it('asks pillar 10 for the goods, as what the provision has to be about', () => {
+    // It used to ask for them as the defining words, which is the same question twice: the words
+    // that make it a ban and the words naming what is banned are not the same words.
     for (const id of ['10.1', '10.2', '10.4']) {
-      for (const m of MEASURES[id]!) expect(m.defines, `${id} ${m.token}`).toMatch(/goods|services/);
+      expect(SUBJECTS[id], id).toMatch(/goods or services/);
+      for (const m of MEASURES[id]!) {
+        if (m.offSubject) continue;
+        expect(m.defines, `${id} ${m.token}`).toMatch(/brought in|sending out|sent out|limit|licence/);
+      }
     }
   });
 
@@ -112,7 +119,7 @@ describe('the goods are the defining element', () => {
     // The Digital ID Act's "Simplified outline", whose whole defining quote was "prohibited".
     const d = at('10.1', [evidence({ definingWords: null })]);
     expect(d.score).toBe(0);
-    expect(d.held[0]?.reason).toContain(MEASURES['10.1']![0]!.defines);
+    expect(d.excluded[0]?.reason).toContain(MEASURES['10.1']![0]!.defines);
   });
 });
 
@@ -120,7 +127,7 @@ describe('a restriction on other goods has somewhere true to go', () => {
   it('is a finding, and is not this indicator', () => {
     const d = at('10.1', [evidence({ measure: 'other-import-ban', definingWords: 'any hazardous waste' })]);
     expect(d.score).toBe(0);
-    expect(d.held).toHaveLength(0);
+    expect(d.excluded).toHaveLength(0);
     expect(d.basis).toHaveLength(0);
   });
 
@@ -132,5 +139,21 @@ describe('a restriction on other goods has somewhere true to go', () => {
     );
     expect(p).toContain('other-import-ban');
     expect(p).toContain('ict-import-ban');
+  });
+});
+
+describe('a ban on goods crossing the border, stated of the goods', () => {
+  // "Goods which is absolutely prohibited for import" names no importer because it binds every one.
+  const passive = { dutyBearer: null, dutyAct: 'prohibited', quote: SECTION, definingWords: 'must not import into Australia' };
+
+  it('is not held for want of a party', () => {
+    const d = at('10.1', [evidence(passive)]);
+    expect(d.held).toHaveLength(0);
+    expect(d.score).toBeGreaterThan(0);
+  });
+
+  it('still is when it does not forbid', () => {
+    const d = at('10.1', [evidence({ ...passive, dutyForce: 'requires' })]);
+    expect(d.held[0]?.reason).toContain('names no party');
   });
 });

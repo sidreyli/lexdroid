@@ -107,6 +107,12 @@ describe("where the run is", () => {
     expect(progress.legs.map((l) => l.indicators)).toEqual([1, 3, 7, 4]);
   });
 
+  it("draws a leg as wide as the indicators asked, when the run asked only some", () => {
+    // The live test: two indicators of one pillar. Four wide, a finished run read "2 of 4".
+    const two = readProgress({ ...run, pillars: [6], indicators: ["6.1", "6.4"] }, [], pillars);
+    expect(two.legs.map((l) => l.indicators)).toEqual([2]);
+  });
+
   it("marks the pillars behind it done, the one it opened reading, and the rest waiting", () => {
     expect(progress.legs.map((l) => l.state)).toEqual(["done", "done", "reading", "waiting"]);
   });

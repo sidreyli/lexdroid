@@ -24,11 +24,9 @@
  * about, which is the whole point of having a reviewer.
  */
 import type { Db } from '../db/index.js';
-import { amendsAnotherAct } from '../parse/identity.js';
-import { citationUrl } from '../export/index.js';
-import { decide, type Evidence, type FrameworkEvidence, type SurfacedInstrument } from '../decide/index.js';
-import { loadRubric } from '../rubric/index.js';
+import { recordedDecider } from '../decide/record.js';
 import { ratesOfRun } from '../run/index.js';
+import { elidedFragments, findFragment, MIN_ANCHOR } from '../util/locate.js';
 
 export interface GateOutcome {
   gate: string;
@@ -87,11 +85,35 @@ export function isOfficialHost(host: string, known: Set<string>): boolean {
   return /(^|\.)gov(\.[a-z]{2,3})?(\.[a-z]{2})?$/.test(h) || /\.gov\.[a-z]{2}$/.test(h) || h.endsWith('.gov');
 }
 
-/** Normalised for comparison: whitespace and the quotation marks a source may render differently. */
+/**
+ * Are the quoted words in the provision?
+ *
+ * A quotation that elides is checked fragment by fragment, each after the one before. That is a
+ * weaker claim than an unbroken quote and a real one: the words are there, in that order.
+ */
+export function quoteAppearsIn(sectionText: string, quote: string): boolean {
+  const haystack = normalise(sectionText);
+  const fragments = elidedFragments(quote);
+  if (!fragments) return haystack.includes(normalise(quote));
+
+  let from = 0;
+  for (const fragment of fragments) {
+    const part = normalise(fragment);
+    const at = findFragment(haystack, part, from, part.length < MIN_ANCHOR);
+    if (at < 0) return false;
+    from = at + part.length;
+  }
+  return true;
+}
+
+/**
+ * Normalised for comparison: whitespace, the quotation marks a source may render differently,
+ * and the typography that marks words without being words -- a star, a definition's own marks.
+ */
 function normalise(s: string): string {
   return s
     .replace(/[‘’‚‛]/g, "'")
-    .replace(/[“”„‟]/g, '"')
+    .replace(/["“”„‟*]/g, '')
     .replace(/[‐-―−]/g, '-')
     .replace(/ /g, ' ')
     .replace(/\s+/g, ' ')
@@ -133,6 +155,17 @@ interface RowRecord {
   status: string | null;
   status_basis: string | null;
   timeframe_basis: string | null;
+  /**
+   * Where the row cites an instrument as a framework rather than a provision: what the reader said
+   * of its own quotation, what the instrument's status is, and the text of its documents. Null for
+   * every other row.
+   */
+  framework?: {
+    quoteVerified: number | null;
+    status: string | null;
+    statusBasis: string | null;
+    texts: string[];
+  } | null;
 }
 
 /**
@@ -164,6 +197,34 @@ export function verifyRun(db: Db, runId: string): VerifyResult {
         WHERE c.run_id = ? ORDER BY e.id`,
     )
     .all(runId) as RowRecord[];
+
+  // A framework row names the instrument, not a provision, and the instrument is the one the cell's
+  // framework basis rests on -- where the framework reading of it is on the record.
+  const frameworkOf = db.prepare(
+    `SELECT f.quote_verified AS quoteVerified, i.status, i.status_basis AS statusBasis, i.id AS instrumentId
+       FROM answer_basis b
+       JOIN framework_reading f ON f.cell_id = b.cell_id AND f.instrument_id = b.instrument_id
+       JOIN instrument i ON i.id = b.instrument_id
+      WHERE b.cell_id = ? AND b.section_id IS NULL
+      ORDER BY b.ordinal LIMIT 1`,
+  );
+  const textsOf = db.prepare(
+    `SELECT dt.text FROM document d JOIN document_text dt ON dt.document_id = d.id WHERE d.instrument_id = ?`,
+  );
+  for (const row of rows) {
+    if (row.section_id !== null) continue;
+    const f = frameworkOf.get(row.cell_id) as
+      | { quoteVerified: number | null; status: string | null; statusBasis: string | null; instrumentId: number }
+      | undefined;
+    row.framework = f
+      ? {
+          quoteVerified: f.quoteVerified,
+          status: f.status,
+          statusBasis: f.statusBasis,
+          texts: (textsOf.all(f.instrumentId) as { text: string }[]).map((t) => t.text),
+        }
+      : null;
+  }
 
   const hostsByEconomy = new Map<string, Set<string>>();
   const record = db.prepare(
@@ -224,7 +285,7 @@ function gatesFor(row: RowRecord, hosts: Set<string>): GateOutcome[] {
     } else if (!row.section_text) {
       out.push({ gate: 'quote-in-source', passed: false, detail: 'the cited provision is no longer in the store' });
     } else {
-      const found = normalise(row.section_text).includes(normalise(quote));
+      const found = quoteAppearsIn(row.section_text, quote);
       out.push({
         gate: 'quote-in-source',
         passed: found,
@@ -236,7 +297,10 @@ function gatesFor(row: RowRecord, hosts: Set<string>): GateOutcome[] {
     //    than the reading: one reading yields several findings, each quoting a different span.
     if (quote && row.quote_char_start !== null && row.quote_char_end !== null && row.doc_text) {
       const at = row.doc_text.slice(row.quote_char_start, row.quote_char_end);
-      const ok = normalise(at) === normalise(quote);
+      // An elided quotation spans the words it skipped, so the offsets bound the passage rather
+      // than reproduce it. What is checked is that every fragment sits inside those bounds, in order.
+      const fragments = elidedFragments(quote);
+      const ok = fragments ? quoteAppearsIn(at, quote) : normalise(at) === normalise(quote);
       out.push({
         gate: 'offsets-resolve',
         passed: ok,
@@ -288,6 +352,39 @@ function gatesFor(row: RowRecord, hosts: Set<string>): GateOutcome[] {
       gate: 'one-measure',
       passed: measures <= 1,
       detail: measures <= 1 ? null : `${measures} measures on one row`,
+    });
+  }
+
+  // An instrument cited as a framework. Not a per-provision discovery, but its quotation is still a
+  // quotation, and the instrument still has to be law in force: these rows went out with the host
+  // checked and nothing else.
+  if (!cites && row.framework && row.verbatim_snippet) {
+    const quote = row.verbatim_snippet;
+    const found = row.framework.texts.some((t) => quoteAppearsIn(t, quote));
+    out.push({
+      gate: 'quote-in-source',
+      passed: found,
+      detail: found
+        ? null
+        : row.framework.texts.length === 0
+          ? 'the instrument has no document text in the store to find the quotation in'
+          : `not found in the instrument: "${quote.slice(0, 80)}"`,
+    });
+    out.push({
+      gate: 'framework-quote-verified',
+      passed: row.framework.quoteVerified === 1,
+      detail: row.framework.quoteVerified === 1 ? null : 'the reader could not verify its own quotation of the framework',
+    });
+    const status = row.framework.status ?? 'unknown';
+    out.push({
+      gate: 'in-force',
+      passed: status === 'in-force' && row.framework.statusBasis !== null,
+      detail:
+        status !== 'in-force'
+          ? `the instrument's status is "${status}"`
+          : row.framework.statusBasis === null
+            ? 'the instrument is marked in force with nothing recorded to evidence it'
+            : null,
     });
   }
 
@@ -357,139 +454,28 @@ export interface RecomputeResult {
 }
 
 export function recomputeScores(db: Db, runId: string): RecomputeResult {
-  const cells = db
-    .prepare(
-      `SELECT c.id, c.economy_code, c.indicator_id, c.sections_read, c.sections_indexed, c.surfaced,
-              a.score, a.band_ordinal
-         FROM cell c LEFT JOIN cell_answer a ON a.cell_id = c.id
-        WHERE c.run_id = ? ORDER BY c.indicator_id`,
-    )
-    .all(runId) as {
-    id: number; economy_code: string; indicator_id: string;
-    sections_read: number | null; sections_indexed: number | null; surfaced: number | null;
-    score: number | null; band_ordinal: number | null;
-  }[];
-
-  const evidenceFor = db.prepare(
-    `SELECT r.attributes, r.section_id, s.heading_path, s.text, s.anchor, d.url AS doc_url,
-            i.id AS instrument_id, i.title
-       FROM reading r
-       JOIN section s ON s.id = r.section_id
-       JOIN document d ON d.id = s.document_id
-       JOIN instrument i ON i.id = d.instrument_id
-      WHERE r.cell_id = ? AND r.applies = 1 ORDER BY r.id`,
-  );
-
-  const frameworkFor = db.prepare(
-    `SELECT f.instrument_id, f.establishes_framework, f.horizontal, f.dedicated,
-            f.dedicated_shown, f.sectoral_shown, f.sector, f.quote,
-            i.title, i.source_url
-       FROM framework_reading f JOIN instrument i ON i.id = f.instrument_id
-      WHERE f.cell_id = ? ORDER BY f.id`,
-  );
-
-  // Which instruments the search surfaced, and how high. Needed to evidence a zero, and rebuilt
-  // from the shortlist rather than re-run: the point is to re-derive the decision from what was
-  // recorded, not to redo the search and get a different list to decide over.
-  const currentToFor = new Map<number, string | null>(
-    (db.prepare('SELECT id, last_amended_on FROM instrument').all() as
-      { id: number; last_amended_on: string | null }[]).map((r) => [r.id, r.last_amended_on]),
-  );
-
-  const surfacedFor = db.prepare(
-    `SELECT i.id AS instrumentId, i.title AS instrumentTitle, MIN(se.rank) AS rank
-       FROM shortlist_entry se
-       JOIN section s ON s.id = se.section_id
-       JOIN document d ON d.id = s.document_id
-       JOIN instrument i ON i.id = d.instrument_id
-      WHERE se.cell_id = ? GROUP BY i.id ORDER BY rank`,
-  );
-
-  const rubric = loadRubric();
-  const byId = new Map(rubric.indicators.map((i) => [i.id, i]));
   // The rate that produced the score, not today's, or re-deriving would re-price rather than check.
-  const rates = ratesOfRun(db, runId);
+  const { cells, rebuild } = recordedDecider(db, runId, ratesOfRun(db, runId));
 
   let agreed = 0;
   const disagreed: { indicatorId: string; stored: number | null; recomputed: number | null; why: string }[] = [];
   const perCell = new Map<number, { agreed: boolean; why: string | null }>();
 
   for (const cell of cells) {
-    const indicator = byId.get(cell.indicator_id);
-    if (!indicator) {
+    const again = rebuild(cell);
+    if (!again) {
       const why = 'the rubric no longer defines this indicator';
       disagreed.push({ indicatorId: cell.indicator_id, stored: cell.score, recomputed: null, why });
       perCell.set(cell.id, { agreed: false, why });
       continue;
     }
 
-    const evidence: Evidence[] = [];
-    for (const r of evidenceFor.all(cell.id) as {
-      attributes: string; section_id: number; heading_path: string; text: string; anchor: string | null;
-      doc_url: string; instrument_id: number; title: string;
-    }[]) {
-      let findings: unknown = [];
-      try {
-        findings = JSON.parse(r.attributes);
-      } catch {
-        findings = [];
-      }
-      if (!Array.isArray(findings)) continue;
-      for (const finding of findings) {
-        evidence.push({
-          finding: finding as Evidence['finding'],
-          sectionId: r.section_id,
-          instrumentId: r.instrument_id,
-          instrumentTitle: r.title,
-          headingPath: r.heading_path,
-          amendsAnotherAct: amendsAnotherAct(r.text),
-          citation: citationUrl(r.doc_url, r.anchor),
-        });
-      }
-    }
-
-    const frameworkEvidence: FrameworkEvidence[] = (frameworkFor.all(cell.id) as {
-      instrument_id: number; establishes_framework: number; horizontal: number | null;
-      dedicated: number | null; dedicated_shown: number | null; sectoral_shown: number | null;
-      sector: string | null; quote: string | null;
-      title: string; source_url: string;
-    }[]).map((f) => ({
-      instrumentId: f.instrument_id,
-      instrumentTitle: f.title,
-      citation: f.source_url,
-      establishesFramework: f.establishes_framework === 1,
-      horizontal: f.horizontal === 1,
-      dedicated: f.dedicated === 1,
-      dedicatedShown: f.dedicated_shown === 1,
-      sectoralShown: f.sectoral_shown === 1,
-      sector: f.sector,
-      quote: f.quote ?? '',
-    }));
-
-    const surfaced = surfacedFor.all(cell.id) as SurfacedInstrument[];
-    for (const s of surfaced) s.currentTo = currentToFor.get(s.instrumentId) ?? null;
-
-    const again = decide({
-      indicator,
-      economy: cell.economy_code,
-      evidence,
-      frameworkEvidence,
-      surfaced,
-      coverage: {
-        sectionsRead: cell.sections_read ?? 0,
-        sectionsIndexed: cell.sections_indexed ?? 0,
-        instrumentsConsidered: cell.surfaced ?? 0,
-      },
-      rates,
-    });
-
     if (again.score === cell.score && (again.band?.ordinal ?? null) === cell.band_ordinal) {
       agreed += 1;
       perCell.set(cell.id, { agreed: true, why: null });
     } else {
       const why =
-        `band ${cell.band_ordinal} recorded, band ${again.band?.ordinal ?? 'none'} re-derived ` +
-        `from ${evidence.length} finding(s)`;
+        `band ${cell.band_ordinal} recorded, band ${again.band?.ordinal ?? 'none'} re-derived`;
       disagreed.push({
         indicatorId: cell.indicator_id, stored: cell.score, recomputed: again.score, why,
       });

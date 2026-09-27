@@ -4,7 +4,7 @@ import type { Portal } from '../profile/types.js';
 export interface DiscoveredInstrument {
   title: string;
   url: string;
-  kind: 'act' | 'regulation' | 'notice' | 'guideline' | 'order' | 'rule';
+  kind: 'act' | 'regulation' | 'notice' | 'guideline' | 'order' | 'rule' | 'publication';
   officialNumber?: string | null;
   /**
    * What the portal says about the instrument's standing, and the sentence that says it.
@@ -15,14 +15,36 @@ export interface DiscoveredInstrument {
   status?: 'in-force' | 'repealed' | 'draft' | 'amending';
   statusBasis?: string;
   /**
+   * The day the instrument began, where the register states it rather than leaving it to the
+   * document. It is what the export's timeframe column is built from, and a register that
+   * publishes the date is a better source for it than a parse of the document's front matter.
+   */
+  commencedOn?: string | null;
+  /**
+   * The day an amendment last changed this instrument's text, where the register states which
+   * amendment it was. A register that keeps a version history answers this; one that only
+   * republishes a consolidation does not, and that one sets `currentTo` instead.
+   */
+  lastAmendedOn?: string | null;
+  /**
    * The date the published consolidation is current to, and the sentence that says so.
    *
    * Not the same as the date of the last amendment, and it must not be reported as one: Malaysia
    * serves the Personal Data Protection Act as at 2023 while the duty ESCAP scores arrived in a
-   * 2024 amendment. Recording what the portal actually publishes is what makes that visible.
+   * 2024 amendment. Recording what the portal actually publishes is what makes that visible --
+   * which is why this has its own column, and why it stopped being written to `lastAmendedOn`.
    */
   currentTo?: string | null;
+  /** The sentence behind whichever of the two dates above the register stated. */
   currentToBasis?: string;
+  /**
+   * The Act the register says this instrument is made under, named the way the register names it.
+   *
+   * Kept as the stated name rather than resolved here, because an adapter lists one portal and
+   * the Act may not be registered yet when the rule made under it is. Resolving the name to a row
+   * is a pass over the whole economy, run once the walk is done.
+   */
+  madeUnder?: string | null;
   /**
    * True when `title` is only a filename, and the document's own stated title should replace it.
    * A code filed under its upload slug never matches the name a citation calls it by.
@@ -39,6 +61,16 @@ export interface DiscoverContext {
   portal: Portal;
   fetcher: Fetcher;
   log: (line: string) => void;
+  /**
+   * An entry the listing published and the adapter could not register, named.
+   *
+   * An adapter is the only thing that knows how many rows a catalogue offered, and it had nowhere
+   * to put that but a log line -- which defaults to discarding it, so the three Laws of Malaysia
+   * listings recomputed "335 listed instruments carry no document link" on every walk and threw
+   * it away every time. A count in a log cannot be compared against the next walk, and a listing
+   * that quietly stops linking its documents looks exactly like a listing that got smaller.
+   */
+  setAside: (entry: { subject: string; reason: string; detail?: string }) => void;
 }
 
 /**

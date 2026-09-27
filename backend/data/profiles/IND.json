@@ -1,0 +1,211 @@
+{
+  "code": "IND",
+  "name": "India",
+  "legalSystem": {
+    "family": "mixed",
+    "note": "Federal constitutional system with common-law courts and codified Union legislation. This profile starts with CENTRAL instruments because an economy-wide RDTII answer cannot silently generalise one State's law to India as a whole. State and Union Territory law remains a declared scope boundary unless an indicator specifically requires it."
+  },
+  "officialLanguages": [
+    "hi",
+    "en"
+  ],
+  "languageNote": "Union legislation is published in English and in authorised Hindi text. India Code carries English and regional-title metadata, while Gazette PDFs may contain Hindi and English editions in the same file. Each parsed section records the language of the words actually cited rather than inheriting one language for the whole instrument.",
+  "instrumentTypes": [
+    {
+      "rank": 1,
+      "kind": "act",
+      "localName": "Central Act of Parliament",
+      "bindingness": "binding",
+      "note": "The principal Union instrument, normally cited by Act number, year and section. India Code records Central and State Acts together, so the adapter admits only records whose own jurisdiction metadata says CENTRAL."
+    },
+    {
+      "rank": 2,
+      "kind": "rule",
+      "localName": "Rules made under a Central Act",
+      "bindingness": "binding",
+      "note": "Subordinate legislation commonly published by G.S.R. notification. The enabling Act and the Gazette text must both be retained because an Act may delegate the operative requirement to rules."
+    },
+    {
+      "rank": 2,
+      "kind": "regulation",
+      "localName": "Regulations made by a statutory authority",
+      "bindingness": "binding-on-licensees",
+      "note": "Regulations and directions issued under an enabling Act may bind a regulated sector such as banking, securities, insurance or telecommunications."
+    },
+    {
+      "rank": 3,
+      "kind": "notice",
+      "localName": "Notification, circular or direction",
+      "bindingness": "binding-on-licensees",
+      "note": "Includes Gazette notifications and regulator directions. Bindingness and commencement are established from the enabling provision and instrument text, never inferred from the title alone."
+    },
+    {
+      "rank": 3,
+      "kind": "order",
+      "localName": "Statutory order",
+      "bindingness": "binding",
+      "note": "Orders such as S.O. instruments may commence, amend or impose a requirement under delegated authority."
+    },
+    {
+      "rank": 4,
+      "kind": "guideline",
+      "localName": "Guideline, policy or advisory",
+      "bindingness": "advisory",
+      "note": "Evidence of regulator interpretation or government practice, but not the source of a legal obligation unless the document and its enabling authority say it binds the relevant entities."
+    },
+    {
+      "rank": 5,
+      "kind": "publication",
+      "localName": "Publication about the law",
+      "bindingness": "advisory",
+      "note": "A document a body published about the law rather than an instrument of it: a consultation paper, a media release, an FAQ, a landing page for an Act held in the statute book. Registered because it is real evidence of how a regulator reads an obligation, and never the source of one. Assigned where the source states neither an identifier nor a standing."
+    }
+  ],
+  "portals": [
+    {
+      "name": "India Code",
+      "url": "https://indiacode.gov.in",
+      "kind": "legislation-database",
+      "authority": "Legislative Department, Ministry of Law and Justice",
+      "pillars": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+      "adapter": "indiacode",
+      "adapterConfig": {
+        "apiBase": "https://indiacode.gov.in/server/api/",
+        "jurisdiction": "CENTRAL",
+        "pageSize": 100,
+        "collections": [
+          { "collection": "ACT", "kind": "act" },
+          { "collection": "RULE", "kind": "rule" },
+          { "collection": "REGULATION", "kind": "regulation" },
+          { "collection": "NOTIFICATION", "kind": "notice" },
+          { "collection": "ORDER", "kind": "order" }
+        ]
+      },
+      "notes": "The migrated portal is a DSpace repository with a public HAL/JSON API. Discovery queries its own collection and jurisdiction metadata instead of scraping the Angular application shell. Act summaries and portal modification dates are discovery metadata only; scoring evidence comes from the structured provision text or the official document."
+    },
+    {
+      "name": "Gazette of India",
+      "url": "https://egazette.gov.in",
+      "kind": "gazette",
+      "authority": "Department of Publication, Government of India",
+      "pillars": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+      "adapter": "crawl",
+      "adapterConfig": {},
+      "notes": "Primary publication point for Acts, commencement notices and subordinate instruments. The current search interface is form-driven and is left visibly unread until a stable, permitted enumeration route is implemented."
+    },
+    {
+      "name": "Legislative Department",
+      "url": "https://legislative.gov.in",
+      "kind": "legislation-database",
+      "authority": "Ministry of Law and Justice",
+      "pillars": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+      "adapter": "crawl",
+      "adapterConfig": {},
+      "notes": "Official year-wise Act lists and legislative references; a fallback and cross-check for India Code, not a second copy silently counted as another measure."
+    },
+    {
+      "name": "Ministry of Electronics and Information Technology",
+      "url": "https://www.meity.gov.in",
+      "kind": "regulator",
+      "authority": "MeitY",
+      "pillars": [5, 6, 7, 8, 10, 11],
+      "adapter": "crawl",
+      "adapterConfig": {},
+      "notes": "Publishes the information-technology and data-protection Acts, rules, notifications and policy documents, including commencement material that must be read separately from a principal Act."
+    },
+    {
+      "name": "Reserve Bank of India",
+      "url": "https://www.rbi.org.in",
+      "kind": "regulator",
+      "authority": "Reserve Bank of India",
+      "pillars": [6, 7, 8, 10, 11],
+      "adapter": "sitemap",
+      "adapterConfig": {},
+      "notes": "Directions, master directions and circulars binding regulated financial entities. The archive requires a dedicated adapter and must not be treated as ordinary static HTML."
+    },
+    {
+      "name": "Department of Telecommunications",
+      "url": "https://dot.gov.in",
+      "kind": "regulator",
+      "authority": "Department of Telecommunications",
+      "pillars": [6, 7, 8, 10, 11],
+      "adapter": "crawl",
+      "adapterConfig": {},
+      "notes": "Telecommunications Acts, rules, licence conditions and security directions."
+    },
+    {
+      "name": "Indian Computer Emergency Response Team",
+      "url": "https://www.cert-in.org.in",
+      "kind": "regulator",
+      "authority": "CERT-In",
+      "pillars": [7],
+      "adapter": "crawl",
+      "adapterConfig": {},
+      "notes": "Directions issued under the Information Technology Act, including incident reporting and log-retention requirements."
+    },
+    {
+      "name": "Department for Promotion of Industry and Internal Trade",
+      "url": "https://dpiit.gov.in",
+      "kind": "regulator",
+      "authority": "DPIIT",
+      "pillars": [1, 2, 3, 4, 9, 11],
+      "adapter": "crawl",
+      "adapterConfig": {},
+      "notes": "Investment, procurement, intellectual-property and competition-related policy and orders."
+    },
+    {
+      "name": "Directorate General of Foreign Trade",
+      "url": "https://www.dgft.gov.in",
+      "kind": "regulator",
+      "authority": "DGFT",
+      "pillars": [1, 2, 3, 5, 6],
+      "adapter": "crawl",
+      "adapterConfig": {},
+      "notes": "Foreign Trade Policy, notifications, public notices and trade-control instruments."
+    },
+    {
+      "name": "Securities and Exchange Board of India",
+      "url": "https://www.sebi.gov.in",
+      "kind": "regulator",
+      "authority": "SEBI",
+      "pillars": [6, 7, 8, 11],
+      "adapter": "sitemap",
+      "adapterConfig": {},
+      "notes": "Regulations and circulars binding securities-market intermediaries, including technology, outsourcing and record-retention duties."
+    },
+    {
+      "name": "Bureau of Indian Standards",
+      "url": "https://www.bis.gov.in",
+      "kind": "regulator",
+      "authority": "Bureau of Indian Standards",
+      "pillars": [2, 4, 5, 10],
+      "adapter": "wp",
+      "adapterConfig": {},
+      "notes": "Standards, conformity-assessment requirements and compulsory-registration material relevant to digital goods and equipment."
+    }
+  ],
+  "commitments": [
+    {
+      "name": "World Trade Organization",
+      "status": "in-force",
+      "sourceUrl": "https://www.wto.org/english/thewto_e/countries_e/india_e.htm"
+    },
+    {
+      "name": "WTO Trade Facilitation Agreement",
+      "status": "in-force",
+      "sourceUrl": "https://www.tfadatabase.org/en/members/india"
+    }
+  ],
+  "notes": "This profile was researched from current official Union portals. ESCAP's completed India rows remain quarantined and are used only after LexDroid has produced a result, for discovery and score evaluation.",
+  "authoredBy": "LexDroid team",
+  "authoredOn": "2026-09-12",
+  "sources": [
+    "https://indiacode.gov.in and https://indiacode.gov.in/server/api -- portal structure, repository metadata and public API read directly on 2026-09-12",
+    "https://legislative.gov.in -- Legislative Department remit and year-wise Central Act publication",
+    "https://egazette.gov.in -- official Gazette publication service",
+    "https://www.meity.gov.in/documents/act-and-policies -- MeitY Acts, policies, rules and notifications",
+    "https://www.rbi.org.in/Scripts/NotificationUser.aspx -- RBI notification and direction archive",
+    "Constitution of India, Articles 343 and 348, and Official Languages Act 1963 -- Union-language context",
+    "NOT ESCAP's legal inventory or completed India database: those remain evaluation-only"
+  ]
+}

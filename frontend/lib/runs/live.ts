@@ -8,6 +8,7 @@ import { useEffect, useState } from "react";
 import { useSecondsSince } from "./now";
 import type { RunEvent, RunStatus } from "@/lib/data/types";
 
+// Same origin by default: the interface serves the ledger itself, so nothing else need be running.
 const API = process.env.NEXT_PUBLIC_LEXDROID_API ?? "";
 
 export type Connection = "live" | "connecting" | "offline" | "closed";
@@ -20,18 +21,23 @@ export interface LiveRun {
   silentFor: number | null;
 }
 
-export function useLiveRun(runId: string, seed: RunEvent[], seedStatus: RunStatus): LiveRun {
+export function useLiveRun(
+  runId: string,
+  seed: RunEvent[],
+  seedStatus: RunStatus,
+  enabled = true,
+): LiveRun {
   const [events, setEvents] = useState<RunEvent[]>(seed);
   const [status, setStatus] = useState<RunStatus>(seedStatus);
   const [connection, setConnection] = useState<Connection>(
-    seedStatus === "running" ? (API ? "connecting" : "offline") : "closed",
+    enabled && seedStatus === "running" ? "connecting" : "closed",
   );
   const [lastAt, setLastAt] = useState<string | null>(seed.at(-1)?.at ?? null);
   // Silence is the failure this view exists to catch: a read can stall saying nothing.
   const silence = useSecondsSince(lastAt);
 
   useEffect(() => {
-    if (!API || seedStatus !== "running") return;
+    if (!enabled || seedStatus !== "running") return;
     const after = seed.at(-1)?.id ?? 0;
     const source = new EventSource(`${API}/api/runs/${runId}/stream?after=${after}`);
 
@@ -49,7 +55,12 @@ export function useLiveRun(runId: string, seed: RunEvent[], seedStatus: RunStatu
     source.onerror = () => setConnection("offline");
 
     return () => source.close();
-  }, [runId, seedStatus, seed]);
+  }, [enabled, runId, seedStatus, seed]);
 
-  return { events, status, connection, silentFor: status === "running" ? silence : null };
+  return {
+    events,
+    status,
+    connection,
+    silentFor: enabled && status === "running" ? silence : null,
+  };
 }

@@ -9,11 +9,25 @@ import Database from 'better-sqlite3';
 import { readFileSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { canonicalizeThai } from '../util/thai.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const backendRoot = join(here, '..', '..');
 
-export const WORKING_DB_PATH = join(backendRoot, 'data', 'lexdroid.db');
+/**
+ * The store every command opens, and the one place it can be pointed elsewhere.
+ *
+ * Scoring is a pure function of stored readings, so `grade` and `rescore` want to run against a
+ * finished corpus at the very moment a run is busy writing to it -- and a run holds the write
+ * lock for hours, which is long enough that "wait for it" means "do not do it". Pointing this at
+ * a snapshot taken with `VACUUM INTO` (a read lock only, so the run is undisturbed) makes the
+ * edit-grade-keep-or-revert loop available during a run instead of only between runs.
+ *
+ * Unset in normal use. A run writing somewhere unexpected would be worse than not running, so
+ * this is opt-in, names the store in the variable, and is never defaulted to a copy.
+ */
+export const WORKING_DB_PATH =
+  process.env['LEXDROID_DB'] ?? join(backendRoot, 'data', 'lexdroid.db');
 const SCHEMA_PATH = join(here, 'schema.sql');
 
 export type Db = Database.Database;
@@ -32,6 +46,7 @@ export function openDb(path: string = WORKING_DB_PATH): Db {
   db.pragma('busy_timeout = 30000');
   db.exec(readFileSync(SCHEMA_PATH, 'utf8'));
   addMissingColumns(db);
+  keyConfirmationsByQuestion(db);
 
   if (path === WORKING_DB_PATH) handle = db;
   return db;
@@ -51,22 +66,44 @@ export function openDb(path: string = WORKING_DB_PATH): Db {
  */
 const ADDED_COLUMNS: readonly { table: string; column: string; type: string }[] = [
   { table: 'section', column: 'anchor', type: 'TEXT' },
+  { table: 'section', column: 'repealed', type: 'INTEGER NOT NULL DEFAULT 0' },
   { table: 'instrument', column: 'title_provisional', type: 'INTEGER NOT NULL DEFAULT 0' },
   { table: 'instrument', column: 'also_at', type: 'TEXT' },
+  { table: 'instrument', column: 'made_under_instrument_id', type: 'INTEGER' },
+  { table: 'instrument', column: 'made_under_basis', type: 'TEXT' },
+  { table: 'instrument', column: 'current_to', type: 'TEXT' },
+  { table: 'instrument', column: 'made_under_name', type: 'TEXT' },
   { table: 'cell', column: 'queries', type: 'TEXT' },
   { table: 'cell', column: 'depth', type: 'INTEGER' },
   { table: 'cell', column: 'surfaced', type: 'INTEGER' },
   { table: 'cell', column: 'sections_indexed', type: 'INTEGER' },
   { table: 'cell', column: 'sections_read', type: 'INTEGER' },
+  { table: 'cell', column: 'governing', type: 'TEXT' },
+  { table: 'cell', column: 'surfaced_instruments', type: 'TEXT' },
+  { table: 'cell', column: 'framework_failed', type: 'INTEGER' },
+  { table: 'cell_answer', column: 'absence_basis', type: 'TEXT' },
   { table: 'reading', column: 'engine_call', type: 'TEXT' },
   { table: 'cell_answer', column: 'rationale', type: 'TEXT' },
   { table: 'export_row', column: 'quote_char_start', type: 'INTEGER' },
   { table: 'export_row', column: 'quote_char_end', type: 'INTEGER' },
+  { table: 'framework_reading', column: 'framework_words', type: 'TEXT' },
+  { table: 'framework_reading', column: 'framework_shown', type: 'INTEGER' },
   { table: 'framework_reading', column: 'dedicated_words', type: 'TEXT' },
   { table: 'framework_reading', column: 'dedicated_shown', type: 'INTEGER' },
   { table: 'framework_reading', column: 'sector_words', type: 'TEXT' },
   { table: 'framework_reading', column: 'sectoral_shown', type: 'INTEGER' },
   { table: 'run', column: 'fx_rates', type: 'TEXT' },
+  { table: 'run', column: 'indicators', type: 'TEXT' },
+  { table: 'cell_answer', column: 'confirmations_asked', type: 'INTEGER' },
+  { table: 'cell_answer', column: 'confirmations_applied', type: 'INTEGER' },
+  { table: 'answer_basis', column: 'quote', type: 'TEXT' },
+  { table: 'reading', column: 'rejected', type: 'INTEGER' },
+  { table: 'reading', column: 'unreadable', type: 'INTEGER' },
+  { table: 'unread_document', column: 'attempts', type: 'INTEGER NOT NULL DEFAULT 1' },
+  { table: 'run_cost', column: 'usd_unknown', type: 'INTEGER NOT NULL DEFAULT 0' },
+  // What each fetch returned, for the Run Record's file type: the URL of an API or a register
+  // search says nothing about it, and a guessed type is a wrong line in the list ESCAP checks.
+  { table: 'fetch_log', column: 'media_type', type: 'TEXT' },
 ];
 
 function addMissingColumns(db: Db): void {
@@ -75,6 +112,59 @@ function addMissingColumns(db: Db): void {
       (c) => c.name === column,
     );
     if (!exists) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
+  }
+}
+
+/**
+ * The one change here that is not a new column: measure_confirmation's key.
+ *
+ * It was unique on the provision and the measure's name, so a verdict could only ever be replaced
+ * -- asking again under a changed description overwrote the answer to the old one, and not asking
+ * again served the old answer as the new one's. The key now includes the question and the model.
+ * SQLite cannot change a table's constraints in place, so the table is rebuilt once, inside a
+ * transaction, with every row carried across unchanged and `question` NULL: those verdicts were
+ * banked before anyone recorded what they answered, and are never consulted until something that
+ * knows says which question they were.
+ */
+function keyConfirmationsByQuestion(db: Db): void {
+  const cols = (db.prepare('PRAGMA table_info(measure_confirmation)').all() as { name: string }[]).map((c) => c.name);
+  if (cols.includes('question')) return;
+  db.pragma('foreign_keys = OFF');
+  try {
+    db.transaction(() => {
+      const before = (db.prepare('SELECT COUNT(*) AS n FROM measure_confirmation').get() as { n: number }).n;
+      db.exec(`
+        CREATE TABLE measure_confirmation_keyed (
+          id              INTEGER PRIMARY KEY,
+          section_id      INTEGER NOT NULL REFERENCES section(id) ON DELETE CASCADE,
+          indicator_id    TEXT NOT NULL,
+          measure         TEXT NOT NULL,
+          question        TEXT,
+          words           TEXT,
+          failure         TEXT,
+          model           TEXT NOT NULL,
+          prompt_tokens   INTEGER,
+          output_tokens   INTEGER,
+          latency_ms      INTEGER,
+          asked_at        TEXT NOT NULL,
+          UNIQUE (section_id, indicator_id, measure, model, question)
+        );
+        INSERT INTO measure_confirmation_keyed
+          (id, section_id, indicator_id, measure, question, words, failure, model,
+           prompt_tokens, output_tokens, latency_ms, asked_at)
+        SELECT id, section_id, indicator_id, measure, NULL, words, failure, model,
+               prompt_tokens, output_tokens, latency_ms, asked_at
+          FROM measure_confirmation;
+        DROP TABLE measure_confirmation;
+        ALTER TABLE measure_confirmation_keyed RENAME TO measure_confirmation;
+        CREATE INDEX IF NOT EXISTS idx_confirmation_measure ON measure_confirmation(indicator_id, measure);
+        CREATE INDEX IF NOT EXISTS idx_measure_confirmation_section ON measure_confirmation(section_id);
+      `);
+      const after = (db.prepare('SELECT COUNT(*) AS n FROM measure_confirmation').get() as { n: number }).n;
+      if (after !== before) throw new Error(`measure_confirmation rebuild kept ${after} of ${before} rows`);
+    })();
+  } finally {
+    db.pragma('foreign_keys = ON');
   }
 }
 
@@ -98,10 +188,21 @@ export function indexSections(db: Db, documentId: number): number {
   const del = db.prepare('DELETE FROM section_fts WHERE rowid = ?');
   const ins = db.prepare('INSERT INTO section_fts(rowid, text, heading_path) VALUES (?, ?, ?)');
 
+  // Normalised only in this copy, not in `section` itself: section.text is the citation's ground
+  // truth and verifyOffsets (parse/index.ts) depends on it staying byte-identical to the slice
+  // char_start/char_end point at in document_text. section_fts has no such offset to preserve, and
+  // is exactly where normalization belongs -- a script with combining marks (Thai's SARA AM
+  // ambiguity included, see util/thai.ts) can represent the same visible text as different byte
+  // sequences depending on the source CMS, PDF extractor or OCR engine, and a trigram index built
+  // from one form silently fails to match a query typed in the other unless both sides are
+  // canonicalised the same way. The query side is normalised in index/index.ts's
+  // ftsQuery/ftsPhrase.
+  const normalize = (s: string): string => canonicalizeThai(s.normalize('NFC'));
+
   db.transaction(() => {
     for (const r of rows) {
       del.run(r.id);
-      ins.run(r.id, r.text, r.heading_path);
+      ins.run(r.id, normalize(r.text), normalize(r.heading_path));
     }
   })();
   return rows.length;

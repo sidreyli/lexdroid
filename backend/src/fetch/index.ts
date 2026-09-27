@@ -17,12 +17,13 @@
  * value the document row carries, so a cited snippet can always be re-checked against the exact
  * bytes it was read out of.
  */
-import { createHash } from 'node:crypto';
+import { createHash, X509Certificate } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { connect as tlsConnect, rootCertificates } from 'node:tls';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { brotliDecompressSync, gunzipSync, inflateSync } from 'node:zlib';
-import { Agent, interceptors, request } from 'undici';
+import { Agent, request } from 'undici';
 import type { Db } from '../db/index.js';
 
 /**
@@ -47,9 +48,10 @@ import type { Db } from '../db/index.js';
  * still names us and our purpose. The site's stated terms for machine access are its robots.txt --
  * six seconds between requests, /search disallowed -- and we obey both, before and after this.
  *
- * Redirects are followed by an interceptor rather than a request option: government sites move
- * documents constantly, and a 301 that is not followed looks exactly like a document that does
- * not exist. Five hops is generous and still terminates.
+ * Redirects are followed, because government sites move documents constantly and a 301 that is not
+ * followed looks exactly like a document that does not exist. Five hops is generous and still
+ * terminates. They are followed by hand rather than by a dispatcher interceptor, for the reason
+ * given at MAX_REDIRECTS.
  */
 const BROWSER_CIPHERS = [
   'TLS_AES_128_GCM_SHA256',
@@ -69,13 +71,171 @@ const BROWSER_CIPHERS = [
   'AES256-SHA',
 ].join(':');
 
+// Redirects are followed by hand in `send`, not by an interceptor: each hop is a request to a URL
+// the site chose rather than one we chose, and it has to pass the same robots check and appear in
+// the same log as any other. The interceptor followed them silently.
 const dispatcher = new Agent({
   connections: 8,
   connect: { ciphers: BROWSER_CIPHERS, ecdhCurve: 'X25519:prime256v1:secp384r1', minVersion: 'TLSv1.2' },
-}).compose(interceptors.redirect({ maxRedirections: 5 }));
+});
+const MAX_REDIRECTS = 5;
+
+/**
+ * The intermediate certificate a server forgot to send, fetched from its own certificate.
+ *
+ * A TLS server is supposed to present its leaf *and* every intermediate up to a trusted root.
+ * Royal Malaysian Customs presents the leaf alone, so the chain cannot be built and every
+ * request to it fails with "unable to verify the first certificate" -- which, from the outside,
+ * is indistinguishable from a regulator that publishes nothing. Its certificate is perfectly
+ * valid; the server is simply misconfigured. Browsers paper over this by fetching the issuer
+ * from the CA Issuers URI the leaf itself carries, and that is what this does.
+ *
+ * This does not weaken verification, and the distinction matters enough to be explicit:
+ *
+ *   - The intermediate is accepted only once we have checked that a certificate in Node's own
+ *     root store both issued it and signed it. An intermediate that does not chain to a trusted
+ *     root is discarded, and the original failure stands.
+ *   - It is then supplied *alongside* the full root store, never in place of it.
+ *   - `rejectUnauthorized` is false only on the throwaway handshake used to read the server's
+ *     certificate. Not one byte of document is read over that socket; the request is retried
+ *     over a fully verified connection or it fails.
+ *
+ * So the outcome is the same chain a correctly configured server would have handed us.
+ */
+const chasedFor = new Map<string, string | null>();
+let chasingDispatcher: Agent | null = null;
+
+/** The CA Issuers URI a certificate publishes, if it publishes one. */
+function caIssuersUri(cert: X509Certificate): string | null {
+  const match = /CA Issuers - URI:\s*(\S+)/i.exec(cert.infoAccess ?? '');
+  return match ? match[1]! : null;
+}
+
+/** Whether a certificate in Node's root store issued and signed this one. */
+function chainsToTrustedRoot(cert: X509Certificate): boolean {
+  for (const pem of rootCertificates) {
+    let root: X509Certificate;
+    try {
+      root = new X509Certificate(pem);
+    } catch {
+      continue;
+    }
+    try {
+      if (cert.checkIssued(root) && cert.verify(root.publicKey)) return true;
+    } catch {
+      // A root whose key type cannot verify this signature is simply not the issuer.
+    }
+  }
+  return false;
+}
+
+/**
+ * Read the certificate `host` actually presents, and fetch the issuer it names.
+ *
+ * Returns the intermediate as PEM, or null when the host names no issuer, the issuer cannot be
+ * read, or it does not chain to a root we already trust.
+ */
+async function fetchOmittedIntermediate(host: string): Promise<string | null> {
+  const leaf = await new Promise<X509Certificate | null>((resolve) => {
+    const socket = tlsConnect(
+      { host, port: 443, servername: host, rejectUnauthorized: false, timeout: 15_000 },
+      () => {
+        const cert = socket.getPeerX509Certificate() ?? null;
+        socket.destroy();
+        resolve(cert);
+      },
+    );
+    socket.on('error', () => { socket.destroy(); resolve(null); });
+    socket.on('timeout', () => { socket.destroy(); resolve(null); });
+  });
+  if (!leaf) return null;
+
+  const uri = caIssuersUri(leaf);
+  if (!uri) return null;
+
+  let bytes: Buffer;
+  try {
+    const res = await request(uri, { method: 'GET', headersTimeout: 20_000, bodyTimeout: 20_000 });
+    if (res.statusCode !== 200) return null;
+    bytes = Buffer.from(await res.body.arrayBuffer());
+  } catch {
+    return null;
+  }
+
+  // CA Issuers serves DER far more often than PEM; X509Certificate reads either.
+  let intermediate: X509Certificate;
+  try {
+    intermediate = new X509Certificate(bytes);
+  } catch {
+    return null;
+  }
+  // It has to be the certificate the leaf actually named, and it has to be trusted itself.
+  try {
+    if (!leaf.checkIssued(intermediate)) return null;
+  } catch {
+    return null;
+  }
+  if (!chainsToTrustedRoot(intermediate)) return null;
+  return intermediate.toString();
+}
+
+/**
+ * Try to repair `host`'s chain. True once an intermediate is held for it, so the caller retries.
+ * Asked at most once per host per process: a second failure is a real one.
+ */
+async function chaseIssuer(host: string): Promise<boolean> {
+  if (chasedFor.has(host)) return chasedFor.get(host) !== null;
+  const pem = await fetchOmittedIntermediate(host).catch(() => null);
+  chasedFor.set(host, pem);
+  if (!pem) return false;
+  chasingDispatcher = new Agent({
+    connections: 8,
+    connect: {
+      ciphers: BROWSER_CIPHERS,
+      ecdhCurve: 'X25519:prime256v1:secp384r1',
+      minVersion: 'TLSv1.2',
+      ca: [...rootCertificates, ...[...chasedFor.values()].filter((v): v is string => v !== null)],
+    },
+  });
+  return true;
+}
+
+/** Whether this failure is a server that did not send its intermediates. */
+function isIncompleteChain(err: unknown): boolean {
+  for (let e: unknown = err, depth = 0; e && depth < 5; e = (e as { cause?: unknown }).cause, depth += 1) {
+    const code = (e as { code?: string }).code;
+    if (code === 'UNABLE_TO_VERIFY_LEAF_SIGNATURE' || code === 'SELF_SIGNED_CERT_IN_CHAIN') return true;
+  }
+  return false;
+}
+
+/** For the tests: the two checks that keep the chase from weakening verification. */
+export const __chainsToTrustedRoot = chainsToTrustedRoot;
+export const __isIncompleteChain = isIncompleteChain;
+export const __caIssuersUri = caIssuersUri;
+
+/** For the tests: what has been chased, and a way back to a clean slate. */
+export const __chaseState = {
+  held: (): string[] => [...chasedFor.entries()].filter(([, v]) => v !== null).map(([h]) => h),
+  reset: (): void => { chasedFor.clear(); chasingDispatcher = null; },
+};
 
 const here = dirname(fileURLToPath(import.meta.url));
-export const CACHE_DIR = join(here, '..', '..', 'data', 'cache');
+
+/**
+ * Where fetched bytes are kept, and why a test is allowed to move it.
+ *
+ * The cache is keyed by URL, and the fetcher's own tests serve their fixtures from a local server
+ * on an ephemeral port -- so they were writing records for `http://127.0.0.1:<port>/a-page` into
+ * the real cache, 1,046 of them beside the 8,383 real ones. The operating system reuses those
+ * ports. When it handed a later test a port an earlier one had cached, the fetcher answered the
+ * page from disk and never asked the host for robots.txt at all, which is why the robots tests
+ * failed roughly one run in three and passed every time they were run alone.
+ *
+ * So the tests get their own directory. This is read once, at import, because that is before any
+ * test body runs: vitest.config.ts sets it for the whole suite.
+ */
+export const CACHE_DIR = process.env['LEXDROID_CACHE_DIR'] ?? join(here, '..', '..', 'data', 'cache');
 
 /**
  * We identify ourselves, and we also have to get through.
@@ -93,7 +253,6 @@ export const USER_AGENT =
   'Chrome/140.0.0.0 Safari/537.36 LexDroid/0.1 (UN ESCAP RDTII research; polite, 1 req/s)';
 
 const DEFAULT_DELAY_MS = 1000;
-const MAX_DELAY_MS = 30_000;
 const TIMEOUT_MS = 60_000;
 
 /** How long to wait after a throttled response, in order. Long, because the answer is to stop. */
@@ -106,10 +265,40 @@ const BACKOFF_MS = [30_000, 90_000, 240_000];
 const SLOWDOWN_MS = 6000;
 
 /**
- * The delay used when robots.txt could not be read. Deliberately slower than our floor: not
- * knowing what a host wants is a reason to be careful, not a licence to go at full speed.
+ * The delay used when robots.txt could not be read. Not knowing what a host wants is a reason to
+ * be careful. A host that answers 4xx has said there are no rules, which is knowing.
  */
 const UNKNOWN_ROBOTS_DELAY_MS = 10_000;
+
+/**
+ * A robots.txt the server failed to produce: 500, 502 or 504, the file broken rather than a host
+ * pushing back. India Code answers 500 to every robots.txt request, and at the unknown pace its
+ * register walk and fetches spent 43 of the rehearsal's 59 minutes waiting (26 Sep 2026). These
+ * go at the ordinary one request a second, and a host that then throttles is still slowed by
+ * SLOWDOWN_MS. 503 is the status that means "slow down", so it stays with the unknown pace.
+ */
+const BROKEN_ROBOTS = new Set([500, 502, 504]);
+
+/**
+ * A robots.txt behind a login: 401 asks who we are, not how fast to go. RFC 9309 lets a crawler
+ * proceed on any 4xx; 403 and 429 stay careful because they are a host pushing back, and 401 is
+ * not. The Bank of Thailand's CDN answered 401 once to its circulars database's robots.txt, then
+ * served every page asked for and 404 to the same file minutes later, and the unknown pace cost
+ * the Thailand rehearsal about three and a half minutes (26 Sep 2026). It goes in the broken
+ * lane: the ordinary pace, still slowed by SLOWDOWN_MS if the host then throttles.
+ */
+const LOGIN_ROBOTS = new Set([401]);
+
+/**
+ * How long to wait before asking again after the connection dropped with no answer at all.
+ *
+ * Short, and short on purpose. A reset is not a host saying no -- it said nothing, and the
+ * request before it and the request after it were both served. The long BACKOFF_MS ladder is for
+ * a host that answered and told us to slow down; applying it here would price a stray packet at
+ * four minutes. A host that is genuinely gone still stops the crawl, because the retries run out
+ * and the refusal count that trips GIVE_UP_AFTER is unchanged.
+ */
+const TRANSPORT_RETRY_MS = [2000, 8000];
 
 /**
  * How many consecutive clean responses buy back one step of the slowdown above.
@@ -179,6 +368,14 @@ function decompress(body: Buffer, encoding: string | string[] | undefined): Buff
  * Any of these cached and parsed becomes a law that says nothing, and then a cell reports no
  * restriction on the strength of a page it never received.
  */
+/** What one request came back with, before the cache and the log get hold of it. */
+interface SendResult {
+  status: number;
+  mediaType: string;
+  body: Buffer;
+  finalUrl: string;
+}
+
 function isSoftBlock(res: { status: number; body: Buffer }): boolean {
   if (res.status === 429 || res.status === 503) return true;
   if (res.status >= 200 && res.status < 300 && res.status !== 200) return true;
@@ -190,7 +387,19 @@ function isSoftBlock(res: { status: number; body: Buffer }): boolean {
   return false;
 }
 
-export type SourceMode = 'fetch' | 'cache-only';
+/**
+ * Where bytes come from.
+ *
+ *   fetch       the cache first, the network for what it lacks
+ *   cache-only  the cache and nothing else; a miss is an error, never a request
+ *   refresh     the network for everything, robots.txt included; the cache is written, not read
+ *
+ * `refresh` is a mode of the fetcher rather than a flag on one call because a document is rarely
+ * one request: an adapter resolves a listing, a wrapper page, an API record and the parts of a
+ * compiled Act, each through this fetcher. Asking the top-level call to refresh used to leave all
+ * of those answering from disk, and the "fresh" document was assembled from last month's bytes.
+ */
+export type SourceMode = 'fetch' | 'cache-only' | 'refresh';
 
 export interface FetchResult {
   url: string;
@@ -202,6 +411,18 @@ export interface FetchResult {
   contentHash: string;
   fromCache: boolean;
   fetchedAt: string;
+}
+
+/** A request body, for the portals whose public pages read their documents with a POST. */
+export interface PostBody {
+  body: string;
+  contentType: string;
+  referer?: string;
+}
+
+/** The cache key of a POST: the address and the body together, since either changes the answer. */
+export function postKey(url: string, post: PostBody): string {
+  return `${url}#post:${createHash('sha256').update(post.body).digest('hex')}`;
 }
 
 export class RobotsDisallowed extends Error {
@@ -323,6 +544,23 @@ function writeFileMkdir(path: string, data: Buffer | string): void {
   writeFileSync(path, data);
 }
 
+/**
+ * Put bytes that were assembled rather than fetched into the blob cache.
+ *
+ * An adapter that joins several responses into one document -- the volumes of an Act, the
+ * provisions of a consolidated page -- produces bytes that no single request ever returned. Those
+ * are the bytes a provision is read out of, and the ones the document row's hash is taken over,
+ * but only the parts were ever written to the cache. So the hash addressed nothing: 1,231 of 4,050
+ * documents could not be re-checked against their own stored bytes, and 199 of them carried a
+ * citation. Composing a document and storing it are one act, not two.
+ */
+export function cacheComposed(body: Buffer): string {
+  const hash = sha256(body);
+  const path = blobPath(hash);
+  if (!existsSync(path)) writeFileMkdir(path, body);
+  return hash;
+}
+
 /** The subset of robots.txt that matters: what we may not fetch, and how slowly. */
 interface Robots {
   disallow: string[];
@@ -332,11 +570,26 @@ interface Robots {
   fetched: boolean;
 }
 
+/** The name we answer to in robots.txt: the product token in our user agent. */
+export const ROBOTS_TOKEN = 'lexdroid';
+
+/**
+ * The rules robots.txt gives us, read the way RFC 9309 says to read them.
+ *
+ * The first version kept only the wildcard group and forgot it the moment a second user-agent line
+ * followed -- so "User-agent: *" grouped with another name lost every rule under it -- and never
+ * looked for a group addressed to us by name, which is the group a site writes when it means us.
+ * Now: consecutive user-agent lines form one group; a group naming our token governs us if there is
+ * one, and the wildcard groups otherwise; every group that applies is merged.
+ *
+ * The crawl delay the site asks for is honoured whatever it is. It used to be capped at thirty
+ * seconds, which is not honouring it.
+ */
 export function parseRobots(text: string): Robots {
-  const disallow: string[] = [];
-  const allow: string[] = [];
-  let crawlDelayMs: number | null = null;
-  let inStar = false;
+  interface Group { agents: string[]; disallow: string[]; allow: string[]; crawlDelayMs: number | null }
+  const groups: Group[] = [];
+  let current: Group | null = null;
+  let rulesSeen = false;
 
   for (const raw of text.split(/\r?\n/)) {
     const line = raw.replace(/#.*$/, '').trim();
@@ -347,26 +600,58 @@ export function parseRobots(text: string): Robots {
     const value = line.slice(colon + 1).trim();
 
     if (field === 'user-agent') {
-      // A group applies to us if it is the wildcard group. We do not claim a name of our own in
-      // robots terms, so anything more specific is somebody else's rules.
-      inStar = value === '*';
+      if (!current || rulesSeen) {
+        current = { agents: [], disallow: [], allow: [], crawlDelayMs: null };
+        groups.push(current);
+        rulesSeen = false;
+      }
+      current.agents.push(value.toLowerCase());
       continue;
     }
-    if (!inStar) continue;
-    if (field === 'disallow' && value) disallow.push(value);
-    else if (field === 'allow' && value) allow.push(value);
+    if (!current) continue;
+    if (field === 'disallow' || field === 'allow' || field === 'crawl-delay') rulesSeen = true;
+    if (field === 'disallow' && value) current.disallow.push(value);
+    else if (field === 'allow' && value) current.allow.push(value);
     else if (field === 'crawl-delay') {
       const seconds = Number(value);
-      if (Number.isFinite(seconds) && seconds > 0) crawlDelayMs = Math.min(seconds * 1000, MAX_DELAY_MS);
+      if (Number.isFinite(seconds) && seconds > 0) current.crawlDelayMs = Math.max(current.crawlDelayMs ?? 0, seconds * 1000);
     }
   }
-  return { disallow, allow, crawlDelayMs, fetched: true };
+
+  // Our token names the group, not the other way round. The test used to be
+  // `ROBOTS_TOKEN.includes(agent)`, which asks whether "lexdroid" contains the site's word: true
+  // for any substring of it, and true for the empty string a bare "User-agent:" line produces. A
+  // site that writes that line anywhere above its real rules had its wildcard group discarded in
+  // favour of an empty one, so "Disallow: /" -- everyone, keep out -- read as no rules at all.
+  const named = groups.filter((g) => g.agents.some((a) => a.split('/')[0]!.trim() === ROBOTS_TOKEN));
+  const applying = named.length > 0 ? named : groups.filter((g) => g.agents.includes('*'));
+  const delays = applying.map((g) => g.crawlDelayMs).filter((d): d is number => d !== null);
+  return {
+    disallow: applying.flatMap((g) => g.disallow),
+    allow: applying.flatMap((g) => g.allow),
+    crawlDelayMs: delays.length ? Math.max(...delays) : null,
+    fetched: true,
+  };
 }
 
-/** Longest-match wins, the convention every major crawler follows. Allow beats Disallow on a tie. */
-function robotsPermits(robots: Robots, pathname: string): boolean {
-  const match = (rules: string[]): number =>
-    rules.reduce((best, rule) => (pathname.startsWith(rule) ? Math.max(best, rule.length) : best), -1);
+/**
+ * How much of a path a robots rule matches: the rule's length where it matches, -1 where not.
+ * `*` matches any run of characters and a final `$` anchors the rule to the end of the path.
+ */
+function ruleMatch(rule: string, path: string): number {
+  if (!rule.includes('*') && !rule.endsWith('$')) return path.startsWith(rule) ? rule.length : -1;
+  const anchored = rule.endsWith('$');
+  const body = anchored ? rule.slice(0, -1) : rule;
+  const pattern = body.split('*').map((s) => s.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('.*');
+  return new RegExp(`^${pattern}${anchored ? '$' : ''}`).test(path) ? rule.length : -1;
+}
+
+/**
+ * Longest match wins, the convention every major crawler follows, and RFC 9309's. Allow beats
+ * Disallow on a tie. `path` is the path with its query, which is what the rules are written against.
+ */
+export function robotsPermits(robots: Robots, path: string): boolean {
+  const match = (rules: string[]): number => rules.reduce((best, rule) => Math.max(best, ruleMatch(rule, path)), -1);
   const d = match(robots.disallow);
   if (d < 0) return true;
   return match(robots.allow) >= d;
@@ -392,15 +677,29 @@ export interface FetcherOptions {
   runId?: string | null;
   /** Floor on the gap between requests to one host. A site asking for more gets more. */
   minDelayMs?: number;
+  /**
+   * How long to wait before asking again when the connection dropped with no answer, one entry
+   * per retry. Defaults to TRANSPORT_RETRY_MS; a test standing in for an unreachable host sets it
+   * short so the breaker can be watched tripping without waiting out the real pauses.
+   */
+  transportRetryMs?: number[];
   onLog?: (line: string) => void;
 }
 
 export class Fetcher {
   private readonly hosts = new Map<string, HostState>();
+  /**
+   * Cookies, kept only for a host a caller has asked to hold a session with, and only in memory.
+   * An ASP.NET form pages its results through server-side session state: without the session
+   * cookie, the second page of a search is answered as a fresh visit with no results. No other
+   * host is sent a cookie, and none is ever written to disk.
+   */
+  private readonly sessions = new Map<string, Map<string, string>>();
   private readonly db: Db;
   private readonly sourceMode: SourceMode;
   private readonly runId: string | null;
   private readonly minDelayMs: number;
+  private readonly transportRetryMs: number[];
   private readonly onLog: (line: string) => void;
 
   /** Counters the run report quotes, so "documents fetched = 0" comes from a measurement. */
@@ -417,6 +716,7 @@ export class Fetcher {
     this.sourceMode = opts.sourceMode;
     this.runId = opts.runId ?? null;
     this.minDelayMs = opts.minDelayMs ?? DEFAULT_DELAY_MS;
+    this.transportRetryMs = opts.transportRetryMs ?? TRANSPORT_RETRY_MS;
     this.onLog = opts.onLog ?? (() => {});
   }
 
@@ -432,13 +732,20 @@ export class Fetcher {
     return s;
   }
 
-  private log(url: string, outcome: string, status: number | null, bytes: number, waitMs: number): void {
+  private log(
+    url: string,
+    outcome: string,
+    status: number | null,
+    bytes: number,
+    waitMs: number,
+    mediaType: string | null = null,
+  ): void {
     this.db
       .prepare(
-        `INSERT INTO fetch_log (run_id, host, url, requested_at, http_status, bytes, wait_ms, outcome)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO fetch_log (run_id, host, url, requested_at, http_status, bytes, wait_ms, outcome, media_type)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run(this.runId, new URL(url).host, url, new Date().toISOString(), status, bytes, waitMs, outcome);
+      .run(this.runId, new URL(url).host, url, new Date().toISOString(), status, bytes, waitMs, outcome, mediaType);
   }
 
   private readCache(url: string): FetchResult | null {
@@ -512,13 +819,80 @@ export class Fetcher {
   }
 
   /** Raw request. Callers go through fetch(), which adds the cache, robots and the log. */
-  private async send(url: string): Promise<{ status: number; mediaType: string; body: Buffer; finalUrl: string }> {
+  private async send(url: string, opts: { robotsFile?: boolean; post?: PostBody } = {}): Promise<SendResult> {
+    let at = url;
+    for (let hop = 0; ; hop += 1) {
+      // Only the first request carries the body: a redirect answered to a POST is followed with a
+      // GET, which is what browsers do with a 302 or 303 and what the destination expects.
+      const res = await this.sendOne(at, hop === 0 ? opts.post : undefined);
+      const location = res.location;
+      if (res.status < 300 || res.status >= 400 || !location || hop >= MAX_REDIRECTS) {
+        return { status: res.status, mediaType: res.mediaType, body: res.body, finalUrl: at };
+      }
+      const next = new URL(location, at);
+      this.log(at, 'redirect', res.status, 0, 0);
+      // robots.txt itself is never disallowed (RFC 9309 follows its redirects), and checking it
+      // against the rules it is about to supply would ask for itself forever.
+      if (opts.robotsFile) {
+        at = next.toString();
+        continue;
+      }
+      // The destination's own rules, which are not necessarily the origin's.
+      const robots = await this.ensureRobots(next.host, next.origin);
+      if (!robotsPermits(robots, next.pathname + next.search)) {
+        this.stats.disallowed += 1;
+        this.log(next.toString(), 'robots-disallowed', null, 0, 0);
+        throw new RobotsDisallowed(next.toString());
+      }
+      // Every hop is a request, and the pace is counted in requests. Only a hop to another host
+      // used to wait, so a portal that redirects to itself -- a session cookie bounce, a trailing
+      // slash -- was asked twice inside one interval. The destination's pace either way: the
+      // queue we are inside belongs to the origin.
+      const waited = await this.wait(next.host);
+      if (waited > 0) this.log(next.toString(), 'redirect-wait', null, 0, waited);
+      at = next.toString();
+    }
+  }
+
+  private async sendOne(url: string, post?: PostBody): Promise<SendResult & { location: string | null }> {
+    const host = new URL(url).host;
+    try {
+      return await this.sendOnce(url, chasedFor.get(host) ? (chasingDispatcher ?? dispatcher) : dispatcher, post);
+    } catch (err) {
+      // A server that omitted its intermediate certificate, asked once per host. Retried over a
+      // connection that is still fully verified -- with the intermediate the server should have
+      // sent, checked against the root store before it is used.
+      if (!isIncompleteChain(err) || chasedFor.has(host)) throw err;
+      if (!(await chaseIssuer(host))) throw err;
+      this.onLog(`  ${host}: serves an incomplete certificate chain; fetched the issuer it names and verified it against the root store.`);
+      return await this.sendOnce(url, chasingDispatcher ?? dispatcher, post);
+    }
+  }
+
+  private async sendOnce(url: string, agent: Agent, post?: PostBody): Promise<SendResult & { location: string | null }> {
+    const jar = this.sessions.get(new URL(url).host);
+    const cookie = jar && jar.size > 0 ? { cookie: [...jar].map(([k, v]) => `${k}=${v}`).join('; ') } : {};
     const res = await request(url, {
-      method: 'GET',
-      dispatcher,
+      method: post ? 'POST' : 'GET',
+      dispatcher: agent,
       headersTimeout: TIMEOUT_MS,
       bodyTimeout: TIMEOUT_MS,
-      headers: {
+      ...(post ? { body: post.body } : {}),
+      headers: post ? {
+        // The request the portal's own page sends when a reader opens a law: the same body, the
+        // same content type, from the page that sends it.
+        'user-agent': USER_AGENT,
+        accept: 'application/json, text/plain, */*',
+        'accept-language': 'en-GB,en;q=0.9',
+        'accept-encoding': 'gzip, deflate, br',
+        'content-type': post.contentType,
+        ...(post.referer ? { referer: post.referer } : {}),
+        'sec-fetch-dest': 'empty',
+        'sec-fetch-mode': 'cors',
+        'sec-fetch-site': 'same-origin',
+        ...cookie,
+      } : {
+        ...cookie,
         'user-agent': USER_AGENT,
         accept: 'text/html,application/xhtml+xml,application/pdf,application/xml;q=0.9,*/*;q=0.8',
         'accept-language': 'en-GB,en;q=0.9',
@@ -534,15 +908,21 @@ export class Fetcher {
     });
     const wire = Buffer.from(await res.body.arrayBuffer());
     this.stats.wireBytes += wire.length;
+    if (jar) {
+      const set = res.headers['set-cookie'];
+      for (const line of Array.isArray(set) ? set : set ? [set] : []) {
+        const pair = /^\s*([^=;\s]+)=([^;]*)/.exec(line);
+        if (pair) jar.set(pair[1]!, pair[2]!);
+      }
+    }
     const body = decompress(wire, res.headers['content-encoding']);
     const ct = res.headers['content-type'];
     const ctValue = (Array.isArray(ct) ? ct[0] : ct) ?? 'application/octet-stream';
     const mediaType = (ctValue.split(';')[0] ?? 'application/octet-stream').trim().toLowerCase();
 
-    // The redirect interceptor records where it went; the last hop is what actually served us.
-    const history = (res.context as { history?: URL[] } | undefined)?.history;
-    const finalUrl = history?.length ? String(history[history.length - 1]) : url;
-    return { status: res.statusCode, mediaType, body, finalUrl };
+    const loc = res.headers['location'];
+    const location = (Array.isArray(loc) ? loc[0] : loc) ?? null;
+    return { status: res.statusCode, mediaType, body, finalUrl: url, location };
   }
 
   /**
@@ -561,20 +941,33 @@ export class Fetcher {
     const s = this.state(host);
     if (s.robots) return s.robots;
 
+    // A host that answers "there is no such file" has answered, and the answer is that it has no
+    // rules. Only 404 and 410 say that: 403 and 429 are a host pushing back, which is the opposite.
     const unknown = (): Robots => ({ disallow: [], allow: [], crawlDelayMs: UNKNOWN_ROBOTS_DELAY_MS, fetched: false });
+    const noRules = (): Robots => ({ disallow: [], allow: [], crawlDelayMs: null, fetched: true });
+    const broken = (): Robots => ({ disallow: [], allow: [], crawlDelayMs: null, fetched: false });
+    let absent = false;
+    let brokenStatus: number | null = null;
 
-    const cached = this.readCache(`${origin}/robots.txt`);
+    let robotsBody: string | null = null;
+
+    const cached = this.sourceMode === 'refresh' ? null : this.readCache(`${origin}/robots.txt`);
     if (cached) {
-      s.robots = parseRobots(cached.body.toString('utf8'));
+      robotsBody = cached.body.toString('utf8');
+      s.robots = parseRobots(robotsBody);
     } else if (this.sourceMode === 'cache-only') {
       s.robots = unknown();
     } else {
       // Fetched under the default delay: we do not yet know what the site would prefer.
       await this.wait(host);
       try {
-        const res = await this.send(`${origin}/robots.txt`);
-        if (res.status === 200 && res.body.length > 0 && !isSoftBlock(res)) {
-          s.robots = parseRobots(res.body.toString('utf8'));
+        const res = await this.send(`${origin}/robots.txt`, { robotsFile: true });
+        if (res.status === 404 || res.status === 410) {
+          absent = true;
+          s.robots = noRules();
+        } else if (res.status === 200 && res.body.length > 0 && !isSoftBlock(res)) {
+          robotsBody = res.body.toString('utf8');
+          s.robots = parseRobots(robotsBody);
           const hash = sha256(res.body);
           writeFileMkdir(blobPath(hash), res.body);
           writeFileMkdir(
@@ -588,10 +981,13 @@ export class Fetcher {
               null, 2,
             ),
           );
+        } else if (BROKEN_ROBOTS.has(res.status) || LOGIN_ROBOTS.has(res.status)) {
+          brokenStatus = res.status;
+          s.robots = broken();
         } else {
           s.robots = unknown();
         }
-        this.log(`${origin}/robots.txt`, s.robots.fetched ? 'ok' : 'error', res.status, res.body.length, 0);
+        this.log(`${origin}/robots.txt`, s.robots.fetched ? 'ok' : 'error', res.status, res.body.length, 0, res.mediaType);
       } catch {
         s.robots = unknown();
       }
@@ -599,15 +995,37 @@ export class Fetcher {
 
     const delay = Math.max(this.minDelayMs, s.robots.crawlDelayMs ?? 0);
     this.onLog(
-      s.robots.fetched
-        ? `  ${host}: robots.txt read, ${s.robots.disallow.length} disallow rule(s), ${delay}ms between requests`
-        : `  ${host}: robots.txt could not be read. Treating that as unknown rather than permissive: ${delay}ms between requests.`,
+      absent
+        ? `  ${host}: no robots.txt, which is a host saying it has no rules: ${delay}ms between requests`
+        : brokenStatus !== null
+          ? `  ${host}: robots.txt answered ${brokenStatus}, ${LOGIN_ROBOTS.has(brokenStatus) ? 'a login prompt' : 'a server error'} rather than a rule: ${delay}ms between requests`
+          : s.robots.fetched
+          ? `  ${host}: robots.txt read, ${s.robots.disallow.length} disallow rule(s), ${delay}ms between requests`
+          : `  ${host}: robots.txt could not be read. Treating that as unknown rather than permissive: ${delay}ms between requests.`,
     );
 
     // Record what we learned against every portal on this host, so the profile view shows it.
     this.db
       .prepare(`UPDATE portal SET robots_allows = ?, crawl_delay_ms = ? WHERE url LIKE ?`)
       .run(s.robots.disallow.length ? 0 : 1, s.robots.crawlDelayMs, `%${host}%`);
+
+    // And record the rules themselves, which is what makes the claim checkable later. The two
+    // columns above say a host had rules; they cannot say which paths those rules covered, so
+    // they cannot answer whether anything we fetched was disallowed.
+    this.db
+      .prepare(
+        `INSERT INTO robots_snapshot (host, fetched, absent, disallow, allow, crawl_delay_ms, body, recorded_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(host) DO UPDATE SET
+           fetched = excluded.fetched, absent = excluded.absent, disallow = excluded.disallow,
+           allow = excluded.allow, crawl_delay_ms = excluded.crawl_delay_ms,
+           body = COALESCE(excluded.body, robots_snapshot.body), recorded_at = excluded.recorded_at`,
+      )
+      .run(
+        host, s.robots.fetched ? 1 : 0, absent ? 1 : 0,
+        JSON.stringify(s.robots.disallow), JSON.stringify(s.robots.allow),
+        s.robots.crawlDelayMs, robotsBody, new Date().toISOString(),
+      );
 
     return s.robots;
   }
@@ -632,12 +1050,16 @@ export class Fetcher {
    * have not seen this URL before. Neither is swallowed: a caller that wants to continue past one
    * must say so.
    */
-  async fetch(url: string, opts: { refresh?: boolean } = {}): Promise<FetchResult> {
+  async fetch(url: string, opts: { refresh?: boolean; post?: PostBody; session?: boolean } = {}): Promise<FetchResult> {
     const parsed = new URL(url);
     const host = parsed.host;
+    if (opts.session) this.sessions.set(host, this.sessions.get(host) ?? new Map());
+    // A POST is a different question from a GET of the same address, and two POSTs with different
+    // bodies are different questions too, so the body is part of what the cache is keyed on.
+    const key = opts.post ? postKey(url, opts.post) : url;
 
-    if (!opts.refresh) {
-      const cached = this.readCache(url);
+    if (!opts.refresh && this.sourceMode !== 'refresh') {
+      const cached = this.readCache(key);
       if (cached) {
         this.stats.cached += 1;
         this.log(url, 'cached', cached.status, cached.body.length, 0);
@@ -661,7 +1083,7 @@ export class Fetcher {
 
     return this.queue(host, async () => {
       const robots = await this.ensureRobots(host, parsed.origin);
-      if (!robotsPermits(robots, parsed.pathname)) {
+      if (!robotsPermits(robots, parsed.pathname + parsed.search)) {
         this.stats.disallowed += 1;
         this.log(url, 'robots-disallowed', null, 0, 0);
         throw new RobotsDisallowed(url);
@@ -670,11 +1092,19 @@ export class Fetcher {
       const state = this.state(host);
       let waitMs = await this.wait(host);
       try {
-        let res = await this.send(url);
+        // A connection that drops before the host answers is retried here, close in, before any
+        // of the logic below treats it as a refusal. The walk that prompted this lost a register
+        // of 847 Acts to one reset on the fourth page: the three pages already gathered were
+        // discarded, and the same page served 1.3MB on the next attempt.
+        let res = await this.sendThroughDrops(url, host, opts.post);
         // Every attempt is logged, retries included. fetch_log is the run record that makes
         // "we crawled politely" checkable rather than claimed, and a record that counts three
         // requests as one understates what actually left this machine.
-        this.log(url, isSoftBlock(res) ? 'soft-blocked' : 'ok', res.status, res.body.length, waitMs);
+        //
+        // Logged at the address that served the bytes, not the one we asked for. B3 reads these
+        // rows to show that no disallowed path was ever fetched, and a redirect into a disallowed
+        // path recorded under the permitted address we asked for would be invisible to it.
+        this.log(res.finalUrl, isSoftBlock(res) ? 'soft-blocked' : 'ok', res.status, res.body.length, waitMs, res.mediaType);
 
         // Back off and retry a throttled or empty response before giving up on it. The delays are
         // long on purpose: the point is to stop asking, not to ask more insistently.
@@ -689,8 +1119,8 @@ export class Fetcher {
           );
           await new Promise((r) => setTimeout(r, pause));
           waitMs += pause;
-          res = await this.send(url);
-          this.log(url, isSoftBlock(res) ? 'soft-blocked' : 'ok', res.status, res.body.length, pause);
+          res = await this.sendThroughDrops(url, host, opts.post);
+          this.log(res.finalUrl, isSoftBlock(res) ? 'soft-blocked' : 'ok', res.status, res.body.length, pause, res.mediaType);
         }
         if (isSoftBlock(res)) {
           this.stats.softBlocked += 1;
@@ -720,7 +1150,7 @@ export class Fetcher {
 
         writeFileMkdir(blobPath(contentHash), res.body);
         writeFileMkdir(
-          recordPath(url),
+          recordPath(key),
           JSON.stringify(
             { url, finalUrl: res.finalUrl, status: res.status, mediaType: res.mediaType, contentHash, bytes: res.body.length, fetchedAt } satisfies CacheRecord,
             null, 2,
@@ -746,6 +1176,32 @@ export class Fetcher {
         throw new TransportFault(url, err);
       }
     });
+  }
+
+  /**
+   * Send, and ask again if the connection dropped without an answer.
+   *
+   * A reset, a hang-up or a DNS blip is not a decision the host made about us, and the caller
+   * cannot tell the difference from an outright refusal once the exception is thrown. Retrying
+   * here keeps that distinction where the evidence for it is. A refusal the host actually stated
+   * -- robots, a cooldown, a suspension -- is never retried, and every attempt is logged, so a
+   * quiet host still shows up in fetch_log as the several requests it really cost.
+   */
+  private async sendThroughDrops(url: string, host: string, post?: PostBody): Promise<SendResult> {
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        return await this.send(url, post ? { post } : {});
+      } catch (err) {
+        if (isNamedRefusal(err) || attempt >= this.transportRetryMs.length) throw err;
+        const pause = this.transportRetryMs[attempt]!;
+        this.log(url, 'error', null, 0, 0);
+        this.onLog(
+          `  ${host}: ${err instanceof Error ? err.message : String(err)} -- no answer. ` +
+            `Asking again in ${pause / 1000}s.`,
+        );
+        await new Promise((r) => setTimeout(r, pause));
+      }
+    }
   }
 
   /** True when the URL is already on disk, so a caller can plan without triggering a fetch. */

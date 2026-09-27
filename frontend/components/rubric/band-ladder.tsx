@@ -2,15 +2,25 @@ import Link from "next/link";
 import { cn } from "@/lib/utils";
 import type { BookBand, Standing } from "@/lib/rubric/book";
 
-const name: Record<string, string> = { AUS: "Australia", MYS: "Malaysia", SGP: "Singapore" };
+/** Code against name, passed down from the page. Spelling the set out here would mean a new
+ *  economy shows as a bare code until someone remembers this file. */
+export type EconomyNames = Record<string, string>;
 
 /** Where an economy landed, sitting on the criterion it actually met. */
-function Mark({ mark, indicatorId }: { mark: Standing; indicatorId: string }) {
+function Mark({
+  mark,
+  indicatorId,
+  names,
+}: {
+  mark: Standing;
+  indicatorId: string;
+  names: EconomyNames;
+}) {
   const quiet = mark.state === "no-restriction";
   return (
     <Link
       href={`/database/${mark.economy.toLowerCase()}/${indicatorId}`}
-      title={`${name[mark.economy] ?? mark.economy} met this criterion`}
+      title={`${names[mark.economy] ?? mark.economy} met this criterion`}
       className={cn(
         "rounded-full px-1.5 py-0.5 text-[10.5px] leading-none font-medium transition-colors",
         quiet
@@ -27,7 +37,15 @@ function Mark({ mark, indicatorId }: { mark: Standing; indicatorId: string }) {
  * ESCAP's score bands, drawn as the steps they are. Every indicator has as many
  * steps as the methodology gives it, from two to five, and none are invented.
  */
-export function BandLadder({ bands, indicatorId }: { bands: BookBand[]; indicatorId: string }) {
+export function BandLadder({
+  bands,
+  indicatorId,
+  names,
+}: {
+  bands: BookBand[];
+  indicatorId: string;
+  names: EconomyNames;
+}) {
   return (
     <ol className="mt-2.5 flex flex-col gap-y-3">
       {bands.map((b, i) => {
@@ -73,7 +91,7 @@ export function BandLadder({ bands, indicatorId }: { bands: BookBand[]; indicato
               {met ? (
                 <span className="ml-2 inline-flex gap-1 align-baseline">
                   {b.met.map((m) => (
-                    <Mark key={m.economy} mark={m} indicatorId={indicatorId} />
+                    <Mark key={m.economy} mark={m} indicatorId={indicatorId} names={names} />
                   ))}
                 </span>
               ) : null}

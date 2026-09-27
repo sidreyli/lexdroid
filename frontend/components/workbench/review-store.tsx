@@ -1,8 +1,8 @@
 "use client";
 
 /**
- * Verdicts live in this browser until the backend accepts them. Nothing here reaches
- * the store, so the workbench says so wherever a decision is recorded.
+ * What this browser has already sent, so the bar shows a verdict without waiting for a reload.
+ * The record itself lives in the store; this is only the echo of it.
  */
 import { createContext, useContext, useMemo, useSyncExternalStore } from "react";
 import type { ReviewDecision } from "@/lib/review";

@@ -28,7 +28,7 @@ export function Scoreboard({ board }: { board: Board }) {
       <section className="bg-card lift grid gap-x-12 gap-y-7 rounded-3xl p-6 sm:p-8 lg:grid-cols-[minmax(0,1fr)_minmax(22rem,30rem)]">
         <div className="max-w-[46ch]">
           <h2 className="text-[18px] leading-tight font-semibold tracking-tight text-navy-deep">
-            Where the three economies stand
+            Where the economies stand
           </h2>
           <p className="mt-2 text-[13.5px] leading-relaxed text-muted-foreground">
             Averaged over the {board.pillarsComplete} pillars answered in full.{" "}
@@ -72,7 +72,8 @@ function Focus({
   onFocus: (code: string | null) => void;
   className?: string;
 }) {
-  const options = [{ code: "", name: "All three" }, ...economies];
+  // "All" rather than a counted word: the set of economies is whatever has a profile.
+  const options = [{ code: "", name: "All" }, ...economies];
   return (
     <div className={cn("inset-surface flex w-fit gap-1 rounded-full p-1", className)}>
       {options.map((o) => {

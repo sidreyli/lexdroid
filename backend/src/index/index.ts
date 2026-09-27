@@ -14,6 +14,7 @@
 import type { Db } from '../db/index.js';
 import { MIN_TRIGRAM_TERM } from '../db/index.js';
 import { embed, EMBEDDING_MODEL } from '../engines/ollama.js';
+import { canonicalizeThai } from '../util/thai.js';
 
 /**
  * How much of a section is embedded. Long sections exist -- a definitions section runs to
@@ -140,7 +141,7 @@ export async function buildDenseIndex(
  *
  * Cyrillic and Malay are deliberately absent: they space their words, so the ordinary path already
  * serves them. Chinese, Japanese and Thai do not, and that is a fact about search rather than about
- * language -- a whole Chinese sentence arrives as one token however long it is.
+ * language -- a whole Thai (or Chinese) sentence arrives as one token however long it is.
  */
 const SPACELESS = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Thai}]/u;
 const SPACELESS_RUN = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Thai}]+/gu;
@@ -176,35 +177,57 @@ function expand(token: string): string[] {
 /**
  * Turn a phrase into an FTS5 query the trigram tokenizer can actually match.
  *
- * Three rules, all learned the hard way. Everything is a quoted phrase, because unquoted text is
+ * Five rules, all learned the hard way. Everything is a quoted phrase, because unquoted text is
  * FTS5 query syntax and a legal phrase containing OR, NOT or a hyphen is a syntax error or, worse,
  * a query that quietly means something else. Terms shorter than three characters are dropped,
  * because a trigram index cannot match them -- a two-character query returns nothing and says
- * nothing about why. And a run of spaceless script is expanded into trigrams rather than left whole.
+ * nothing about why. A run of spaceless script is expanded into trigrams rather than left whole.
+ * The phrase is NFC-normalised before any of that, because Thai (and other scripts with combining
+ * marks) can represent the same visible text as different byte sequences -- a differing CMS, PDF
+ * extractor or OCR engine routinely produces one form or the other, and an index built from one form
+ * silently fails to match a query typed in the other unless both sides are canonicalised the same
+ * way. And the split that turns the phrase into candidate terms keeps combining marks (`\p{M}`)
+ * attached to the letter before them, not just letters and numbers (`\p{L}`/`\p{N}`) -- a Thai tone
+ * mark or vowel sign, or a Devanagari matra, is Unicode category Mark, not Letter, and splitting on
+ * "everything that is not a letter or number" tears every Thai word apart at its own diacritics
+ * before `expand()` ever sees it. Verified directly: splitting "ข้อมูลส่วนบุคคล" (personal data, one
+ * word with three internal tone/vowel marks) on `[^\p{L}\p{N}]+` produces five fragments, three of
+ * them one or two characters and dropped by the length filter -- only 5 of the word's 15 code points
+ * survive. Splitting on `[^\p{L}\p{N}\p{M}]+` instead keeps the whole word intact.
  *
- * That last rule is the query-side half of a bug whose index-side half was already fixed. The
- * trigram tokenizer means Chinese is stored and searchable; splitting a query on whitespace means a
- * Chinese question still arrived as one enormous term, which FTS5 can satisfy only by finding that
- * entire string contiguously. The index worked and the search returned nothing -- the same silent
- * failure as v1's Latin-only tokenizer, one stage later in the pipeline.
+ * The spaceless-script rule is the query-side half of a bug whose index-side half was already fixed.
+ * The trigram tokenizer means Thai and Chinese are stored and searchable; splitting a query on
+ * whitespace means a Thai question still arrived as one enormous term, which FTS5 can satisfy only
+ * by finding that entire string contiguously. The index worked and the search returned nothing --
+ * the same silent failure as v1's Latin-only tokenizer, one stage later in the pipeline.
  */
 export function ftsQuery(phrase: string): string | null {
-  const terms = [
-    ...new Set(
-      phrase
-        .toLowerCase()
-        .split(/[^\p{L}\p{N}]+/u)
-        .flatMap(expand)
-        .filter((t) => t.length >= MIN_TRIGRAM_TERM),
-    ),
-  ].slice(0, MAX_QUERY_TERMS);
-  if (terms.length === 0) return null;
-  return terms.map((t) => `"${t.replace(/"/g, '""')}"`).join(' OR ');
+  const canonical = canonicalizeThai(phrase.normalize('NFC'));
+  const terms = canonical
+    .toLowerCase()
+    .split(/[^\p{L}\p{N}\p{M}]+/u)
+    .flatMap(expand)
+    .filter((t) => t.length >= MIN_TRIGRAM_TERM);
+  // Deduplicate only what the expansion invented. Overlapping trigram windows repeat whenever the
+  // run does -- "กขกขกข" yields its two windows three times over -- and a window repeated because
+  // of where the windows fell says nothing about the question. A word repeated in a phrase is the
+  // phrase's own emphasis, and bm25 counting it twice is the behaviour every score we have so far
+  // was measured under, so the spaced-script path is left exactly as it was. Measured over the 331
+  // distinct queries the rubric puts to the economies we run: with this condition every one is
+  // byte-identical to master's term list; without it, 179 change. The cap likewise guards expansion,
+  // which is the only thing here that can turn one word into hundreds of terms.
+  const capped = SPACELESS.test(canonical) ? [...new Set(terms)].slice(0, MAX_QUERY_TERMS) : terms;
+  if (capped.length === 0) return null;
+  return capped.map((t) => `"${t.replace(/"/g, '""')}"`).join(' OR ');
 }
 
 /** As a phrase rather than as loose terms: for a term of art like "personal data". */
 export function ftsPhrase(phrase: string): string | null {
-  const cleaned = phrase.toLowerCase().replace(/[^\p{L}\p{N}\s]+/gu, ' ').replace(/\s+/g, ' ').trim();
+  const cleaned = canonicalizeThai(phrase.normalize('NFC'))
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\p{M}\s]+/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
   if (cleaned.replace(/\s/g, '').length < MIN_TRIGRAM_TERM) return null;
   return `"${cleaned}"`;
 }
@@ -270,9 +293,22 @@ export function loadVectors(db: Db, opts: { model?: string; economy?: string } =
   const dims = rows[0]!.dims;
   const matrix = new Float32Array(rows.length * dims);
   const ids = new Int32Array(rows.length);
+  // Every vector is checked, not only the first. The matrix is sized from the first row, so a
+  // shorter blob used to leave zeros that score as a match to nothing, a longer one to spill into
+  // its neighbour's row, and a NaN to poison every similarity it touched -- silently, in the
+  // ranking a zero is later reported against. A corrupt index is a failure to say out loud.
   rows.forEach((r, i) => {
+    if (r.dims !== dims || r.vector.length !== dims * 4) {
+      throw new Error(
+        `section ${r.section_id}'s ${model} vector is ${r.dims} dims in ${r.vector.length} bytes, where the index is ${dims} dims; re-embed before searching`,
+      );
+    }
+    const v = fromBlob(r.vector);
+    for (let k = 0; k < v.length; k++) {
+      if (!Number.isFinite(v[k]!)) throw new Error(`section ${r.section_id}'s ${model} vector holds a non-finite value; re-embed before searching`);
+    }
     ids[i] = r.section_id;
-    matrix.set(fromBlob(r.vector), i * dims);
+    matrix.set(v, i * dims);
   });
   return { ids, matrix, dims };
 }

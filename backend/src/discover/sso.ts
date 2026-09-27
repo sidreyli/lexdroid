@@ -10,8 +10,7 @@
  * the fetcher; discovery uses the browse listings, which are allowed, rather than the search box.
  */
 import * as cheerio from 'cheerio';
-import { createHash } from 'node:crypto';
-import { HostSuspended, type Fetcher } from '../fetch/index.js';
+import { cacheComposed, HostSuspended, type Fetcher } from '../fetch/index.js';
 import type { FetchResult } from '../fetch/index.js';
 import { provisionIds } from '../parse/sso.js';
 import type { Adapter, DiscoveredInstrument } from './types.js';
@@ -57,16 +56,19 @@ function mergeProvisions(bodies: string[]): string {
   const container = $('#legisContent').first();
   if (container.length === 0) return bodies[0]!;
 
+  // A schedule arrives as div.schedule rather than div.prov1, and is merged the same way: it is
+  // where a prohibited-goods list or a relief threshold is written down.
+  const HEADERS = 'td.prov1Hdr, td.prov1Rep, td.sHdr';
   const have = new Set<string>();
-  container.find('div.prov1 td.prov1Hdr, div.prov1 td.prov1Rep').each((_i, el) => {
+  container.find(`div.prov1 ${HEADERS}, div.schedule ${HEADERS}`).each((_i, el) => {
     const id = $(el).attr('id');
     if (id) have.add(id);
   });
 
   for (const html of bodies.slice(1)) {
     const $more = cheerio.load(html);
-    $more('#legisContent div.prov1').each((_i, el) => {
-      const id = $more(el).find('td.prov1Hdr, td.prov1Rep').first().attr('id');
+    $more('#legisContent').find('div.prov1, div.schedule').each((_i, el) => {
+      const id = $more(el).find(HEADERS).first().attr('id');
       if (id && have.has(id)) return;
       if (id) have.add(id);
       container.append($more.html(el as never));
@@ -257,7 +259,7 @@ export const ssoAdapter: Adapter = {
       // responses is not addressable at any one of their URLs, and a citation has to resolve.
       url,
       body,
-      contentHash: createHash('sha256').update(body).digest('hex'),
+      contentHash: cacheComposed(body),
       fromCache: responses.every((r) => r.fromCache),
     };
   },

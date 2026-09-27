@@ -288,6 +288,51 @@ describe('a PDF whose front matter follows its arrangement of sections', () => {
   });
 });
 
+describe('Indian PDF provision labels and source language', () => {
+  it('keeps a decimal label that is followed by its heading without another dot', () => {
+    const built = sectionise([
+      {
+        page: 1,
+        language: 'en',
+        lines: ['12.5 Definitions', 'For the purposes of this rule, space activity includes launch operations.'],
+      },
+    ]);
+    expect(built.sections.map((section) => section.label)).toEqual(['12.5']);
+    expect(built.sections[0]?.language).toBe('en');
+  });
+
+  it('carries a Hindi page language into the section a quotation comes from', () => {
+    const built = sectionise([
+      {
+        page: 1,
+        language: 'hi',
+        lines: ['1. संक्षिप्त नाम', 'इस अधिनियम का संक्षिप्त नाम उदाहरण अधिनियम है।'],
+      },
+    ]);
+    expect(built.sections[0]?.language).toBe('hi');
+  });
+
+  it('keeps matching provision labels in each language of a bilingual instrument', () => {
+    const built = sectionise([
+      {
+        page: 1,
+        language: 'hi',
+        lines: ['1. संक्षिप्त नाम', 'इन नियमों का संक्षिप्त नाम उदाहरण नियम, 2024 है।'],
+      },
+      {
+        page: 2,
+        language: 'en',
+        lines: ['1. Short title', 'These rules may be called the Example Rules, 2024.'],
+      },
+    ]);
+
+    expect(built.sections.map((section) => `${section.language}:${section.label}`)).toEqual(['hi:1', 'en:1']);
+    for (const section of built.sections) {
+      expect(built.text.slice(section.charStart, section.charEnd)).toBe(section.text);
+    }
+  });
+});
+
 
 describe('the name a document repeats on its own pages', () => {
   const paged = (header: string[], n = 8): { page: number; lines: string[] }[] =>

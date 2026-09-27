@@ -52,15 +52,39 @@ export interface Corpus {
   unread: { reason: string; count: number }[];
 }
 
+/** One rung of an economy's instrument hierarchy, as the profile declares it. */
+export interface InstrumentType {
+  rank: number;
+  kind: string;
+  localName: string;
+  bindingness: string;
+  note: string;
+}
+
+export interface Portal {
+  name: string;
+  url: string;
+  kind: string;
+  authority?: string;
+  pillars?: number[];
+  /** Null where nothing can enumerate this portal yet, which is a gap and shown as one. */
+  adapter?: string | null;
+  notes?: string;
+}
+
 export interface Economy {
   code: string;
   name: string;
   legalSystem: { family: string; note: string };
   officialLanguages: string[];
   languageNote?: string;
-  portals: { name: string; url: string; kind: string; authority?: string }[];
+  instrumentTypes?: InstrumentType[];
+  portals: Portal[];
   commitments?: { name: string; status?: string; sourceUrl?: string }[];
   notes?: string;
+  authoredBy?: string;
+  authoredOn?: string;
+  sources?: string[];
   corpus: Corpus;
 }
 
@@ -97,6 +121,8 @@ export interface Gate {
   gate: string;
   passed: boolean;
   detail: string | null;
+  /** When the gate was run. A reviewer's decision clears it only if made after. */
+  checkedAt?: string | null;
 }
 
 /** The window of document text around a citation, with the quote rebased onto it. */
@@ -191,6 +217,8 @@ export interface Run {
   finishedAt: string | null;
   economies: string[];
   pillars: number[] | "all";
+  /** The indicators asked, when the run asked only some of its pillars' -- as the live test does. */
+  indicators?: string[] | null;
   engine: string;
   model: string;
   sourceMode: "fetch" | "cache-only";
@@ -200,7 +228,8 @@ export interface Run {
   notes: string | null;
   cells: number;
   rows: number;
-  usd: number;
+  /** Null where an engine the run used charges at a price that was not recorded. */
+  usd: number | null;
   calls: number;
   tokens: number;
   wallSeconds: number;
@@ -236,6 +265,8 @@ export interface QueueItem {
   score: number | null;
   hasQuote: boolean;
   failedGates: number;
+  /** The verdict a reviewer has already recorded on this row, if any. */
+  verdict: "accept" | "edit" | "reject" | null;
 }
 
 /** One economy against one indicator, as the coverage grid sees it. */

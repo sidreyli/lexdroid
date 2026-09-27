@@ -15,8 +15,7 @@
  *     register builds, and the register's own table of contents links straight into it, fragment
  *     and all. That is the link a citation should carry, so it is the document we fetch.
  */
-import { createHash } from 'node:crypto';
-import { HostSuspended, type Fetcher, type FetchResult } from '../fetch/index.js';
+import { cacheComposed, HostSuspended, type Fetcher, type FetchResult } from '../fetch/index.js';
 import type { Adapter, DiscoveredInstrument } from './types.js';
 
 const DEFAULT_API = 'https://api.prod.legislation.gov.au/v1/';
@@ -25,12 +24,18 @@ const PAGE = 100;
 const MAX_PAGES = 1000;
 
 /** The fields a register entry needs. Selecting them keeps a page from carrying every amendment. */
-const SELECT = 'id,name,collection,status,isInForce,isPrincipal,seriesType,year,number';
+const SELECT =
+  'id,name,collection,status,isInForce,isPrincipal,seriesType,year,number,makingDate,statusHistory';
 
 interface CollectionConfig {
   collection: string;
   kind: DiscoveredInstrument['kind'];
   listing?: string;
+}
+
+interface StatusPeriod {
+  status: string | null;
+  start: string | null;
 }
 
 interface TitleRow {
@@ -43,6 +48,10 @@ interface TitleRow {
   seriesType: string | null;
   year: number | null;
   number: number | null;
+  /** The day the title was made. Not the day it commenced, and regularly years apart from it. */
+  makingDate?: string | null;
+  /** Every standing the title has held, with the day each began. */
+  statusHistory?: StatusPeriod[] | null;
 }
 
 const STATUS: Record<string, DiscoveredInstrument['status']> = {
@@ -84,6 +93,121 @@ function apiUrl(base: string, collection: string, skip: number): string {
   });
   if (skip > 0) params.set('$skip', String(skip));
   return `${base}titles?${params.toString()}`;
+}
+
+/** Pages of children read per Act. Twenty is 2,000 instruments, and more says only how long a list is. */
+const MAX_AUTHORISED_PAGES = 20;
+
+/** The register id in a title's own URL: "F2025L01263" in .../F2025L01263/latest/text. */
+export function registerIdOf(url: string): string | null {
+  return /legislation\.gov\.au\/([A-Z]\d{4}[A-Z]\d{5})(?![A-Za-z0-9])/i.exec(url)?.[1]?.toUpperCase() ?? null;
+}
+
+/**
+ * One page of the titles an Act authorises.
+ *
+ * The relation is the register's own: every legislative instrument says which title authorises it,
+ * and the API serves the question backwards. In force only, because a repealed instrument is not a
+ * requirement a row could cite -- and because it is what takes the Customs Act from 11,891 to
+ * 7,649. A second conjoined clause is refused by the service, so the principal test is left out.
+ */
+function authorisedUrl(base: string, actId: string, skip: number): string {
+  const params = new URLSearchParams({
+    $filter: 'isInForce eq true',
+    $select: 'id,name',
+    $orderby: 'id',
+    $top: String(PAGE),
+    $count: 'true',
+  });
+  if (skip > 0) params.set('$skip', String(skip));
+  return `${base}titles/search(criteria='authorises("${actId}")')?${params.toString()}`;
+}
+
+export interface AuthorisedTitle {
+  id: string;
+  name: string;
+}
+
+export interface AuthorisedTitles {
+  titles: AuthorisedTitle[];
+  /** What the register says the total is, against what was read. Truncation is reported, not hidden. */
+  stated: number | null;
+  complete: boolean;
+}
+
+/**
+ * Everything the register says is made under one Act.
+ *
+ * Capped, because the Customs Act authorises 7,649 in-force tariff concession orders and by-laws.
+ * Past the cap the title-stem fallback is what it always was, so truncation loses nothing.
+ */
+export async function authorisedTitles(
+  fetcher: Fetcher,
+  actId: string,
+  opts: { base?: string; maxPages?: number; log?: (line: string) => void } = {},
+): Promise<AuthorisedTitles> {
+  const base = opts.base ?? DEFAULT_API;
+  const maxPages = opts.maxPages ?? MAX_AUTHORISED_PAGES;
+  const log = opts.log ?? ((): void => {});
+  const titles: AuthorisedTitle[] = [];
+  let stated: number | null = null;
+  let skip = 0;
+
+  for (let page = 0; page < maxPages; page += 1) {
+    let res;
+    try {
+      res = await fetcher.fetch(authorisedUrl(base, actId, skip));
+    } catch (err) {
+      log(`    ${actId}: not read -- ${err instanceof Error ? err.message : String(err)}`);
+      return { titles, stated, complete: false };
+    }
+    if (res.status !== 200) {
+      log(`    ${actId}: HTTP ${res.status}`);
+      return { titles, stated, complete: false };
+    }
+
+    let body: { value?: AuthorisedTitle[]; '@odata.count'?: number };
+    try {
+      body = JSON.parse(res.body.toString('utf8')) as typeof body;
+    } catch {
+      log(`    ${actId}: the API answered with something that is not JSON`);
+      return { titles, stated, complete: false };
+    }
+    const rows = body.value;
+    if (!Array.isArray(rows)) return { titles, stated, complete: false };
+    if (stated === null) stated = body['@odata.count'] ?? null;
+
+    titles.push(...rows);
+    skip += rows.length;
+    if (rows.length === 0) break;
+    if (stated !== null && skip >= stated) break;
+  }
+
+  return { titles, stated, complete: stated === null ? true : titles.length >= stated };
+}
+
+/**
+ * The day the register says the title came into force, and the sentence that says it.
+ *
+ * Read off `statusHistory` rather than `makingDate`, because the two disagree whenever Parliament
+ * backdates or defers: the Taxation Laws Amendment Act (No. 8) 2000 was made on 21 December 2000
+ * and is in force from 22 December 1999. `makingDate` is the easier field and the wrong one.
+ *
+ * The earliest InForce period is the answer; a title that has been repealed and revived holds
+ * more than one, and the first is when the instrument began.
+ */
+export function commencement(row: TitleRow): { on: string; basis: string } | null {
+  const started = (row.statusHistory ?? [])
+    .filter((p) => (p?.status ?? '').toLowerCase() === 'inforce' && typeof p.start === 'string')
+    .map((p) => p.start!.slice(0, 10))
+    .filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d))
+    .sort();
+  const on = started[0];
+  if (!on) return null;
+  return {
+    on,
+    basis: `The Federal Register of Legislation's status history for this title opens "InForce" on ${on}.`,
+  };
 }
 
 function officialNumber(row: TitleRow): string | null {
@@ -151,6 +275,7 @@ export const frlAdapter: Adapter = {
           const url = titleUrl(row.id);
           if (seen.has(url)) continue;
           seen.add(url);
+          const began = commencement(row);
           found.push({
             title: row.name,
             url,
@@ -160,6 +285,7 @@ export const frlAdapter: Adapter = {
             statusBasis:
               `The Federal Register of Legislation records this title as "${row.status ?? 'InForce'}" ` +
               `(${cfg.listing ?? cfg.collection}, asked on ${askedOn})`,
+            ...(began ? { commencedOn: began.on, currentToBasis: began.basis } : {}),
           });
           added += 1;
         }
@@ -208,7 +334,7 @@ export const frlAdapter: Adapter = {
       url: parts.length === 1 ? parts[0]! : url,
       finalUrl: parts.length === 1 ? parts[0]! : url,
       body: merged,
-      contentHash: createHash('sha256').update(merged).digest('hex'),
+      contentHash: cacheComposed(merged),
       mediaType: 'text/html',
     };
   },

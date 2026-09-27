@@ -70,6 +70,84 @@ function normalise(v: ArrayLike<number>): Float32Array {
 }
 
 /**
+ * How much of an instrument's own table of contents is embedded beside its name.
+ *
+ * The shortlist already reads headings: two of its four channels are built on them, one lexical
+ * over the stored contents list and one dense over their embeddings, and both are fused with the
+ * two title channels. This does not add headings to a ranking that had none. What it adds is the
+ * headings to the *instrument's own vector*, which carries the title, the kind and the number and
+ * nothing else.
+ *
+ * The difference is what each channel is a claim about. A heading channel scores an instrument by
+ * its single best-matching heading, deliberately and for the reason given where it is written: an
+ * Act is relevant because one Part is on point, not because most of it is. But a best-of score
+ * rises with how many headings there are to take a best of, and the instruments these queries
+ * reach are long. Meanwhile the title channels, which do rank the instrument as a whole, see only
+ * the drafter's shorthand -- and where every candidate Act opens with the same sector word, a
+ * title is the one thing that cannot tell them apart.
+ *
+ * Measured on one economy's telecommunications shortlist, where all fifteen contenders begin
+ * with the sector's name: the Act whose second Part is headed for the authority's
+ * establishment, functions and powers came sixth, below an Act with barely half as many headings
+ * as its own eighty-seven. It took none of the three governing seats, so the seats that exist to
+ * rescue a provision one query found and the others did not were never offered to it, and the
+ * section reading "the Authority is established by this section" was surfaced by no cell in any
+ * run -- though it outscored the section of the same Act that was surfaced. Length is part of
+ * that and not the whole of it; a shorter Act outranked it too.
+ *
+ * A capped list of top-level headings folded into the vector gives the instrument a
+ * whole-instrument representation that does not grow with its length, which is the one thing the
+ * other three channels do not have. The cap is what makes it a description rather than a
+ * concatenation. The title still leads, an instrument with no parsed sections is embedded exactly
+ * as before, and the heading channels are untouched: this adds a signal and removes none.
+ *
+ * Validated on the cell it was found in, with the governing seats widened to six because the Act
+ * arrives sixth: the cell went from abstaining to answering, the answer agrees with the reference
+ * scoring, no other cell in the pillar moved, and the sections surfaced were identical run to run.
+ * The cost is in sections read, which rose by a quarter.
+ */
+const HEADINGS_EMBEDDED = 24;
+
+/** What an instrument is called, and -- where we have read it -- what it contains. */
+function instrumentText(
+  r: { title: string; kind: string; official_number: string | null },
+  parts: readonly string[] | undefined,
+): string {
+  const named = `${r.title} (${r.kind}${r.official_number ? `, ${r.official_number}` : ''})`;
+  return parts && parts.length ? `${named}. ${parts.join('. ')}` : named;
+}
+
+/** Each instrument's own top-level headings, in the order it set them out. */
+function topLevelHeadings(db: Db, instrumentIds: readonly number[]): Map<number, string[]> {
+  const out = new Map<number, string[]>();
+  const CHUNK = 500;
+  for (let i = 0; i < instrumentIds.length; i += CHUNK) {
+    const slice = instrumentIds.slice(i, i + CHUNK);
+    if (slice.length === 0) continue;
+    const rows = db
+      .prepare(
+        `SELECT d.instrument_id id, s.heading_path path, MIN(s.ordinal) ord
+           FROM section s JOIN document d ON d.id = s.document_id
+          WHERE d.instrument_id IN (${slice.map(() => '?').join(',')})
+            AND s.heading_path IS NOT NULL AND s.heading_path <> ''
+          GROUP BY d.instrument_id, s.heading_path
+          ORDER BY d.instrument_id, ord`,
+      )
+      .all(...slice) as { id: number; path: string; ord: number }[];
+    for (const row of rows) {
+      const top = (row.path.split(' > ')[0] ?? '').trim();
+      if (!top) continue;
+      const seen = out.get(row.id) ?? [];
+      if (seen.length >= HEADINGS_EMBEDDED || seen.includes(top)) continue;
+      seen.push(top);
+      out.set(row.id, seen);
+    }
+  }
+  return out;
+}
+
+
+/**
  * Embed the title of every registered instrument that does not have one yet.
  *
  * The kind is included in the embedded text because "Act" and "Regulations" carry real meaning in
@@ -113,10 +191,15 @@ export async function buildInstrumentIndex(
                                               vector = excluded.vector`,
   );
 
+  const headings = topLevelHeadings(
+    db,
+    pending.map((r) => r.id),
+  );
+
   let done = 0;
   for (let i = 0; i < pending.length; i += EMBED_BATCH) {
     const batch = pending.slice(i, i + EMBED_BATCH);
-    const inputs = batch.map((r) => `${r.title} (${r.kind}${r.official_number ? `, ${r.official_number}` : ''})`);
+    const inputs = batch.map((r) => instrumentText(r, headings.get(r.id)));
     const vectors = await embed(inputs, model);
     db.transaction(() => {
       vectors.forEach((v, j) => {
@@ -381,11 +464,14 @@ export async function shortlistInstruments(
     model?: string;
     /** Set false to rank on titles alone. Used to measure what the contents index is worth. */
     contents?: boolean;
+    /** Share of the list held for Acts. Measured at 0.5; set 0 to rank the register as one pool. */
+    primaryShare?: number;
   },
 ): Promise<InstrumentCandidate[]> {
   const model = opts.model ?? EMBEDDING_MODEL;
   const limit = opts.limit ?? 25;
   const depth = opts.depthPerQuery ?? 40;
+  const primaryShare = opts.primaryShare ?? 0.5;
 
   // Each query in each channel is its own run. Reciprocal rank fusion combines ranks, so a run
   // must keep its own ranking -- flattening them first would make rank 1 of a weak query
@@ -397,9 +483,8 @@ export async function shortlistInstruments(
     const dense = await titleDense(db, query, opts.economy, depth, model, opts.kind);
     if (dense.length) runs.push(dense);
 
-    // The contents channels, where an instrument has contents. An instrument that has none is not
-    // penalised here -- it simply competes on its title, which is all it could ever do. That is why
-    // a partial contents index is worth having: it lifts what it covers and harms nothing else.
+    // The contents channels, where an instrument has contents. Scores are averaged over the
+    // channels that could have found an instrument, not summed -- see normalising below.
     if (opts.contents !== false) {
       const hLex = headingLexical(db, query, opts.economy, depth, opts.kind);
       if (hLex.length) runs.push(hLex);
@@ -421,29 +506,58 @@ export async function shortlistInstruments(
     }
   }
 
-  const fused = fuse(runs).slice(0, limit * 3);
+  // Reciprocal rank fusion adds a vote per run, so an instrument carrying contents can score in
+  // twice as many runs as one without. Contents exist almost only for instruments already read, so
+  // summing hands "already read" a two-to-one advantage unrelated to relevance -- measured at nought
+  // unread instruments in the shortlist for all three economies. Averaging over the runs that could
+  // have found it lets a title compete at full strength.
+  const hasContents = new Set(
+    (
+      db
+        .prepare(
+          `SELECT c.instrument_id id FROM instrument_contents c
+             JOIN instrument i ON i.id = c.instrument_id
+            WHERE i.economy_code = ?`,
+        )
+        .all(opts.economy) as { id: number }[]
+    ).map((r) => r.id),
+  );
+  const titleRuns = runs.filter((r) => r[0] && !r[0].channel.startsWith('heading')).length;
+  const headingRuns = runs.length - titleRuns;
+
+  const fused = fuse(runs)
+    .map((h) => {
+      const eligible = hasContents.has(h.sectionId) ? titleRuns + headingRuns : titleRuns;
+      return { ...h, score: eligible > 0 ? h.score / eligible : h.score };
+    })
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit * 3);
 
   const byId = db.prepare(
     `SELECT i.id, i.title, i.kind, i.official_number, i.source_url,
-            EXISTS (SELECT 1 FROM document d WHERE d.instrument_id = i.id) AS read
+            -- Read means there is text to examine. A document stored as unread -- an empty scan, a
+            -- landing page, a consultation -- is a document, and counting it made 142 instruments
+            -- with nothing in them eligible to be examined as a framework.
+            EXISTS (SELECT 1 FROM document d JOIN section s ON s.document_id = d.id
+                     WHERE d.instrument_id = i.id) AS read
        FROM instrument i WHERE i.id = ?`,
   );
 
-  const out: InstrumentCandidate[] = [];
+  const pool: InstrumentCandidate[] = [];
   for (const hit of fused) {
     const row = byId.get(hit.sectionId) as
       | { id: number; title: string; kind: string; official_number: string | null; source_url: string; read: number }
       | undefined;
     if (!row) continue;
     if (opts.kind && row.kind !== opts.kind) continue;
-    out.push({
+    pool.push({
       instrumentId: row.id,
       title: row.title,
       kind: row.kind,
       officialNumber: row.official_number,
       sourceUrl: row.source_url,
       read: row.read === 1,
-      rank: out.length + 1,
+      rank: 0,
       channels: hit.channels ?? [],
       matchedHeadings: [
         ...new Set(
@@ -453,7 +567,27 @@ export async function shortlistInstruments(
         ),
       ].slice(0, 3),
     });
+    if (pool.length >= limit) break;
+  }
+
+  // A share of the list held for primary legislation. An Act and a notification made under it are
+  // not interchangeable candidates, and a register of 23,693 regulations buries 1,264 Acts.
+  //
+  // Filled by ranking the Acts on their own rather than by picking them out of the open list: the
+  // channels are depth-limited, so an Act that 5,841 subsidiary instruments push past the depth is
+  // not there to be picked. Measured against ESCAP's own citations, holding half the list this way
+  // moved recall at depth 40 from 27/47/43% to 33/60/49% for Australia, Singapore and Malaysia.
+  const wanted = Math.floor(limit * primaryShare);
+  const primary =
+    wanted > 0 && !opts.kind
+      ? await shortlistInstruments(db, { ...opts, limit: wanted, kind: 'act', primaryShare: 0 })
+      : [];
+
+  const out: InstrumentCandidate[] = [];
+  const taken = new Set(primary.map((c) => c.instrumentId));
+  for (const c of [...primary, ...pool.filter((c) => !taken.has(c.instrumentId))]) {
     if (out.length >= limit) break;
+    out.push({ ...c, rank: out.length + 1 });
   }
   return out;
 }

@@ -31,7 +31,10 @@ CREATE TABLE IF NOT EXISTS run (
   -- The exchange rates this run scored with, as fetched. Indicator 12.5 compares a customs
   -- threshold with 200 USD, and a score re-derived next month must use the run's own rate.
   fx_rates        TEXT,
-  notes           TEXT
+  notes           TEXT,
+  -- JSON array of indicator ids when the run asked about only some of its pillars' indicators, as
+  -- the live test does. NULL is every indicator of the pillars.
+  indicators      TEXT
 );
 
 -- What a run cost, per engine, measured rather than estimated.
@@ -45,6 +48,9 @@ CREATE TABLE IF NOT EXISTS run_cost (
   cached_calls    INTEGER NOT NULL DEFAULT 0, -- served from the response cache, not billable
   wall_seconds    REAL NOT NULL DEFAULT 0,
   usd             REAL NOT NULL DEFAULT 0,    -- 0 for local engines; recorded so the claim is checkable
+  -- 1 where the engine charges and its price was not recorded: a hosted engine's bill is the
+  -- provider's, and `usd` then says nothing. Shown as unknown, never as a measured zero.
+  usd_unknown     INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (run_id, engine, model)
 );
 
@@ -83,7 +89,8 @@ CREATE TABLE IF NOT EXISTS run_event (
   economy_code    TEXT,
   pillar_id       INTEGER,
   indicator_id    TEXT,
-  stage           TEXT NOT NULL,              -- retrieve | read | framework | decide | record | run
+  stage           TEXT NOT NULL,              -- run | discover | fetch | index | retrieve | read
+                                              -- | framework | decide | record | confirm | export | verify
   -- started | finished | refused | failed. A refusal is the engine declining to produce a reading
   -- and is not a failure of the run; both are recorded, and neither is silent.
   kind            TEXT NOT NULL CHECK (kind IN ('started', 'finished', 'refused', 'failed')),
@@ -154,9 +161,21 @@ CREATE TABLE IF NOT EXISTS instrument (
                   CHECK (status IN ('in-force', 'repealed', 'draft', 'amending', 'unknown')),
   status_basis    TEXT,                       -- the sentence in the document that establishes it
   amends_instrument_id INTEGER REFERENCES instrument(id),
-  commenced_on    TEXT,                       -- ISO date, read from the document itself
-  last_amended_on TEXT,
-  timeframe_basis TEXT,                       -- quoted evidence for the two dates above
+  -- The Act this instrument is made under, as the register itself states it. Inferring it
+  -- from the title misses every instrument its drafters did not name after its parent.
+  made_under_instrument_id INTEGER REFERENCES instrument(id),
+  -- The parent's name as the register writes it, kept whether or not it resolves to a row. A
+  -- register can name an Act it does not itself publish, and the name is evidence either way.
+  made_under_name TEXT,
+  made_under_basis TEXT,
+  commenced_on    TEXT,                       -- ISO date, read from the document or stated by the register
+  last_amended_on TEXT,                       -- ISO date of an amendment, never of a republication
+  -- The date the published consolidation is current to. A separate column because it is a weaker
+  -- claim than last_amended_on and was being reported as one: Malaysia serves the Personal Data
+  -- Protection Act "as at 2023" while the duty ESCAP scores arrived in a 2024 amendment, so a
+  -- row built from the catalogue's date said the Act was last amended in 2023. It was not.
+  current_to      TEXT,
+  timeframe_basis TEXT,                       -- quoted evidence for the dates above
   language        TEXT,                       -- BCP-47
   source_url      TEXT NOT NULL,
   discovered_via  TEXT NOT NULL,              -- portal id, search, or citation from another instrument
@@ -204,7 +223,10 @@ CREATE TABLE IF NOT EXISTS unread_document (
   document_id     INTEGER PRIMARY KEY REFERENCES document(id) ON DELETE CASCADE,
   reason          TEXT NOT NULL,              -- scanned-no-ocr | ocr-below-threshold | landing-page | empty | parse-error
   detail          TEXT,
-  recorded_at     TEXT NOT NULL
+  recorded_at     TEXT NOT NULL,
+  -- Times this address has come back unreadable. A transient failure is asked for again until
+  -- this reaches the limit; a permanent one is not asked for again at all.
+  attempts        INTEGER NOT NULL DEFAULT 1
 );
 
 CREATE TABLE IF NOT EXISTS section (
@@ -224,11 +246,15 @@ CREATE TABLE IF NOT EXISTS section (
   -- computed and then dropped for want of this column, which is exactly the pinpoint-citation
   -- problem v1 spent a week recovering from.
   anchor          TEXT,
+  -- The parser read this provision as repealed or deleted. Kept, because a reader needs to see that
+  -- a section is gone, and never the basis of a current measure.
+  repealed        INTEGER NOT NULL DEFAULT 0,
   UNIQUE (document_id, ordinal)
 );
 
 CREATE INDEX IF NOT EXISTS idx_section_document ON section(document_id);
 CREATE INDEX IF NOT EXISTS idx_instrument_economy ON instrument(economy_code);
+
 
 -- Corpus-wide lexical index. One index over every section of every document in the economy --
 -- not one index per document, which is what forced v1 to visit all 536 Singapore documents to
@@ -343,10 +369,31 @@ CREATE TABLE IF NOT EXISTS fetch_log (
   http_status     INTEGER,
   bytes           INTEGER,
   wait_ms         INTEGER NOT NULL DEFAULT 0, -- time spent held by the rate limiter
-  outcome         TEXT NOT NULL               -- ok | cached | robots-disallowed | error | skipped-cache-only
+  outcome         TEXT NOT NULL,              -- ok | cached | robots-disallowed | error | skipped-cache-only
+  media_type      TEXT                        -- what the server said it sent, where it answered
 );
 
 CREATE INDEX IF NOT EXISTS idx_fetch_log_run ON fetch_log(run_id);
+
+-- What each host's robots.txt said, kept so the claim can be replayed rather than repeated.
+--
+-- "We honour robots.txt" is the loudest claim this tool makes, and until now the store held two
+-- booleans about it: whether a host had any disallow rule, and its crawl delay. The rules
+-- themselves survived only in the content-addressed blob cache, reachable by recomputing the hash
+-- of the robots URL -- so checking after the fact that no fetched path was disallowed meant
+-- reconstructing 41 hosts' rules off disk, and for the largest Malaysian portal, 10,643 requests
+-- against a crawl delay that proves a real file was read, the blob was simply gone. Compliance
+-- that cannot be replayed is a claim and not a fact, so the rules we acted on are written here.
+CREATE TABLE IF NOT EXISTS robots_snapshot (
+  host            TEXT PRIMARY KEY,
+  fetched         INTEGER NOT NULL,           -- the host served rules and we parsed them
+  absent          INTEGER NOT NULL,           -- 404 or 410: the host says it has no rules
+  disallow        TEXT NOT NULL,              -- JSON array, exactly what the crawl obeyed
+  allow           TEXT NOT NULL,              -- JSON array
+  crawl_delay_ms  INTEGER,
+  body            TEXT,                       -- the file as served, where the host served one
+  recorded_at     TEXT NOT NULL
+);
 
 -- ---------------------------------------------------------------------------------------------
 -- The cell -- the unit of work
@@ -375,6 +422,16 @@ CREATE TABLE IF NOT EXISTS cell (
   -- Provisions actually put in front of the engine for this cell. Larger than the shortlist:
   -- reading is pillar-scoped, so a cell is answered over its whole pillar's union.
   sections_read   INTEGER,
+  -- The instruments the register named as governing this question, best first. The decision is
+  -- ordered by it, so it is recorded with the cell rather than re-derived from a later register.
+  governing       TEXT,                       -- JSON array of instrument ids
+  -- The instruments this cell's own search surfaced, best rank first. A zero is cited against
+  -- these, and a count alone cannot say which Act was read -- so the run could not reproduce it.
+  surfaced_instruments TEXT,                  -- JSON [{instrumentId, instrumentTitle, rank, currentTo}]
+  -- Framework candidates the engine failed to read. The ones it did read are the cell's
+  -- framework_reading rows; these leave none, and without the count a replay could not tell a
+  -- framework nobody could read from one that was read and found missing. NULL: not recorded.
+  framework_failed INTEGER,
   UNIQUE (run_id, economy_code, indicator_id)
 );
 
@@ -415,6 +472,11 @@ CREATE TABLE IF NOT EXISTS reading (
   -- against the pillar's own schema.
   attributes      TEXT NOT NULL DEFAULT '{}', -- JSON
   reasoning       TEXT,
+  -- Items of the answer that did not become findings: refused against the provision, and of those
+  -- the ones too malformed to be findings at all. A reading with unreadable items was not read in
+  -- full. NULL: recorded before either was counted, and unknown rather than zero.
+  rejected        INTEGER,
+  unreadable      INTEGER,
   prompt_tokens   INTEGER,
   output_tokens   INTEGER,
   latency_ms      INTEGER,
@@ -437,6 +499,8 @@ CREATE TABLE IF NOT EXISTS framework_reading (
   engine          TEXT NOT NULL,
   model           TEXT NOT NULL,
   establishes_framework INTEGER NOT NULL CHECK (establishes_framework IN (0, 1)),
+  framework_words TEXT,                       -- the rule said to establish the framework
+  framework_shown INTEGER,                    -- and whether that rule is really in the instrument
   horizontal      INTEGER,
   dedicated       INTEGER,
   dedicated_words TEXT,                       -- what the instrument says it is for, in its own words
@@ -466,10 +530,62 @@ CREATE TABLE IF NOT EXISTS cell_answer (
   -- Why this band and not the one above: the attribute that decided it.
   deciding_fact   TEXT,
   controlling_instrument_id INTEGER REFERENCES instrument(id),
+  -- Whether that instrument was read to govern the subject or merely surfaced by the search.
+  -- Fourteen indicators score their maximum for an absence, and only the first sustains one.
+  absence_basis   TEXT CHECK (absence_basis IN ('governing', 'surfaced')),
   -- The sentence a reviewer reads, assembled from the band's own words and the evidence.
   -- Stored because it is what the export quotes; never written by a model.
   rationale       TEXT,
+  -- The confirmation state this score was computed under. A score is a function of the readings
+  -- and the second reading's verdicts, and the same run scored 105 cells one way and 118 the other
+  -- with nothing written down to say which. These say which: how many of the cell's findings
+  -- carried a verdict, and how many that pass ruled out. A re-derivation that sees different
+  -- numbers reports a mismatch rather than a different answer.
+  confirmations_asked   INTEGER,
+  confirmations_applied INTEGER,
   computed_at     TEXT NOT NULL
+);
+
+-- Which findings the answer actually stood on, in the decision's own order.
+-- Zone 3 sets most findings aside with a reason -- a sentence that declares rather than obliges,
+-- a power to make a rule rather than the rule. Those stay in `reading`, which is the record of
+-- what was read; they are not measures, so they are not rows.
+CREATE TABLE IF NOT EXISTS answer_basis (
+  id              INTEGER PRIMARY KEY,
+  cell_id         INTEGER NOT NULL REFERENCES cell(id) ON DELETE CASCADE,
+  ordinal         INTEGER NOT NULL,           -- what the band was counted from comes first
+  instrument_id   INTEGER NOT NULL REFERENCES instrument(id),
+  -- Null for a framework indicator: ESCAP decides those over instruments, not provisions.
+  section_id      INTEGER REFERENCES section(id),
+  measure         TEXT,
+  -- Which of the provision's findings under that measure the answer counted. A provision can
+  -- carry two, and the row has to quote the one the band was decided on. NULL: not recorded.
+  quote           TEXT,
+  UNIQUE (cell_id, section_id, measure, instrument_id)
+);
+CREATE INDEX IF NOT EXISTS idx_answer_basis_cell ON answer_basis(cell_id);
+
+-- A citation parked for the length of a re-parse.
+--
+-- `answer_basis` and `export_row` point at the provision an answer stood on, and neither of those
+-- references cascades, on purpose: a past run's record of what it cited is not something a parser
+-- change may quietly delete. But a re-parse does delete and rebuild the sections of every document
+-- it touches, and SQLite refuses that while the pointers are live -- which is how re-parsing
+-- Malaysia stopped at the sixth Act with "FOREIGN KEY constraint failed".
+--
+-- So the pointer is written down here, nulled for the duration, and then put back against the
+-- provision that now carries the same Part, heading and label. A citation whose provision the new
+-- parse no longer produces is not restored; it goes to the discard ledger, named.
+CREATE TABLE IF NOT EXISTS detached_citation (
+  id              INTEGER PRIMARY KEY,
+  table_name      TEXT NOT NULL CHECK (table_name IN ('answer_basis', 'export_row')),
+  row_id          INTEGER NOT NULL,
+  document_id     INTEGER NOT NULL,
+  ordinal         INTEGER NOT NULL,
+  heading_path    TEXT NOT NULL,
+  label           TEXT,
+  detached_at     TEXT NOT NULL,
+  UNIQUE (table_name, row_id)
 );
 
 -- ---------------------------------------------------------------------------------------------
@@ -544,3 +660,55 @@ CREATE TABLE IF NOT EXISTS review_action (
   reviewer        TEXT,
   acted_at        TEXT NOT NULL
 );
+
+-- Whether one provision states one measure, asked on its own.
+--
+-- Keyed by the question and not by the cell or the run: "does section 24 of the Payment Services
+-- Act state a licence to sell online" has one answer, and a second cell asking it should read the
+-- answer rather than pay for it again. That is also what makes the pass affordable to measure --
+-- it re-asks about provisions already read, with no fetching, parsing, indexing or searching.
+--
+-- The question is the provision and the measure *as the catalogue described it when asked*, and the
+-- answer is one model's. `question` is the hash of everything the reader was shown apart from the
+-- provision (src/read/question.ts); a verdict is consulted only while its question is the one the
+-- catalogue asks today, and only for the model asking. NULL is a verdict banked before questions
+-- were recorded, kept for the record and never consulted.
+CREATE TABLE IF NOT EXISTS measure_confirmation (
+  id              INTEGER PRIMARY KEY,
+  section_id      INTEGER NOT NULL REFERENCES section(id) ON DELETE CASCADE,
+  indicator_id    TEXT NOT NULL,
+  measure         TEXT NOT NULL,
+  question        TEXT,
+  -- The provision's own words stating the measure, or NULL where it states none. NULL is the
+  -- ruling: read, and does not carry the measure.
+  words           TEXT,
+  -- Why it was not asked, when it was not. A provision nobody read is not one found wanting.
+  failure         TEXT,
+  model           TEXT NOT NULL,
+  prompt_tokens   INTEGER,
+  output_tokens   INTEGER,
+  latency_ms      INTEGER,
+  asked_at        TEXT NOT NULL,
+  UNIQUE (section_id, indicator_id, measure, model, question)
+);
+CREATE INDEX IF NOT EXISTS idx_confirmation_measure ON measure_confirmation(indicator_id, measure);
+
+-- ---------------------------------------------------------------------------------------------
+-- Every table that points at a provision, indexed on the pointer.
+--
+-- Not for reading speed: SQLite enforces ON DELETE CASCADE by looking for the children, and with
+-- no index on the child's key that is a full scan of the child table for each parent row deleted.
+-- A re-parse deletes a document's sections one at a time, so re-parsing Malaysia scanned a
+-- 336,000-row `reading` table about thirty-five times per document -- fourteen seconds each, six
+-- hours for the corpus, and the corpus is re-parsed whenever the parser learns something.
+--
+-- Declared at the end because an index cannot be created before its table exists, and these point
+-- back at `section` from all over Zones 2 and 3.
+-- ---------------------------------------------------------------------------------------------
+
+CREATE INDEX IF NOT EXISTS idx_reading_section ON reading(section_id);
+CREATE INDEX IF NOT EXISTS idx_shortlist_entry_section ON shortlist_entry(section_id);
+CREATE INDEX IF NOT EXISTS idx_answer_basis_section ON answer_basis(section_id);
+CREATE INDEX IF NOT EXISTS idx_export_row_section ON export_row(section_id);
+CREATE INDEX IF NOT EXISTS idx_measure_confirmation_section ON measure_confirmation(section_id);
+CREATE INDEX IF NOT EXISTS idx_export_row_reading ON export_row(reading_id);

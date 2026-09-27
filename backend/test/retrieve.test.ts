@@ -103,8 +103,23 @@ describe('seating the instruments that govern the question', () => {
 
   it('adds each named instrument best provisions to the depth, in the order named', () => {
     const { order, counts } = addGoverningSeats(ordered, owner, [3, 1], 2, 3);
-    expect(order.map((h) => h.sectionId)).toEqual([11, 21, 22, 31, 32, 12]);
+    expect(order.map((h) => h.sectionId)).toEqual([11, 21, 22, 31, 32, 12, 13]);
     expect(counts.get(3)).toBe(2);
+    expect(counts.get(1)).toBe(2);
+  });
+
+  it('spends a seat on a provision the depth lacks, not on one it already has', () => {
+    // The whole worth of the seats. Instrument 1 is already in the depth at section 11, so its
+    // two seats are for 12 and 13; filling them from its best provisions outright spends one of
+    // them on 11 and the instrument gains one provision instead of two.
+    //
+    // Measured on the run of 20 September 2026 this was not an edge: 150 governing instruments,
+    // 900 seats, and 27 provisions added between them. The Copyright Act 1968 was named as
+    // governing for Australia's fair-dealing cell, given six seats, and the six provisions they
+    // were filled from were six the depth already held -- so an Act of 670 sections was read six
+    // sections deep while ten accounting standards took a slot each.
+    const { order, counts } = addGoverningSeats(ordered, owner, [1], 2, 1);
+    expect(order.map((h) => h.sectionId)).toEqual([11, 12, 13]);
     expect(counts.get(1)).toBe(2);
   });
 
@@ -130,5 +145,17 @@ describe('seating the instruments that govern the question', () => {
     const best = (id: number): number => ({ 21: 9, 22: 8, 23: 1 })[id] ?? 99;
     const { order } = addGoverningSeats(ordered, owner, [2], 2, 1, best);
     expect(order.map((h) => h.sectionId)).toEqual([11, 23, 22]);
+  });
+
+  it('settles a tie on merit, not on where the diversity cap put the loser', () => {
+    // Australia's fair-dealing cell is this shape. The instrument's candidates tie on the rank a
+    // single query gave them, so the tie-break spends the seat; taking it from the capped order
+    // spends it on whichever of them the cap displaced least, which is the cap ruling again.
+    const merit = [11, 21, 23, 22, 31, 12, 13, 32].map((sectionId) => ({ sectionId }));
+    const best = (id: number): number => ({ 21: 1, 22: 5, 23: 5 })[id] ?? 99;
+    const capped = addGoverningSeats(ordered, owner, [2], 1, 2, best);
+    expect(capped.order.map((h) => h.sectionId)).toEqual([11, 21, 22]);
+    const onMerit = addGoverningSeats(ordered, owner, [2], 1, 2, best, merit);
+    expect(onMerit.order.map((h) => h.sectionId)).toEqual([11, 21, 23]);
   });
 });

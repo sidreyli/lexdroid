@@ -11,8 +11,27 @@
  * ledger, or to a browser.
  */
 
-/** The stage an event came from. 'run' is the run itself opening, finishing or failing. */
-export type EventStage = 'run' | 'retrieve' | 'read' | 'framework' | 'decide' | 'record';
+/**
+ * The stage an event came from. 'run' is the run itself opening, finishing or failing.
+ *
+ * In the order a run does them: the corpus is prepared (discover, fetch, index), the cells are
+ * answered (retrieve, read, framework, decide, record), and the answers are made submittable
+ * (confirm, export, verify). A run that stops before the last three has produced no rows anybody
+ * can review, which is what used to happen every time.
+ */
+export type EventStage =
+  | 'run'
+  | 'discover'
+  | 'fetch'
+  | 'index'
+  | 'retrieve'
+  | 'read'
+  | 'framework'
+  | 'decide'
+  | 'record'
+  | 'confirm'
+  | 'export'
+  | 'verify';
 
 /**
  * A refusal is the engine declining to produce a reading, on one provision, and the run carries on.

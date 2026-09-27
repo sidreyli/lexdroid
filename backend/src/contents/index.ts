@@ -39,6 +39,10 @@ import * as cheerio from 'cheerio';
 import type { Db } from '../db/index.js';
 import { embed, EMBEDDING_MODEL } from '../engines/ollama.js';
 import { CacheMiss, HostSuspended, RobotsDisallowed, SoftBlocked, TransportFault, type Fetcher } from '../fetch/index.js';
+import { loadRubric } from '../rubric/index.js';
+import { MEASURES } from '../rubric/measures.js';
+import { shortlistInstruments } from '../shortlist/index.js';
+import { linkParents } from './parentage.js';
 
 /** The words a drafter opens a container with, and how deep each one sits. */
 const CONTAINER_LEVEL: Record<string, number> = {
@@ -172,6 +176,54 @@ export function contentsFromParsedSections(db: Db, instrumentId: number): string
   return rows.map((r) => r.heading_path);
 }
 
+/**
+ * Contents for every instrument already parsed, taken from its own sections at no request.
+ *
+ * Free work must never be queued behind work that can be refused. Taking these inside a fetch loop
+ * looked equivalent and was not: the loop walks the register in order, so a free instrument at
+ * position 350 waits behind 349 paid ones, and when the host stops answering at position 90 it is
+ * never reached at all. That is how the Personal Data Protection Act -- the most-cited instrument
+ * in two of the pillars, with 86 sections already parsed and stored -- ended a full crawl with no
+ * contents and fell from rank 1 to rank 39 for want of an artefact we were already holding.
+ *
+ * And it has to happen in a run, not only in the contents crawl. India's Information Technology Act
+ * was parsed, 125 sections, and never given contents, so the framework ranking -- which reads
+ * contents -- could not see section 79's safe harbour and examined the Dam Safety Act instead.
+ *
+ * With no ids, every instrument of the economy that has sections and no contents. Returns the ids
+ * given contents.
+ */
+export function recordParsedContents(db: Db, ids: number[] | { economy: string }): Set<number> {
+  const candidates = Array.isArray(ids)
+    ? ids
+    : (
+        db
+          .prepare(
+            `SELECT DISTINCT d.instrument_id id FROM document d JOIN instrument i ON i.id = d.instrument_id
+              WHERE i.economy_code = ?
+                AND NOT EXISTS (SELECT 1 FROM instrument_contents c WHERE c.instrument_id = i.id)`,
+          )
+          .all(ids.economy) as { id: number }[]
+      ).map((r) => r.id);
+  const url = db.prepare('SELECT source_url FROM instrument WHERE id = ?');
+  const insert = db.prepare(
+    `INSERT OR REPLACE INTO instrument_contents
+       (instrument_id, headings, heading_count, source_url, extractor, fetched_at)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+  );
+  const done = new Set<number>();
+  db.transaction(() => {
+    for (const id of candidates) {
+      const parsed = contentsFromParsedSections(db, id);
+      if (parsed.length === 0) continue;
+      const row = url.get(id) as { source_url: string } | undefined;
+      insert.run(id, JSON.stringify(parsed), parsed.length, row?.source_url ?? '', 'parsed-sections', new Date().toISOString());
+      done.add(id);
+    }
+  })();
+  return done;
+}
+
 export interface ContentsProgress {
   fetched: number;
   fromParsed: number;
@@ -181,12 +233,24 @@ export interface ContentsProgress {
 
 export interface BuildContentsOptions {
   economy: string;
-  /** Which kinds to fetch contents for. Acts by default -- see the note at the top of this file. */
+  /**
+   * Which kinds to fetch contents for. Every kind by default.
+   *
+   * It was Acts only, which is a blunt way of protecting a budget and it removed the wrong things:
+   * an import ban lives in customs regulations, a procurement rule in a treasury policy, a
+   * certification requirement in a standards body's own document. Now that the order is decided by
+   * what the rubric asks about, a regulation that answers a question is reached before an Act that
+   * does not, and the budget no longer needs a kind filter to stand in for relevance.
+   */
   kinds?: string[];
   /** A wall-clock ceiling. The live hour is an hour, and a crawl that overruns it answers nothing. */
   budgetMs?: number;
-  /** Instrument ids to do first, in this order. Everything else follows in register order. */
+  /** Instrument ids to do first, in this order. Everything else follows behind them. */
   priority?: number[];
+  /** 'register' crawls in the order the portal listed things. The default ranks by the rubric. */
+  order?: 'rubric' | 'register';
+  /** The embedding model the ranking uses, where it is not the default. */
+  model?: string;
   log?: (line: string) => void;
 }
 
@@ -200,13 +264,257 @@ export interface BuildContentsOptions {
  * is strictly better than none: the instruments it covers are ranked on what they contain and the
  * rest fall back to their titles.
  */
+/**
+ * The order to crawl an economy's register in, decided by what the rubric asks about.
+ *
+ * The crawl is budgeted -- Singapore Statutes Online asks six seconds between requests, and the
+ * live test is an hour in total -- so the order is what the corpus ends up being. It was register
+ * order, which is the order a portal happens to list its instruments in, and the effect on
+ * Australia is measurable: 23,693 registered regulations, 109 fetched, and among the 23,584 left
+ * undone were the Customs (Prohibited Imports) Regulations 1956, the Customs (Prohibited Exports)
+ * Regulations 1958, the Customs Regulation 2015, the Radiocommunications Regulations 2023 and the
+ * Commonwealth Procurement Rules -- the last being the instrument ESCAP itself cites for
+ * Australia's procurement indicators.
+ *
+ * None of those is an obscure document. They were simply late in a list.
+ *
+ * So the register is ranked against the rubric's own vocabulary before anything is fetched, which
+ * is what the shortlist was built for. Nothing is excluded: everything the budget does not reach
+ * is still reported as left undone, and a later crawl continues down the same order.
+ */
+/** As many candidates per question as the register is large, so a big register is still placed. */
+function depthFor(registered: number): number {
+  return Math.min(1_000, Math.max(40, Math.ceil(registered / 50)));
+}
+
+/** How far down the ranking an Act still carries its own instruments, and how many it carries. */
+const PARENTS_FOLLOWED = 60;
+
+/** Instruments taken from each question's own ranking, and Acts followed for each question. */
+const SHARE_PER_QUESTION = 400;
+const PARENTS_PER_QUESTION = 3;
+const CARRIED_PER_PARENT = 40;
+
+/** A notice appoints someone or fixes a figure; the law it is made under is in the other three. */
+const CARRY_FIRST: readonly string[] = ['regulation', 'order', 'rule'];
+
+/** "Customs (Prohibited Imports) Regulations 1956" is made under "Customs Act 1901". */
+function actStem(title: string): string | null {
+  const stem = /^(.*?)\s+Act\b/i.exec(title.trim())?.[1]?.trim();
+  return stem && stem.length >= 4 ? stem : null;
+}
+
+/**
+ * Each Act near the top of the ranking, followed by the instruments made under it.
+ *
+ * A title is a weak signal over a register of tens of thousands, and the instruments that answer
+ * the rubric are exactly the ones with the flattest titles: "Customs Regulation 2015" ranked
+ * nowhere against 28,000 competitors, while the Act it is made under ranked twelfth. The Act is
+ * the signal. What hangs off it comes with it, and the score already knows which Act governs.
+ */
+export function withSubsidiary(db: Db, economy: string, ranked: number[], parents = PARENTS_FOLLOWED): number[] {
+  const rows = db
+    .prepare(
+      `SELECT id, title, kind, made_under_instrument_id parent
+         FROM instrument WHERE economy_code = ? ORDER BY id`,
+    )
+    .all(economy) as { id: number; title: string; kind: string; parent: number | null }[];
+  const place = new Map(ranked.map((id, n) => [id, n] as const));
+  const byId = new Map(rows.map((r) => [r.id, r] as const));
+
+  // What the register itself says is made under each Act. A title-stem match is the fallback for a
+  // portal that states nothing, and is kept behind the stated relation rather than in place of it.
+  const stated = new Map<number, Set<number>>();
+  for (const r of rows) {
+    if (r.parent === null || r.parent === r.id) continue;
+    const set = stated.get(r.parent) ?? new Set<number>();
+    set.add(r.id);
+    stated.set(r.parent, set);
+  }
+
+  const rank = (id: number): number => place.get(id) ?? Number.MAX_SAFE_INTEGER;
+  const carried: number[][] = [];
+  let lastParentAt = -1;
+  for (const [at, id] of ranked.entries()) {
+    if (carried.length >= parents) break;
+    const row = byId.get(id);
+    if (row?.kind !== 'act') continue;
+    const children = stated.get(id) ?? new Set<number>();
+    const stem = actStem(row.title);
+    const prefix = stem ? `${stem.toLowerCase()} ` : null;
+    if (children.size === 0 && !prefix) continue;
+    lastParentAt = at;
+    carried.push(
+      rows
+        .filter(
+          (r) =>
+            r.kind !== 'act' &&
+            (children.has(r.id) || (prefix !== null && `${r.title.toLowerCase()} `.startsWith(prefix))),
+        )
+        .sort(
+          (a, b) =>
+            (children.has(a.id) ? 0 : 1) - (children.has(b.id) ? 0 : 1) ||
+            (CARRY_FIRST.includes(a.kind) ? 0 : 1) - (CARRY_FIRST.includes(b.kind) ? 0 : 1) ||
+            rank(a.id) - rank(b.id) ||
+            a.id - b.id,
+        )
+        .slice(0, CARRIED_PER_PARENT)
+        .map((r) => r.id),
+    );
+  }
+
+  const order: number[] = [];
+  const placed = new Set<number>();
+  const take = (id: number): void => {
+    if (placed.has(id)) return;
+    placed.add(id);
+    order.push(id);
+  };
+
+  // The governing Acts first, then their instruments a round at a time. Exhausting one Act before
+  // starting the next buried the customs regulations behind forty consumer-protection notices.
+  for (const id of ranked.slice(0, lastParentAt + 1)) take(id);
+  for (let k = 0; k < CARRIED_PER_PARENT; k += 1) {
+    for (const children of carried) {
+      const id = children[k];
+      if (id !== undefined) take(id);
+    }
+  }
+  for (const id of ranked) take(id);
+  return order;
+}
+
+/**
+ * One crawl order out of sixty-one rankings, a place each at a time.
+ *
+ * Fusing every indicator's queries into one ranking decides the crawl by popularity: an instrument
+ * that is the best answer to one question loses to instruments that are mediocre answers to many.
+ * Measured on Australia, the Act that authorises the Commonwealth Procurement Rules ranks 5th when
+ * the procurement questions are asked and 106th when all 61 are asked at once, which put it past
+ * the cut and its Rules out of reach. Every indicator is a cell that has to be answered, so every
+ * indicator gets the same share of the crawl.
+ */
+export function shareTheCrawl(perQuestion: number[][]): number[] {
+  const order: number[] = [];
+  const placed = new Set<number>();
+  const deepest = Math.max(0, ...perQuestion.map((q) => q.length));
+  for (let round = 0; round < deepest; round += 1) {
+    for (const question of perQuestion) {
+      const id = question[round];
+      if (id === undefined || placed.has(id)) continue;
+      placed.add(id);
+      order.push(id);
+    }
+  }
+  return order;
+}
+
+/**
+ * Ask the register what the highest-ranked Acts carry, before the order is decided.
+ *
+ * Only those Acts, because only theirs are carried. The answers are stored, so a second crawl of
+ * the same economy asks nothing.
+ */
+async function askWhatEachActCarries(
+  db: Db,
+  fetcher: Fetcher,
+  economy: string,
+  byRank: number[],
+  log: (line: string) => void,
+  budgetMs?: number,
+): Promise<void> {
+  const acts = new Set(
+    (db.prepare("SELECT id FROM instrument WHERE economy_code = ? AND kind = 'act'").all(economy) as {
+      id: number;
+    }[]).map((r) => r.id),
+  );
+  const top = byRank.filter((id) => acts.has(id)).slice(0, PARENTS_FOLLOWED);
+  if (top.length === 0) return;
+
+  try {
+    const p = await linkParents(db, fetcher, top, { log, ...(budgetMs ? { budgetMs } : {}) });
+    if (p.asked > 0) {
+      log(
+        `  asked the register about ${p.asked} Act(s): ${p.linked} instrument(s) now say what they ` +
+          `are made under` +
+          (p.truncated || p.failed ? `, ${p.truncated} answered in part, ${p.failed} not answered` : '') +
+          (p.unasked ? `, ${p.unasked} not reached inside the budget` : ''),
+      );
+    }
+  } catch (err) {
+    // An unanswered register is the crawl we already had, not a crawl that stops.
+    log(`  could not ask what each Act carries (${err instanceof Error ? err.message : String(err)})`);
+  }
+}
+
+export async function rubricOrder(
+  db: Db,
+  opts: {
+    economy: string;
+    model?: string;
+    fetcher?: Fetcher;
+    /** A ceiling on asking the register what each Act carries, not on the ranking itself. */
+    budgetMs?: number;
+    log?: (line: string) => void;
+  },
+): Promise<number[]> {
+  const log = opts.log ?? ((): void => {});
+  const rubric = loadRubric();
+
+  // One question per indicator: its subject, and each measure said the way a provision would say
+  // it. The band criteria are left out -- they distinguish one score from another, which is a
+  // question for a provision, not for a statute book's table of contents.
+  const questions = rubric.indicators.map((indicator) => {
+    const qs = [`${indicator.pillarName}: ${indicator.category}`.replace(/\s+/g, ' ').trim()];
+    for (const measure of MEASURES[indicator.id] ?? []) {
+      const gloss = measure.gloss.replace(/\s+/g, ' ').trim();
+      if (!qs.includes(gloss)) qs.push(gloss);
+    }
+    return { id: indicator.id, queries: qs };
+  });
+
+  const registered = (
+    db.prepare('SELECT COUNT(*) c FROM instrument WHERE economy_code = ?').get(opts.economy) as { c: number }
+  ).c;
+
+  if (registered === 0) return [];
+
+  log(`  ranking ${registered} registered instrument(s) for each of ${questions.length} indicators`);
+  try {
+    const perQuestion: number[][] = [];
+    for (const question of questions) {
+      const ranked = await shortlistInstruments(db, {
+        economy: opts.economy,
+        queries: question.queries,
+        limit: SHARE_PER_QUESTION,
+        depthPerQuery: depthFor(registered),
+        ...(opts.model ? { model: opts.model } : {}),
+      });
+      perQuestion.push(ranked.map((c) => c.instrumentId));
+    }
+
+    const byRank = shareTheCrawl(perQuestion);
+    if (opts.fetcher) {
+      await askWhatEachActCarries(db, opts.fetcher, opts.economy, byRank, log, opts.budgetMs);
+    }
+    const order = withSubsidiary(db, opts.economy, byRank, questions.length * PARENTS_PER_QUESTION);
+    log(`  ${byRank.length} placed by question; ${order.length} once each Act carries its own instruments`);
+    return order;
+  } catch (err) {
+    // A crawl that cannot rank is still a crawl. Said out loud, because the order it falls back to
+    // is the one this function exists to replace.
+    log(`  could not rank the register (${err instanceof Error ? err.message : String(err)}); crawling in register order`);
+    return [];
+  }
+}
+
 export async function buildContents(
   db: Db,
   fetcher: Fetcher,
   opts: BuildContentsOptions,
 ): Promise<ContentsProgress> {
   const log = opts.log ?? ((): void => {});
-  const kinds = opts.kinds ?? ['act'];
+  const kinds = opts.kinds ?? ['act', 'regulation', 'order', 'rule', 'notice', 'guideline'];
   const started = Date.now();
   const progress: ContentsProgress = { fetched: 0, fromParsed: 0, skipped: 0, failed: 0 };
 
@@ -220,11 +528,29 @@ export async function buildContents(
     )
     .all(opts.economy, ...kinds) as { id: number; title: string; source_url: string }[];
 
-  const order = opts.priority
-    ? [
-        ...opts.priority.map((id) => pending.find((p) => p.id === id)).filter((p) => p !== undefined),
-        ...pending.filter((p) => !opts.priority!.includes(p.id)),
-      ]
+  // What the budget is spent on. Register order is the order a portal happens to list things in;
+  // asked for explicitly it is still available, and it is no longer the default.
+  const priority =
+    opts.priority ??
+    (opts.order === 'register'
+      ? undefined
+      : await rubricOrder(db, {
+          economy: opts.economy,
+          fetcher,
+          // A quarter of the crawl's budget at most: the order is worth paying for, the documents
+          // are what the budget is for.
+          ...(opts.budgetMs ? { budgetMs: Math.floor(opts.budgetMs / 4) } : {}),
+          ...(opts.model ? { model: opts.model } : {}),
+          log,
+        }));
+
+  const place = priority ? new Map(priority.map((id, i) => [id, i] as const)) : null;
+  const order = place
+    ? [...pending].sort(
+        (a, b) =>
+          (place.get(a.id) ?? Number.MAX_SAFE_INTEGER) - (place.get(b.id) ?? Number.MAX_SAFE_INTEGER) ||
+          a.id - b.id,
+      )
     : pending;
 
   const insert = db.prepare(
@@ -236,26 +562,10 @@ export async function buildContents(
   log(`  ${order.length} instrument(s) without contents`);
 
   // Every free one first, in a sweep of its own, before a single request leaves the machine.
-  //
-  // A document we already parsed has told us its headings, so its contents cost nothing. Taking
-  // them inside the fetch loop looked equivalent and was not: the loop walks the register in
-  // order, so a free instrument sitting at position 350 waits behind 349 paid ones, and when the
-  // host stops answering at position 90 it is never reached at all. That is how the Personal Data
-  // Protection Act -- the most-cited instrument in two of the pillars, with 86 sections already
-  // parsed and stored -- ended a full crawl with no contents and fell from rank 1 to rank 39 for
-  // want of an artefact we were already holding.
-  //
-  // Free work must never be queued behind work that can be refused.
-  const needsFetch: typeof order = [];
-  for (const inst of order) {
-    const parsed = contentsFromParsedSections(db, inst.id);
-    if (parsed.length > 0) {
-      insert.run(inst.id, JSON.stringify(parsed), parsed.length, inst.source_url, 'parsed-sections', new Date().toISOString());
-      progress.fromParsed += 1;
-    } else {
-      needsFetch.push(inst);
-    }
-  }
+  // Why that order matters is on `recordParsedContents`.
+  const free = recordParsedContents(db, order.map((o) => o.id));
+  progress.fromParsed = free.size;
+  const needsFetch = order.filter((o) => !free.has(o.id));
   if (progress.fromParsed > 0) {
     log(`  ${progress.fromParsed} taken from documents already parsed, at no request`);
   }

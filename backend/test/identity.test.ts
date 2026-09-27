@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { statedName, namesMatch, identityMismatch, amendsAnotherAct } from '../src/parse/identity.js';
+import { statedName, namesMatch, identityMismatch, namesAnInstrument, amendsAnotherAct } from '../src/parse/identity.js';
 
 const s = (text: string) => [{ text }];
 
@@ -31,6 +31,42 @@ describe('whether two names are the same instrument', () => {
   it('will not match a different Act', () => {
     expect(namesMatch('Judicial Appointments Commission Act 2009', 'WITNESS PROTECTION ACT 2009')).toBe(false);
   });
+
+  it('reads a plural and its singular as the same word', () => {
+    // Three of Malaysia's ten rejected documents were rejected over an "s". The Destitute Persons
+    // Act is filed as "DESTITUTE PERSON'S ACT 1977" and is the same Act either way.
+    expect(namesMatch('Destitute Persons Act 1977', "DESTITUTE PERSON'S ACT 1977")).toBe(true);
+    expect(namesMatch('Labuan Offshore Trusts Act', 'LABUAN OFFSHORES TRUSTS ACT 1996')).toBe(true);
+  });
+});
+
+describe('a filed title that is not a legal title', () => {
+  it('is not asked to contradict anything', () => {
+    // Malaysia's data protection portal filed a regulation under its own site theme. A page title
+    // is not an instrument name, so it cannot say the document is a different instrument.
+    expect(namesAnInstrument('Wordpress Revolutionize')).toBe(false);
+    expect(
+      identityMismatch(
+        s('1. (1) These regulations may be cited as the Personal Data Protection Regulations 2013.'),
+        'Wordpress Revolutionize',
+      ),
+    ).toBeNull();
+  });
+
+  it('leaves a real title to be checked as before', () => {
+    expect(namesAnInstrument('WITNESS PROTECTION ACT 2009')).toBe(true);
+    expect(namesAnInstrument('Peraturan Peraturan Perlindungan Data Peribadi 2013')).toBe(true);
+  });
+
+  it('does not check a title the register only guessed at', () => {
+    expect(
+      identityMismatch(
+        s('1. (1) This Act may be cited as the Judicial Appointments Commission Act 2009.'),
+        'Act 695 Reprint 2019 rules',
+        { titleProvisional: true },
+      ),
+    ).toBeNull();
+  });
 });
 
 describe('a document filed under the wrong instrument', () => {
@@ -58,5 +94,58 @@ describe('a provision that only instructs an amendment', () => {
 
   it('leaves a provision that imposes its own duty alone', () => {
     expect(amendsAnotherAct('32. (1) A licensee shall retain the records for a period of not less than six years.')).toBe(false);
+  });
+});
+
+describe('a name the drafting writes differently from the register', () => {
+  it('keeps the bracketed part, which is what tells a family of instruments apart', () => {
+    expect(
+      statedName(s('1. (1) This order may be cited as the Personal Data Protection\n(Class of Data Users) (Amendment) Order 2016.')),
+    ).toBe('Personal Data Protection (Class of Data Users) (Amendment) Order 2016');
+  });
+
+  it('stops at the name, not at the commencement the same sentence runs into', () => {
+    expect(
+      statedName(s('1. This Act may be cited as the Ports (Privatization) Act 1990 and shall come into force on a date to be appointed.')),
+    ).toBe('Ports (Privatization) Act 1990');
+  });
+
+  it('reads one spelling against the other', () => {
+    expect(namesMatch('Ports (Privatization) Act 1990', 'PORTS (PRIVATISATION) ACT 1990')).toBe(true);
+    expect(namesMatch('Salvation Army (Incorporation) Act 1956', 'SALVATION ARMY (INCORPORATED) ACT 1956')).toBe(true);
+    expect(namesMatch('Goods and Services Tax (Repeal) Act 2018', 'GOODS AND SERVICES (REPEAL) ACT 2018')).toBe(true);
+  });
+
+  it('still holds two Acts apart where only the opening of a word agrees', () => {
+    expect(
+      namesMatch('Arbitration Act 2005', 'CONVENTION ON THE RECOGNITION AND ENFORCEMENT OF FOREIGN ARBITRAL AWARDS ACT 1985'),
+    ).toBe(false);
+  });
+
+  it('holds apart two Acts of the same name from different years', () => {
+    // The comparison drops every number, so a 1968 Act and a 1998 Act of the same name were the
+    // same instrument, and a document filed under one was accepted as the other. The year an Act
+    // is named for is part of its name.
+    expect(namesMatch('Copyright Act 1968', 'COPYRIGHT ACT 1998')).toBe(false);
+    expect(namesMatch('Akta Hak Cipta 1987', 'AKTA HAK CIPTA 1997')).toBe(false);
+    expect(namesMatch('Copyright Act 1968', 'COPYRIGHT ACT 1968')).toBe(true);
+  });
+
+  it('does not read a number no statute book could be dated by as a year', () => {
+    // A Malaysian Order whose name the parser recovered as "Order/2063". The parse is wrong; the
+    // filing is not, and refusing the document would lose a real instrument over it.
+    expect(
+      namesMatch(
+        'Maintenance Orders (Facilities for Enforcement) (Extension of the Act) Order/2063',
+        'MAINTENANCE ORDERS (FACILITIES FOR ENFORCEMENT) (EXTENSION OF THE ACT) ORDER 2004',
+      ),
+    ).toBe(true);
+  });
+
+  it('says nothing about a year where only one name states one', () => {
+    // A register entry that gives no year is not a contradiction, and a revised edition prints a
+    // later date somewhere else in the name without changing which Act it is.
+    expect(namesMatch('Labuan Offshore Trusts Act', 'LABUAN OFFSHORES TRUSTS ACT 1996')).toBe(true);
+    expect(namesMatch('Copyright Act 1987', 'COPYRIGHT ACT 1987 (REVISED 2006)')).toBe(true);
   });
 });

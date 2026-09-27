@@ -176,7 +176,9 @@ describe('a request that never completes', () => {
     // crawler would keep asking a server that has stopped listening.
     const { Fetcher, HostSuspended, __giveUpAfter } = await import('../src/fetch/index.js');
     const db = openDb(':memory:');
-    const fetcher = new Fetcher({ db, sourceMode: 'fetch' });
+    // A drop is now retried close in before it counts, so the real pauses are replaced with
+    // nothing: what is under test is that the retries run out and the breaker still trips.
+    const fetcher = new Fetcher({ db, sourceMode: 'fetch', transportRetryMs: [0, 0] });
 
     // Stand in for the network: every request faults, the way an unreachable host behaves.
     (fetcher as unknown as { send: () => Promise<never> }).send = () => {

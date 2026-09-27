@@ -33,6 +33,7 @@ export function DecisionBar({
   editing,
   setEditing,
   nextHref,
+  readOnly = false,
 }: {
   rowId: number;
   baseline: FindingEdit;
@@ -40,11 +41,13 @@ export function DecisionBar({
   editing: boolean;
   setEditing: (v: boolean) => void;
   nextHref: string | null;
+  readOnly?: boolean;
 }) {
   const { decisions, reviewer, record, clear } = useReview();
   const router = useRouter();
   const [asking, setAsking] = useState<"edit" | "reject" | null>(null);
   const [attestation, setAttestation] = useState("");
+  const [saving, setSaving] = useState(false);
 
   const decision = decisions[rowId];
   const changed = diffEdit(baseline, draft);
@@ -54,21 +57,44 @@ export function DecisionBar({
     if (nextHref) router.push(nextHref);
   };
 
-  const commit = (action: ReviewAction, text: string) => {
-    record({
-      rowId,
-      action,
-      attestation: text,
-      changedFields: action === "edit" ? changed : {},
-      reviewer,
-      actedAt: new Date().toISOString(),
-    });
+  if (readOnly) {
+    return (
+      <Bar note="This hosted snapshot is for inspection. Run LexDroid locally to record a review.">
+        <span className="rounded-full bg-inset px-3 py-1.5 text-[12px] font-medium text-muted-foreground">
+          Read only
+        </span>
+      </Bar>
+    );
+  }
+
+  const commit = async (action: ReviewAction, text: string) => {
+    const fields = action === "edit" ? changed : {};
+    setSaving(true);
+    try {
+      const response = await fetch("/api/review", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ rowId, action, attestation: text, changedFields: fields, reviewer }),
+      });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: string };
+        throw new Error(body.error ?? "The verdict was not saved");
+      }
+    } catch (err) {
+      setSaving(false);
+      toast.error("Not saved", { description: (err as Error).message });
+      return;
+    }
+
+    record({ rowId, action, attestation: text, changedFields: fields, reviewer, actedAt: new Date().toISOString() });
+    setSaving(false);
     setEditing(false);
     setAsking(null);
     setAttestation("");
-    toast(`${actionLabel[action]}, held in this browser`, {
+    toast(`${actionLabel[action]}, recorded in the store`, {
       description: nextHref ? "Moving to the next finding." : "That was the last one.",
     });
+    router.refresh();
     advance();
   };
 
@@ -94,7 +120,7 @@ export function DecisionBar({
           className="h-9 shrink-0 rounded-xl px-3 text-[12.5px]"
         >
           <RotateCcw className="size-3.5" />
-          Reopen
+          Record another
         </Button>
       </Bar>
     );
@@ -135,7 +161,7 @@ export function DecisionBar({
           value={attestation}
           onValue={setAttestation}
           confirmLabel="Save correction"
-          onConfirm={() => commit("edit", attestation.trim())}
+          onConfirm={() => void commit("edit", attestation.trim())}
           summary={
             <div className="rounded-xl bg-inset px-4 py-3">
               <p className="text-[12px] font-medium text-navy-deep">What changes</p>
@@ -155,7 +181,7 @@ export function DecisionBar({
 
   return (
     <>
-      <Bar note="Verdicts are held in this browser until the backend accepts them.">
+      <Bar note="Every verdict is recorded beside the answer it judges, and the export follows it.">
         <Button
           size="sm"
           variant="ghost"
@@ -176,7 +202,8 @@ export function DecisionBar({
         </Button>
         <Button
           size="sm"
-          onClick={() => commit("accept", "")}
+          disabled={saving}
+          onClick={() => void commit("accept", "")}
           className="h-9 shrink-0 rounded-xl bg-navy px-4 text-[12.5px] font-medium text-paper hover:bg-navy-deep"
         >
           <Check className="size-3.5" />
@@ -193,7 +220,7 @@ export function DecisionBar({
         onValue={setAttestation}
         confirmLabel="Reject finding"
         destructive
-        onConfirm={() => commit("reject", attestation.trim())}
+        onConfirm={() => void commit("reject", attestation.trim())}
       />
     </>
   );

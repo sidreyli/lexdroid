@@ -2,8 +2,10 @@
  * Zone 0 and Zone 1 for one economy, from the command line.
  *
  *   npm run -w backend zone1 -- --economy SGP --register
+ *   npm run -w backend zone1 -- --economy MYS --register --portal mcmc
  *   npm run -w backend zone1 -- --economy SGP --read 20 --title "Personal Data"
  *   npm run -w backend zone1 -- --economy AUS --pillars 6,7 --top 25
+ *   npm run -w backend zone1 -- --economy SGP --unread
  *   npm run -w backend zone1 -- --economy SGP --embed
  *   npm run -w backend zone1 -- --economy SGP --status
  *
@@ -27,12 +29,26 @@ import { EMBEDDING_MODEL, haveModel, OllamaUnavailable } from '../src/engines/ol
 interface Args {
   economy: string;
   register: boolean;
+  /** Walk only the portals whose name or URL contains this. For re-walking one repaired adapter. */
+  portal: string | null;
   read: number | null;
   title: string | null;
   kind: string | null;
   embed: boolean;
   refresh: boolean;
   reparse: boolean;
+  /** Only instruments with a document this parser produced: the scope of a parser fix. */
+  parser: string | null;
+  /**
+   * Exactly these instruments, by id. The scope of a parser fix measured rather than guessed.
+   *
+   * `--reparse` on its own re-parses the economy, and re-parsing a document deletes the sections it
+   * rebuilds -- so every embedding of every one of them goes too, and Malaysia's 126,000 sections
+   * cost hours of GPU time to put back. A fix that changes 58 documents should re-parse 58.
+   */
+  instruments: number[] | null;
+  /** Re-read only the documents nothing could be read out of. */
+  unread: boolean;
   status: boolean;
   delayMs: number | null;
   sourceMode: SourceMode;
@@ -53,19 +69,25 @@ function parseArgs(argv: string[]): Args {
 
   const readArg = get('read');
   const anyStage =
-    has('register') || readArg !== null || has('embed') || has('status') || has('reparse')
-    || get('about') !== null || get('pillars') !== null;
+    has('register') || readArg !== null || has('embed') || has('status') || has('reparse') || has('unread')
+    || get('about') !== null || get('pillars') !== null || get('instruments') !== null;
 
   return {
     economy: (get('economy') ?? 'SGP').toUpperCase(),
     register: has('register') || !anyStage,
+    portal: get('portal'),
     read: readArg !== null ? (readArg === 'all' ? 0 : Number(readArg))
-      : (get('about') !== null || get('pillars') !== null || has('reparse')) ? 0 : anyStage ? null : 0,
+      : (get('about') !== null || get('pillars') !== null || has('reparse') || has('unread') || get('instruments') !== null) ? 0 : anyStage ? null : 0,
     title: get('title'),
+    parser: get('parser'),
+    instruments: get('instruments') !== null
+      ? get('instruments')!.split(',').map((n) => Number(n.trim())).filter((n) => Number.isInteger(n) && n > 0)
+      : null,
     kind: get('kind'),
     embed: has('embed') || !anyStage,
     refresh: has('refresh'),
     reparse: has('reparse'),
+    unread: has('unread'),
     status: has('status'),
     delayMs: get('delay') !== null ? Number(get('delay')) : null,
     sourceMode: has('cache-only') ? 'cache-only' : 'fetch',
@@ -118,13 +140,18 @@ function status(db: ReturnType<typeof openDb>, economy: string): void {
   // a gap in the corpus, and counting it as one overstates the damage: three Acts refused by a
   // throttling host on 6 September were all read on the next run, while the summary went on
   // reporting three documents set aside. So the ledger keeps everything and the summary splits it.
+  // Joined, not filtered: the economy has to be in the WHERE clause. Left in the JOIN alone it
+  // selects every economy's discards and reports the other two as this one's, because their
+  // subjects cannot match this register and so come back with a null document -- Australia read as
+  // 6,024 documents set aside when it had three. And the ledger holds one row per attempt, so a
+  // document re-parsed three times was counted three times; the gap is documents, not attempts.
   const discards = db
     .prepare(
       `SELECT d.reason,
-              SUM(CASE WHEN doc.id IS NULL THEN 1 ELSE 0 END) AS still_missing,
-              COUNT(*) AS total
+              COUNT(DISTINCT CASE WHEN doc.id IS NULL THEN d.subject END) AS still_missing,
+              COUNT(DISTINCT d.subject) AS total
          FROM discard d
-         LEFT JOIN instrument i ON i.source_url = d.subject AND i.economy_code = ?
+         JOIN instrument i ON i.source_url = d.subject AND i.economy_code = ?
          LEFT JOIN document doc ON doc.instrument_id = i.id
         WHERE d.stage IN ('fetch', 'parse')
         GROUP BY d.reason
@@ -158,16 +185,23 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (args.refresh && args.sourceMode === 'cache-only') {
+    throw new Error('--refresh asks for current bytes and --cache-only forbids asking: pick one');
+  }
   const fetcher = new Fetcher({
     db,
-    sourceMode: args.sourceMode,
+    // Refreshing is the fetcher's mode, so every request the adapters make for the document --
+    // listings, wrappers, API records, the parts of a compilation -- is fetched again too.
+    sourceMode: args.refresh ? 'refresh' : args.sourceMode,
     ...(args.delayMs ? { minDelayMs: args.delayMs } : {}),
     onLog: (l) => console.log(l),
   });
 
   if (args.register) {
-    console.log(`\nRegister -- walking the portals`);
-    const results = await register(db, profile, fetcher, (l) => console.log(l));
+    console.log(`\nRegister -- walking the portals${args.portal ? ` matching "${args.portal}"` : ''}`);
+    const results = await register(db, profile, fetcher, (l) => console.log(l), {
+      ...(args.portal ? { portalLike: args.portal } : {}),
+    });
     for (const r of results) {
       if (r.error) console.log(`  ${r.portal}: ${r.error}`);
     }
@@ -223,12 +257,42 @@ Shortlist -- ranking the register against ${asked.length} question(s), ${args.to
       ...(args.title ? { titleLike: args.title } : {}),
       ...(args.kind ? { kind: args.kind } : {}),
       ...(shortlisted ? { instrumentIds: shortlisted } : {}),
+      // Named outright, this wins over the shortlist: it is the answer to "which documents does
+      // this fix change", and a shortlist would only narrow it to the ones a question happens to ask.
+      ...(args.instruments ? { instrumentIds: args.instruments } : {}),
+      ...(args.parser
+        ? {
+            instrumentIds: (db
+              .prepare(
+                `SELECT DISTINCT d.instrument_id id FROM document d
+                   JOIN document_text dt ON dt.document_id = d.id
+                   JOIN instrument i ON i.id = d.instrument_id
+                  WHERE i.economy_code = ? AND dt.parser = ?`,
+              )
+              .all(args.economy, args.parser) as { id: number }[])
+              .map((r) => r.id)
+              .filter((id) => !shortlisted || shortlisted.includes(id))
+              // An empty list is read as no filter at all, which would re-parse the economy.
+              .concat([0]),
+          }
+        : {}),
       refresh: args.refresh,
       reparse: args.reparse,
+      unreadOnly: args.unread,
       log: (l) => console.log(l),
     });
     const by = (o: string) => results.filter((r) => r.outcome === o).length;
     console.log(`  ${by('parsed')} parsed, ${by('unread')} unread, ${by('error')} failed`);
+    // A failure is not a statistic. Re-parsing Malaysia ended "1404 parsed, 20 unread, 162 failed"
+    // and exited 0, and the 162 were not a random 162: a document a past answer cites cannot have
+    // its sections deleted, so the ones that refused to re-parse were very nearly all of the ones
+    // the cells rest on. The run looked like it had worked. Exit code, not prose -- and set rather
+    // than thrown, so the index and status stages below still run and still show the corpus.
+    if (by('error') > 0) {
+      console.log(`  a parse that failed is a failure: exiting non-zero. If these are foreign key`);
+      console.log(`  errors, the citations are still attached -- see "npm run -w backend reanchor".`);
+      process.exitCode = 1;
+    }
     // Kept separate from "failed" on purpose. These were never asked for, so nothing is known
     // about them either way, and rolling them into a failure count would turn an interrupted run
     // into a corpus that looks like it has holes in it.
