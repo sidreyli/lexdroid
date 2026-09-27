@@ -855,12 +855,12 @@ export class Fetcher {
   }
 
   /** Raw request. Callers go through fetch(), which adds the cache, robots and the log. */
-  private async send(url: string, opts: { robotsFile?: boolean; post?: PostBody } = {}): Promise<SendResult> {
+  private async send(url: string, opts: { robotsFile?: boolean; post?: PostBody; timeoutMs?: number } = {}): Promise<SendResult> {
     let at = url;
     for (let hop = 0; ; hop += 1) {
       // Only the first request carries the body: a redirect answered to a POST is followed with a
       // GET, which is what browsers do with a 302 or 303 and what the destination expects.
-      const res = await this.sendOne(at, hop === 0 ? opts.post : undefined);
+      const res = await this.sendOne(at, hop === 0 ? opts.post : undefined, opts.timeoutMs);
       const location = res.location;
       if (res.status < 300 || res.status >= 400 || !location || hop >= MAX_REDIRECTS) {
         return { status: res.status, mediaType: res.mediaType, charset: res.charset, body: res.body, finalUrl: at };
@@ -890,10 +890,10 @@ export class Fetcher {
     }
   }
 
-  private async sendOne(url: string, post?: PostBody): Promise<SendResult & { location: string | null }> {
+  private async sendOne(url: string, post?: PostBody, timeoutMs?: number): Promise<SendResult & { location: string | null }> {
     const host = new URL(url).host;
     try {
-      return await this.sendOnce(url, chasedFor.get(host) ? (chasingDispatcher ?? dispatcher) : dispatcher, post);
+      return await this.sendOnce(url, chasedFor.get(host) ? (chasingDispatcher ?? dispatcher) : dispatcher, post, timeoutMs);
     } catch (err) {
       // A server that omitted its intermediate certificate, asked once per host. Retried over a
       // connection that is still fully verified -- with the intermediate the server should have
@@ -901,18 +901,18 @@ export class Fetcher {
       if (!isIncompleteChain(err) || chasedFor.has(host)) throw err;
       if (!(await chaseIssuer(host))) throw err;
       this.onLog(`  ${host}: serves an incomplete certificate chain; fetched the issuer it names and verified it against the root store.`);
-      return await this.sendOnce(url, chasingDispatcher ?? dispatcher, post);
+      return await this.sendOnce(url, chasingDispatcher ?? dispatcher, post, timeoutMs);
     }
   }
 
-  private async sendOnce(url: string, agent: Agent, post?: PostBody): Promise<SendResult & { location: string | null }> {
+  private async sendOnce(url: string, agent: Agent, post?: PostBody, timeoutMs = TIMEOUT_MS): Promise<SendResult & { location: string | null }> {
     const jar = this.sessions.get(new URL(url).host);
     const cookie = jar && jar.size > 0 ? { cookie: [...jar].map(([k, v]) => `${k}=${v}`).join('; ') } : {};
     const res = await request(url, {
       method: post ? 'POST' : 'GET',
       dispatcher: agent,
-      headersTimeout: TIMEOUT_MS,
-      bodyTimeout: TIMEOUT_MS,
+      headersTimeout: timeoutMs,
+      bodyTimeout: timeoutMs,
       ...(post ? { body: post.body } : {}),
       headers: post ? {
         // The request the portal's own page sends when a reader opens a law: the same body, the
@@ -1090,7 +1090,19 @@ export class Fetcher {
    */
   async fetch(
     url: string,
-    opts: { refresh?: boolean; post?: PostBody; form?: Record<string, string>; session?: boolean } = {},
+    opts: {
+      refresh?: boolean;
+      post?: PostBody;
+      form?: Record<string, string>;
+      session?: boolean;
+      /**
+       * How long to wait for the host to start answering, where one request is known to be slow.
+       * IPS builds its whole-document export on demand, and a Code runs to minutes before the first
+       * byte: the Tax Code Part 2 took 206 s, so the ordinary minute refused it every time. Raised
+       * for that request alone, so a host that has simply stopped answering still costs a minute.
+       */
+      timeoutMs?: number;
+    } = {},
   ): Promise<FetchResult> {
     const parsed = new URL(url);
     const host = parsed.host;
@@ -1140,7 +1152,7 @@ export class Fetcher {
         // of the logic below treats it as a refusal. The walk that prompted this lost a register
         // of 847 Acts to one reset on the fourth page: the three pages already gathered were
         // discarded, and the same page served 1.3MB on the next attempt.
-        let res = await this.sendThroughDrops(url, host, post);
+        let res = await this.sendThroughDrops(url, host, post, opts.timeoutMs);
         // Every attempt is logged, retries included. fetch_log is the run record that makes
         // "we crawled politely" checkable rather than claimed, and a record that counts three
         // requests as one understates what actually left this machine.
@@ -1163,7 +1175,7 @@ export class Fetcher {
           );
           await new Promise((r) => setTimeout(r, pause));
           waitMs += pause;
-          res = await this.sendThroughDrops(url, host, post);
+          res = await this.sendThroughDrops(url, host, post, opts.timeoutMs);
           this.log(res.finalUrl, isSoftBlock(res) ? 'soft-blocked' : 'ok', res.status, res.body.length, pause, method, res.mediaType);
         }
         if (isSoftBlock(res)) {
@@ -1231,10 +1243,10 @@ export class Fetcher {
    * -- robots, a cooldown, a suspension -- is never retried, and every attempt is logged, so a
    * quiet host still shows up in fetch_log as the several requests it really cost.
    */
-  private async sendThroughDrops(url: string, host: string, post?: PostBody): Promise<SendResult> {
+  private async sendThroughDrops(url: string, host: string, post?: PostBody, timeoutMs?: number): Promise<SendResult> {
     for (let attempt = 0; ; attempt += 1) {
       try {
-        return await this.send(url, post ? { post } : {});
+        return await this.send(url, { ...(post ? { post } : {}), ...(timeoutMs ? { timeoutMs } : {}) });
       } catch (err) {
         if (isNamedRefusal(err) || attempt >= this.transportRetryMs.length) throw err;
         const pause = this.transportRetryMs[attempt]!;

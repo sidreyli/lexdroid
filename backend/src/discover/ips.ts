@@ -209,7 +209,8 @@ export const ipsAdapter: Adapter = {
     if (page.status !== 200 || !truncated(decodeBody(page))) return page;
     const nd = /nd=(\d+)/.exec(url)?.[1];
     if (!nd) return page;
-    const exported = await fetcher.fetch(`${new URL(url).origin}/proxy/ips/?savertf=&nd=${nd}&page=all`);
+    // Built on demand, and a Code takes minutes before the first byte: 206 s for the Tax Code Part 2.
+    const exported = await fetcher.fetch(`${new URL(url).origin}/proxy/ips/?savertf=&nd=${nd}&page=all`, { timeoutMs: 600_000 });
     const part = htmlFromMhtml(exported.body);
     if (!part) return page;
     return {
