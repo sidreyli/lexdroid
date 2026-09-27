@@ -14,7 +14,7 @@
     { "economy": "THA", "pack": "tha", "run": "f8848a01-d776-42a3-8db2-afbcc3a25e8d" }
   ],
   "audit": {
-    "unearned": ["MYS 10.2", "MYS 11.3", "THA 10.2", "THA 3.1", "IND 6.4", "IND 12.4.6"],
+    "unearned": ["AUS 10.3", "MYS 10.2", "MYS 11.3", "THA 10.2", "THA 3.1", "IND 6.4", "IND 12.4.6"],
     "finds": {
       "AUS 5.1": 0, "AUS 6.2": 1, "AUS 9.1": 1,
       "SGP 8.3": 1, "SGP 9.3": 1, "SGP 11.2": 0, "SGP 12.8": 1, "SGP 12.4.7": 1,
