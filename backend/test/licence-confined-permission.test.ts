@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 import { confinesPermission } from '../src/decide/index.js';
 
-const f = (quote: string) => ({ dutyAct: null, quote });
+const f = (quote: string) => ({ dutyAct: '', quote });
 
 describe('a permission confined to licence holders', () => {
   it('is a requirement to hold the licence', () => {
