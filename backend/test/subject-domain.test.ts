@@ -132,4 +132,29 @@ describe('goods named by their tariff code', () => {
   it('does not count the same duty where the provision states no ICT code', () => {
     expect(score(tradeDefence, [duty()]).score).toBe(0);
   });
+
+  // The notice as it is written: the State lays the duty, in the present tense, by declaring it.
+  const laid = (dutyAct: string): Evidence => {
+    const e = duty(['845690']);
+    return {
+      ...e,
+      finding: {
+        ...e.finding,
+        dutyBearer: 'the Central Government',
+        dutyBearerKind: 'government',
+        dutyAct,
+        dutyForce: 'declares',
+        quote: `the Central Government hereby ${dutyAct} on the subject goods an anti-dumping duty`,
+        definingWords: `${dutyAct} on the subject goods an anti-dumping duty`,
+      },
+    };
+  };
+
+  it('counts the words laying the duty, though the State says them and they declare', () => {
+    expect(score(tradeDefence, [laid('imposes')]).score).toBeGreaterThan(0);
+  });
+
+  it('does not count a duty the provision only refers to as laid already', () => {
+    expect(score(tradeDefence, [laid('had imposed')]).score).toBe(0);
+  });
 });

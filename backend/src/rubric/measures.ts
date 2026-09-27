@@ -82,6 +82,18 @@ export interface Measure {
    * says why the exemption exists, and lets a power to impose customs duties use the same one.
    */
   permits?: boolean;
+  /**
+   * Whether this measure is a charge an authority lays on goods.
+   *
+   * A duty on goods is borne by whoever brings them in, and the instrument that lays it is written
+   * by the authority in the present tense: "the Central Government hereby imposes on the subject
+   * goods ... an anti-dumping duty". The reader rightly reads that as a declaration by the State,
+   * and two gates then ruled out every such notice -- one for declaring rather than requiring, one
+   * for binding the State -- so a measure actually in force could never be counted. The words
+   * laying the charge make it out, whoever says them; a charge only referred to as already laid
+   * does not.
+   */
+  laidOnGoods?: boolean;
   /** Whether this measure is defined by something crossing the economy's border. */
   crossesBorder?: boolean;
   /**
@@ -635,6 +647,7 @@ export const MEASURES: Record<string, Measure[]> = {
       gloss:
         'an anti-dumping duty, countervailing duty or safeguard measure imposed on imported ICT or electronic goods',
       actor: 'the importer of the goods',
+      laidOnGoods: true,
       // A duty is charged on whoever brings the goods in. Every finding this indicator collected in
       // all three economies binds the Minister, the Government or the court instead -- the sections
       // of the enabling Act that say when and how a duty may be imposed, which are the procedure

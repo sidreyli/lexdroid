@@ -1526,7 +1526,12 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     // exceeding RM500 per user" -- which is the answer ESCAP gives for that cell and is a
     // declaration by grammar. The reader was right about the verb; the gate was asking the wrong
     // measures for one.
-    if (e.finding.dutyForce === 'declares' && !permits(indicatorId, e.finding.measure) && !confinesPermission(e.finding)) {
+    if (
+      e.finding.dutyForce === 'declares' &&
+      !permits(indicatorId, e.finding.measure) &&
+      !confinesPermission(e.finding) &&
+      !laysTheCharge(indicatorId, e.finding)
+    ) {
       ruledOut.push({
         evidence: e,
         reason: `the provision declares what is the case -- "${e.finding.dutyAct}" -- rather than requiring anyone to do anything`,
@@ -2128,7 +2133,8 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     // Each measure says which side it binds, and this checks the side the reader read out.
     if (
       actorKindOf(indicatorId, e.finding.measure) === 'private' &&
-      e.finding.dutyBearerKind === 'government'
+      e.finding.dutyBearerKind === 'government' &&
+      !laysTheCharge(indicatorId, e.finding)
     ) {
       ruledOut.push({
         evidence: e,
@@ -2165,7 +2171,7 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     }
     // A power is not a duty, and two measures in the rubric are written as powers: government
     // access, and a power to impose customs duties on an electronic transmission.
-    if (!isRequirement(e.finding) && !permits(indicatorId, e.finding.measure)) {
+    if (!isRequirement(e.finding) && !permits(indicatorId, e.finding.measure) && !laysTheCharge(indicatorId, e.finding)) {
       ruledOut.push({ evidence: e, reason: 'the provision permits rather than requires' });
       continue;
     }
@@ -2651,6 +2657,20 @@ function statesASubject(subjectWords: string): boolean {
 }
 
 /** Is this measure one the rubric describes as a permission or a limit rather than a command? */
+/**
+ * Whether the finding is the words laying a charge on goods, for a measure that is one -- see
+ * `laidOnGoods`. The act has to lay it now: "imposes", "levies". A charge the provision only
+ * refers to as laid already -- "had imposed", "has been imposed" -- is laid somewhere else, and
+ * counting it here would count that instrument twice.
+ */
+function laysTheCharge(indicatorId: string, f: Pick<Finding, 'measure' | 'dutyAct'>): boolean {
+  const laid = (MEASURES[indicatorId] ?? []).some((m) => m.token === f.measure && m.laidOnGoods === true);
+  const act = f.dutyAct ?? '';
+  return laid && LAYS_A_CHARGE.test(act) && !REFERS_TO_A_CHARGE_LAID.test(act);
+}
+const LAYS_A_CHARGE = /\b(impos|levi|levy|charg)\w*/i;
+const REFERS_TO_A_CHARGE_LAID = /\b(had|has|have|was|were|been|to be|shall be|may)\b/i;
+
 function permits(indicatorId: string, measure: string | null): boolean {
   if (!measure) return false;
   return (MEASURES[indicatorId] ?? []).some((m) => m.token === measure && m.permits === true);
