@@ -11,7 +11,7 @@
 import { tariffCodesOf } from '../rubric/ict-goods.js';
 import type { Db } from '../db/index.js';
 import { citationUrl } from '../export/index.js';
-import { prescribedFor } from '../cell/index.js';
+import { definedFor, prescribedFor } from '../cell/index.js';
 import { loadRubric } from '../rubric/index.js';
 import { decide, sameFinding, type Decision, type Evidence, type FrameworkEvidence, type SurfacedInstrument } from './index.js';
 import type { FxRates } from './currency.js';
@@ -182,6 +182,7 @@ export function recordedDecider(
             inheritsAPower: inheritsAPower(r.text, finding.quote),
             sectionLanguage: r.language,
             ...tariffCodesOf(r.text),
+            ...definedFor(db, finding, r.instrument_id),
             instrumentKind: r.instrument_kind,
             ...(r.repealed ? { sectionRepealed: true } : {}),
             citation: citationUrl(r.doc_url, r.anchor, { page: r.page, mediaType: r.media_type }),

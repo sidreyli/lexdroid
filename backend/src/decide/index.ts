@@ -87,6 +87,12 @@ export interface Evidence {
    */
   definesATerm?: boolean;
   /**
+   * What the instrument defines the party bound, or the subject, as -- the words of its own
+   * definition entry. Carried only for a measure whose domain the document may name (see
+   * TITLE_CARRIES_DOMAIN), because the definition is the document naming it.
+   */
+  definedAs?: string;
+  /**
    * Whether the quoted words are a list item whose stem only confers a power.
    *
    * Same footing as definesATerm: a fact about the drafting, read off the whole section once. The
@@ -806,7 +812,7 @@ const RULES: Record<string, Rule> = {
   '8.3': (indicator, qualifying) => {
     const online = qualifying.filter((e) => e.finding.measure === 'user-identity');
     if (online.length > 0) {
-      return { ordinal: 1, reason: 'identity required to connect or use an online service', counted: online };
+      return { ordinal: 1, reason: 'identity required to connect or use an online service', counted: providerBoundFirst(online) };
     }
     const sim = qualifying.filter((e) => e.finding.measure === 'sim-registration');
     if (sim.length > 0) return { ordinal: 2, reason: 'identity required to register a SIM', counted: sim };
@@ -1796,6 +1802,9 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
       domain !== null &&
       (((SECTOR_DOMAINS.has(indicatorId) || TITLE_CARRIES_DOMAIN.has(e.finding.measure ?? '')) &&
         (domain.test(e.instrumentTitle) || domain.test(e.finding.subjectWords ?? ''))) ||
+        // Or the instrument's own definition of the party or subject, which names the topic once
+        // for every provision after it just as a title does -- see definedFor in ../cell.
+        (TITLE_CARRIES_DOMAIN.has(e.finding.measure ?? '') && domain.test(e.definedAs ?? '')) ||
         (TARIFF_CODED_DOMAIN.has(indicatorId) && (e.ictTariffCodes?.length ?? 0) > 0));
     if (domain && !namesDomain && e.finding.subjectWords && !domain.test(e.finding.subjectWords) && otherLanguage(e)) {
       held.push({
@@ -1927,6 +1936,21 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
       ruledOut.push({
         evidence: e,
         reason: `"${e.finding.definingWords}" is a proportion the holder must reach to qualify, not one a foreign holder may not exceed`,
+      });
+      continue;
+    }
+    // A copy put out for inspection for a few days is a notice, not storage. A payment firm
+    // transferring its business "must keep at their respective offices in Singapore, for
+    // inspection by any person that may be affected by the transfer, a copy of the report" for 15
+    // days after the Gazette notice, and it made a second local storage measure beside the
+    // Companies Act's accounting records. It says where the affected may read a document while
+    // they can object, and nothing about where the records themselves must live. A register kept
+    // open to inspection with no end is still where the register is kept, so only the short window
+    // rules it out.
+    if (locational(indicatorId, e.finding.measure) && displayedForAWhile(e.finding)) {
+      ruledOut.push({
+        evidence: e,
+        reason: `the provision puts a copy out for inspection for ${e.finding.statedPeriod}, which is notice to those affected rather than a place the data must be kept`,
       });
       continue;
     }
@@ -2220,6 +2244,14 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
 }
 
 /** The verbs of keeping something somewhere, as against doing something to it there. */
+/** Kept "for inspection" for a window counted in days or weeks: see `hold`. */
+function displayedForAWhile(f: Finding): boolean {
+  return (
+    /for (?:public )?inspection|open to (?:public )?inspection|available for (?:public )?inspection|เพื่อให้.{0,20}ตรวจดู/i.test(f.quote ?? '') &&
+    /\d+\s*(?:days?|weeks?)\b|\b[a-z-]+ (?:days?|weeks?)\b|\d+\s*วัน/i.test(f.statedPeriod ?? '')
+  );
+}
+
 const KEEPING = /\b(keep|kept|keeping|retain\w*|store\w*|storing|hold|held|holding|maintain\w*|preserv\w*)\b|เก็บ|จัดเก็บ|เก็บรักษา/i;
 /** The verbs of doing something to data, which make a locational duty 6.1's. */
 const PROCESSING = /\b(process\w*|handl\w*|analys\w*|comput\w*)\b|ประมวลผล/i;
@@ -2807,6 +2839,22 @@ function absenceFor(input: DecideInput): Absence | null {
     pillarFindings: 0,
     currentTo: top.currentTo ?? null,
   };
+}
+
+/**
+ * The measure as the rubric states it first: a duty on the online service provider.
+ *
+ * 8.3's user-identity measure binds "the internet or online service provider", and every finding
+ * that makes it out counts. But a service's own terms telling its users to log in -- a central
+ * bank's rules for its bond information website -- make it out too, and they are not the law that
+ * requires providers to know their users. The row leads with the provision whose party bound is
+ * named, or defined by its own instrument, as an online service; nothing is dropped.
+ */
+function providerBoundFirst(found: Evidence[]): Evidence[] {
+  const domain = MEASURE_DOMAIN['user-identity'];
+  if (!domain) return found;
+  const bound = found.filter((e) => domain.test(e.finding.dutyBearer ?? '') || domain.test(e.definedAs ?? ''));
+  return [...bound, ...found.filter((e) => !bound.includes(e))];
 }
 
 /**
