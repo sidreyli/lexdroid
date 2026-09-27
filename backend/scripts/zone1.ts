@@ -5,6 +5,8 @@
  *   npm run -w backend zone1 -- --economy MYS --register --portal mcmc
  *   npm run -w backend zone1 -- --economy SGP --read 20 --title "Personal Data"
  *   npm run -w backend zone1 -- --economy AUS --pillars 6,7 --top 25
+ *   npm run -w backend zone1 -- --economy MNG --pillars 1,2 --list-only --save mng.ids   rank only
+ *   npm run -w backend zone1 -- --economy MNG --instruments $(cat mng.ids)              then fetch
  *   npm run -w backend zone1 -- --economy SGP --unread
  *   npm run -w backend zone1 -- --economy SGP --embed
  *   npm run -w backend zone1 -- --economy SGP --status
@@ -24,6 +26,8 @@ import { buildDenseIndex } from '../src/index/index.js';
 import { buildInstrumentIndex, shortlistInstruments } from '../src/shortlist/index.js';
 import { loadRubric, indicatorsOfPillar } from '../src/rubric/index.js';
 import { queriesFor } from '../src/retrieve/index.js';
+import { hasTranslationTable } from '../src/retrieve/translations.js';
+import { writeFileSync } from 'node:fs';
 import { EMBEDDING_MODEL, haveModel, OllamaUnavailable } from '../src/engines/ollama.js';
 
 interface Args {
@@ -58,6 +62,15 @@ interface Args {
   pillars: number[] | null;
   /** How many of the shortlisted instruments to actually fetch. */
   top: number;
+  /**
+   * Rank the register and stop: nothing is fetched. Ranking needs the embedding model and fetching
+   * needs only the network, so the two can happen on different machines at different times -- a
+   * rented GPU for the minute the ranking takes, and a laptop for the hours the portals' crawl
+   * delays make the fetch take. Read the list back with --instruments.
+   */
+  listOnly: boolean;
+  /** Where --list-only writes the shortlisted ids, comma-separated, ready for --instruments. */
+  save: string | null;
 }
 
 function parseArgs(argv: string[]): Args {
@@ -96,6 +109,8 @@ function parseArgs(argv: string[]): Args {
       ? get('pillars')!.split(',').map((p) => Number(p.trim())).filter((p) => Number.isInteger(p) && p > 0)
       : null,
     top: get('top') !== null ? Number(get('top')) : 15,
+    listOnly: has('list-only'),
+    save: get('save'),
   };
 }
 
@@ -219,9 +234,13 @@ async function main(): Promise<void> {
     if (args.about) asked.push({ label: args.about, queries: [args.about] });
     if (args.pillars) {
       const rubric = loadRubric();
+      // The questions a run asks, built as run/prepare.ts builds them: in the economy's own languages,
+      // and named for the economy where a translation table is keyed on the named question. Asked in
+      // English alone, a Cyrillic or Lao register is ranked on the title vectors only.
+      const named = profile.officialLanguages.some((l) => hasTranslationTable(l)) ? profile.name : undefined;
       for (const p of args.pillars) {
         for (const ind of indicatorsOfPillar(p, rubric)) {
-          asked.push({ label: `${ind.id} ${ind.category}`, queries: queriesFor(ind) });
+          asked.push({ label: `${ind.id} ${ind.category}`, queries: queriesFor(ind, named, profile.officialLanguages) });
         }
       }
     }
@@ -248,6 +267,13 @@ Shortlist -- ranking the register against ${asked.length} question(s), ${args.to
     shortlisted = [...union.keys()];
     console.log(`  ${shortlisted.length} distinct instrument(s) to read`);
     if (!shortlisted.length) console.log('  nothing in the register matched, so nothing will be fetched');
+    if (args.listOnly) {
+      if (args.save) {
+        writeFileSync(args.save, `${shortlisted.join(',')}\n`);
+        console.log(`  wrote ${shortlisted.length} id(s) to ${args.save}; fetch them with --instruments $(cat ${args.save})`);
+      }
+      return;
+    }
   }
 
   if (args.read !== null) {

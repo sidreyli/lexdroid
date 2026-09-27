@@ -6,7 +6,23 @@
  * Their act types are binding; what they bind is nobody.
  */
 import { describe, expect, it } from 'vitest';
-import { kindFor } from '../src/discover/ips.js';
+import { kindFor, onlyAmends } from '../src/discover/ips.js';
+
+describe('a Russian law that only amends others', () => {
+  it('is recognised by the title the system gives it', () => {
+    expect(onlyAmends('О внесении изменений в Федеральный закон "О связи"')).toBe(true);
+    expect(onlyAmends('О внесении изменения в статью 6 Закона Российской Федерации "О защите прав потребителей"')).toBe(true);
+    expect(onlyAmends('О признании утратившими силу отдельных положений законодательных актов Российской Федерации')).toBe(true);
+    expect(onlyAmends('О внесении дополнений в Закон РСФСР "О банках и банковской деятельности в РСФСР"')).toBe(true);
+    expect(onlyAmends('О приостановлении действия отдельных положений Федерального закона "О закупках"')).toBe(true);
+  });
+
+  it('is not the principal law it amends', () => {
+    expect(onlyAmends('О защите прав потребителей')).toBe(false);
+    expect(onlyAmends('О контрактной системе в сфере закупок товаров, работ, услуг для обеспечения государственных и муниципальных нужд')).toBe(false);
+    expect(onlyAmends('О безопасности критической информационной инфраструктуры Российской Федерации')).toBe(false);
+  });
+});
 
 describe('the kind a Russian row is registered as', () => {
   it('is advisory for a decree approving a doctrine or the foundations of policy', () => {

@@ -37,8 +37,13 @@ import type { InstrumentKind } from './titles.js';
 const PER_PAGE = 20;
 
 export interface IpsQuery {
-  /** The act-type code from the system's classifier. */
-  type: string;
+  /**
+   * The act-type code from the system's classifier, or absent for every type. A law of the RSFSR or
+   * of the Russian Federation before the 1993 Constitution is a "Закон РСФСР" or a "Закон Российской
+   * Федерации", which is none of the classifier codes above, so the only way to reach one is to search
+   * every type and keep the rows whose type line names it -- `issuer` does that.
+   */
+  type?: string;
   kind: InstrumentKind;
   /** Words the title must contain, as the system's title search reads them. */
   title?: string;
@@ -46,6 +51,24 @@ export interface IpsQuery {
   issuer?: string;
   /** Pages to walk at most; 20 rows each. */
   maxPages?: number;
+  /**
+   * The system's sort code. 7, the default, is newest first; -7 is oldest first, which puts a
+   * principal law ahead of the years of amendments to it that share its title words.
+   */
+  sort?: string;
+  /**
+   * Leave out a law that only amends, repeals or suspends others. The system serves every act as its
+   * consolidated current text, so what an amending law changed is already read in the act it
+   * changed; registered on its own it is a second copy of words the principal act carries, and it
+   * takes a place in the shortlist a principal act needed. Opt-in per query, so the queries a corpus
+   * was already built from register exactly what they did.
+   */
+  principalOnly?: boolean;
+}
+
+/** A title that says the act only amends, repeals or suspends other acts. */
+export function onlyAmends(name: string): boolean {
+  return /^о\s+(внесени[ия]\s+(изменени|дополнени)|признании\s+утратившими?\s+силу|приостановлении\s+действия)/iu.test(name.trim());
 }
 
 /** A query string value in windows-1251, which is how the system reads Cyrillic in a query. */
@@ -209,7 +232,9 @@ export const ipsAdapter: Adapter = {
 
     const found = new Map<string, DiscoveredInstrument>();
     for (const q of queries) {
-      const params = `bpas=cd00000&a3=${q.type}&a3type=1${q.title ? `&a1=${cp1251Param(q.title)}` : ''}&sort=7`;
+      const params =
+        `bpas=cd00000${q.type ? `&a3=${q.type}&a3type=1` : ''}` +
+        `${q.title ? `&a1=${cp1251Param(q.title)}` : ''}&sort=${q.sort ?? '7'}`;
       let rows = 0;
       let kept = 0;
       for (let page = 0; page < (q.maxPages ?? 25); page += 1) {
@@ -228,6 +253,7 @@ export const ipsAdapter: Adapter = {
         for (const row of got) {
           if (q.issuer && !row.heading.includes(q.issuer)) continue;
           if (words && !row.name.toLowerCase().includes(words)) continue;
+          if (q.principalOnly && onlyAmends(row.name)) continue;
           const inst = instrumentFrom(row, q.kind, base);
           if (!found.has(inst.url)) {
             found.set(inst.url, inst);
@@ -236,7 +262,7 @@ export const ipsAdapter: Adapter = {
         }
         if (got.length < PER_PAGE) break;
       }
-      log(`  IPS type ${q.type}${q.title ? ` "${q.title}"` : ''}: ${rows} rows, ${kept} registered`);
+      log(`  IPS type ${q.type ?? 'any'}${q.title ? ` "${q.title}"` : ''}: ${rows} rows, ${kept} registered`);
     }
     return [...found.values()];
   },

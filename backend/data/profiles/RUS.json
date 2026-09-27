@@ -136,7 +136,27 @@
           { "type": "102000505", "kind": "act", "title": "об иностранных инвестициях" },
           { "type": "102000496", "kind": "regulation", "title": "персональных данных", "issuer": "Правительства Российской Федерации" },
           { "type": "102000496", "kind": "regulation", "title": "информационн", "issuer": "Правительства Российской Федерации", "maxPages": 5 },
-          { "type": "102000503", "kind": "order", "title": "информационной безопасности" }
+          { "type": "102000503", "kind": "order", "title": "информационной безопасности" },
+          { "type": "102000505", "kind": "act", "title": "закуп*", "sort": "-7", "principalOnly": true, "maxPages": 3 },
+          { "type": "102000505", "kind": "act", "title": "иностранных инвестиций", "sort": "-7", "principalOnly": true, "maxPages": 3 },
+          { "type": "102000505", "kind": "act", "title": "обществах", "sort": "-7", "principalOnly": true, "maxPages": 3 },
+          { "type": "102000505", "kind": "act", "title": "защите конкуренции", "sort": "-7", "principalOnly": true, "maxPages": 3 },
+          { "type": "102000505", "kind": "act", "title": "коммерческой тайне", "sort": "-7", "principalOnly": true, "maxPages": 3 },
+          { "type": "102000505", "kind": "act", "title": "критической информационной инфраструктуры", "sort": "-7", "principalOnly": true, "maxPages": 3 },
+          { "type": "102000505", "kind": "act", "title": "рекламе", "sort": "-7", "principalOnly": true, "maxPages": 3 },
+          { "type": "102000505", "kind": "act", "title": "внешнеторговой деятельности", "sort": "-7", "principalOnly": true, "maxPages": 3 },
+          { "type": "102000505", "kind": "act", "title": "экспортном контроле", "sort": "-7", "principalOnly": true, "maxPages": 3 },
+          { "type": "102000505", "kind": "act", "title": "стандартизации", "sort": "-7", "principalOnly": true, "maxPages": 3 },
+          { "type": "102000505", "kind": "act", "title": "аккредитации", "sort": "-7", "principalOnly": true, "maxPages": 3 },
+          { "type": "102000505", "kind": "act", "title": "единства измерений", "sort": "-7", "principalOnly": true, "maxPages": 3 },
+          { "type": "102000505", "kind": "act", "title": "лицензировании", "sort": "-7", "principalOnly": true, "maxPages": 3 },
+          { "type": "102000505", "kind": "act", "title": "валютном регулировании", "sort": "-7", "principalOnly": true, "maxPages": 3 },
+          { "type": "102000505", "kind": "act", "title": "банках", "sort": "-7", "principalOnly": true, "maxPages": 3 },
+          { "type": "102000505", "kind": "act", "title": "платеж", "sort": "-7", "principalOnly": true, "maxPages": 3 },
+          { "type": "102000505", "kind": "act", "title": "торговой деятельности", "sort": "-7", "principalOnly": true, "maxPages": 3 },
+          { "kind": "act", "title": "защите прав потребителей", "issuer": "Закон Российской Федерации", "sort": "-7", "principalOnly": true, "maxPages": 3 },
+          { "kind": "act", "title": "средствах массовой информации", "issuer": "Закон Российской Федерации", "sort": "-7", "principalOnly": true, "maxPages": 3 },
+          { "kind": "act", "title": "банках", "issuer": "Закон РСФСР", "sort": "-7", "principalOnly": true, "maxPages": 3 }
         ]
       },
       "notes": "The parent legal-information portal, walked through its legal information system (IPS, /proxy/ips) by the ips adapter: the consolidated current text of every federal act as HTML, with the standing the system gives it. robots.txt is 'User-Agent: * / Disallow:' -- an empty disallow, fully permissive -- read directly 21 September 2026. Queries are act-type codes from the system's own classifier plus title words, aimed at the digital-trade pillars; all 12,155 federal laws would be mostly amending laws. Pages are windows-1251. Recorded over http because the environment used on 21 September could not complete a TLS handshake to it while reaching it normally on port 80; that is a fact about that network rather than about this host, and the scheme should be re-checked from an ordinary connection. Full trace: docs/lao-mongolia-russia-recon.md."
