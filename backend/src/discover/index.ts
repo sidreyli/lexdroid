@@ -14,7 +14,7 @@
  * says it publishes, and where that disagrees with ESCAP's sheet, the disagreement is a finding.
  */
 import type { Db } from '../db/index.js';
-import type { Fetcher } from '../fetch/index.js';
+import type { Fetcher, FetchResult } from '../fetch/index.js';
 import { RobotsDisallowed, CacheMiss, HostSuspended } from '../fetch/index.js';
 import { parseDocument, storeDocument, verifyOffsets } from '../parse/index.js';
 import { namedDocumentLink, pointedDocumentLink, soleDocumentLink } from '../parse/html.js';
@@ -22,6 +22,7 @@ import { namesAnInstrument, ownName, statedKind } from '../parse/identity.js';
 import { registeredKind } from './titles.js';
 import type { EconomyProfile } from '../profile/types.js';
 import { portalId } from '../profile/index.js';
+import { cbicDownloadUrl, resolveCbicDocument } from './cbic.js';
 import { crawlAdapter } from './crawl.js';
 import { drupalAdapter } from './drupal.js';
 import { frlAdapter } from './frl.js';
@@ -302,7 +303,7 @@ async function readEdition(
     return null;
   };
   try {
-    const fetched = await fetcher.fetch(url);
+    const fetched = await fetchDocument(url, fetcher);
     if (fetched.status !== 200) return discard('non-200-response', `HTTP ${fetched.status}`);
 
     const parsed = await parseDocument(fetched, { languages });
@@ -387,6 +388,15 @@ export interface MaterialiseOptions {
  * corpus has to resolve a document the way the read path resolves it, and for a long Act that means
  * the adapter joining the EPUB volumes rather than the title page sitting at the document's URL.
  */
+/**
+ * An instrument's document, for the URLs whose address is a viewer rather than the document. Most
+ * are fetched as they stand; a host that serves an app at the public address and the document from
+ * an API behind it is asked the way its own page asks, whichever adapter registered the URL.
+ */
+export async function fetchDocument(url: string, fetcher: Fetcher): Promise<FetchResult> {
+  return cbicDownloadUrl(url) ? resolveCbicDocument(url, fetcher) : fetcher.fetch(url);
+}
+
 export function adapterFor(db: Db, profile: EconomyProfile, via: string): Adapter | null {
   const id = Number(via.replace('portal:', ''));
   const row = db.prepare('SELECT url FROM portal WHERE id = ?').get(id) as { url: string } | undefined;
@@ -482,7 +492,7 @@ export async function materialise(
     try {
       let fetched = adapter?.resolveDocument
         ? await adapter.resolveDocument(row.source_url, fetcher)
-        : await fetcher.fetch(row.source_url);
+        : await fetchDocument(row.source_url, fetcher);
 
       if (fetched.status !== 200) {
         // Recorded, not just reported: an instrument the corpus does not contain has to be
