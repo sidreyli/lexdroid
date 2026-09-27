@@ -548,6 +548,16 @@ separately from the Thailand-specific commits either side of it (`feat(thailand)
 PR, rather than riding in as part of a Thailand-economy review) given its blast radius. Flagged here
 so this doesn't get lost between now and whenever a PR actually opens.
 
+## MDES notifications (27 September 2026)
+
+The Ministry of Digital Economy and Society issues the ministerial notifications made under the
+Computer-Related Crime Act B.E. 2550, among them the criteria for service providers to retain
+computer traffic data.
+Its law pages, `www.mdes.go.th/law/detail/<id>`, serve the notification PDF directly, and
+robots.txt allows everything (checked 27 September 2026). There is no listing worth an adapter, so
+the notifications are registered by URL. The parser splits a Thai notification PDF into its
+clauses (ข้อ), which is what lets a single clause be cited rather than the whole notice.
+
 ## Sources
 
 - `docs/architecture.md`, `docs/india-integration.md`, `docs/expansion-plan.md`,

@@ -5,12 +5,14 @@
     "ind": "lexdroid.bench-ind.db",
     "tha": "lexdroid.bench-tha.db",
     "12-follow": "lexdroid.bench-12-follow.db",
-    "p9-ams": "lexdroid.bench-p9-ams.db"
+    "p9-ams": "lexdroid.bench-p9-ams.db",
+    "mys81011": "lexdroid.bench-mys81011.db"
   },
   "sources": [
     { "economy": "AUS", "pack": "aus-mys-sgp", "run": "a74d0fca-5362-4ee1-9194-983d70a66eab", "skip": [12] },
     { "economy": "AUS", "pack": "12-follow", "run": "1550d25e-8695-431f-ad33-0716f05043f0", "pillars": [12] },
-    { "economy": "MYS", "pack": "aus-mys-sgp", "run": "a74d0fca-5362-4ee1-9194-983d70a66eab", "skip": [12] },
+    { "economy": "MYS", "pack": "aus-mys-sgp", "run": "a74d0fca-5362-4ee1-9194-983d70a66eab", "skip": [8, 10, 11, 12] },
+    { "economy": "MYS", "pack": "mys81011", "run": "880a2308-d908-41af-b83b-c2822fdad986", "pillars": [8, 10, 11] },
     { "economy": "MYS", "pack": "12-follow", "run": "9dbd7d9c-6ce2-4fa3-b9fe-99112642fc56", "pillars": [12] },
     { "economy": "SGP", "pack": "aus-mys-sgp", "run": "a74d0fca-5362-4ee1-9194-983d70a66eab", "skip": [9] },
     { "economy": "SGP", "pack": "p9-ams", "run": "3ba611e1-0f69-4a34-9103-6ff5fe70e333", "pillars": [9] },

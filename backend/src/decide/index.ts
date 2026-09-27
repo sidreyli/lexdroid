@@ -18,7 +18,7 @@
  */
 import type { Indicator, ScoreBand } from '../rubric/types.js';
 import type { Finding } from '../read/index.js';
-import { FRAMEWORK_TITLE_DOMAIN, MEASURES, MEASURE_DOMAIN, MEASURE_NAMES, SECTOR_DOMAINS, SUBJECTS, TITLE_CARRIES_DOMAIN, SUBJECT_DOMAIN } from '../rubric/measures.js';
+import { FRAMEWORK_TITLE_DOMAIN, HEADING_CLASS_DOMAIN, MEASURES, MEASURE_DOMAIN, MEASURE_NAMES, SECTOR_DOMAINS, SUBJECTS, TITLE_CARRIES_DOMAIN, SUBJECT_DOMAIN } from '../rubric/measures.js';
 import { tallyConfirmations, type ConfirmationTally } from '../read/confirmations.js';
 import { inUsd, moneyIn, type FxRates } from './currency.js';
 import { determinesAParticularCase } from '../discover/titles.js';
@@ -1803,6 +1803,19 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
       });
       continue;
     }
+    // And a subject that is only a pointer to the class its own Division, Part or Schedule applies
+    // to, for a measure that takes no domain of its own: the class is the heading's, so the heading
+    // answers for it -- see HEADING_CLASS_DOMAIN.
+    const classDomain = HEADING_CLASS_DOMAIN[e.finding.measure ?? ''];
+    const unit = classDomain ? headingUnitPointedAt(e.finding.subjectWords) : null;
+    const heading = unit ? headingOf(e.headingPath, unit) : null;
+    if (classDomain && heading && !classDomain.test(heading)) {
+      ruledOut.push({
+        evidence: e,
+        reason: `"${e.finding.subjectWords}" is the class of goods "${heading}" names, and that is not ${subject ?? "this indicator's subject"}`,
+      });
+      continue;
+    }
     // And the other way round for a sector: the words name no sector and neither does the Act they
     // were read in, so the provision is about some other trade. Ruled out for the reason the
     // subject test is -- the provision was read and what it is about belongs elsewhere.
@@ -2586,6 +2599,18 @@ const POINTS_AT_A_PROVISION =
 /** Words that carry no subject of their own, so a phrase of nothing else has named none. */
 const CARRIES_NO_SUBJECT =
   /^(?:the|a|an|any|all|each|every|such|other|those|these|same|following|of|doing|and|or|acts?|matters?|things?|provisions?|requirements?|purposes?|types?|kinds?|classes?|cases?)$/i;
+/** The unit -- Division, Part, Schedule, Chapter -- a subject defers to as "this Division", if it does. */
+function headingUnitPointedAt(subjectWords: string | null | undefined): string | null {
+  const m = /\bclass(?:es)? of goods to which this (Division|Subdivision|Part|Chapter|Schedule)\b/i.exec(subjectWords ?? '');
+  return m ? m[1]! : null;
+}
+
+/** The innermost heading of that unit on the provision's heading path. */
+function headingOf(headingPath: string | null | undefined, unit: string): string | null {
+  const segments = (headingPath ?? '').split(' > ').reverse();
+  return segments.find((h) => new RegExp(`^${unit}\\b`, 'i').test(h.trim())) ?? null;
+}
+
 function statesASubject(subjectWords: string): boolean {
   const at = subjectWords.search(POINTS_AT_A_PROVISION);
   if (at < 0) return true;

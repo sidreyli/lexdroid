@@ -1678,6 +1678,19 @@ const ONLINE_CONTENT = new RegExp(
   'i',
 );
 
+/**
+ * What a subject that only points at its own heading has to be, once the heading is read in.
+ *
+ * Import-compliance takes no domain, because a duty on every importer is a cost every ICT import
+ * bears. A duty on "goods included in a class of goods to which this Division applies" is not one:
+ * the class is the Division's, and the Division says what it is in its heading. Read that way a
+ * permit for animal products is a permit for animal products, and it counted as a second ICT
+ * compliance requirement only because the sentence left the class to its heading.
+ */
+export const HEADING_CLASS_DOMAIN: Readonly<Record<string, RegExp>> = {
+  'import-compliance': ICT_GOODS,
+};
+
 export const MEASURE_DOMAIN: Readonly<Record<string, RegExp>> = {
   // 8.3's two bands are two subjects: identity to reach a service online, and identity for the
   // mobile subscription the service runs over. Only the top band gets a domain. The band below it
