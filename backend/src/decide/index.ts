@@ -1410,8 +1410,13 @@ const CONFINED_PERMISSION = new RegExp(
   'i',
 );
 
-export function confinesPermission(f: Pick<Finding, 'dutyAct' | 'quote'>): boolean {
-  return [f.dutyAct, f.quote].some((w) => !!w && CONFINED_PERMISSION.test(w));
+// The permission and its confinement can be copied out as two fields: "may transfer" as the act and
+// "only if" as the words that make the measure out, when the provision reads "may transfer ... only
+// if it is necessary". Read apart, neither says "only" next to the permission, and a data transfer
+// rule of exactly that shape was ruled out as a bare power.
+export function confinesPermission(f: Pick<Finding, 'dutyAct' | 'quote'> & { definingWords?: string | null }): boolean {
+  const joined = f.dutyAct && f.definingWords ? `${f.dutyAct} ${f.definingWords}` : null;
+  return [f.dutyAct, f.quote, joined].some((w) => !!w && CONFINED_PERMISSION.test(w));
 }
 
 function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
@@ -2123,6 +2128,11 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
   return { kept, held, ruledOut };
 }
 
+/** The verbs of keeping something somewhere, as against doing something to it there. */
+const KEEPING = /\b(keep|kept|keeping|retain\w*|store\w*|storing|hold|held|holding|maintain\w*|preserv\w*)\b|เก็บ|จัดเก็บ|เก็บรักษา/i;
+/** The verbs of doing something to data, which make a locational duty 6.1's. */
+const PROCESSING = /\b(process\w*|handl\w*|analys\w*|comput\w*)\b|ประมวลผล/i;
+
 /**
  * Which indicator a finding actually belongs to, where the rubric draws a line the reader does not.
  *
@@ -2153,6 +2163,26 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
  * next door, not nothing at all.
  */
 export function refile(f: Finding): Finding {
+  // And 6.1 and 6.2 the same way: a duty that says only where something must be *kept* is 6.2's,
+  // whose own measure asks for records "kept and retained within the economy". 6.1 asks where data
+  // is processed. The reader files "accounting records must be kept in Australia" under 6.1 because
+  // the provision is a locational duty on a data holder, and one economy's cell was scored at the
+  // top band on it -- an insurer's books counted as a second local processing measure beside the one
+  // provision that does say "process or handle ... outside Australia". A duty that names processing
+  // as well as keeping stays where it is.
+  if (
+    f.indicatorId === '6.1' &&
+    f.measure === 'local-processing' &&
+    KEEPING.test(f.dutyAct ?? '') &&
+    !PROCESSING.test(`${f.dutyAct ?? ''} ${f.quote ?? ''}`)
+  ) {
+    return {
+      ...f,
+      indicatorId: '6.2',
+      measure: 'local-storage',
+      refiledFrom: { indicatorId: f.indicatorId, measure: f.measure },
+    };
+  }
   if (f.indicatorId === '6.1' && f.measure === 'transfer-ban' && (f.exceptionWords || f.dutyForce === 'requires')) {
     return {
       ...f,

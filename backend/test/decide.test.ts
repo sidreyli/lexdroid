@@ -14,6 +14,7 @@ import { describe, expect, it } from 'vitest';
 import {
   decide,
   refile,
+  confinesPermission,
   type Evidence,
   type FrameworkEvidence,
   type SurfacedInstrument,
@@ -1046,6 +1047,58 @@ describe('a prohibition, and the two things that are not one', () => {
     const plain = finding({ indicatorId: '6.2', measure: 'local-storage' });
     expect(refile(plain)).toBe(plain);
     expect(refile(plain).refiledFrom).toBeUndefined();
+  });
+
+  // A duty that says only where records must be kept is storage, and 6.2's own measure asks for
+  // exactly that. An insurer's accounting records "must be kept ... in Australia" scored 6.1's top
+  // band as a second local processing measure.
+  it('files a duty only to keep something in the economy as storage, not processing', () => {
+    const kept = refile(
+      finding({ indicatorId: '6.1', measure: 'local-processing', dutyAct: 'must be kept', quote: 'must be kept: ... in Australia' }),
+    );
+    expect(kept.indicatorId).toBe('6.2');
+    expect(kept.measure).toBe('local-storage');
+    expect(kept.refiledFrom).toEqual({ indicatorId: '6.1', measure: 'local-processing' });
+    // One that names processing as well as holding stays a processing measure.
+    const both = finding({
+      indicatorId: '6.1',
+      measure: 'local-processing',
+      dutyAct: 'must not hold the records, or process or handle the information relating to the records, outside Australia',
+    });
+    expect(refile(both)).toBe(both);
+  });
+
+  // A condition on moving currency is a condition on a transfer, and not on a transfer of data.
+  it('does not count a condition on a transfer of something other than data', () => {
+    const d = decide({
+      indicator: indicator64,
+      economy: 'IND',
+      evidence: [
+        evidence(6, 'A Hypothetical Currency Regulation', {
+          indicatorId: '6.4',
+          measure: 'transfer-condition',
+          quote: 'no person shall, without the general or special permission of the Reserve Bank, export or send out of India any foreign currency',
+          dutyBearer: 'person',
+          dutyAct: 'shall not export',
+          dutyForce: 'forbids',
+          subjectWords: 'foreign currency',
+          placeWords: 'out of India',
+          borderWords: 'out of India',
+          exceptionWords: 'without the general or special permission of the Reserve Bank',
+          definingWords: 'without the general or special permission of the Reserve Bank',
+        }),
+      ],
+      surfaced,
+      coverage,
+    });
+    expect(d.score).toBe(0);
+  });
+
+  // "May transfer" is the permission, "only if" the words the reader copied as the condition. Apart,
+  // neither shows "only" beside the permission, and the rule was ruled out as a bare power.
+  it('reads a permission and the condition confining it together', () => {
+    expect(confinesPermission({ dutyAct: 'may transfer', quote: 'may transfer', definingWords: 'only if' })).toBe(true);
+    expect(confinesPermission({ dutyAct: 'may transfer', quote: 'may transfer', definingWords: null })).toBe(false);
   });
 
   // And the provision that genuinely is a ban still is one.

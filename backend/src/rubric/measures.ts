@@ -1780,7 +1780,24 @@ const DIGITAL_TRADE_SECTOR = new RegExp(
   'i',
 );
 
+/**
+ * What a condition on a transfer has to be moving, for 6.4 to be about it: data.
+ *
+ * Every system conditions transfers of a dozen things -- currency, shares, immovable property,
+ * controlled technology -- and the reader files each "no person shall, without the permission of
+ * the Reserve Bank, export or send out ... any foreign currency" as a condition on a transfer,
+ * which it is. It is not one on data, and one economy's cell was scored on exactly that. The
+ * indicator's own title says what moves: "conditions on cross-border data flows". A statute that
+ * conditions a transfer of data says so, because the data is what it is regulating.
+ */
+const DATA_SUBJECT = new RegExp(
+  [/\b(data|information|records?|databases?|documents?|files?)\b/.source, 'ข้อมูล|สารสนเทศ'].join('|'),
+  'i',
+);
+
 export const SUBJECT_DOMAIN: Readonly<Record<string, RegExp>> = {
+  // See DATA_SUBJECT above.
+  '6.4': DATA_SUBJECT,
   // See DIGITAL_TRADE_SECTOR above. A sector, so the instrument's title may carry it.
   '3.1': DIGITAL_TRADE_SECTOR,
   ...PILLAR_12_DOMAINS,
