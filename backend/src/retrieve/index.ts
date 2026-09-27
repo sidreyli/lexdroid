@@ -23,6 +23,7 @@ import { MEASURES } from '../rubric/measures.js';
 import { THAI } from './queries-th.js';
 import { shortlistInstruments } from '../shortlist/index.js';
 import { determinesAParticularCase } from '../discover/titles.js';
+import { REPLACEABLE_FIGURE } from '../parse/identity.js';
 import {
   fuse,
   loadVectors,
@@ -386,6 +387,38 @@ export async function retrieveForIndicator(
       channels: hit.channels,
       found: (surfacings.get(hit.sectionId) ?? []).sort((a, b) => a.rank - b.rank),
     });
+  }
+
+  // Last, and only adding: a provision that leaves its amount to be prescribed brings in the
+  // provision that prescribes it, seated just behind it. See prescribingSections.
+  const byPointer = prescribingSections(db, opts.economy, sections);
+  if (byPointer.size) {
+    const have = new Set(sections.map((s) => s.sectionId));
+    const withFollowed: RetrievedSection[] = [];
+    for (const s of sections) {
+      withFollowed.push(s);
+      for (const id of byPointer.get(s.sectionId) ?? []) {
+        if (have.has(id)) continue;
+        const row = byId.get(id) as
+          | { id: number; document_id: number; heading_path: string; text: string; anchor: string | null; instrument_id: number; instrument_title: string }
+          | undefined;
+        if (!row) continue;
+        have.add(id);
+        withFollowed.push({
+          sectionId: row.id,
+          documentId: row.document_id,
+          instrumentId: row.instrument_id,
+          instrumentTitle: row.instrument_title,
+          headingPath: row.heading_path,
+          text: row.text,
+          anchor: row.anchor,
+          rank: 0,
+          channels: ['prescribed-by'],
+          found: [],
+        });
+      }
+    }
+    sections.splice(0, sections.length, ...withFollowed.map((s, i) => ({ ...s, rank: i + 1 })));
   }
 
   return {
@@ -996,6 +1029,125 @@ export function caseSections(db: Db, economy: string): Set<number> {
       )
       .all(...chunk) as { id: number }[];
     for (const r of sections) out.add(r.id);
+  }
+  return out;
+}
+
+/**
+ * Words that leave an amount to another instrument: "$250 or such other amount as is prescribed",
+ * "sold at a price not more than a prescribed amount".
+ */
+export const LEAVES_AMOUNT =
+  /\b(?:such\s+other\s+(?:amount|sum|value)\s+as\s+(?:is|may\s+be)\s+(?:prescribed|specified|determined)|(?:a|the)\s+prescribed\s+(?:amount|sum|value|price))\b/i;
+
+/**
+ * An amount stated outright: a currency against digits, or a figure in words against a currency.
+ * "Five hundred ringgit" is how Malaysia's low-value-goods order states its line.
+ */
+export const STATES_AMOUNT =
+  /(?:US\s?\$|A\s?\$|S\s?\$|\bRM|₹|\$)\s?\d|\d[\d,. ]*\s?(?:dollars?|ringgit|rupees?|baht)\b|\b(?:hundred|thousand|million)\s+(?:\w+\s+){0,3}?(?:dollars?|ringgit|rupees?|baht)\b/i;
+
+/** How many prescribing provisions one pointer may bring in, and how many a cell may take in all. */
+const PRESCRIBING_PER_POINTER = 2;
+const PRESCRIBING_PER_CELL = 6;
+/** Words a pointing clause and a prescribing provision must share before one is taken for the other. */
+const PRESCRIBING_MIN_OVERLAP = 3;
+
+const NAMING = new WeakMap<Db, Map<number, number[]>>();
+
+const OVERLAP_STOP = new Set(
+  ['that', 'this', 'which', 'with', 'from', 'have', 'been', 'shall', 'must', 'under', 'other', 'such', 'than', 'into', 'upon', 'where', 'there', 'their', 'these', 'those', 'within', 'made', 'being', 'does', 'section', 'paragraph', 'subsection', 'prescribed', 'amount'],
+);
+function contentWords(text: string): Set<string> {
+  return new Set((text.toLowerCase().match(/[a-z]{4,}/g) ?? []).filter((w) => !OVERLAP_STOP.has(w)));
+}
+
+/**
+ * The provisions that prescribe an amount a retrieved provision leaves to be prescribed, keyed by
+ * the provision that points.
+ *
+ * A threshold is often stated in two places and read in one. Australia's Customs Act exempts from
+ * entry goods "that have a value not exceeding $250 or such other amount as is prescribed", and the
+ * Customs Regulation says, in full, "For subparagraph 68(1)(f)(iii) of the Act, the amount is
+ * $1 000" -- which shares no word with any question a de minimis indicator can ask, and was not
+ * surfaced at any depth tried. Malaysia's Sales Tax Act defines low value goods by "a prescribed
+ * amount" and an order made under it says "five hundred ringgit". The pointer is found; what it
+ * points at is only reachable by following it.
+ *
+ * Followed within the pointing instrument and to instruments made under it or naming it by title,
+ * to their provisions that state an amount outright rather than as another default, ranked first
+ * by whether they cite the pointing provision by its number and then by the words they share with
+ * the pointing clause -- as a share of their own length, or a definitions section sharing twenty
+ * words out of two thousand outranks a one-line regulation sharing eight out of twelve.
+ */
+export function prescribingSections(
+  db: Db,
+  economy: string,
+  sections: readonly Pick<RetrievedSection, 'sectionId' | 'instrumentId' | 'instrumentTitle' | 'text'>[],
+): Map<number, number[]> {
+  const labelOf = db.prepare(`SELECT label FROM section WHERE id = ?`);
+  const out = new Map<number, number[]>();
+  const pointers = sections.filter((s) => LEAVES_AMOUNT.test(s.text));
+  if (!pointers.length) return out;
+
+  // Kept for the database's lifetime: the title search scans the economy's text, and every
+  // indicator whose retrieval reaches the same Act would otherwise scan it again.
+  let naming = NAMING.get(db);
+  if (!naming) NAMING.set(db, (naming = new Map()));
+  const instrumentsUnder = (instrumentId: number, title: string): number[] => {
+    const known = naming!.get(instrumentId);
+    if (known) return known;
+    const ids = (
+      db
+        .prepare(
+          `SELECT DISTINCT i.id FROM instrument i
+            WHERE i.economy_code = ?
+              AND (i.id = ? OR i.made_under_instrument_id = ?
+                   OR EXISTS (SELECT 1 FROM document d JOIN section s ON s.document_id = d.id
+                               WHERE d.instrument_id = i.id AND s.text LIKE ?))`,
+        )
+        .all(economy, instrumentId, instrumentId, `%${title.trim()}%`) as { id: number }[]
+    ).map((r) => r.id);
+    naming!.set(instrumentId, ids);
+    return ids;
+  };
+  const sectionsOf = db.prepare(
+    `SELECT s.id, s.text FROM section s JOIN document d ON d.id = s.document_id
+      WHERE d.instrument_id = ? AND COALESCE(s.repealed, 0) = 0`,
+  );
+
+  const taken = new Set(sections.map((s) => s.sectionId));
+  let total = 0;
+  for (const p of pointers) {
+    if (total >= PRESCRIBING_PER_CELL) break;
+    // A title too short to name one instrument would name every instrument.
+    if (p.instrumentTitle.trim().length < 12) continue;
+    const at = p.text.search(LEAVES_AMOUNT);
+    const clause = p.text.slice(Math.max(0, at - 400), at + 200);
+    const words = contentWords(clause);
+    // The pointing clause's own reference, where its instruments cite it by one: "68(1)(f)(iii)".
+    const refs = new Set(clause.match(/\b\d+[A-Z]?(?:\(\w+\))+/g) ?? []);
+    // And the pointing provision's own number, as another instrument cites it: "68(1)(f)(iii) of the Act".
+    const label = ((labelOf.get(p.sectionId) as { label: string | null } | undefined)?.label ?? '').replace(/[.\s]+$/, '');
+    if (/^\d+[A-Z]?$/.test(label)) refs.add(`${label}(`);
+
+    const scored: { id: number; share: number; cites: boolean }[] = [];
+    for (const instrument of instrumentsUnder(p.instrumentId, p.instrumentTitle)) {
+      for (const row of sectionsOf.all(instrument) as { id: number; text: string }[]) {
+        if (taken.has(row.id)) continue;
+        if (!STATES_AMOUNT.test(row.text) || REPLACEABLE_FIGURE.test(row.text) || LEAVES_AMOUNT.test(row.text)) continue;
+        const theirs = contentWords(row.text);
+        let overlap = 0;
+        for (const w of words) if (theirs.has(w)) overlap += 1;
+        const cites = [...refs].some((r) => row.text.includes(r));
+        if (overlap >= PRESCRIBING_MIN_OVERLAP || cites) scored.push({ id: row.id, share: overlap / Math.sqrt(theirs.size || 1), cites });
+      }
+    }
+    scored.sort((a, b) => Number(b.cites) - Number(a.cites) || b.share - a.share);
+    const chosen = scored.slice(0, Math.min(PRESCRIBING_PER_POINTER, PRESCRIBING_PER_CELL - total)).map((c) => c.id);
+    for (const id of chosen) taken.add(id);
+    total += chosen.length;
+    if (chosen.length) out.set(p.sectionId, chosen);
   }
   return out;
 }
