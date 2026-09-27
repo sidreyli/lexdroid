@@ -406,6 +406,8 @@ export const THAI: Readonly<Record<string, string>> = {
     "ใบอนุญาตให้บริการเนื้อหาออนไลน์ แอปพลิเคชัน หรือบริการแพลตฟอร์ม ซึ่งหน่วยงานกำกับดูแลอาจไม่อนุญาต พักใช้ หรือเพิกถอนได้ตามดุลพินิจ หรือที่กำหนดเงื่อนไขเกี่ยวกับเนื้อหา",
   "a requirement to hold a licence, permit or registration in order to provide online content, applications or platform services":
     "ข้อกำหนดให้ต้องได้รับใบอนุญาต หรือจดทะเบียน เพื่อให้บริการเนื้อหาออนไลน์ แอปพลิเคชัน หรือบริการแพลตฟอร์ม",
+  "no person shall provide a content service, applications service or computer online service unless that person holds a licence":
+    "ห้ามมิให้ผู้ใดให้บริการเนื้อหา บริการแอปพลิเคชัน หรือบริการคอมพิวเตอร์ออนไลน์ เว้นแต่จะได้รับใบอนุญาต",
   "Any strict licence requirement/ cases of more than one measure in category (2)":
     "ข้อกำหนดการอนุญาตที่เข้มงวดใด หรือกรณีที่มีมากกว่าหนึ่งมาตรการตามประเภท (2)",
   "Any licensing scheme":

@@ -305,6 +305,9 @@ export const MEASURES: Record<string, Measure[]> = {
       defines: 'the words requiring the licence, permit or registration',
       gloss:
         'a requirement to hold a licence, permit or registration in order to provide online content, applications or platform services',
+      alsoAsked: [
+        'no person shall provide a content service, applications service or computer online service unless that person holds a licence',
+      ],
       actor: 'the provider of the online content or application',
     },
   ],
