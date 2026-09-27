@@ -1882,7 +1882,8 @@ export async function readFramework(
     };
   }
   const quote = typeof p['quote'] === 'string' ? p['quote'] : '';
-  const dedicatedWords = wordsOrNull(p['dedicatedWords']);
+  // As the source has it, where a Cyrillic or Lao copy is nearly verbatim -- see sourceWords.
+  const dedicatedWords = sourceWords(wordsOrNull(p['dedicatedWords']), input.openingText);
   const sectorWords = wordsOrNull(p['sectorWords']);
   const haystack = [input.provisionsText, input.openingText].join('\n\n');
   const frameworkWords = sourceWords(wordsOrNull(p['frameworkWords']), haystack);

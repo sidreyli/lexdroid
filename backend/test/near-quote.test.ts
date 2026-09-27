@@ -50,3 +50,16 @@ describe('a data protection framework named in its own language', () => {
     expect(must.test('Федеральный закон "О таможенном регулировании"')).toBe(false);
   });
 });
+
+describe('a purpose clause copied with one word inserted', () => {
+  it('is found as the Mongolian Cyber Security Law states it', () => {
+    const opening =
+      '1.1.Энэ хуулийн зорилт нь кибер аюулгүй байдлыг хангах үйл ажиллагааны тогтолцоо, зарчим, эрх зүйн үндсийг тогтоох, ' +
+      'кибер орон зай, кибер орчин дахь мэдээллийн бүрэн бүтэн, нууцлагдсан, хүртээмжтэй байдлыг хангахтай холбогдсон харилцааг зохицуулахад оршино.';
+    // The reader wrote "мэдээлсэн мэдээллийн" where the law has "мэдээллийн".
+    const copy = opening.slice(26).replace('дахь мэдээллийн', 'дахь мэдээлсэн мэдээллийн');
+    const words = sourceWords(copy, opening);
+    expect(words).not.toContain('мэдээлсэн');
+    expect(opening).toContain(words!);
+  });
+});

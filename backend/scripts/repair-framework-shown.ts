@@ -54,7 +54,7 @@ const fullText = db.prepare(
     WHERE d.instrument_id = ? ORDER BY d.id, s.ordinal`,
 );
 
-const changes: { id: number; words: string | null; framework: number; dedicated: number; label: string }[] = [];
+const changes: { id: number; words: string | null; purpose: string | null; framework: number; dedicated: number; label: string }[] = [];
 for (const r of rows) {
   const subject = FRAMEWORK_OF[r.indicator];
   if (!subject) continue;
@@ -65,11 +65,13 @@ for (const r of rows) {
   // A Cyrillic or Lao copy that is nearly verbatim is checked, and kept, as the source has it.
   const words = sourceWords(r.framework_words, text);
   const framework = frameworkWordsShown(words, subject, text) ? 1 : 0;
-  const dedicated = dedicatedWordsShown(r.dedicated_words, subject, opening) ? 1 : 0;
+  const purpose = sourceWords(r.dedicated_words, opening);
+  const dedicated = dedicatedWordsShown(purpose, subject, opening) ? 1 : 0;
   if (framework === (r.framework_shown ?? 0) && dedicated === (r.dedicated_shown ?? 0)) continue;
   changes.push({
     id: r.id,
     words,
+    purpose,
     framework,
     dedicated,
     label: `${r.economy} ${r.indicator}  rule ${r.framework_shown ?? '-'} -> ${framework}, purpose ${r.dedicated_shown ?? '-'} -> ${dedicated}  ${r.title.slice(0, 80)}`,
@@ -83,8 +85,8 @@ if (!apply) {
   console.log('\nread-only. pass --apply to write.');
   process.exit(0);
 }
-const write = db.prepare('UPDATE framework_reading SET framework_words = ?, framework_shown = ?, dedicated_shown = ? WHERE id = ?');
+const write = db.prepare('UPDATE framework_reading SET framework_words = ?, dedicated_words = ?, framework_shown = ?, dedicated_shown = ? WHERE id = ?');
 db.transaction(() => {
-  for (const c of changes) write.run(c.words, c.framework, c.dedicated, c.id);
+  for (const c of changes) write.run(c.words, c.purpose, c.framework, c.dedicated, c.id);
 })();
 console.log(`\nwrote ${changes.length}.`);
