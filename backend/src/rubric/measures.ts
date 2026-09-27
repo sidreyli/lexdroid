@@ -1811,6 +1811,28 @@ const DATA_SUBJECT = new RegExp(
   'i',
 );
 
+/**
+ * The words that make out a tariff-coded indicator's measure, which is what a provision stating an
+ * ICT code must also say before retrieval seats it. A tariff schedule states every code there is,
+ * and states no duty against any of them.
+ */
+export const TARIFF_CODED_MEASURE: Readonly<Record<string, RegExp>> = {
+  '1.4': /\b(anti-?dumping|countervailing|safeguard)\b/i,
+};
+
+/**
+ * The indicators whose goods ESCAP defines by tariff code, where a provision that states an ICT
+ * tariff code has named its subject whatever words it uses for the goods.
+ *
+ * 1.4 counts duties charged on ICT goods, and the guide says which goods those are: the WTO ITA I
+ * and II lists and the proposed ITA III, all by HS code (ict-goods.ts). A duty notice names the
+ * goods it charges by code and by a trade name, and a word list cannot know every trade name --
+ * India's duty on "industrial laser machines" and its duty on "digital offset printing plates"
+ * both failed the words above and both carry codes on the list. Pillar 10 is left out for the
+ * reason its SUBJECT_DOMAIN entry is.
+ */
+export const TARIFF_CODED_DOMAIN: ReadonlySet<string> = new Set(Object.keys(TARIFF_CODED_MEASURE));
+
 export const SUBJECT_DOMAIN: Readonly<Record<string, RegExp>> = {
   // See DATA_SUBJECT above.
   '6.4': DATA_SUBJECT,

@@ -18,7 +18,7 @@
  */
 import type { Indicator, ScoreBand } from '../rubric/types.js';
 import type { Finding } from '../read/index.js';
-import { FRAMEWORK_TITLE_DOMAIN, HEADING_CLASS_DOMAIN, MEASURES, MEASURE_DOMAIN, MEASURE_NAMES, SECTOR_DOMAINS, SUBJECTS, TITLE_CARRIES_DOMAIN, SUBJECT_DOMAIN } from '../rubric/measures.js';
+import { FRAMEWORK_TITLE_DOMAIN, HEADING_CLASS_DOMAIN, MEASURES, MEASURE_DOMAIN, MEASURE_NAMES, SECTOR_DOMAINS, SUBJECTS, TITLE_CARRIES_DOMAIN, SUBJECT_DOMAIN, TARIFF_CODED_DOMAIN } from '../rubric/measures.js';
 import { tallyConfirmations, type ConfirmationTally } from '../read/confirmations.js';
 import { inUsd, moneyIn, type FxRates } from './currency.js';
 import { determinesAParticularCase } from '../discover/titles.js';
@@ -106,6 +106,12 @@ export interface Evidence {
   instrumentKind?: string | null;
   /** The language the provision is written in. Absent where the corpus predates the field. */
   sectionLanguage?: string | null;
+  /**
+   * The ICT tariff codes the provision states -- see ict-goods.ts. A customs instrument names the
+   * goods it charges by code, so this is what the goods are, whatever the words call them. Absent
+   * for evidence recorded before the field, which reads as none.
+   */
+  ictTariffCodes?: string[];
   /** The parser read the provision itself as repealed or deleted, whatever the instrument's status. */
   sectionRepealed?: boolean;
 }
@@ -1779,10 +1785,13 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     const domain = inDomain(indicatorId, e.finding.measure);
     // A sector is named by the document, not by every sentence in it -- see SECTOR_DOMAINS. The
     // instrument's title answers the domain for those, and the words answer it for the rest.
+    // And goods are named by their tariff code where the indicator's goods are defined by one --
+    // see TARIFF_CODED_DOMAIN.
     const namesDomain =
       domain !== null &&
-      (SECTOR_DOMAINS.has(indicatorId) || TITLE_CARRIES_DOMAIN.has(e.finding.measure ?? '')) &&
-      (domain.test(e.instrumentTitle) || domain.test(e.finding.subjectWords ?? ''));
+      (((SECTOR_DOMAINS.has(indicatorId) || TITLE_CARRIES_DOMAIN.has(e.finding.measure ?? '')) &&
+        (domain.test(e.instrumentTitle) || domain.test(e.finding.subjectWords ?? ''))) ||
+        (TARIFF_CODED_DOMAIN.has(indicatorId) && (e.ictTariffCodes?.length ?? 0) > 0));
     if (domain && !namesDomain && e.finding.subjectWords && !domain.test(e.finding.subjectWords) && otherLanguage(e)) {
       held.push({
         evidence: e,

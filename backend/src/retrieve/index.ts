@@ -19,7 +19,8 @@
  */
 import type { Db } from '../db/index.js';
 import type { Indicator } from '../rubric/types.js';
-import { MEASURES } from '../rubric/measures.js';
+import { MEASURES, TARIFF_CODED_MEASURE } from '../rubric/measures.js';
+import { ictTariffCodes } from '../rubric/ict-goods.js';
 import { THAI } from './queries-th.js';
 import { shortlistInstruments } from '../shortlist/index.js';
 import { determinesAParticularCase } from '../discover/titles.js';
@@ -419,6 +420,34 @@ export async function retrieveForIndicator(
       }
     }
     sections.splice(0, sections.length, ...withFollowed.map((s, i) => ({ ...s, rank: i + 1 })));
+  }
+
+  // And, only adding, the provisions that charge goods by an ICT tariff code. See codedSections.
+  const measureWords = TARIFF_CODED_MEASURE[indicator.id];
+  if (measureWords) {
+    const have = new Set(sections.map((s) => s.sectionId));
+    // Every suppression but one: a notice deciding a named case is kept out because it applies a
+    // rule rather than states one, and a duty imposed on named goods is exactly what 1.4 counts.
+    const notDecided = new Set<number>([...second, ...outlines, ...copies]);
+    const codedSkip = (id: number): boolean => notDecided.has(id) || repeats.has(id) || have.has(id);
+    for (const id of codedSections(db, opts.economy, queries, measureWords, codedSkip)) {
+      const row = byId.get(id) as
+        | { id: number; document_id: number; heading_path: string; text: string; anchor: string | null; instrument_id: number; instrument_title: string }
+        | undefined;
+      if (!row) continue;
+      sections.push({
+        sectionId: row.id,
+        documentId: row.document_id,
+        instrumentId: row.instrument_id,
+        instrumentTitle: row.instrument_title,
+        headingPath: row.heading_path,
+        text: row.text,
+        anchor: row.anchor,
+        rank: sections.length + 1,
+        channels: ['tariff-code'],
+        found: [],
+      });
+    }
   }
 
   return {
@@ -1050,6 +1079,56 @@ export const STATES_AMOUNT =
 /** How many prescribing provisions one pointer may bring in, and how many a cell may take in all. */
 const PRESCRIBING_PER_POINTER = 2;
 const PRESCRIBING_PER_CELL = 6;
+/**
+ * How many instruments charging goods by an ICT tariff code are read beyond the depth. The band tops
+ * out at four measures, and three times that leaves room for the notices that only amend, extend or
+ * correct one.
+ */
+const CODED_SEATS = 12;
+
+/** How far down each question's lexical results the coded provisions are looked for. */
+const CODED_SCAN = 3000;
+
+/**
+ * The provisions that charge goods named by an ICT tariff code, one per instrument, best first.
+ *
+ * ESCAP defines 1.4's goods by tariff code (ict-goods.ts), and a duty notice names them by code
+ * and by a trade name no question can anticipate. The questions ask for "ICT or electronic goods",
+ * which India's duty on printed circuit boards never says, so among 173 duty notices that all use
+ * the same words the four ESCAP counted ranked 135th to 250th and none was read. The code is the
+ * one thing every such notice states and no other kind of notice does, so it is looked for here
+ * rather than asked for: among the provisions the questions reach lexically, those that state an
+ * ICT code and the measure's own words, in the order the questions ranked them.
+ */
+export function codedSections(
+  db: Db,
+  economy: string,
+  queries: readonly string[],
+  measureWords: RegExp,
+  skip: (id: number) => boolean,
+): number[] {
+  const row = db.prepare('SELECT s.text, d.instrument_id FROM section s JOIN document d ON d.id = s.document_id WHERE s.id = ?');
+  const best = new Map<number, number>();
+  for (const query of queries) {
+    for (const hit of searchLexical(db, query, { limit: CODED_SCAN, economy })) {
+      const seen = best.get(hit.sectionId);
+      if (seen === undefined || hit.rank < seen) best.set(hit.sectionId, hit.rank);
+    }
+  }
+  const out: number[] = [];
+  const instruments = new Set<number>();
+  for (const [id] of [...best.entries()].sort((a, b) => a[1] - b[1] || a[0] - b[0])) {
+    if (skip(id)) continue;
+    const r = row.get(id) as { text: string; instrument_id: number } | undefined;
+    if (!r || instruments.has(r.instrument_id)) continue;
+    if (!measureWords.test(r.text) || ictTariffCodes(r.text).length === 0) continue;
+    instruments.add(r.instrument_id);
+    out.push(id);
+    if (out.length >= CODED_SEATS) break;
+  }
+  return out;
+}
+
 /** Words a pointing clause and a prescribing provision must share before one is taken for the other. */
 const PRESCRIBING_MIN_OVERLAP = 3;
 
