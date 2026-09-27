@@ -138,6 +138,21 @@ const PART_SPLIT = /^PART([IVXLC]+|\d+)([A-Z]?)$/i;
 // its Schedules instead ("JADUAL A").
 const SCHEDULE_LINE =
   /^(?:FIRST|SECOND|THIRD|FOURTH|FIFTH|SIXTH|SEVENTH|EIGHTH|NINTH|TENTH|ELEVENTH|TWELFTH)?(SCHEDULE|JADUAL)(PERTAMA|KEDUA|KETIGA|KEEMPAT|KELIMA|KEENAM|KETUJUH|KELAPAN|KESEMBILAN|KESEPULUH|[IVXLC]+|\d+[A-Z]?|[A-Z])?$/i;
+/**
+ * A bilingual gazette names its Schedule in both languages on one line: "JADUAL PERTAMA/FIRST
+ * SCHEDULE". Read whole, that line is neither, so Malaysia's import prohibition order filed its
+ * First Schedule's items under the Order's own paragraphs, where their numbers collided and each
+ * item lost the line naming the goods -- "2. Broadcast receivers capable of receiving radio
+ * communication within the ranges (68-87) MHz" was stored as "and (108-174) MHz".
+ */
+const isScheduleLine = (line: string): boolean =>
+  line.replace(/\s+/g, '').split('/').some((half) => SCHEDULE_LINE.test(half));
+/**
+ * The caption under a Schedule's heading says what its list is: "(Goods which is absolutely
+ * prohibited for import)". Its items are read one at a time, and without the caption an item is a
+ * bare description of goods with nothing said about them.
+ */
+const SCHEDULE_CAPTION = /^\((?![\divxlc]+\)$)[^()]{8,}\)$/i;
 /** An Act states its purpose in its long title, which is the best evidence of what it is for. */
 const LONG_TITLE = /^An Act to\b/i;
 const ENACTING = /^ENACTED by\b/i;
@@ -379,6 +394,7 @@ export function sectionise(pages: PageText[]): SectionBuilder {
   const dotted = new Set<string>();
   let part = '';
   let titlePending = false;
+  let captionPending = false;
   let open: Candidate | null = null;
 
   let pageLanguage: string | null = null;
@@ -407,20 +423,25 @@ export function sectionise(pages: PageText[]): SectionBuilder {
       // "Schedule" is also the marginal note of the section that brings the Schedule in, and that
       // note sits directly above its section's number; a Schedule's own heading never does.
       const next = p.lines[at + 1];
-      const schedule =
-        line.length < 40 && !(next && provisionAt(next)) ? SCHEDULE_LINE.exec(line.replace(/\s+/g, '')) : null;
+      const schedule = line.length < 40 && !(next && provisionAt(next)) && isScheduleLine(line);
       if (schedule) {
         const name = line.replace(/\s+/g, ' ').trim().toUpperCase();
         // The same name again at the head of the Schedule's next page is its running header.
-        if (name === part) continue;
+        if (name === part || part.startsWith(`${name} (`)) continue;
         part = name;
         titlePending = false;
+        captionPending = true;
         // The Schedule is text in its own right -- a list of offences, of diseases, of forms -- so
         // it opens a section of its own. Left as loose prose it reached no search at all, and the
         // Criminal Procedure Code lost a quarter of its text that way.
         open = { label: null, heading: name, part: '', page: p.page, lines: [line], language: p.language ?? null, schedule: true };
         items.push(open);
         continue;
+      }
+      // The caption may sit under the paragraph that brings the Schedule in: "[Paragraph 3]".
+      if (captionPending && !/^\[[^\]]*\]$/.test(line.trim())) {
+        captionPending = false;
+        if (SCHEDULE_CAPTION.test(line.trim())) part = `${part} ${line.replace(/\s+/g, ' ').trim()}`;
       }
       const partMatch = PART_LINE.exec(line);
       if (partMatch && line.length < 120) {
