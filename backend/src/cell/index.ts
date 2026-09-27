@@ -22,6 +22,7 @@ import type { Indicator } from '../rubric/types.js';
 import { chosenIndicators, loadRubric } from '../rubric/index.js';
 import { fuse, loadVectors, searchLexical, type LoadedVectors } from '../index/index.js';
 import { retrieveForIndicator, type RetrievalRecord } from '../retrieve/index.js';
+import { storedFrameworkCandidates, storedRetrieval } from '../retrieve/replay.js';
 import { shortlistInstruments } from '../shortlist/index.js';
 import {
   openingOf,
@@ -160,6 +161,12 @@ export interface AnswerOptions {
    * examined as a framework and scored is then only what these ask.
    */
   indicators?: readonly string[];
+  /**
+   * A run whose recorded retrieval this pillar reads instead of searching again. For measuring a
+   * reader change on a database that holds a run's provisions but not the indexes that found them
+   * (a benchmark pack); see retrieve/replay.ts.
+   */
+  retrievalFrom?: string;
 }
 
 interface SectionRow {
@@ -271,9 +278,11 @@ export async function answerPillar(
   }
   const pillarName = indicators[0]!.pillarName;
 
-  const vectors =
-    opts.vectors ??
-    loadVectors(db, { economy, ...(opts.embeddingModel ? { model: opts.embeddingModel } : {}) });
+  const replayFrom = opts.retrievalFrom;
+  const vectors = replayFrom
+    ? null
+    : (opts.vectors ??
+      loadVectors(db, { economy, ...(opts.embeddingModel ? { model: opts.embeddingModel } : {}) }));
 
   const stages: StageTiming[] = [];
   let mark = Date.now();
@@ -285,15 +294,21 @@ export async function answerPillar(
   // 1. Retrieve, per indicator, and keep each record: it is the evidence behind a zero.
   const retrieval: RetrievalRecord[] = [];
   for (const indicator of indicators) {
-    const record = await retrieveForIndicator(db, indicator, {
-      economy,
-      vectors,
-      languages: loadProfile(economy).officialLanguages,
-      ...(opts.depth ? { depth: opts.depth } : {}),
-      ...(opts.embeddingModel ? { model: opts.embeddingModel } : {}),
-    });
+    const record = replayFrom
+      ? storedRetrieval(db, replayFrom, economy, indicator.id)
+      : await retrieveForIndicator(db, indicator, {
+          economy,
+          vectors: vectors!,
+          languages: loadProfile(economy).officialLanguages,
+          ...(opts.depth ? { depth: opts.depth } : {}),
+          ...(opts.embeddingModel ? { model: opts.embeddingModel } : {}),
+        });
+    if (!record) {
+      log(`  ${indicator.id}: run ${replayFrom!.slice(0, 8)} recorded no cell for it, so nothing is replayed`);
+      continue;
+    }
     retrieval.push(record);
-    log(`  ${indicator.id}: ${record.sections.length} of ${record.surfaced} surfaced provision(s)`);
+    log(`  ${indicator.id}: ${record.sections.length} of ${record.surfaced} surfaced provision(s)${replayFrom ? ' (replayed)' : ''}`);
     emit({
       stage: 'retrieve',
       kind: 'finished',
@@ -422,7 +437,9 @@ export async function answerPillar(
     if (!subject) continue;
     const record = retrieval.find((r) => r.indicatorId === indicator.id);
     const candidates = (
-      await frameworkCandidates(db, economy, subject, record, byId, opts.embeddingModel)
+      replayFrom
+        ? storedFrameworkCandidates(db, replayFrom, economy, indicator.id)
+        : await frameworkCandidates(db, economy, subject, record, byId, opts.embeddingModel)
     ).slice(0, FRAMEWORK_CANDIDATES);
     log(`  ${indicator.id}: examining ${candidates.length} instrument(s) as a possible framework`);
 

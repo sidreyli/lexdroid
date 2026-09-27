@@ -17,6 +17,10 @@ backend/data/lexdroid.snapshot.db-*
 # from their sample kit; never redistributed with the public repository.
 backend/data/baseline.db
 backend/data/baseline.db-*
+# Benchmark packs (scripts/bench-pack): our runs plus a reference carrying ESCAP's scores.
+# Handed to teammates directly, never committed.
+bench-pack/
+lexdroid-bench*.zip
 backend/data/engine-cache.db
 backend/data/engine-cache.db-*
 backend/data/cache/

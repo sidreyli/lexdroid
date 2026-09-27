@@ -42,6 +42,8 @@
     "confirm": "tsx scripts/confirm.ts",
     "reach": "tsx scripts/reach.ts",
     "benchmark": "tsx scripts/benchmark.ts",
+    "bench-pack": "tsx scripts/bench-pack.ts",
+    "bench-diff": "tsx scripts/bench-diff.ts",
     "rescore": "tsx scripts/rescore.ts",
     "engine-check": "tsx scripts/engine-check.ts",
     "calibration": "tsx scripts/calibration.ts",
