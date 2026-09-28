@@ -6,7 +6,7 @@
  * Their act types are binding; what they bind is nobody.
  */
 import { describe, expect, it } from 'vitest';
-import { kindFor, onlyAmends } from '../src/discover/ips.js';
+import { kindFor, namesSubject, onlyAmends, queriesToWalk } from '../src/discover/ips.js';
 
 describe('a Russian law that only amends others', () => {
   it('is recognised by the title the system gives it', () => {
@@ -37,5 +37,39 @@ describe('the kind a Russian row is registered as', () => {
   it('stays binding for a decree or resolution that makes rules', () => {
     expect(kindFor('Постановление Правительства Российской Федерации от 16.01.2023 № 24 "Об утверждении Правил принятия решения уполномоченным органом по защите прав субъектов персональных данных о запрещении или об ограничении трансграничной передачи персональных данных"', 'regulation').kind).toBe('regulation');
     expect(kindFor('Федеральный закон от 27.07.2006 № 152-ФЗ "О персональных данных"', 'act').kind).toBe('act');
+  });
+});
+
+describe('the Government resolutions a subject walks', () => {
+  const law = { type: '102000505', kind: 'act' as const, title: 'лицензировании', principalOnly: true };
+
+  it('are walked on every federal-law subject when the portal asks', () => {
+    const walked = queriesToWalk([law, { type: '102000486', kind: 'act' as const }], true);
+    expect(walked).toHaveLength(3);
+    expect(walked[2]).toMatchObject({
+      type: '102000496', kind: 'regulation', title: 'лицензировании',
+      issuer: 'Правительства Российской Федерации', principalOnly: true,
+    });
+  });
+
+  it('leave the queries a register was built from alone when it does not', () => {
+    expect(queriesToWalk([law], false)).toEqual([law]);
+  });
+
+  it('are not walked twice when the profile already names them', () => {
+    const named = { type: '102000496', kind: 'regulation' as const, title: 'лицензировании', issuer: 'Правительства Российской Федерации' };
+    expect(queriesToWalk([law, named], true)).toHaveLength(2);
+  });
+});
+
+describe('the subject of a resolution', () => {
+  it('is the law title words without the "о" that makes them a name', () => {
+    const walked = queriesToWalk([{ type: '102000505', kind: 'act' as const, title: 'о связи' }], true);
+    expect(walked[1]!.title).toBe('связи');
+  });
+
+  it('is communications in "услуг связи" but not in "в связи с"', () => {
+    expect(namesSubject('Об утверждении Правил оказания услуг связи', 'связи')).toBe(true);
+    expect(namesSubject('О мерах в связи с распространением инфекции', 'связи')).toBe(false);
   });
 });

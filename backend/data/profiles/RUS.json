@@ -123,6 +123,7 @@
       ],
       "adapter": "ips",
       "adapterConfig": {
+        "resolutionsPerSubject": true,
         "queries": [
           { "type": "102000486", "kind": "act", "maxPages": 5 },
           { "type": "102000505", "kind": "act", "title": "персональных данных" },

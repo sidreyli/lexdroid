@@ -66,6 +66,50 @@ export interface IpsQuery {
   principalOnly?: boolean;
 }
 
+const FEDERAL_LAW = '102000505';
+const RESOLUTION = '102000496';
+const GOVERNMENT = 'Правительства Российской Федерации';
+
+/**
+ * The queries to walk: the profile's own, and -- where the portal asks for it -- for every subject
+ * it walks federal laws on, the Government resolutions on the same subject. A federal law states the
+ * regime and a Government resolution carries its operative detail (the licensing rules, the
+ * procurement preferences, the list of what needs certifying), so a register that holds the law and
+ * not the resolutions under it holds the frame without the rules. Newest first and principal only:
+ * the resolutions in force are the recent ones, and one that only amends others is read in the act
+ * it amends.
+ *
+ * A law is named "О связи" and a resolution under it speaks of "услуг связи", so the subject is the
+ * law's title words without the "о"/"об" that makes them a name.
+ */
+export function queriesToWalk(queries: IpsQuery[], resolutionsPerSubject: boolean): IpsQuery[] {
+  if (!resolutionsPerSubject) return queries;
+  const walked = new Set(queries.map((q) => `${q.type ?? ''}|${q.title ?? ''}|${q.issuer ?? ''}`));
+  const extra: IpsQuery[] = [];
+  for (const q of queries) {
+    if (q.type !== FEDERAL_LAW || !q.title) continue;
+    const subject = q.title.replace(/^об?\s+/iu, '');
+    const key = `${RESOLUTION}|${subject}|${GOVERNMENT}`;
+    if (walked.has(key)) continue;
+    walked.add(key);
+    extra.push({ type: RESOLUTION, kind: 'regulation', title: subject, issuer: GOVERNMENT, sort: '7', principalOnly: true, maxPages: 10 });
+  }
+  return [...queries, ...extra];
+}
+
+/**
+ * Whether a title has the query's words as its subject. "в связи с" -- "in connection with" -- is
+ * how a Russian title says why, not what: a resolution "о мерах в связи с" a crisis is not about
+ * communications.
+ */
+export function namesSubject(title: string, words: string): boolean {
+  const t = title.toLowerCase();
+  for (let at = t.indexOf(words); at >= 0; at = t.indexOf(words, at + 1)) {
+    if (!(words.startsWith('связ') && /(^|\s)в\s+$/u.test(t.slice(0, at)))) return true;
+  }
+  return false;
+}
+
 /** A title that says the act only amends, repeals or suspends other acts. */
 export function onlyAmends(name: string): boolean {
   return /^о\s+(внесени[ия]\s+(изменени|дополнени)|признании\s+утратившими?\s+силу|приостановлении\s+действия)/iu.test(name.trim());
@@ -225,7 +269,8 @@ export const ipsAdapter: Adapter = {
   async discover(ctx: DiscoverContext): Promise<DiscoveredInstrument[]> {
     const { portal, fetcher, log, setAside } = ctx;
     const base = new URL(portal.url).origin;
-    const queries = ((portal.adapterConfig as { queries?: IpsQuery[] }).queries ?? []);
+    const config = portal.adapterConfig as { queries?: IpsQuery[]; resolutionsPerSubject?: boolean };
+    const queries = queriesToWalk(config.queries ?? [], config.resolutionsPerSubject === true);
     if (queries.length === 0) {
       setAside({ subject: portal.url, reason: 'no-queries-configured', detail: 'the profile names no IPS query to walk' });
       return [];
@@ -253,7 +298,7 @@ export const ipsAdapter: Adapter = {
         const words = q.title?.replace(/\*/g, '').toLowerCase();
         for (const row of got) {
           if (q.issuer && !row.heading.includes(q.issuer)) continue;
-          if (words && !row.name.toLowerCase().includes(words)) continue;
+          if (words && !namesSubject(row.name, words)) continue;
           if (q.principalOnly && onlyAmends(row.name)) continue;
           const inst = instrumentFrom(row, q.kind, base);
           if (!found.has(inst.url)) {
