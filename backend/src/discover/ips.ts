@@ -49,6 +49,13 @@ export interface IpsQuery {
   title?: string;
   /** Text the row's type line must contain: "Правительства Российской Федерации". */
   issuer?: string;
+  /**
+   * The issuing body's code in the system's classifier of issuers (`a6`, read from
+   * `?autocomplete&bpa=cd00000&nclassif=6&area=110&query=<cp1251 name>`), which the system filters
+   * on itself. A regulator's orders are a few hundred rows among the hundred thousand orders of
+   * every ministry, so `issuer`, which only keeps rows, cannot reach them; this asks for them.
+   */
+  issuedBy?: string;
   /** Pages to walk at most; 20 rows each. */
   maxPages?: number;
   /**
@@ -69,6 +76,28 @@ export interface IpsQuery {
 const FEDERAL_LAW = '102000505';
 const RESOLUTION = '102000496';
 const GOVERNMENT = 'Правительства Российской Федерации';
+/**
+ * How deep a subject's resolutions are walked, newest first. Ten pages was 200 rows, and the busiest
+ * subjects -- communications, procurement, licensing, payments, advertising -- filled all 200 with
+ * resolutions still to come: a 2018 rule on what operators store and a 2012 licensing regime were
+ * past the end. Forty reaches back about a decade on the busiest subject.
+ */
+const RESOLUTION_PAGES = 40;
+/** Consecutive listing pages that may fail before a walk gives the query up. */
+const MAX_FAILED_PAGES = 3;
+
+/**
+ * One page of results. The system now and then answers a listing page with a 502, and the fetcher
+ * keeps what it was answered: the walk of every federal law read that page as the end of the list
+ * and stopped at 1,320 of 12,155 rows, and every later walk read the same 502 back from the cache.
+ * A page that is not a 200 is asked for again past the cache, once, and otherwise fails.
+ */
+async function listingPage(fetcher: Fetcher, url: string): Promise<FetchResult> {
+  let page = await fetcher.fetch(url);
+  if (page.status !== 200) page = await fetcher.fetch(url, { refresh: true });
+  if (page.status !== 200) throw new Error(`HTTP ${page.status}`);
+  return page;
+}
 
 /**
  * The queries to walk: the profile's own, and -- where the portal asks for it -- for every subject
@@ -92,7 +121,7 @@ export function queriesToWalk(queries: IpsQuery[], resolutionsPerSubject: boolea
     const key = `${RESOLUTION}|${subject}|${GOVERNMENT}`;
     if (walked.has(key)) continue;
     walked.add(key);
-    extra.push({ type: RESOLUTION, kind: 'regulation', title: subject, issuer: GOVERNMENT, sort: '7', principalOnly: true, maxPages: 10 });
+    extra.push({ type: RESOLUTION, kind: 'regulation', title: subject, issuer: GOVERNMENT, sort: '7', principalOnly: true, maxPages: RESOLUTION_PAGES });
   }
   return [...queries, ...extra];
 }
@@ -279,18 +308,22 @@ export const ipsAdapter: Adapter = {
     const found = new Map<string, DiscoveredInstrument>();
     for (const q of queries) {
       const params =
-        `bpas=cd00000${q.type ? `&a3=${q.type}&a3type=1` : ''}` +
+        `bpas=cd00000${q.type ? `&a3=${q.type}&a3type=1` : ''}${q.issuedBy ? `&a6=${q.issuedBy}&a6type=1` : ''}` +
         `${q.title ? `&a1=${cp1251Param(q.title)}` : ''}&sort=${q.sort ?? '7'}`;
       let rows = 0;
       let kept = 0;
+      let failed = 0;
       for (let page = 0; page < (q.maxPages ?? 25); page += 1) {
         const url = `${base}/proxy/ips/?list_itself=&${params}&page=first${page ? `&start=${page * PER_PAGE}` : ''}`;
         let got: IpsRow[];
         try {
-          got = ipsRows(decodeBody(await fetcher.fetch(url)));
+          got = ipsRows(decodeBody(await listingPage(fetcher, url)));
+          failed = 0;
         } catch (err) {
           setAside({ subject: `IPS ${params} page ${page + 1}`, reason: 'listing-page-failed', detail: err instanceof Error ? err.message : String(err) });
-          break;
+          // One page the system failed to build is one page lost, not the rest of the walk.
+          if (++failed >= MAX_FAILED_PAGES) break;
+          continue;
         }
         rows += got.length;
         // The system's title search is loose: "о связи" returns every law passed "в связи с"
@@ -308,7 +341,7 @@ export const ipsAdapter: Adapter = {
         }
         if (got.length < PER_PAGE) break;
       }
-      log(`  IPS type ${q.type ?? 'any'}${q.title ? ` "${q.title}"` : ''}: ${rows} rows, ${kept} registered`);
+      log(`  IPS type ${q.type ?? 'any'}${q.issuedBy ? ` issuer ${q.issuedBy}` : ''}${q.title ? ` "${q.title}"` : ''}: ${rows} rows, ${kept} registered`);
     }
     return [...found.values()];
   },
