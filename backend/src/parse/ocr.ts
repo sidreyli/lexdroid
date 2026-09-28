@@ -47,7 +47,7 @@ export interface OcrPage {
  * of these if the pack finds its script on it -- the English pack reads Thai as Latin gibberish,
  * and before Thailand had a pack the Hindi one read a Thai notification as Devanagari.
  */
-type Pack = 'hin' | 'tha' | 'lao';
+type Pack = 'hin' | 'tha' | 'lao' | 'rus' | 'mon';
 
 const SCRIPTS: Record<string, { pack: Pack; chars: RegExp }> = {
   hi: { pack: 'hin', chars: /[\u0900-\u097f]/g },
@@ -55,6 +55,10 @@ const SCRIPTS: Record<string, { pack: Pack; chars: RegExp }> = {
   // The Lao Official Gazette publishes image-only scans -- one sampled at 1.09 MB carried zero
   // /Font and zero /ToUnicode -- so every Lao document reaches the pipeline through this pack.
   lo: { pack: 'lao', chars: /[\u0e80-\u0eff]/g },
+  // The Eurasian Economic Union's acts before 2015 are copier scans with no text layer, and so are
+  // some Mongolian laws. Without these packs the English one read both, as Latin gibberish.
+  ru: { pack: 'rus', chars: /[\u0400-\u04ff]/g },
+  mn: { pack: 'mon', chars: /[\u0400-\u04ff]/g },
 };
 
 /** The packs to consult for an economy's languages. With none stated, Hindi, as before Thailand. */
@@ -73,6 +77,8 @@ function localLanguageData(): string {
     localRequire('@tesseract.js-data/hin') as LanguagePackage,
     localRequire('@tesseract.js-data/tha') as LanguagePackage,
     localRequire('@tesseract.js-data/lao') as LanguagePackage,
+    localRequire('@tesseract.js-data/rus') as LanguagePackage,
+    localRequire('@tesseract.js-data/mon') as LanguagePackage,
   ];
   mkdirSync(TESSDATA_DIR, { recursive: true });
   mkdirSync(TESSERACT_CACHE, { recursive: true });
