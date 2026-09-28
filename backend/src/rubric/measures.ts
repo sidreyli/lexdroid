@@ -1486,8 +1486,30 @@ const RESTRICTION = new RegExp(
  * ask for one. A measure defined as a remedy is not made out by words that only name the thing
  * being protected.
  */
+/**
+ * The same terms of art in Russian, Mongolian and Lao, beside the Thai ones each list already carries.
+ *
+ * Each list below was written in English and taught Thai one term at a time; a provision in any other
+ * script could never pass it, so the reader's correct reading of a Russian patent article or a Lao
+ * copyright one was held as "stated only in English" and its cell abstained. These are the ordinary
+ * legal words for the same concepts, as stems (the languages inflect), and never next to `\b`, which
+ * does not bound a Cyrillic or Lao word. Every term is in Cyrillic or Lao script, so no English, Thai
+ * or Malay text can match one.
+ *
+ * Plain "связ" is not among them: "в связи с" (in connection with) is everywhere in Russian law.
+ */
+const REMEDY_LOCAL = 'возмещени|убытк|ответственност|компенсаци|хохирол|нөхөн төлөх|хариуцлага|ຄ່າເສຍຫາຍ|ຊົດເຊີຍ|ຮັບຜິດຊອບ';
+const SDOC_LOCAL = 'деклараци[а-яё]* о соответствии|декларировани[а-яё]* соответстви|тохирлын мэдэгдэл|нийлүүлэгчийн мэдэгдэл';
+const FOREIGN_BODY_LOCAL = 'иностранн|международн[а-яё]* договор|признани|за пределами|гадаад|харилцан хүлээн зөвшөөр|ຕ່າງປະເທດ|ຕາງປະເທດ|ຮັບຮູ້ເຊິ່ງກັນ';
+const SECRETS_LOCAL = 'коммерческ[а-яё]* тайн|секрет[а-яё]* производств|ноу-хау|исходн[а-яё]* код|шифровани|байгууллагын нууц|худалдааны нууц|эх код|ຄວາມລັບທາງການຄ້າ|ຄວາມລັບທາງທຸລະກິດ';
+const PATENT_LOCAL = 'патент|изобретени|полезн[а-яё]* модел|шинэ бүтээл|ашигтай загвар|ສິດທິບັດ|ອະນຸສິດທິບັດ|ການປະດິດ';
+const COPYRIGHT_LOCAL = 'авторск|смежн[а-яё]* прав|произведени|зохиогч|бүтээл|ລິຂະສິດ|ສິດກ່ຽວຂ້ອງ|ຜົນງານ';
+const COMMUNICATIONS_LOCAL = 'электросвяз|телекоммуникац|радиочастот|вещани|услуг[а-яё]* связи|средств[а-яё]* связи|сет[ьи] связи|операто[а-яё]* связи|о связи|харилцаа холбоо|цахилгаан холбоо|ໂທລະຄົມ|ສື່ສານ|ຄື້ນຄວາມຖີ່';
+const RADIO_EMC_LOCAL = 'радиоэлектрон|электромагнит|электрическ|продукци|оборудовани|издели|бүтээгдэхүүн|тоног төхөөрөмж|цахилгаан|ຜະລິດຕະພັນ|ອຸປະກອນ|ເຄື່ອງໃຊ້ໄຟຟ້າ';
+
 const REMEDY =
   /\b(remed\w*|injunct\w*|damages|account of profits|compensat\w*|liable|liability|relief|restrain\w*|action\w*|proceeding\w*|sue|sued|suit|claim\w*|breach of confidence|enforc\w*)\b/i;
+const REMEDY_ANY = new RegExp([REMEDY.source, REMEDY_LOCAL].join('|'), 'i');
 
 export const MEASURE_NAMES: Readonly<Record<string, RegExp>> = {
   // A licence measure needs a word meaning licence. Five indicators turn on one.
@@ -1507,14 +1529,16 @@ export const MEASURE_NAMES: Readonly<Record<string, RegExp>> = {
   'mandated-encryption': ENCRYPTION,
   'product-testing': TESTING,
   'third-party-testing-accepted': TESTING,
-  'sdoc-allowed': /\b(self[- ]declar\w*|declaration of conformity|supplier'?s? declaration)\b/i,
+  'sdoc-allowed': new RegExp([/\b(self[- ]declar\w*|declaration of conformity|supplier'?s? declaration)\b/.source, SDOC_LOCAL].join('|'), 'i'),
   // A body in another country is named by where it is not as often as by what it is: a statute
   // writes "outside" this economy where the list above expects "foreign" or "another country".
   // The one provision in the corpus recognising certification authorities "authorized by
   // governmental entities outside Malaysia" was turned away by this test for saying so, and the
   // cell it would have decided reported that nobody had read anything of the kind.
-  'mra-certification-accepted':
-    /\b(mutual recognition|foreign\w*|overseas|abroad|outside|another (country|economy|jurisdiction)|recognis\w*|recogniz\w*)\b/i,
+  'mra-certification-accepted': new RegExp(
+    [/\b(mutual recognition|foreign\w*|overseas|abroad|outside|another (country|economy|jurisdiction)|recognis\w*|recogniz\w*)\b/.source, FOREIGN_BODY_LOCAL].join('|'),
+    'i',
+  ),
   'foreign-exclusion-from-standards': /\b(foreign\w*|non-?resident\w*|overseas|nationa\w*)\b/i,
   'national-payment-standard': STANDARD,
   // 4.1's two measures differ by one thing, and the rubric says which: the stronger is "the words
@@ -1523,7 +1547,7 @@ export const MEASURE_NAMES: Readonly<Record<string, RegExp>> = {
   // them apart -- and copying the subject back as the defining words is how the weaker was read as
   // the stronger. Only the stronger is asked for a remedy; the clause keeps no entry here, because
   // a duty of confidence is made out by the duty and the confidence alone.
-  'trade-secret-protection': REMEDY,
+  'trade-secret-protection': REMEDY_ANY,
   // Named by its negation rather than by a term of art: see WITHOUT_PUBLICITY above.
   'opaque-standard-setting': WITHOUT_PUBLICITY,
   // A residual band with no term of art to ask for: see RESTRICTION above.
@@ -1612,9 +1636,9 @@ const ICT_GOODS = new RegExp(
   'i',
 );
 const PROCUREMENT = new RegExp([/\b(procure\w*|tender\w*|bid\w*|public contract\w*|government contract\w*|supply to the (Government|State)|Commonwealth contract\w*|purchas\w* by (a|the) (public|government)\w*)\b/.source, 'จัดซื้อจัดจ้าง|ประกวดราคา|เสนอราคา'].join('|'), 'i');
-const SECRETS = new RegExp([/\b(trade secret\w*|source code\w*|algorithm\w*|confidential (business )?information|proprietary information|encrypt\w*|cryptograph\w*|know-how)\b/.source, 'ความลับทางการค้า|รหัสต้นฉบับ|ซอร์สโค้ด|อัลกอริทึม|เข้ารหัส'].join('|'), 'i');
-const PATENT = new RegExp([/\b(patent\w*|invention\w*|utility model\w*|patentee\w*)\b/.source, 'สิทธิบัตร|การประดิษฐ์'].join('|'), 'i');
-const COPYRIGHT = new RegExp([/\b(copyright\w*|author\w*|literary|artistic|musical|cinematograph\w*|performer\w*|work\w*|broadcast\w*|infring\w*)\b/.source, 'ลิขสิทธิ์|ผู้สร้างสรรค์|นักแสดง|ละเมิด'].join('|'), 'i');
+const SECRETS = new RegExp([/\b(trade secret\w*|source code\w*|algorithm\w*|confidential (business )?information|proprietary information|encrypt\w*|cryptograph\w*|know-how)\b/.source, 'ความลับทางการค้า|รหัสต้นฉบับ|ซอร์สโค้ด|อัลกอริทึม|เข้ารหัส', SECRETS_LOCAL].join('|'), 'i');
+const PATENT = new RegExp([/\b(patent\w*|invention\w*|utility model\w*|patentee\w*)\b/.source, 'สิทธิบัตร|การประดิษฐ์', PATENT_LOCAL].join('|'), 'i');
+const COPYRIGHT = new RegExp([/\b(copyright\w*|author\w*|literary|artistic|musical|cinematograph\w*|performer\w*|work\w*|broadcast\w*|infring\w*)\b/.source, 'ลิขสิทธิ์|ผู้สร้างสรรค์|นักแสดง|ละเมิด', COPYRIGHT_LOCAL].join('|'), 'i');
 const TELECOM = new RegExp(
   [
     /\b(telecom\w*|telephon\w*|carrier\w*|carriage service\w*|network service\w*|spectrum|radiocommunication\w*|licensee\w*|operator\w*|subscriber\w*|broadband|mobile)\b/.source,
@@ -1781,6 +1805,7 @@ const COMMUNICATIONS = new RegExp(
   [
     /\b(telecom\w*|communication\w*|broadcast\w*|carriage service\w*|carrier\w*|spectrum|radiocommunication\w*|postal|media|network facilit\w*|network service\w*|applications service\w*)\b/.source,
     'โทรคมนาคม|คมนาคม|กระจายเสียง|คลื่นความถี่|ไปรษณีย์|สื่อ',
+    COMMUNICATIONS_LOCAL,
   ].join('|'),
   'i',
 );
@@ -1804,6 +1829,7 @@ const RADIO_EMC = new RegExp(
   [
     /\b(radio|radiocommunication\w*|electromagnetic|EMC|EMI|interference|telecom\w*|communications? (equipment|apparatus|device\w*)|wireless|spectrum|electrical|electronic (equipment|product\w*|appliance\w*)|products?|goods|articles|equipment|apparatus|appliances?)\b/.source,
     'วิทยุคมนาคม|โทรคมนาคม|คลื่นความถี่|แม่เหล็กไฟฟ้า|เครื่องใช้ไฟฟ้า|อิเล็กทรอนิกส์|ผลิตภัณฑ์อุตสาหกรรม',
+    RADIO_EMC_LOCAL,
   ].join('|'),
   'i',
 );
