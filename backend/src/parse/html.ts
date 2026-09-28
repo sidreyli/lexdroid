@@ -309,13 +309,13 @@ export function soleDocumentLink(html: string, pageUrl: string): string | null {
 }
 
 /**
- * A link a web server can answer. Mongolia's register pastes some laws' file links as the drafter's
- * own disk -- `file:///Users/.../08-ne-89.doc` -- and following one failed with no host, three of
- * them in a row tripped the refusal breaker, and the rest of a 1,482-law read stopped at law 124.
- * Such a link names a file nobody can fetch, so the page keeps its own text instead.
+ * A link a request can follow. An editor who drafted the page in a word processor can leave a link
+ * to the file on their own desktop -- Mongolia's legalinfo.mn carries `file:///Users/.../08-ne-89.doc`
+ * beside the law it amends -- and asked for, it fails the way a host refusing us does, three times,
+ * until the reader stops asking the host it came from.
  */
-function servedOverTheWeb(target: URL): boolean {
-  return target.protocol === 'http:' || target.protocol === 'https:';
+function onTheWeb(url: URL): boolean {
+  return url.protocol === 'http:' || url.protocol === 'https:';
 }
 
 /**
@@ -341,7 +341,7 @@ export function namedDocumentLink(html: string, pageUrl: string, title: string):
     if (!text || !namesTheSame(text, title)) return;
     try {
       const target = new URL(href, pageUrl);
-      if (!servedOverTheWeb(target)) return;
+      if (!onTheWeb(target)) return;
       target.hash = '';
       // A site linking itself under its other name. Bank Negara's pages are served from
       // www.bnm.gov.my and two of them link their own policy at bnm.gov.my, which answers 202 to
@@ -412,7 +412,7 @@ export function pointedDocumentLink(html: string, pageUrl: string): string | nul
     if (!href || !/\.(?:pdf|docx?|rtf)(?:$|\?)/i.test(href)) return;
     try {
       const target = new URL(href, pageUrl);
-      if (!servedOverTheWeb(target)) return;
+      if (!onTheWeb(target)) return;
       target.hash = '';
       // The same site under its other name, as `namedDocumentLink` explains.
       if (target.host !== here && target.host.replace(/^www\./i, '') === here.replace(/^www\./i, '')) {

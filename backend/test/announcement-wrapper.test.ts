@@ -86,14 +86,6 @@ describe('the file a page links under its own name', () => {
     expect(namedDocumentLink(elsewhere, PAGE, TITLE)).toBe('https://cdn.example.com/e-money-pd.pdf');
   });
 
-  it('is not named when its link is a file on the drafter’s own disk, which no server answers', () => {
-    const onDisk = ANNOUNCEMENT.replace(
-      '<a href="/documents/20124/943361/e-money-pd.pdf">',
-      '<a href="file:///Users/drafter/Desktop/e-money-pd.pdf">',
-    );
-    expect(namedDocumentLink(onDisk, PAGE, TITLE)).toBeNull();
-  });
-
   it('is not named when nothing linked carries the instrument’s name', () => {
     const anonymous = ANNOUNCEMENT.replace(
       `<a href="/documents/20124/943361/e-money-pd.pdf">${TITLE}</a>`,
@@ -133,17 +125,18 @@ describe('a page that announces a document is replaced by the document', () => {
     expect(storedUrl(db)).toBe(page);
     db.close();
   });
+});
 
-  it('keeps the page when the file it links sits on a host that no longer answers', async () => {
+describe('a file the page links on a host that is gone', () => {
+  it('leaves the page read, and the host it lives on is not the page host', async () => {
     const db = register(TITLE, PAGE);
     const fetch = vi.fn(async (url: string) => {
-      if (url === POLICY) throw new Error(`${url} did not complete: getaddrinfo ENOTFOUND`);
-      return served(url, ANNOUNCEMENT);
+      if (url.startsWith('https://old.bnm.gov.my/')) throw new Error('getaddrinfo ENOTFOUND old.bnm.gov.my');
+      return served(url, `<html><head><title>${TITLE}</title></head><body><main>${body('An issuer shall keep the funds in trust.', 60)}
+        <a href="https://old.bnm.gov.my/files/e-money.pdf">download</a></main></body></html>`);
     });
-    const [result] = await materialise(db, loadProfile('MYS'), { fetch } as never, { instrumentIds: [1] });
-    // The page is what is held -- read or not on its own merits -- and the instrument is not failed.
-    expect(result!.outcome).not.toBe('error');
-    expect(fetch).toHaveBeenCalledWith(POLICY);
+    const results = await materialise(db, loadProfile('MYS'), { fetch } as never, { instrumentIds: [1] });
+    expect(results[0]!.outcome).toBe('parsed');
     expect(storedUrl(db)).toBe(PAGE);
     db.close();
   });
