@@ -110,8 +110,8 @@ function pointOf(text: string): { label: string; depth: number } | null {
  * paragraph.
  *
  * No `\b` anywhere in this file. JavaScript's word boundary is defined against `\w`, which is
- * ASCII, so it never matches beside a Cyrillic letter -- `/\bБҮЛЭГ/.test('НЭГДҮГЭЭР БҮЛЭГ')` is
- * false. It fails silently and in the direction that looks like working code: the first draft of
+ * ASCII, so it never matches beside a Cyrillic letter: a boundary placed before "БҮЛЭГ" never
+ * matches "НЭГДҮГЭЭР БҮЛЭГ". It fails silently and in the direction that looks like working code: the first draft of
  * this parser detected no chapters at all on the real Anti-Corruption Law.
  */
 const CHAPTER = /^[^.]{0,48}бүлэг\s*$/iu;

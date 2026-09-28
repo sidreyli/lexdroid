@@ -30,3 +30,15 @@ describe('an act copied from the quote', () => {
     expect(copiedFromTheQuote('shall not procss personal data', 'a person shall not process personal data outside Singapore')).toBe(true);
   });
 });
+
+describe('a phrase field copied from the verified quote', () => {
+  const quote = 'ห้ามมิให้บริษัทข้อมูลเครดิตประมวลผลข้อมูลภายนอกราชอาณาจักร';
+
+  it('stands when the copy stutters a syllable', () => {
+    expect(copiedFromTheQuote('ภายนอกราชอาณาณาจักร', quote)).toBe(true);
+  });
+
+  it('is still refused when the words are not the quote', () => {
+    expect(copiedFromTheQuote('ภายในราชอาณาจักรไทย', quote)).toBe(false);
+  });
+});

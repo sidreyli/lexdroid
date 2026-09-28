@@ -107,3 +107,54 @@ describe('a subject outside the indicator’s domain', () => {
     expect(score(licensing, [ev('12.3', 'ecommerce-licence', null)]).score).toBe(0);
   });
 });
+
+describe('goods named by their tariff code', () => {
+  const tradeDefence = { ...indicator('1.4', [
+    { score: 1, criterion: 'More than three measures' },
+    { score: 0.75, criterion: 'Three measures' },
+    { score: 0.5, criterion: 'Two measures' },
+    { score: 0.25, criterion: 'One measure' },
+    { score: 0, criterion: 'No measure' },
+  ]), pillarId: 1 };
+  const duty = (codes?: string[]): Evidence => {
+    const e = ev('1.4', 'trade-defence-measure', 'industrial laser machines');
+    return {
+      ...e,
+      finding: { ...e.finding, dutyBearer: 'the importer', quote: 'there shall be levied an anti-dumping duty on industrial laser machines', imposingWords: 'there shall be levied', definingWords: 'there shall be levied an anti-dumping duty' },
+      ...(codes ? { ictTariffCodes: codes } : {}),
+    };
+  };
+
+  it('counts a duty on goods whose name is no ICT word, where the provision states an ICT code', () => {
+    expect(score(tradeDefence, [duty(['845690'])]).score).toBeGreaterThan(0);
+  });
+
+  it('does not count the same duty where the provision states no ICT code', () => {
+    expect(score(tradeDefence, [duty()]).score).toBe(0);
+  });
+
+  // The notice as it is written: the State lays the duty, in the present tense, by declaring it.
+  const laid = (dutyAct: string): Evidence => {
+    const e = duty(['845690']);
+    return {
+      ...e,
+      finding: {
+        ...e.finding,
+        dutyBearer: 'the Central Government',
+        dutyBearerKind: 'government',
+        dutyAct,
+        dutyForce: 'declares',
+        quote: `the Central Government hereby ${dutyAct} on the subject goods an anti-dumping duty`,
+        definingWords: `${dutyAct} on the subject goods an anti-dumping duty`,
+      },
+    };
+  };
+
+  it('counts the words laying the duty, though the State says them and they declare', () => {
+    expect(score(tradeDefence, [laid('imposes')]).score).toBeGreaterThan(0);
+  });
+
+  it('does not count a duty the provision only refers to as laid already', () => {
+    expect(score(tradeDefence, [laid('had imposed')]).score).toBe(0);
+  });
+});

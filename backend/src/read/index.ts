@@ -941,8 +941,31 @@ export function copiedFromTheQuote(act: string, quote: string): boolean {
   // A short fragment is one edit from too many words to say anything, so it has to be exact.
   return (
     parts.length > 0 &&
-    parts.every((p) => p.length >= MIN_FRAGMENT_CHARS && (q.includes(p) || (p.length >= MIN_ANCHOR_CHARS && withinEdits(p, q, Math.max(1, Math.floor(p.length / 20))))))
+    parts.every(
+      (p) =>
+        p.length >= MIN_FRAGMENT_CHARS &&
+        (q.includes(p) ||
+          (p.length >= MIN_ANCHOR_CHARS &&
+            [p, ...withoutAStutter(p)].some((v) => withinEdits(v, q, Math.max(1, Math.floor(p.length / 20)))))),
+    )
   );
+}
+
+/**
+ * The phrase with one immediately repeated run of up to three characters written once.
+ *
+ * A reader that stutters writes a syllable twice -- "ราชอาณาณาจักร" for "ราชอาณาจักร" -- which is
+ * one slip of the pen and two characters of edit distance, so on a short phrase the budget of one
+ * edit refused it. Each variant still has to be found in the verified quote.
+ */
+function withoutAStutter(p: string): string[] {
+  const out: string[] = [];
+  for (let n = 1; n <= 3; n++) {
+    for (let i = 0; i + 2 * n <= p.length; i++) {
+      if (p.slice(i, i + n) === p.slice(i + n, i + 2 * n)) out.push(p.slice(0, i) + p.slice(i + n));
+    }
+  }
+  return out;
 }
 
 /** Is `needle` in `hay` with at most `k` characters inserted, dropped or changed? */
@@ -968,6 +991,10 @@ export function rejectionFor(f: Finding, sectionText: string, allowed: Set<strin
   if (!f.measure) return 'no measure this indicator recognises was named';
   const inProvision = (phrase: string): boolean =>
     quoteIsInSection(phrase, sectionText, MIN_PHRASE_CHARS) || (heading !== '' && quoteIsInSection(phrase, heading, MIN_PHRASE_CHARS));
+  // A field that repeats part of the verified quote with a slip in the copy makes no claim the quote
+  // has not already made, so it is held to the quote, the way the act is. What it names must still
+  // be the quote's own words; see `copiedFromTheQuote`.
+  const claimed = (phrase: string): boolean => inProvision(phrase) || copiedFromTheQuote(phrase, f.quote);
   // The party and the act have to be the provision's own words, not a summary of them.
   if (f.dutyBearer && !inProvision(f.dutyBearer)) {
     return `the party said to bear the duty, "${f.dutyBearer}", is not in the provision`;
@@ -996,25 +1023,25 @@ export function rejectionFor(f: Finding, sectionText: string, allowed: Set<strin
   }
   // Where a place is claimed it has to be in the provision, for the same reason the party and the
   // act do. A place the provision does not name is the one fact these measures are defined by.
-  if (f.placeWords && !inProvision(f.placeWords)) {
+  if (f.placeWords && !claimed(f.placeWords)) {
     return `the words said to state the place, "${f.placeWords}", are not in the provision`;
   }
-  if (f.exceptionWords && !inProvision(f.exceptionWords)) {
+  if (f.exceptionWords && !claimed(f.exceptionWords)) {
     return `the words said to make an exception, "${f.exceptionWords}", are not in the provision`;
   }
-  if (f.locatedData && !inProvision(f.locatedData)) {
+  if (f.locatedData && !claimed(f.locatedData)) {
     return `the data said to be located, "${f.locatedData}", is not in the provision`;
   }
-  if (f.informationWords && !inProvision(f.informationWords)) {
+  if (f.informationWords && !claimed(f.informationWords)) {
     return `the words said to name information, "${f.informationWords}", are not in the provision`;
   }
-  if (f.keepingWords && !inProvision(f.keepingWords)) {
+  if (f.keepingWords && !claimed(f.keepingWords)) {
     return `the words said to keep the data in place, "${f.keepingWords}", are not in the provision`;
   }
-  if (f.authorisingWords && !inProvision(f.authorisingWords)) {
+  if (f.authorisingWords && !claimed(f.authorisingWords)) {
     return `the words said to authorise the power, "${f.authorisingWords}", are not in the provision`;
   }
-  if (f.roleWords && !inProvision(f.roleWords)) {
+  if (f.roleWords && !claimed(f.roleWords)) {
     return `the position said to be created, "${f.roleWords}", is not in the provision`;
   }
   // The words that make the measure out are a claim about the provision like every other quote.
@@ -1038,16 +1065,16 @@ export function rejectionFor(f: Finding, sectionText: string, allowed: Set<strin
     }
     f.definingWords = f.quote;
   }
-  if (f.definingWords && !inProvision(f.definingWords)) {
+  if (f.definingWords && !claimed(f.definingWords)) {
     return `the words said to make out ${f.measure}, "${f.definingWords}", are not in the provision`;
   }
-  if (f.borderWords && !inProvision(f.borderWords)) {
+  if (f.borderWords && !claimed(f.borderWords)) {
     return `the words said to cross the border, "${f.borderWords}", are not in the provision`;
   }
-  if (f.imposingWords && !inProvision(f.imposingWords)) {
+  if (f.imposingWords && !claimed(f.imposingWords)) {
     return `the words said to impose the requirement, "${f.imposingWords}", are not in the provision`;
   }
-  if (f.prescribingWords && !inProvision(f.prescribingWords)) {
+  if (f.prescribingWords && !claimed(f.prescribingWords)) {
     return `the words said to empower another instrument, "${f.prescribingWords}", are not in the provision`;
   }
   if (f.scopeUnstated) return 'the reach of the duty was not answered in the terms offered';
@@ -1056,10 +1083,10 @@ export function rejectionFor(f: Finding, sectionText: string, allowed: Set<strin
   if (f.sectorScope === 'specific' && !f.sector) {
     return 'the duty is said to bind one sector, and no sector is named';
   }
-  if (f.targetWords && !inProvision(f.targetWords)) {
+  if (f.targetWords && !claimed(f.targetWords)) {
     return `the words said to name what the measure is aimed at, "${f.targetWords}", are not in the provision`;
   }
-  if (f.conditionWords && !inProvision(f.conditionWords)) {
+  if (f.conditionWords && !claimed(f.conditionWords)) {
     return `the words said to state the condition the measure waits on, "${f.conditionWords}", are not in the provision`;
   }
   return null;
@@ -1614,7 +1641,19 @@ const SUBJECT_NAMES_IN_OTHER_LANGUAGES: Record<string, Record<FrameworkSubject, 
     'data-protection': ['ข้อมูลส่วนบุคคล', 'ความเป็นส่วนตัว'],
     cybersecurity: ['ไซเบอร์', 'ความผิดเกี่ยวกับคอมพิวเตอร์', 'ความมั่นคงปลอดภัยสารสนเทศ', 'ความมั่นคงปลอดภัยของระบบสารสนเทศ'],
     'copyright-safe-harbour': ['ลิขสิทธิ์', 'ผู้ให้บริการ'],
-    'intermediary-liability': ['ตัวกลาง', 'ผู้ให้บริการ'],
+    // The subject sentence too, which was asked of Thai law only in English, in the two shapes a
+    // shield takes: no liability for users' data, and none for a provider that took it down when
+    // told to. "ผู้ให้บริการ" alone is every bank's "service provider", and with only the names the
+    // section search handed 8.2 banking rules; Thailand's shield, s.15 of its computer-crime Act,
+    // was never examined. With these it is the first instrument found.
+    'intermediary-liability': [
+      'ตัวกลาง',
+      'ผู้ให้บริการ',
+      'ผู้ให้บริการไม่ต้องรับผิด',
+      'ผู้ให้บริการไม่ต้องรับโทษ',
+      'ผู้ให้บริการไม่ต้องรับผิดสำหรับข้อมูลคอมพิวเตอร์ของผู้ใช้บริการ',
+      'ผู้ให้บริการไม่ต้องรับโทษหากได้ปฏิบัติตามขั้นตอนการแจ้งเตือนและการนำข้อมูลคอมพิวเตอร์ออกจากระบบ',
+    ],
     'consumer-protection': ['ผู้บริโภค'],
   },
   // Russian, Mongolian and Lao, in the wording those economies' own titles use -- "О персональных

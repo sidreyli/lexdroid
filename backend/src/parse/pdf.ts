@@ -68,7 +68,14 @@ export function ocrReplacesThePage(why: 'sparse' | 'damaged', before: string, af
 }
 
 
-const PROVISION_LINE = /^\s*(\d+[A-Z]{0,2})\.\s*(?:—|-|–)?\s*(?:\(1\))?\s*(?=\S)/;
+/**
+ * A number with a digit straight after its dot is a decimal, not a provision. The duty column of
+ * an Indian anti-dumping notification wraps onto lines of their own, and "75.72% including China
+ * PR" opened provision 75 in the middle of the table; so did "8.23%" and "14.06%". Every real
+ * shape with a digit there -- "12.5 Definitions", "8.2.1.1 A company" -- is taken by the two
+ * patterns tried before this one.
+ */
+const PROVISION_LINE = /^\s*(\d+[A-Z]{0,2})\.(?!\d)\s*(?:—|-|–)?\s*(?:\(1\))?\s*(?=\S)/;
 /** India notifications sometimes number a paragraph "12.5 Definitions" without a second dot. */
 const DECIMAL_PROVISION_LINE = /^\s*[‘'"]?(\d+\.\d+[A-Z]{0,2})(?:\s+(?=\S)|\s*$)/;
 /**
@@ -590,6 +597,17 @@ export function sectionise(pages: PageText[]): SectionBuilder {
     (it, n) => 'lines' in it && it.label !== null && it.lines.length > 1 && lastAt.get(key(it)) === n && !listed(it, n),
   );
   const builder = new SectionBuilder();
+  // A document whose numbering starts at 2 left its first paragraph unnumbered. That is how an
+  // Indian notification is drafted: the paragraph naming the goods, the finding and the words
+  // "hereby imposes" carries no number, and "2." is its duration clause. Filed as front matter it
+  // reached no search, so CBIC's anti-dumping notifications were found only by their tariff rows
+  // and never by what they impose. Everything before "2." is that paragraph and its table.
+  const opening = items.findIndex((it) => 'lines' in it && it.label !== null);
+  const unnumberedFirst =
+    opening > 0 &&
+    (items[opening] as Candidate).label === '2' &&
+    !items.some((it) => 'lines' in it && it.label === '1');
+  const firstParagraph: string[] = [];
   /**
    * What accumulated under an entry that is about to be dropped.
    *
@@ -614,6 +632,23 @@ export function sectionise(pages: PageText[]): SectionBuilder {
     });
   };
   for (const [n, it] of items.entries()) {
+    if (unnumberedFirst && n < opening) {
+      if (!('lines' in it)) firstParagraph.push(it.prose);
+      else firstParagraph.push(...it.lines);
+      continue;
+    }
+    if (unnumberedFirst && n === opening && firstParagraph.join('').trim()) {
+      const first = items.slice(0, opening).find((x) => 'lines' in x) as Candidate | undefined;
+      builder.add({
+        headingPath: '',
+        label: null,
+        text: firstParagraph.join('\n').trim(),
+        page: first?.page ?? (it as Candidate).page,
+        language: (it as Candidate).language ?? null,
+        repealed: false,
+        anchor: null,
+      });
+    }
     if (!('lines' in it)) {
       builder.addProse(it.prose);
       continue;

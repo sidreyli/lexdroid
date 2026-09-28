@@ -10,9 +10,16 @@ Unzip into the repository root. You get `bench-pack/` (gitignored):
 
 | File | Holds |
 | :-- | :-- |
-| `lexdroid.bench-aus-mys-sgp.db` | run `a74d0fca` (AUS, MYS, SGP) |
-| `lexdroid.bench-ind.db` | India: run `283f457e` (all pillars but 8), `78642831` (pillar 8), `b358e814` (a pillar 12 re-read that changed no score) |
-| `lexdroid.bench-tha.db` | Thailand: run `f8848a01` |
+| `lexdroid.bench-aus-mys-sgp.db` | run `a74d0fca` (AUS, MYS, SGP; all pillars but those below) |
+| `lexdroid.bench-12-follow.db` | pillar 12: AUS run `1550d25e`, MYS run `9dbd7d9c` |
+| `lexdroid.bench-mys81011.db` | MYS pillars 8, 10 and 11: run `880a2308` |
+| `lexdroid.bench-p9-ams.db` | SGP pillar 9: run `3ba611e1` (it also holds AUS and MYS pillar 9, which the benchmark doesn't use) |
+| `lexdroid.bench-ind.db` | India: run `283f457e` (all pillars but 1 and 8), `78642831` (pillar 8), `b358e814` (a pillar 12 re-read that changed no score) |
+| `lexdroid.bench-tha.db` | Thailand: run `f8848a01` (all pillars but 5, 6, 8 and 11) |
+| `lexdroid.bench-ind-p1ict.db` | IND pillar 1: run `d4a8e968` |
+| `lexdroid.bench-tha-p511.db` | THA pillars 5 and 11: run `32cab2a4` |
+| `lexdroid.bench-tha-p68.db` | THA pillar 6: run `6c775d5c`; THA pillar 8: run `b4a8abcc` |
+| `cell-scores.md` | every cell, its status and what it rests on, by economy, and what to fix next |
 | `reference.json` | every cell as it stands now: our score, ESCAP's score, the audit label, and what the score rests on |
 | `baseline.db` | ESCAP's answers the reference was graded against |
 
@@ -33,8 +40,8 @@ finds, the contestable cells and the ones law can't answer.
 npm run -w backend bench-diff
 ```
 
-It should print "No cell moved", then 229 agree, 222 earned and 234 right of 305. The declarable
-pillars should be AUS 9, MYS 7, SGP 8, IND 6 and THA 9.
+It should print "No cell moved", then 245 agree, 240 earned and 253 right of 305. The declarable
+pillars should be AUS 9, MYS 8, SGP 11, IND 8 and THA 10 (46).
 
 - **agree:** our score matches ESCAP's.
 - **earned:** an agreement that rests on the right law.
@@ -88,4 +95,6 @@ npm run -w backend bench-diff -- --write-reference
 ```
 
 Only re-bank the reference after an agreed change, and update the audit in `manifest.json` to
-match.
+match. Never re-cut an existing pack from the working database: cut a new run into a pack of its
+own, add it to `packs` and `sources` in the manifest, and grade it with
+`--use ECO:pillars=<run>@<pack file>` first.

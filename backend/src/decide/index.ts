@@ -18,7 +18,7 @@
  */
 import type { Indicator, ScoreBand } from '../rubric/types.js';
 import type { Finding } from '../read/index.js';
-import { FRAMEWORK_TITLE_DOMAIN, HEADING_CLASS_DOMAIN, MEASURES, MEASURE_DOMAIN, MEASURE_NAMES, SECTOR_DOMAINS, SUBJECTS, TITLE_CARRIES_DOMAIN, SUBJECT_DOMAIN } from '../rubric/measures.js';
+import { FRAMEWORK_TITLE_DOMAIN, HEADING_CLASS_DOMAIN, MEASURES, MEASURE_DOMAIN, MEASURE_NAMES, SECTOR_DOMAINS, SUBJECTS, TITLE_CARRIES_DOMAIN, SUBJECT_DOMAIN, TARIFF_CODED_DOMAIN } from '../rubric/measures.js';
 import { tallyConfirmations, type ConfirmationTally } from '../read/confirmations.js';
 import { inUsd, moneyIn, type FxRates } from './currency.js';
 import { determinesAParticularCase } from '../discover/titles.js';
@@ -87,6 +87,12 @@ export interface Evidence {
    */
   definesATerm?: boolean;
   /**
+   * What the instrument defines the party bound, or the subject, as -- the words of its own
+   * definition entry. Carried only for a measure whose domain the document may name (see
+   * TITLE_CARRIES_DOMAIN), because the definition is the document naming it.
+   */
+  definedAs?: string;
+  /**
    * Whether the quoted words are a list item whose stem only confers a power.
    *
    * Same footing as definesATerm: a fact about the drafting, read off the whole section once. The
@@ -106,6 +112,12 @@ export interface Evidence {
   instrumentKind?: string | null;
   /** The language the provision is written in. Absent where the corpus predates the field. */
   sectionLanguage?: string | null;
+  /**
+   * The ICT tariff codes the provision states -- see ict-goods.ts. A customs instrument names the
+   * goods it charges by code, so this is what the goods are, whatever the words call them. Absent
+   * for evidence recorded before the field, which reads as none.
+   */
+  ictTariffCodes?: string[];
   /** The parser read the provision itself as repealed or deleted, whatever the instrument's status. */
   sectionRepealed?: boolean;
 }
@@ -802,7 +814,7 @@ const RULES: Record<string, Rule> = {
   '8.3': (indicator, qualifying) => {
     const online = qualifying.filter((e) => e.finding.measure === 'user-identity');
     if (online.length > 0) {
-      return { ordinal: 1, reason: 'identity required to connect or use an online service', counted: online };
+      return { ordinal: 1, reason: 'identity required to connect or use an online service', counted: providerBoundFirst(online) };
     }
     const sim = qualifying.filter((e) => e.finding.measure === 'sim-registration');
     if (sim.length > 0) return { ordinal: 2, reason: 'identity required to register a SIM', counted: sim };
@@ -1511,10 +1523,13 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
      * says. There the finding is held, as the measure-name and subject tests already hold it, and a
      * zero is never built on a test the provision could not have passed.
      */
+    // Only for the languages whose own words these tests do not yet carry. Thai and Malay take the
+    // rule-out path exactly as on master, so no economy outside Russia, Mongolia and Lao can move.
     const excludeOnWords = (reason: string): void => {
       const language = otherLanguage(e);
-      if (language) held.push({ evidence: e, reason: `${reason} -- but the provision is in ${language}, and the test is of English words` });
-      else ruledOut.push({ evidence: e, reason });
+      if (language && CYRILLIC_OR_LAO_LANGUAGES.has(language)) {
+        held.push({ evidence: e, reason: `${reason} -- but the provision is in ${language}, and the test is of English words` });
+      } else ruledOut.push({ evidence: e, reason });
     };
     // Before any measure-specific test: a sentence that declares rather than obliges has not
     // imposed a requirement on anyone, whatever the requirement would have been.
@@ -1536,7 +1551,12 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     // exceeding RM500 per user" -- which is the answer ESCAP gives for that cell and is a
     // declaration by grammar. The reader was right about the verb; the gate was asking the wrong
     // measures for one.
-    if (e.finding.dutyForce === 'declares' && !permits(indicatorId, e.finding.measure) && !confinesPermission(e.finding)) {
+    if (
+      e.finding.dutyForce === 'declares' &&
+      !permits(indicatorId, e.finding.measure) &&
+      !confinesPermission(e.finding) &&
+      !laysTheCharge(indicatorId, e.finding)
+    ) {
       ruledOut.push({
         evidence: e,
         reason: `the provision declares what is the case -- "${e.finding.dutyAct}" -- rather than requiring anyone to do anything`,
@@ -1792,10 +1812,16 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     const domain = inDomain(indicatorId, e.finding.measure);
     // A sector is named by the document, not by every sentence in it -- see SECTOR_DOMAINS. The
     // instrument's title answers the domain for those, and the words answer it for the rest.
+    // And goods are named by their tariff code where the indicator's goods are defined by one --
+    // see TARIFF_CODED_DOMAIN.
     const namesDomain =
       domain !== null &&
-      (SECTOR_DOMAINS.has(indicatorId) || TITLE_CARRIES_DOMAIN.has(e.finding.measure ?? '')) &&
-      (domain.test(e.instrumentTitle) || domain.test(e.finding.subjectWords ?? ''));
+      (((SECTOR_DOMAINS.has(indicatorId) || TITLE_CARRIES_DOMAIN.has(e.finding.measure ?? '')) &&
+        (domain.test(e.instrumentTitle) || domain.test(e.finding.subjectWords ?? ''))) ||
+        // Or the instrument's own definition of the party or subject, which names the topic once
+        // for every provision after it just as a title does -- see definedFor in ../cell.
+        (TITLE_CARRIES_DOMAIN.has(e.finding.measure ?? '') && domain.test(e.definedAs ?? '')) ||
+        (TARIFF_CODED_DOMAIN.has(indicatorId) && (e.ictTariffCodes?.length ?? 0) > 0));
     if (domain && !namesDomain && e.finding.subjectWords && !domain.test(e.finding.subjectWords) && otherLanguage(e)) {
       held.push({
         evidence: e,
@@ -1920,6 +1946,21 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
       });
       continue;
     }
+    // A copy put out for inspection for a few days is a notice, not storage. A payment firm
+    // transferring its business "must keep at their respective offices in Singapore, for
+    // inspection by any person that may be affected by the transfer, a copy of the report" for 15
+    // days after the Gazette notice, and it made a second local storage measure beside the
+    // Companies Act's accounting records. It says where the affected may read a document while
+    // they can object, and nothing about where the records themselves must live. A register kept
+    // open to inspection with no end is still where the register is kept, so only the short window
+    // rules it out.
+    if (locational(indicatorId, e.finding.measure) && displayedForAWhile(e.finding)) {
+      ruledOut.push({
+        evidence: e,
+        reason: `the provision puts a copy out for inspection for ${e.finding.statedPeriod}, which is notice to those affected rather than a place the data must be kept`,
+      });
+      continue;
+    }
     // Where the measure is a condition, the place the data goes is not one. The condition may be
     // stated outright or carved out as an exception, so either will do; naming neither will not.
     if (
@@ -2001,7 +2042,12 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     // "administered by a trustee company in Singapore" -- a place, a duty, and nothing to do with
     // data. These measures are all about where data has to be, so a provision that never names
     // the data has not made one out however locational its language is.
-    if (locational(indicatorId, e.finding.measure) && !e.finding.locatedData) {
+    //
+    // The data may be named as the provision's subject rather than in the field asked for it. Section
+    // 12 of a credit information statute forbids processing "ข้อมูล" outside the Kingdom; the reader
+    // gave the data as the subject and left the located data empty. Where the subject is called
+    // information in the quote's own words, it is the data the place holds.
+    if (locational(indicatorId, e.finding.measure) && !e.finding.locatedData && !subjectIsTheData(e.finding)) {
       ruledOut.push({
         evidence: e,
         reason: 'the provision names a place but no data that has to be there',
@@ -2013,7 +2059,7 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     // secure": a duty, a place, and a thing that must be there, all genuinely in the provision.
     // The thing is a virus. Every measure marked locational is about where *data* has to be, so
     // a provision whose own words never call the located thing information has not made one out.
-    if (locational(indicatorId, e.finding.measure) && !e.finding.informationWords) {
+    if (locational(indicatorId, e.finding.measure) && !e.finding.informationWords && !subjectIsTheData(e.finding)) {
       ruledOut.push({
         evidence: e,
         reason: 'the provision says where something must be, but never calls that thing information',
@@ -2057,8 +2103,13 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     // here in the way a patent is: a legal system may call it data, a record, a document or
     // particulars, but none of them calls it a payment. Placed after the structural tests, which
     // need no view about what the words mean and so should have their say first.
-    if (locational(indicatorId, e.finding.measure) && !INFORMATION.test(e.finding.informationWords ?? '') && !INFORMATION_LOCAL.test(e.finding.informationWords ?? '')) {
-      excludeOnWords(`the provision calls the thing "${e.finding.informationWords}", which is not information`);
+    const informationWords = e.finding.informationWords ?? (subjectIsTheData(e.finding) ? e.finding.subjectWords : null);
+    if (locational(indicatorId, e.finding.measure) && !callsItInformation(informationWords)) {
+      const reason = `the provision calls the thing "${informationWords}", which is not information`;
+      // Russian, Mongolian and Lao have their own words for information (INFORMATION_LOCAL), but a
+      // list of stems is never the whole of a language, so a provision in one of them that fails it
+      // is held rather than ruled out -- see excludeOnWords. Every other language is ruled out as before.
+      excludeOnWords(reason);
       continue;
     }
     // And a place that is not a place. These measures ask for the words naming the country,
@@ -2117,7 +2168,8 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     // Each measure says which side it binds, and this checks the side the reader read out.
     if (
       actorKindOf(indicatorId, e.finding.measure) === 'private' &&
-      e.finding.dutyBearerKind === 'government'
+      e.finding.dutyBearerKind === 'government' &&
+      !laysTheCharge(indicatorId, e.finding)
     ) {
       ruledOut.push({
         evidence: e,
@@ -2154,7 +2206,7 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     }
     // A power is not a duty, and two measures in the rubric are written as powers: government
     // access, and a power to impose customs duties on an electronic transmission.
-    if (!isRequirement(e.finding) && !permits(indicatorId, e.finding.measure)) {
+    if (!isRequirement(e.finding) && !permits(indicatorId, e.finding.measure) && !laysTheCharge(indicatorId, e.finding)) {
       ruledOut.push({ evidence: e, reason: 'the provision permits rather than requires' });
       continue;
     }
@@ -2203,6 +2255,14 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
 }
 
 /** The verbs of keeping something somewhere, as against doing something to it there. */
+/** Kept "for inspection" for a window counted in days or weeks: see `hold`. */
+function displayedForAWhile(f: Finding): boolean {
+  return (
+    /for (?:public )?inspection|open to (?:public )?inspection|available for (?:public )?inspection|เพื่อให้.{0,20}ตรวจดู/i.test(f.quote ?? '') &&
+    /\d+\s*(?:days?|weeks?)\b|\b[a-z-]+ (?:days?|weeks?)\b|\d+\s*วัน/i.test(f.statedPeriod ?? '')
+  );
+}
+
 const KEEPING = /\b(keep|kept|keeping|retain\w*|store\w*|storing|hold|held|holding|maintain\w*|preserv\w*)\b|เก็บ|จัดเก็บ|เก็บรักษา/i;
 /** The verbs of doing something to data, which make a locational duty 6.1's. */
 const PROCESSING = /\b(process\w*|handl\w*|analys\w*|comput\w*)\b|ประมวลผล/i;
@@ -2432,6 +2492,26 @@ function foreignIsTheHeld(f: Finding): boolean {
  * a document or particulars, and it words each of those its own way, but the category itself is
  * one every one of them has. It is not a list of the data we want to find.
  */
+/** The subject is information by its own words, and those words are in the quote: see `hold`. */
+function subjectIsTheData(f: Finding): boolean {
+  const subject = (f.subjectWords ?? '').trim();
+  return (
+    subject.length > 0 &&
+    callsItInformation(subject) &&
+    (f.quote ?? '').toLowerCase().includes(subject.toLowerCase())
+  );
+}
+
+function callsItInformation(words: string | null | undefined): boolean {
+  return INFORMATION.test(words ?? '') || INFORMATION_TH.test(words ?? '') || INFORMATION_LOCAL.test(words ?? '');
+}
+
+/** The languages INFORMATION_LOCAL and PLACE_LOCAL speak for. */
+const CYRILLIC_OR_LAO_LANGUAGES: ReadonlySet<string> = new Set(['ru', 'mn', 'lo']);
+
+/** INFORMATION in Thai, which has no word boundaries for it to test. */
+const INFORMATION_TH = /ข้อมูล|สารสนเทศ|เอกสาร|บันทึก|ทะเบียน|บัญชี|รายงาน/;
+
 const INFORMATION =
   /\b(information|data|dataset\w*|records?|recorded|documents?|particulars?|details?|registers?|books?|accounts?|files?|communications?|messages?|contents?|statements?|reports?|copies|copy|logs?|databases?|credentials?|personal\w*)\b/i;
 
@@ -2451,8 +2531,14 @@ const PLACE_KIND =
 const PLACE_NAME = /\p{Lu}\p{L}{2,}/u;
 
 function namesAPlace(words: string | null): boolean {
-  return !!words && (PLACE_KIND.test(words) || PLACE_NAME.test(words) || PLACE_LOCAL.test(words));
+  return !!words && (PLACE_KIND.test(words) || PLACE_KIND_TH.test(words) || PLACE_NAME.test(words) || PLACE_LOCAL.test(words));
 }
+
+/**
+ * PLACE_KIND in Thai. Thai has no capitals, so a place's name cannot be told by its case, and the
+ * common nouns carry the whole test: a kingdom, a country, abroad, a territory, a jurisdiction.
+ */
+const PLACE_KIND_TH = /ราชอาณาจักร|ประเทศ|ต่างประเทศ|นอกประเทศ|ดินแดน|เขตอำนาจ|ต่างแดน/;
 
 /**
  * Does this proportion say how much must be held, rather than how much may be?
@@ -2662,6 +2748,20 @@ function statesASubject(subjectWords: string): boolean {
 }
 
 /** Is this measure one the rubric describes as a permission or a limit rather than a command? */
+/**
+ * Whether the finding is the words laying a charge on goods, for a measure that is one -- see
+ * `laidOnGoods`. The act has to lay it now: "imposes", "levies". A charge the provision only
+ * refers to as laid already -- "had imposed", "has been imposed" -- is laid somewhere else, and
+ * counting it here would count that instrument twice.
+ */
+function laysTheCharge(indicatorId: string, f: Pick<Finding, 'measure' | 'dutyAct'>): boolean {
+  const laid = (MEASURES[indicatorId] ?? []).some((m) => m.token === f.measure && m.laidOnGoods === true);
+  const act = f.dutyAct ?? '';
+  return laid && LAYS_A_CHARGE.test(act) && !REFERS_TO_A_CHARGE_LAID.test(act);
+}
+const LAYS_A_CHARGE = /\b(impos|levi|levy|charg)\w*/i;
+const REFERS_TO_A_CHARGE_LAID = /\b(had|has|have|was|were|been|to be|shall be|may)\b/i;
+
 function permits(indicatorId: string, measure: string | null): boolean {
   if (!measure) return false;
   return (MEASURES[indicatorId] ?? []).some((m) => m.token === measure && m.permits === true);
@@ -2798,6 +2898,22 @@ function absenceFor(input: DecideInput): Absence | null {
     pillarFindings: 0,
     currentTo: top.currentTo ?? null,
   };
+}
+
+/**
+ * The measure as the rubric states it first: a duty on the online service provider.
+ *
+ * 8.3's user-identity measure binds "the internet or online service provider", and every finding
+ * that makes it out counts. But a service's own terms telling its users to log in -- a central
+ * bank's rules for its bond information website -- make it out too, and they are not the law that
+ * requires providers to know their users. The row leads with the provision whose party bound is
+ * named, or defined by its own instrument, as an online service; nothing is dropped.
+ */
+function providerBoundFirst(found: Evidence[]): Evidence[] {
+  const domain = MEASURE_DOMAIN['user-identity'];
+  if (!domain) return found;
+  const bound = found.filter((e) => domain.test(e.finding.dutyBearer ?? '') || domain.test(e.definedAs ?? ''));
+  return [...bound, ...found.filter((e) => !bound.includes(e))];
 }
 
 /**
