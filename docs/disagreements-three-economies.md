@@ -74,6 +74,10 @@ requirement, the 0.5 band. ESCAP cites only the e-data and e-transactions laws.
 
 ## Contestable
 
+*Added after the 28 September word-list fix:* **LAO 5.5** (ours 1, ESCAP 0). The Law on Radio
+Frequency requires an applicant to have "ມີຖານະທາງດ້ານການເງິນທີ່ຫັ້ນດົງ" (a stable financial position)
+to hold a licence; the band names minimum capital as a strict condition. Defensible either way.
+
 - **MNG 5.7** (ESCAP 1). ESCAP scores no independent telecom authority; the Communications
   Regulatory Commission is established by the Law on Communications. Independence is a judgement.
 - **MNG 6.3** (ours 0). ESCAP has two rows, 0 on the Personal Data Protection and Public Information
