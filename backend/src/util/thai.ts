@@ -17,5 +17,10 @@
  * out of scope for this branch; see docs/thailand-integration-plan.md's combining-mark section.
  */
 export function canonicalizeThai(s: string): string {
-  return s.replace(/ํา/g, 'ำ');
+  return s.replace(/ํา/g, 'ำ').replace(/ໍາ/g, 'ຳ');
 }
+// Lao has the identical case: ຳ (U+0EB3) against NIGGAHITA + SARA AA (U+0ECD U+0EB2), with no
+// canonical decomposition either. Lao OCR produces the two-point form in 61% of the provisions held
+// (7,027 of 11,423, measured 28 September 2026) while the Lao query translations are all written
+// with the single point, so without this fold a Lao keyword query containing it missed most of the
+// corpus. Lao script only, so no Thai, Latin or Cyrillic text is touched.

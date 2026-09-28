@@ -272,6 +272,18 @@ describe('canonicalizeThai on its own (unit-level, no database involved)', () =>
     const alreadyComposed = 'น้ำมันเชื้อเพลิง'; // "fuel oil" -- precomposed SARA AM only
     expect(canonicalizeThai(alreadyComposed)).toBe(alreadyComposed);
   });
+
+  it('folds the Lao two-point AM the same way, so a Lao query finds OCR text written either way', () => {
+    // "ການນໍາເຂົ້າ" (import) as Lao OCR writes it, against the single-point form the query uses.
+    const ocr = 'ການນໍາເຂົ້າ ແລະ ການກໍານົດ';
+    expect(canonicalizeThai(ocr)).toBe('ການນຳເຂົ້າ ແລະ ການກຳນົດ');
+    expect(canonicalizeThai('ການນຳເຂົ້າ')).toBe('ການນຳເຂົ້າ');
+  });
+
+  it('leaves Latin and Cyrillic text untouched by the Lao fold', () => {
+    const other = 'Статья 18. Personal data -- хувийн мэдээлэл';
+    expect(canonicalizeThai(other)).toBe(other);
+  });
 });
 
 describe('the offset invariant survives Thai normalization end to end', () => {
