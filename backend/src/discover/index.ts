@@ -439,6 +439,24 @@ export const MAX_ATTEMPTS = 3;
  */
 const WRAPPER_GAIN = 3;
 
+/**
+ * A file a page links, or null where another host would not give it to us. Mongolia's legalinfo.mn
+ * links amendments at old.legalinfo.mn, a name that no longer resolves; three of those in a row
+ * suspended that host and the suspension stopped the read of every law still queued on
+ * legalinfo.mn itself. The page is still the page: where the file it links is out of reach, the
+ * page is what is read. A failure on the page's own host is the page's host failing, and is
+ * thrown as it always was.
+ */
+async function linkedFile(fetcher: Fetcher, url: string, pageUrl: string, log: (line: string) => void): Promise<FetchResult | null> {
+  try {
+    return await fetcher.fetch(url);
+  } catch (err) {
+    if (err instanceof CacheMiss || new URL(url).host === new URL(pageUrl).host) throw err;
+    log(`  linked file not read, the page is kept: ${err instanceof Error ? err.message : String(err)}`);
+    return null;
+  }
+}
+
 /** What a parse actually yielded to search, which is the only comparable measure of a document. */
 function textLength(parsed: { sections: { text: string }[] }): number {
   return parsed.sections.reduce((n, s) => n + s.text.length, 0);
@@ -528,8 +546,8 @@ export async function materialise(
       const wrapper = parsed.unread?.reason === 'landing-page' || parsed.unread?.reason === 'empty';
       if (wrapper && /html/i.test(fetched.mediaType)) {
         const only = soleDocumentLink(decodeBody(fetched), fetched.finalUrl);
-        if (only) {
-          const inner = await fetcher.fetch(only);
+        const inner = only ? await linkedFile(fetcher, only, fetched.finalUrl, log) : null;
+        if (only && inner) {
           const reparsed = inner.status === 200 ? await parseDocument(inner, { languages: profile.officialLanguages }) : null;
           if (reparsed && !reparsed.unread) {
             fetched = inner;
@@ -561,8 +579,8 @@ export async function materialise(
       if (!adopted && /html/i.test(fetched.mediaType)) {
         const body = decodeBody(fetched);
         const named = namedDocumentLink(body, fetched.finalUrl, row.title) ?? pointedDocumentLink(body, fetched.finalUrl);
-        if (named && named !== fetched.finalUrl) {
-          const inner = await fetcher.fetch(named);
+        const inner = named && named !== fetched.finalUrl ? await linkedFile(fetcher, named, fetched.finalUrl, log) : null;
+        if (named && inner) {
           const reparsed = inner.status === 200 ? await parseDocument(inner, { languages: profile.officialLanguages }) : null;
           const held = textLength(parsed);
           const offered = reparsed ? textLength(reparsed) : 0;
