@@ -54,11 +54,10 @@ describe('the OCR language packs', () => {
   });
 
   /**
-   * Mongolia and Russia are deliberately absent from the list above.
-   *
-   * Both write Cyrillic, and neither portal has yet been found serving a scan: legalinfo.mn
-   * renders its documents as HTML and publication.pravo.gov.ru is server-rendered. Adding `rus`
-   * and `mon` before a scan turns up would be building against a guess, which is what
+   * Mongolia is deliberately absent from the list above: legalinfo.mn renders its documents as
+   * HTML and no Mongolian scan has turned up. Russia's did on 28 September 2026 -- the Eurasian
+   * Economic Union's acts before 2015 are copier scans with no text layer -- so `rus` is packaged.
+   * Adding `mon` before a scan turns up would be building against a guess, which is what
    * docs/thailand-integration-plan.md's "what shouldn't be built speculatively" section warns
    * against. Both packs exist on npm at MIT if one does.
    */
@@ -69,6 +68,7 @@ describe('the OCR language packs', () => {
       '@tesseract.js-data/eng',
       '@tesseract.js-data/hin',
       '@tesseract.js-data/lao',
+      '@tesseract.js-data/rus',
       '@tesseract.js-data/tha',
     ]);
   });
