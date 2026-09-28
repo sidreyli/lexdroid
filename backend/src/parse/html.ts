@@ -309,6 +309,16 @@ export function soleDocumentLink(html: string, pageUrl: string): string | null {
 }
 
 /**
+ * A link a web server can answer. Mongolia's register pastes some laws' file links as the drafter's
+ * own disk -- `file:///Users/.../08-ne-89.doc` -- and following one failed with no host, three of
+ * them in a row tripped the refusal breaker, and the rest of a 1,482-law read stopped at law 124.
+ * Such a link names a file nobody can fetch, so the page keeps its own text instead.
+ */
+function servedOverTheWeb(target: URL): boolean {
+  return target.protocol === 'http:' || target.protocol === 'https:';
+}
+
+/**
  * The one file a page publishes under the instrument's own name.
  *
  * A regulator that announces a policy document by posting a page linking it has the crawl
@@ -331,6 +341,7 @@ export function namedDocumentLink(html: string, pageUrl: string, title: string):
     if (!text || !namesTheSame(text, title)) return;
     try {
       const target = new URL(href, pageUrl);
+      if (!servedOverTheWeb(target)) return;
       target.hash = '';
       // A site linking itself under its other name. Bank Negara's pages are served from
       // www.bnm.gov.my and two of them link their own policy at bnm.gov.my, which answers 202 to
@@ -401,6 +412,7 @@ export function pointedDocumentLink(html: string, pageUrl: string): string | nul
     if (!href || !/\.(?:pdf|docx?|rtf)(?:$|\?)/i.test(href)) return;
     try {
       const target = new URL(href, pageUrl);
+      if (!servedOverTheWeb(target)) return;
       target.hash = '';
       // The same site under its other name, as `namedDocumentLink` explains.
       if (target.host !== here && target.host.replace(/^www\./i, '') === here.replace(/^www\./i, '')) {

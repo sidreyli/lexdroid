@@ -86,6 +86,14 @@ describe('the file a page links under its own name', () => {
     expect(namedDocumentLink(elsewhere, PAGE, TITLE)).toBe('https://cdn.example.com/e-money-pd.pdf');
   });
 
+  it('is not named when its link is a file on the drafter’s own disk, which no server answers', () => {
+    const onDisk = ANNOUNCEMENT.replace(
+      '<a href="/documents/20124/943361/e-money-pd.pdf">',
+      '<a href="file:///Users/drafter/Desktop/e-money-pd.pdf">',
+    );
+    expect(namedDocumentLink(onDisk, PAGE, TITLE)).toBeNull();
+  });
+
   it('is not named when nothing linked carries the instrument’s name', () => {
     const anonymous = ANNOUNCEMENT.replace(
       `<a href="/documents/20124/943361/e-money-pd.pdf">${TITLE}</a>`,
