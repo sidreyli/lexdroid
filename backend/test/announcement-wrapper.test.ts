@@ -133,4 +133,18 @@ describe('a page that announces a document is replaced by the document', () => {
     expect(storedUrl(db)).toBe(page);
     db.close();
   });
+
+  it('keeps the page when the file it links sits on a host that no longer answers', async () => {
+    const db = register(TITLE, PAGE);
+    const fetch = vi.fn(async (url: string) => {
+      if (url === POLICY) throw new Error(`${url} did not complete: getaddrinfo ENOTFOUND`);
+      return served(url, ANNOUNCEMENT);
+    });
+    const [result] = await materialise(db, loadProfile('MYS'), { fetch } as never, { instrumentIds: [1] });
+    // The page is what is held -- read or not on its own merits -- and the instrument is not failed.
+    expect(result!.outcome).not.toBe('error');
+    expect(fetch).toHaveBeenCalledWith(POLICY);
+    expect(storedUrl(db)).toBe(PAGE);
+    db.close();
+  });
 });

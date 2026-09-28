@@ -415,6 +415,23 @@ export async function fetchDocument(url: string, fetcher: Fetcher): Promise<Fetc
   return cbicDownloadUrl(url) ? resolveCbicDocument(url, fetcher) : fetcher.fetch(url);
 }
 
+/**
+ * A file a page offers, or null where it could not be had. The page itself was served, so a file
+ * it links on a host that has gone -- legalinfo.mn links laws' Word files on old.legalinfo.mn,
+ * which no longer resolves -- leaves the page as the document rather than failing the instrument.
+ * Three such laws in a row tripped that host's refusal breaker and stopped a 1,360-law Mongolian
+ * read at law 216, though legalinfo.mn itself was answering every request.
+ */
+async function offeredFile(fetcher: Fetcher, url: string, note: (why: string) => void): Promise<FetchResult | null> {
+  try {
+    return await fetcher.fetch(url);
+  } catch (err) {
+    if (err instanceof CacheMiss) throw err;
+    note(err instanceof Error ? err.message : String(err));
+    return null;
+  }
+}
+
 export function adapterFor(db: Db, profile: EconomyProfile, via: string): Adapter | null {
   const id = Number(via.replace('portal:', ''));
   const row = db.prepare('SELECT url FROM portal WHERE id = ?').get(id) as { url: string } | undefined;
@@ -531,9 +548,9 @@ export async function materialise(
       if (wrapper && /html/i.test(fetched.mediaType)) {
         const only = soleDocumentLink(decodeBody(fetched), fetched.finalUrl);
         if (only) {
-          const inner = await fetcher.fetch(only);
-          const reparsed = inner.status === 200 ? await parseDocument(inner, { languages: profile.officialLanguages }) : null;
-          if (reparsed && !reparsed.unread) {
+          const inner = await offeredFile(fetcher, only, (why) => log(`  [${n + 1}/${rows.length}] the file it links did not come: ${why}`));
+          const reparsed = inner === null ? null : inner.status === 200 ? await parseDocument(inner, { languages: profile.officialLanguages }) : null;
+          if (inner && reparsed && !reparsed.unread) {
             fetched = inner;
             parsed = reparsed;
             adopted = true;
@@ -563,8 +580,10 @@ export async function materialise(
       if (!adopted && /html/i.test(fetched.mediaType)) {
         const body = decodeBody(fetched);
         const named = namedDocumentLink(body, fetched.finalUrl, row.title) ?? pointedDocumentLink(body, fetched.finalUrl);
-        if (named && named !== fetched.finalUrl) {
-          const inner = await fetcher.fetch(named);
+        const inner = named && named !== fetched.finalUrl
+          ? await offeredFile(fetcher, named, (why) => log(`  [${n + 1}/${rows.length}] the file it links did not come, the page is kept: ${why}`))
+          : null;
+        if (named && inner) {
           const reparsed = inner.status === 200 ? await parseDocument(inner, { languages: profile.officialLanguages }) : null;
           const held = textLength(parsed);
           const offered = reparsed ? textLength(reparsed) : 0;
