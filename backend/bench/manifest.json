@@ -12,7 +12,9 @@
     "tha-p68": "lexdroid.bench-tha-p68.db",
     "lao": "lexdroid.bench-lao.db",
     "lao-fix": "lexdroid.bench-lao-fix.db",
-    "lao-fix2": "lexdroid.bench-lao-fix2.db"
+    "lao-fix2": "lexdroid.bench-lao-fix2.db",
+    "rus": "lexdroid.bench-rus.db",
+    "mng": "lexdroid.bench-mng.db"
   },
   "sources": [
     { "economy": "AUS", "pack": "aus-mys-sgp", "run": "a74d0fca-5362-4ee1-9194-983d70a66eab", "skip": [12] },
@@ -29,7 +31,9 @@
     { "economy": "THA", "pack": "tha-p511", "run": "32cab2a4-9e5e-45f3-b475-bcec480d01ee", "pillars": [5, 11] },
     { "economy": "THA", "pack": "tha-p68", "run": "6c775d5c-d600-40f0-afb9-debfe271c3ef", "pillars": [6] },
     { "economy": "THA", "pack": "tha-p68", "run": "b4a8abcc-69b8-42c6-a295-ff146c33ad3e", "pillars": [8] },
-    { "economy": "LAO", "pack": "lao-fix2", "run": "452f3e65-9efd-43e0-b6e0-d872f7cbc666" }
+    { "economy": "LAO", "pack": "lao-fix2", "run": "452f3e65-9efd-43e0-b6e0-d872f7cbc666" },
+    { "economy": "RUS", "pack": "rus", "run": "24fc8068-9eab-45bc-addc-c6819c3c2e19" },
+    { "economy": "MNG", "pack": "mng", "run": "515b4c45-98bd-4e71-8897-2e63d2007c48" }
   ],
   "audit": {
     "unearned": ["AUS 10.3", "MYS 10.2", "MYS 11.3", "THA 10.2", "THA 3.1", "IND 12.4.6"],
