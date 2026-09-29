@@ -1834,8 +1834,16 @@ const TRADE = new RegExp(
   'i',
 );
 
-/** Both halves, in either order: it has to be trade, and it has to be trade done online. */
-const ONLINE_TRADE = new RegExp(`(?=.*${TRADE.source})(?=.*${ONLINE.source})`, 'i');
+/**
+ * Both halves, in either order: it has to be trade, and it has to be trade done online.
+ *
+ * Each half is grouped. Both are alternations, and `.*` set before an ungrouped one reaches only
+ * its first branch -- the English words -- so every Thai, Russian, Mongolian and Lao term was
+ * asked for at the very start of the subject. "ການຄ້າທາງເອເລັກໂຕຣນິກ", electronic commerce, opens on
+ * its trade word and failed on its online one, and Lao PDR's Decree on Electronic Commerce had
+ * each of its licensing provisions held as "stated only in English".
+ */
+const ONLINE_TRADE = new RegExp(`(?=.*(?:${TRADE.source}))(?=.*(?:${ONLINE.source}))`, 'i');
 
 /**
  * What a licence has to be a licence *for* to be a licence to provide online content.
