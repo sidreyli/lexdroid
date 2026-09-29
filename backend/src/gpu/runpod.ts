@@ -326,16 +326,19 @@ async function rentOne(
 ): Promise<Pod> {
   let created: RawPod | undefined;
   let lastError: unknown;
-  for (const cloud of ['COMMUNITY', 'SECURE'] as const) {
-    const gpus = available.filter((o) => o.cloud === cloud).slice(0, 8).map((o) => o.gpu);
-    if (gpus.length === 0) continue;
-    try {
-      created = await call<RawPod>('POST', '/pods', createBody(engine, rental, gpus, token, REPO_ROOT, cloud, slot));
-      break;
-    } catch (err) {
-      // Out of stock on this tier is the expected failure; anything else is not.
-      lastError = err;
-      if (!/no instances currently available/i.test(String(err))) throw err;
+  // A request names at most 8 GPU types, so a tier with more under the ceiling is asked for in
+  // eights, cheapest first: when the cheap ones are out of stock a dearer one still gets asked for.
+  tiers: for (const cloud of ['COMMUNITY', 'SECURE'] as const) {
+    const all = available.filter((o) => o.cloud === cloud).map((o) => o.gpu);
+    for (let i = 0; i < all.length; i += 8) {
+      try {
+        created = await call<RawPod>('POST', '/pods', createBody(engine, rental, all.slice(i, i + 8), token, REPO_ROOT, cloud, slot));
+        break tiers;
+      } catch (err) {
+        // Out of stock on this tier is the expected failure; anything else is not.
+        lastError = err;
+        if (!/no instances currently available/i.test(String(err))) throw err;
+      }
     }
   }
   if (!created) {
