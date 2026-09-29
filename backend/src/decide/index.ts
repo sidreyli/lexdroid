@@ -1895,7 +1895,18 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
         // for every provision after it just as a title does -- see definedFor in ../cell.
         (TITLE_CARRIES_DOMAIN.has(e.finding.measure ?? '') && domain.test(e.definedAs ?? '')) ||
         (TARIFF_CODED_DOMAIN.has(indicatorId) && (e.ictTariffCodes?.length ?? 0) > 0));
-    if (domain && !namesDomain && e.finding.subjectWords && !domain.test(e.finding.subjectWords) && otherLanguage(e)) {
+    // Words in another language that the domain's own words for it do not reach are not thereby
+    // outside it: those lists are stems, and a statute's chapter names its topic in its own terms.
+    // The title of the instrument they were read in does answer, as it does for a sector. Lao PDR's
+    // copyright decree heads its fair use article with the exception's name and nothing else, and
+    // asked of that name alone the domain held the one provision stating the model 4.5's top band
+    // names. Only where held: English words are still asked of themselves. And only for a measure
+    // that grants -- an exception, a remedy -- which is stated inside the statute creating the
+    // right; a restriction is asked of its own words, since a radio Act's ban on importing
+    // equipment is in a telecom title and is not a ban on ICT goods for that.
+    const grants = (MEASURES[indicatorId] ?? []).some((m) => m.token === e.finding.measure && m.permits === true);
+    const titledInDomain = domain !== null && grants && otherLanguage(e) !== null && domain.test(e.instrumentTitle);
+    if (domain && !namesDomain && !titledInDomain && e.finding.subjectWords && !domain.test(e.finding.subjectWords) && otherLanguage(e)) {
       held.push({
         evidence: e,
         reason: `the subject "${e.finding.subjectWords}" is in ${otherLanguage(e)}, and this indicator's subject is stated only in English`,
@@ -1905,6 +1916,7 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     if (
       domain &&
       !namesDomain &&
+      !titledInDomain &&
       e.finding.subjectWords &&
       !domain.test(e.finding.subjectWords) &&
       statesASubject(e.finding.subjectWords)
@@ -1931,7 +1943,7 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     // And the other way round for a sector: the words name no sector and neither does the Act they
     // were read in, so the provision is about some other trade. Ruled out for the reason the
     // subject test is -- the provision was read and what it is about belongs elsewhere.
-    if (domain && SECTOR_DOMAINS.has(indicatorId) && !namesDomain) {
+    if (domain && SECTOR_DOMAINS.has(indicatorId) && !namesDomain && !titledInDomain) {
       excludeOnWords(`neither "${e.finding.subjectWords ?? e.instrumentTitle}" nor the instrument it is in names ${subject ?? "this indicator's subject"}`);
       continue;
     }

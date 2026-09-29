@@ -2174,4 +2174,30 @@ describe('Lao PDR read in its own words', () => {
     });
     expect(reasons(d)).not.toContain('empowers another instrument');
   });
+
+  const indicator45 = indicatorAt('4.5', [
+    { score: 1, criterion: 'Lack of copyright legal framework OR lack of copyright exceptions' },
+    { score: 0.5, criterion: 'Unclear copyright exceptions, such as three-step test and other types of copyright exceptions' },
+    { score: 0, criterion: 'Clear copyright exceptions following fair use or fair dealing model' },
+  ]);
+  const fairUse = (instrumentTitle: string): Evidence => ({
+    ...lao('4.5', 'fair-use-exception', {
+      quote: 'ການນໍາໃຊ້ທີ່ເຫນາະສົມ',
+      definingWords: 'ການນໍາໃຊ້ທີ່ເຫນາະສົມ',
+      subjectWords: 'ການນໍາໃຊ້ທີ່ເຫນາະສົມ',
+      dutyForce: 'permits',
+    }),
+    instrumentTitle,
+  });
+
+  it("takes a copyright exception's domain from the title of the copyright decree it is in", () => {
+    const d = decide({ indicator: indicator45, economy: 'LAO', evidence: [fairUse('ຂໍ້ຕົກລົງວ່າດ້ວຍ ລິຂະສິດ ແລະ ສິດກ່ຽວຂ້ອງກັບລິຂະສິດ')], surfaced, coverage });
+    expect(reasons(d)).not.toContain("this indicator's subject is stated only in English");
+    expect(d.score).toBe(0);
+  });
+
+  it('does not take it from a law about something else', () => {
+    const d = decide({ indicator: indicator45, economy: 'LAO', evidence: [fairUse('ກົດໝາຍວ່າດ້ວຍ ທີ່ດິນ')], surfaced, coverage });
+    expect(d.basis).toHaveLength(0);
+  });
 });
