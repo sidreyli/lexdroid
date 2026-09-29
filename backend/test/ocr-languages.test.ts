@@ -47,6 +47,7 @@ describe('the OCR language packs', () => {
       hi: 'hin',
       lo: 'lao',
       th: 'tha',
+      mn: 'mon',
     };
     for (const [language, pack] of Object.entries(needsOwnPack)) {
       expect(() => localRequire(`@tesseract.js-data/${pack}`), `${language} has no OCR pack`).not.toThrow();
@@ -54,13 +55,16 @@ describe('the OCR language packs', () => {
   });
 
   /**
-   * Mongolia and Russia are deliberately absent from the list above.
+   * Russia is deliberately absent from the list above; Mongolia was until a scan turned up.
    *
-   * Both write Cyrillic, and neither portal has yet been found serving a scan: legalinfo.mn
-   * renders its documents as HTML and publication.pravo.gov.ru is server-rendered. Adding `rus`
-   * and `mon` before a scan turns up would be building against a guess, which is what
-   * docs/thailand-integration-plan.md's "what shouldn't be built speculatively" section warns
-   * against. Both packs exist on npm at MIT if one does.
+   * Both write Cyrillic, and neither portal was at first found serving a scan: legalinfo.mn
+   * renders its documents as HTML and publication.pravo.gov.ru is server-rendered. Then four
+   * legalinfo.mn instruments came back with an empty content block, each a scan pasted into the
+   * page -- so `mon` is packaged. The Russian scans found so far are gazette PDFs under
+   * publication.pravo.gov.ru's /file/pdf, which its robots.txt disallows, so a `rus` pack would
+   * read nothing the pipeline may fetch. Adding one before then would be building against a guess,
+   * which is what docs/thailand-integration-plan.md's "what shouldn't be built speculatively"
+   * section warns against. The pack exists on npm at MIT if one does.
    */
   it('does not package a language no profile has yet needed', () => {
     const declared = localRequire('../package.json') as { dependencies: Record<string, string> };
@@ -69,6 +73,7 @@ describe('the OCR language packs', () => {
       '@tesseract.js-data/eng',
       '@tesseract.js-data/hin',
       '@tesseract.js-data/lao',
+      '@tesseract.js-data/mon',
       '@tesseract.js-data/tha',
     ]);
   });

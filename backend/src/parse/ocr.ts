@@ -12,12 +12,21 @@ const TESSERACT_CACHE = join(OCR_ROOT, 'cache');
 const RENDER_SCALE = 2.5;
 const localRequire = createRequire(import.meta.url);
 const pdfRequire = createRequire(localRequire.resolve('pdfjs-dist/package.json'));
-const { createCanvas } = pdfRequire('@napi-rs/canvas') as {
+const { createCanvas, loadImage } = pdfRequire('@napi-rs/canvas') as {
   createCanvas(width: number, height: number): {
     getContext(type: '2d'): unknown;
     toBuffer(type: 'image/png'): Buffer;
   };
+  loadImage(source: Buffer): Promise<{ width: number; height: number }>;
 };
+
+/** What a 2d context is asked to do here, and nothing more. */
+interface Paint {
+  fillStyle: string;
+  imageSmoothingQuality: string;
+  fillRect(x: number, y: number, w: number, h: number): void;
+  drawImage(image: unknown, x: number, y: number, w: number, h: number): void;
+}
 
 interface LanguagePackage {
   code: string;
@@ -39,6 +48,8 @@ export interface OcrPage {
   page: number;
   lines: string[];
   confidence: number;
+  /** What the engine returned, blank lines and all: a blank line is where it saw a paragraph end. */
+  text?: string;
 }
 
 /**
@@ -47,7 +58,7 @@ export interface OcrPage {
  * of these if the pack finds its script on it -- the English pack reads Thai as Latin gibberish,
  * and before Thailand had a pack the Hindi one read a Thai notification as Devanagari.
  */
-type Pack = 'hin' | 'tha' | 'lao';
+type Pack = 'hin' | 'tha' | 'lao' | 'mon';
 
 const SCRIPTS: Record<string, { pack: Pack; chars: RegExp }> = {
   hi: { pack: 'hin', chars: /[\u0900-\u097f]/g },
@@ -55,6 +66,10 @@ const SCRIPTS: Record<string, { pack: Pack; chars: RegExp }> = {
   // The Lao Official Gazette publishes image-only scans -- one sampled at 1.09 MB carried zero
   // /Font and zero /ToUnicode -- so every Lao document reaches the pipeline through this pack.
   lo: { pack: 'lao', chars: /[\u0e80-\u0eff]/g },
+  // legalinfo.mn serves some instruments as a scan pasted into the page -- a Finance Minister's
+  // order, a six-page forestry procedure -- with no text beside it. The Cyrillic block is the
+  // pack's evidence; the English pass has already declined the page by then.
+  mn: { pack: 'mon', chars: /[\u0400-\u04ff]/g },
 };
 
 /** The packs to consult for an economy's languages. With none stated, Hindi, as before Thailand. */
@@ -73,6 +88,7 @@ function localLanguageData(): string {
     localRequire('@tesseract.js-data/hin') as LanguagePackage,
     localRequire('@tesseract.js-data/tha') as LanguagePackage,
     localRequire('@tesseract.js-data/lao') as LanguagePackage,
+    localRequire('@tesseract.js-data/mon') as LanguagePackage,
   ];
   mkdirSync(TESSDATA_DIR, { recursive: true });
   mkdirSync(TESSERACT_CACHE, { recursive: true });
@@ -185,6 +201,50 @@ export async function ocrPdfPages(
   } finally {
     await doc.destroy();
     if (ownsEngine) await engine.close();
+  }
+  return pages;
+}
+
+/**
+ * The narrowest page OCR is given. A scan published for the screen can be small: a Mongolian
+ * minister's order came as a 460-pixel-wide JPEG, and read at that size it was 17% confidence
+ * with no sentence of it right. Drawn at three times the size the same image read at 84%, every
+ * point of the order word for word. Enlarging adds no detail, but the engine's models are trained
+ * on letters the size a printed page has at 300 dpi, which is about what this width gives an A4 page.
+ */
+const MIN_WIDTH = 1400;
+
+/** An image enlarged to a readable width, on white: a transparent PNG would otherwise read as black. */
+async function readable(image: Buffer): Promise<Buffer> {
+  const img = await loadImage(image);
+  const scale = Math.min(4, Math.max(1, MIN_WIDTH / img.width));
+  const width = Math.round(img.width * scale);
+  const height = Math.round(img.height * scale);
+  const canvas = createCanvas(width, height);
+  const paint = canvas.getContext('2d') as Paint;
+  paint.imageSmoothingQuality = 'high';
+  paint.fillStyle = 'white';
+  paint.fillRect(0, 0, width, height);
+  paint.drawImage(img, 0, 0, width, height);
+  return canvas.toBuffer('image/png');
+}
+
+/** OCR for pages that are images already -- a scan a web page shows in place of its text. Image n is page n. */
+export async function ocrImages(
+  images: readonly Buffer[],
+  languages?: readonly string[],
+  suppliedEngine?: OcrEngine,
+): Promise<OcrPage[]> {
+  if (images.length === 0) return [];
+  const engine = suppliedEngine ?? (await createTesseractEngine(languages));
+  const pages: OcrPage[] = [];
+  try {
+    for (const [i, image] of images.entries()) {
+      const recognized = await engine.recognize(await readable(image), i + 1);
+      pages.push({ page: i + 1, lines: linesOf(recognized.text), confidence: recognized.confidence, text: recognized.text });
+    }
+  } finally {
+    if (!suppliedEngine) await engine.close();
   }
   return pages;
 }

@@ -41,6 +41,7 @@
 import * as cheerio from 'cheerio';
 import type { AnyNode } from 'domhandler';
 import { nodeText } from './html-text.js';
+import type { OcrPage } from './ocr.js';
 import { SectionBuilder, type ParsedDocument } from './types.js';
 
 /** Where the instrument's own text lives, most specific first. */
@@ -439,4 +440,161 @@ export function parseLegalinfo(html: string, url: string): ParsedDocument {
     parser: 'legalinfo',
     unread: null,
   };
+}
+
+/**
+ * The scans a page shows in place of its text, in page order: absolute addresses, or the data:
+ * URIs of those pasted into the page itself. Both happen. A forestry procedure carries its six
+ * pages inline as base64 PNGs; a Finance Minister's order links one JPEG under /uploads/images/.
+ *
+ * What is not a scan: the State emblem the site heads every document with (in its own divider),
+ * and the toolbar's icons, which are the site's assets.
+ */
+export function legalinfoScans(html: string, url: string): string[] {
+  const $ = cheerio.load(html);
+  const blocks = [
+    ...CONTENT.map((s) => $(s).filter((_, e) => $(e).closest(ANNEX).length === 0).first()).filter((el) => el.length > 0).slice(0, 1),
+    ...$(ANNEX).toArray().map((a) => $(a)),
+  ];
+  const scans: string[] = [];
+  for (const block of blocks) {
+    for (const img of block.find('img').toArray()) {
+      const src = ($(img).attr('src') ?? '').trim();
+      if (!src || $(img).closest('.nom-more-divider, .nom-more-header').length > 0) continue;
+      if (src.startsWith('data:image/')) {
+        scans.push(src);
+        continue;
+      }
+      const at = new URL(src, url);
+      if (at.host !== new URL(url).host || /^\/(?:assets|storage)\//.test(at.pathname)) continue;
+      scans.push(at.href);
+    }
+  }
+  return [...new Set(scans)];
+}
+
+/**
+ * A line OCR made of something that is not text: a seal, a signature, the edge of the paper.
+ * Letters are most of any line of print, and a stamp read as text is mostly marks and digits.
+ */
+function legible(line: string): boolean {
+  const letters = (line.match(/\p{L}/gu) ?? []).length;
+  const marks = line.replace(/\s/g, '').length;
+  return letters >= 3 && letters / marks >= 0.6;
+}
+
+/**
+ * An article's heading, stop and all: "16 дүгээр зүйл.Газрын ой". A line of print can begin
+ * anywhere in a sentence, and the forestry procedure has one beginning "дүгээр зүйлд заасан" --
+ * "in article [16] of" -- which ARTICLE alone took for a heading, making the procedure one article
+ * with everything before it front matter. A page of text never starts a paragraph there; a line
+ * of OCR can.
+ */
+const ARTICLE_HEADING = /^((?:\S+\s+)?\S*(?:дугаар|дүгээр))\s+зүйл\s*\./iu;
+
+/** A line that begins a provision, a part or a chapter, and so begins a paragraph wherever it falls. */
+function opensUnit(line: string): boolean {
+  return ARTICLE_HEADING.test(line) || pointOf(line) !== null || CHAPTER.test(line) || CHAPTER_NAMED.test(line) || PART.test(line);
+}
+
+/**
+ * OCR's lines put back into the paragraphs the drafter wrote. The engine ends a paragraph with a
+ * blank line, but not always -- it runs short points together, and it breaks mid-sentence at a
+ * page's edge -- so a line that opens a provision opens a paragraph, and otherwise a paragraph
+ * ends only where a blank line follows the end of a sentence.
+ *
+ * And the engine drops stops. The blood service order's points read "1. Цусны", "2 Батлагдсан",
+ * "3 Холбогдох": without the stop, points 2 and 3 were read into point 1. A line opening with the
+ * very number that comes next, and then a capital, is that point, and gets its stop back.
+ */
+function scanParagraphs(pages: readonly OcrPage[]): Paragraph[] {
+  const out: string[] = [];
+  let next = 1;
+  const sentenceEnded = (): boolean => /[.;:!?]$/.test(out[out.length - 1]!);
+  for (const page of pages) {
+    for (const block of (page.text ?? page.lines.join('\n')).split(/\n\s*\n/)) {
+      let blockStart = true;
+      for (let line of block.split('\n').map(clean).filter(legible)) {
+        const bare = /^(\d{1,3})\s+(?=\p{Lu})/u.exec(line);
+        if (bare && Number(bare[1]) === next) line = `${bare[1]}.${line.slice(bare[1]!.length)}`;
+        const unit = opensUnit(line);
+        const continues = out.length > 0 && !unit && (!blockStart || !sentenceEnded() || ARTICLE.test(line));
+        if (continues) out[out.length - 1] += ` ${line}`;
+        else out.push(line);
+        const point = unit ? pointOf(line) : null;
+        if (point?.depth === 1) next = Number(point.label) + 1;
+        blockStart = false;
+      }
+    }
+  }
+  return out.map((text) => ({ text, struck: false, inTable: false }));
+}
+
+/** The least a scan must yield to be read as the instrument, in characters and in the engine's confidence. */
+const SCAN_MIN_CHARS = 200;
+const SCAN_MIN_CONFIDENCE = 50;
+
+/**
+ * A page that heads an annex: "...А-134 дугаар тушаалын хавсралт" ending a line at its top, where
+ * the approving body says what the pages beneath belong to. The noun bare and closing its line;
+ * the order that approves an annex says "хавсралтын ёсоор баталсугай" in its own first point.
+ */
+function headsAnnex(page: OcrPage): boolean {
+  return page.lines.filter(legible).slice(0, 6).some((l) => /хавсралт\s*\.?$/iu.test(l));
+}
+
+/**
+ * An order approving something as its annex: "...журмыг хавсралтын ёсоор баталсугай", "...1 дүгээр
+ * хавсралтаар баталсугай". The annex header is not always legible -- on the forestry procedure the
+ * ministry's seal is stamped across it and OCR read "Я- зар вфралт" -- but the order is typed, and
+ * says there will be one.
+ */
+const APPROVES_ANNEX = /хавсралт(?:ын\s+ёсоор|аар)\s+(?:\S+\s+){0,2}батал/iu;
+
+/** Where the order's pages end and its annex's begin: at a page that heads one, or the first page after an approving order that does not go on with the order's points. */
+function annexStarts(pages: readonly OcrPage[], k: number): boolean {
+  if (headsAnnex(pages[k]!)) return true;
+  const before = pages.slice(0, k).map((p) => p.text ?? p.lines.join('\n')).join('\n').replace(/\s+/g, ' ');
+  if (!APPROVES_ANNEX.test(before)) return false;
+  const opening = pages[k]!.lines.map(clean).filter(legible).find(opensUnit);
+  return !opening || pointOf(opening)?.depth !== 1;
+}
+
+/**
+ * A page that is a scan of the instrument, read from its OCR, sectioned the way its text would
+ * have been. An annex scanned after the order approving it is its own block, as it is when the
+ * site serves the annex as text: the forestry order numbers its points 1, 2, 3 and the procedure
+ * it approves 1.1, 1.2, and read as one block the order's numbering was the unit and the whole
+ * procedure fell into three unnumbered sections under its parts.
+ */
+export function parseLegalinfoScan(pages: readonly OcrPage[], url: string): ParsedDocument {
+  const builder = new SectionBuilder();
+  const blocks: OcrPage[][] = [];
+  let annexBegun = false;
+  pages.forEach((page, k) => {
+    // Once in the annex, only another annex heading starts a block: the annex's own pages follow the approving order too.
+    const starts = k > 0 && (annexBegun ? headsAnnex(page) : annexStarts(pages, k));
+    if (blocks.length === 0 || starts) blocks.push([page]);
+    else blocks[blocks.length - 1]!.push(page);
+    if (starts) annexBegun = true;
+  });
+  const first = headsAnnex(blocks[0]![0]!) ? 1 : 0;
+  const annexes = blocks.length - 1 + first;
+  blocks.forEach((block, i) => {
+    const n = i + first;
+    const annex = n === 0 ? null : { name: annexes > 1 ? `Хавсралт ${n}` : 'Хавсралт', repealed: false };
+    readBlock(builder, scanParagraphs(block), annex);
+  });
+  const confidence = pages.length ? Math.round(pages.reduce((n, p) => n + p.confidence, 0) / pages.length) : 0;
+  const meta = { ocrPages: String(pages.length), ocrConfidence: String(confidence) };
+  if (builder.text.length < SCAN_MIN_CHARS || confidence < SCAN_MIN_CONFIDENCE) {
+    return {
+      extraction: 'none', text: '', sections: [], title: null, meta, parser: 'legalinfo-ocr',
+      unread: {
+        reason: 'ocr-below-threshold',
+        detail: `${url} is ${pages.length} scanned page(s); OCR read ${builder.text.length} characters at ${confidence}% confidence, below the evidence threshold.`,
+      },
+    };
+  }
+  return { extraction: 'ocr', text: builder.text, sections: builder.sections, title: null, meta, parser: 'legalinfo-ocr', unread: null };
 }
