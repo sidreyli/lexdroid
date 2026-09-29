@@ -91,7 +91,7 @@ export function slotOf(name: string, engineId: string): number | null {
   const prefix = `${podName(engineId)}-`;
   if (!name.startsWith(prefix)) return null;
   const n = name.slice(prefix.length);
-  return /^[2-9]\d*$/.test(n) ? Number(n) : null;
+  return /^([2-9]|[1-9]\d+)$/.test(n) ? Number(n) : null;
 }
 
 /** The lowest free slots, as many as are asked for. */
