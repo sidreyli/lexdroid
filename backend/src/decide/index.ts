@@ -18,7 +18,7 @@
  */
 import type { Indicator, ScoreBand } from '../rubric/types.js';
 import type { Finding } from '../read/index.js';
-import { DATA_SUBJECT, FRAMEWORK_TITLE_DOMAIN, HEADING_CLASS_DOMAIN, MEASURES, MEASURE_DOMAIN, MEASURE_NAMES, RESTRICTION_ANY, SECTOR_ASKED_IN_ITS_OWN_PILLAR, SECTOR_DOMAINS, SUBJECTS, TITLE_CARRIES_DOMAIN, SUBJECT_DOMAIN, TARIFF_CODED_DOMAIN } from '../rubric/measures.js';
+import { DATA_SUBJECT, FRAMEWORK_TITLE_DOMAIN, HEADING_CLASS_DOMAIN, MEASURES, MEASURE_DOMAIN, MEASURE_NAMES, RESTRICTION_ANY, SECTOR_ASKED_IN_ITS_OWN_PILLAR, SECTOR_DOMAINS, STANDARD_ANY, SUBJECTS, TITLE_CARRIES_DOMAIN, SUBJECT_DOMAIN, TARIFF_CODED_DOMAIN } from '../rubric/measures.js';
 import { tallyConfirmations, type ConfirmationTally } from '../read/confirmations.js';
 import { inUsd, moneyIn, type FxRates } from './currency.js';
 import { determinesAParticularCase } from '../discover/titles.js';
@@ -1842,6 +1842,23 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
       ruledOut.push({
         evidence: e,
         reason: `"${e.finding.definingWords ?? e.finding.quote}" names nothing that prohibits, limits or requires anything, and this measure is a residual restriction`,
+      });
+      continue;
+    }
+    // national-payment-standard's only term of art (STANDARD, in measures.ts) is English, and the
+    // same confirmation pass that let a bare noun through for local-bank-account and the RESTRICTION
+    // measures above lets one through here too. Mongolia's Customs Act named "цахим мөнгө"
+    // (electronic money) as the whole of its defining words for this measure as well, and it says
+    // nothing about a standard or a requirement in any language. Checked regardless of
+    // readInItsLanguage, exactly like BANK_STEM and RESTRICTION_ANY, and only for this one measure.
+    if (
+      e.finding.measure === 'national-payment-standard' &&
+      !STANDARD_ANY.test(e.finding.definingWords ?? '') &&
+      !STANDARD_ANY.test(e.finding.quote ?? '')
+    ) {
+      ruledOut.push({
+        evidence: e,
+        reason: `"${e.finding.definingWords ?? e.finding.quote}" names no standard or requirement, and a national-payment-standard measure has to`,
       });
       continue;
     }

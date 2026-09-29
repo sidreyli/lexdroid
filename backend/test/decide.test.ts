@@ -2274,6 +2274,73 @@ describe('a residual payment restriction that names no restricting word', () => 
   });
 });
 
+// national-payment-standard's only term of art (STANDARD, in measures.ts) is English, the same gap
+// RESTRICTION_ANY closes above -- Mongolia's Customs Act named "цахим мөнгө" as the whole of its
+// defining words for this measure too, and Russia's genuine Bank-of-Russia citation is drafted as
+// "требования к защите информации" ("information-security requirements"), never "стандарт".
+describe('a national-payment-standard measure that names no standard or requirement', () => {
+  const indicator1243 = indicator12('12.4.3', [
+    { score: 1, criterion: 'Requirement on the standard used for domestic payments' },
+    { score: 0, criterion: 'No requirement' },
+  ]);
+  const other = (economy: string, language: string, definingWords: string, quote: string, subjectWords: string) => ({
+    ...p12('12.4.3', 'national-payment-standard', { quote, definingWords, subjectWords }),
+    sectionLanguage: language,
+    confirmed: true,
+  });
+
+  it('is not made out by a bare "цахим мөнгө" confirmed in Mongolian as this measure', () => {
+    const d = decide({
+      indicator: indicator1243,
+      economy: 'MNG',
+      evidence: [other('MNG', 'mn', 'цахим мөнгө', 'олон улсын шуудангаар цахим мөнгө хүлээн авахыг хориглоно', 'цахим мөнгө')],
+      surfaced,
+      coverage,
+    });
+    expect(d.score).toBe(0);
+    expect(d.excluded.map((x) => x.reason).join(' ')).toContain('names no standard');
+  });
+
+  it('is made out by a genuine information-security requirement confirmed in Russian', () => {
+    const d = decide({
+      indicator: indicator1243,
+      economy: 'RUS',
+      evidence: [
+        other(
+          'RUS',
+          'ru',
+          'требований к защите информации',
+          'обязаны обеспечивать соблюдение установленных Банком России требований к защите информации при осуществлении переводов денежных средств',
+          'переводов денежных средств',
+        ),
+      ],
+      surfaced,
+      coverage,
+    });
+    expect(d.score).toBe(1);
+  });
+
+  it('is not made out by an unrelated Russian "требование" that names no protection or security', () => {
+    const d = decide({
+      indicator: indicator1243,
+      economy: 'RUS',
+      evidence: [
+        other(
+          'RUS',
+          'ru',
+          'требования к оформлению документов',
+          'Центральный банк устанавливает требования к оформлению документов при переводе денежных средств',
+          'переводе денежных средств',
+        ),
+      ],
+      surfaced,
+      coverage,
+    });
+    expect(d.score).toBe(0);
+    expect(d.excluded.map((x) => x.reason).join(' ')).toContain('names no standard');
+  });
+});
+
 describe('Lao PDR read in its own words', () => {
   const indicatorAt = (id: string, bands: { score: number; criterion: string }[], exception: string | null = null): Indicator => ({
     ...indicator12(id, bands),

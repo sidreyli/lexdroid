@@ -1659,6 +1659,30 @@ const RESTRICTION_LOCAL = [
 export const RESTRICTION_ANY = new RegExp([RESTRICTION.source, RESTRICTION_LOCAL].join('|'), 'i');
 
 /**
+ * STANDARD above is English, the same gap RESTRICTION_ANY closes: national-payment-standard's only
+ * term of art is the English "standard/specification/technical regulation/conform/compliance" list,
+ * with no `_LOCAL` counterpart, so a provision confirmed in another language reaches this measure
+ * only through the confirmation escape hatch, which asks nothing about what the provision says.
+ * Mongolia's Customs Act named "цахим мөнгө" (electronic money) as the whole of its defining words
+ * for six unrelated payment measures at once (see RESTRICTION_ANY's own comment) and was confirmed
+ * in Mongolian as this measure too -- no word in the quote means standard, requirement or anything
+ * about security.
+ *
+ * Russia's own citation for this measure is genuine, and would have broken on
+ * TECHNICAL_STANDARD_LOCAL's Russian stems verbatim: the Bank of Russia's information-security duty
+ * for money transfers is drafted as "требований к защите информации" ("information-security
+ * requirements"), never "стандарт". So the Russian addition here is not the bare stem "требов" --
+ * this same corpus uses "требование" for an unrelated customs-documentation duty and an unrelated
+ * consumer-protection duty -- but the narrower shape the genuine citation actually uses: a
+ * requirement word within a short distance of a protection word. Checked directly against every
+ * national-payment-standard reading in the RUS bench pack, this matches exactly the four genuine
+ * "требования к ... защит..." readings and none of the others (including the two bare "обязательные
+ * требования"/"требования к оформлению документов" readings that would have passed the bare stem).
+ */
+const STANDARD_LOCAL = [TECHNICAL_STANDARD_LOCAL, 'требован\\w*[\\s\\S]{0,20}защит'].join('|');
+export const STANDARD_ANY = new RegExp([STANDARD.source, 'มาตรฐาน|ข้อกำหนดทางเทคนิค', STANDARD_LOCAL].join('|'), 'i');
+
+/**
  * A list of algorithm names was tried here for 'deviating-encryption-standard' and removed.
  *
  * It was worth a cell and it was wrong. Auditing every gate by what it threw out across the three
