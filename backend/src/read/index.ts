@@ -1677,7 +1677,19 @@ const SUBJECT_NAMES_IN_OTHER_LANGUAGES: Record<string, Record<FrameworkSubject, 
     'data-protection': ['ຂໍ້ມູນສ່ວນບຸກຄົນ', 'ປົກປ້ອງຂໍ້ມູນ'],
     cybersecurity: ['ໄຊເບີ', 'ລະບົບຄອມພິວເຕີ', 'ຄວາມປອດໄພທາງໄຊເບີ'],
     'copyright-safe-harbour': ['ລິຂະສິດ'],
-    'intermediary-liability': ['ຜູ້ໃຫ້ບໍລິການ'],
+    // Lao law calls the intermediary ສື່ກາງ, and states its shield in the shapes Thai does: the
+    // intermediary's liability, and an intermediary that has none or need bear none. With only
+    // "ຜູ້ໃຫ້ບໍລິການ", every bank's service provider, the section search handed 8.2 payment and
+    // anti-money-laundering rules, and the E-Transactions Law's article on an intermediary's
+    // non-liability was never examined. With the name alone it was fifth among the section search's
+    // instruments, past the five examined; with the shield's shapes it is the first.
+    'intermediary-liability': [
+      'ຜູ້ໃຫ້ບໍລິການ',
+      'ສື່ກາງ',
+      'ຄວາມຮັບຜິດຊອບຂອງສື່ກາງ',
+      'ສື່ກາງ ບໍ່ມີຄວາມຮັບຜິດຊອບ',
+      'ສື່ກາງບໍ່ຕ້ອງຮັບຜິດຊອບ',
+    ],
     'consumer-protection': ['ຜູ້ຊົມໃຊ້'],
   },
 };
@@ -1689,9 +1701,11 @@ function namesIn(subject: FrameworkSubject, languages: readonly string[]): strin
 
 /** Whether quoted words name the subject at all, as opposed to merely coming from the instrument. */
 function namesSubject(words: string, subject: FrameworkSubject): boolean {
-  // Lao OCR writes ຳ as ໍ + າ as often as not; the names use the single character.
-  const w = words.toLowerCase().replace(/ໍາ/g, 'ຳ');
-  return [...SUBJECT_NAMES[subject], ...namesIn(subject, Object.keys(SUBJECT_NAMES_IN_OTHER_LANGUAGES))].some((n) => w.includes(n));
+  // Lao OCR writes ຳ as ໍ + າ as often as not, and drops tone marks ("ສືກາງ" for "ສື່ກາງ"); the
+  // names use the single character, and are compared without tones on both sides.
+  const lao = (s: string) => s.replace(/ໍາ/g, 'ຳ').replace(/[່-໋]/g, '');
+  const w = lao(words.toLowerCase());
+  return [...SUBJECT_NAMES[subject], ...namesIn(subject, Object.keys(SUBJECT_NAMES_IN_OTHER_LANGUAGES))].some((n) => w.includes(lao(n)));
 }
 
 /**
