@@ -88,6 +88,37 @@ describe('an engine that goes away and comes back', () => {
     expect(engineReconnects()).toBe(2);
   });
 
+  // 29 September: a rented engine's HTTPS proxy failed to accept the connection inside undici's ten
+  // seconds, UND_ERR_CONNECT_TIMEOUT was not on the list, and a confirmation pass on four pods
+  // died every hundred and fifty questions for a link that was back on the next attempt.
+  it('is waited for when the connection to it could not be opened in time', async () => {
+    const { server, port } = await flaky(0);
+    open.push(server);
+    let refused = 0;
+    vi.doMock('undici', async (original) => {
+      const real = await original<typeof import('undici')>();
+      return {
+        ...real,
+        request: (async (...args: Parameters<typeof real.request>) => {
+          if (refused < 2) {
+            refused += 1;
+            throw Object.assign(new Error('Connect Timeout Error (attempted addresses: 104.18.7.228:443, timeout: 10000ms)'), {
+              code: 'UND_ERR_CONNECT_TIMEOUT',
+            });
+          }
+          return real.request(...args);
+        }) as typeof real.request,
+      };
+    });
+    try {
+      const { embed, engineReconnects } = await engineAt(port, '10,10,10,10');
+      expect(await embed(['a provision'])).toHaveLength(1);
+      expect(engineReconnects()).toBe(2);
+    } finally {
+      vi.doUnmock('undici');
+    }
+  });
+
   it('does not retry a stall, because the engine took the request and the wait was already spent', async () => {
     vi.resetModules();
     const { EngineTimeout, EngineFailure } = await import('../src/engines/ollama.js');

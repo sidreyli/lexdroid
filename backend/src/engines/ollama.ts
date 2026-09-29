@@ -166,8 +166,11 @@ export function engineReconnects(): number {
  * pool's retirement above, so a blink that the keeper healed in fifteen seconds still cost the
  * whole pillar -- most of one night's engine time, for four banked answers.
  */
+//
+// A connection the proxy did not accept in time is the same: nothing was sent, so nothing was
+// spent, and the next attempt found the engine there -- see the connect-timeout test.
 const CONNECTION_LOST =
-  /ECONNRESET|ECONNREFUSED|ECONNABORTED|EPIPE|ETIMEDOUT|EHOSTUNREACH|ENETUNREACH|ENETDOWN|ENOTFOUND|EAI_AGAIN|UND_ERR_SOCKET|SocketError|socket hang up|other side closed|fetch failed|terminated/i;
+  /ECONNRESET|ECONNREFUSED|ECONNABORTED|EPIPE|ETIMEDOUT|EHOSTUNREACH|ENETUNREACH|ENETDOWN|ENOTFOUND|EAI_AGAIN|UND_ERR_SOCKET|UND_ERR_CONNECT_TIMEOUT|Connect Timeout|SocketError|socket hang up|other side closed|fetch failed|terminated/i;
 
 /** The engine said the request timed out, which is about this prompt and not about the link. */
 const STALLED = /UND_ERR_(HEADERS|BODY)_TIMEOUT|Headers Timeout|Body Timeout/i;
