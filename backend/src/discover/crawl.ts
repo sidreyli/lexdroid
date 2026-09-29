@@ -10,6 +10,7 @@
  * opaque path still writes its name in the anchor, and the anchor is what a citation matches.
  */
 import * as cheerio from 'cheerio';
+import type { Element } from 'domhandler';
 import { decodeBody } from '../fetch/decode.js';
 import type { Adapter, DiscoveredInstrument, DiscoverContext } from './types.js';
 import { instrumentTitle } from './titles.js';
@@ -137,6 +138,31 @@ function tierFilterOf(portal: DiscoverContext['portal']): RegExp | null {
   }
 }
 
+/**
+ * The name a table gives a link whose own text is not one.
+ *
+ * A regulator's register is often a table: number, name, date, and a link captioned with the
+ * decision's code -- "3-201-1.2 /2015.12.30/", "2017-16 тоот", "Журам". The name is in the row, not
+ * in the anchor, and reading anchors alone the Communications Regulatory Commission of Mongolia's
+ * register of approved procedures named nothing. A cell of the row the link sits in names it, and
+ * only a cell: the row as a whole runs the name into its dates and amendment notes.
+ */
+function namedByRow(
+  $: cheerio.CheerioAPI,
+  el: Element,
+  namedBy: readonly string[],
+  vocabulary: DiscoverContext['vocabulary'],
+): ReturnType<typeof instrumentTitle> {
+  const row = $(el).closest('tr');
+  if (row.length === 0) return null;
+  for (const cell of row.children('td, th').toArray()) {
+    if ($(cell).find(el).length > 0) continue;
+    const named = instrumentTitle($(cell).text().replace(/\s+/g, ' ').trim(), namedBy, vocabulary);
+    if (named) return named;
+  }
+  return null;
+}
+
 export const crawlAdapter: Adapter = {
   name: 'crawl',
   async discover(ctx: DiscoverContext): Promise<DiscoveredInstrument[]> {
@@ -207,7 +233,7 @@ export const crawlAdapter: Adapter = {
           target.hash = '';
           const at = target.toString();
 
-          const named = instrumentTitle(text, namedBy, ctx.vocabulary);
+          const named = instrumentTitle(text, namedBy, ctx.vocabulary) ?? namedByRow($, el, namedBy, ctx.vocabulary);
           if (named && !found.has(at)) {
             // A portal that publishes more than one tier of law needs the tier decided here
             // rather than downstream, because a register is what every later stage believes the

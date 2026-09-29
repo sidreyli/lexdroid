@@ -47,6 +47,7 @@ describe('the OCR language packs', () => {
       hi: 'hin',
       lo: 'lao',
       th: 'tha',
+      mn: 'mon',
     };
     for (const [language, pack] of Object.entries(needsOwnPack)) {
       expect(() => localRequire(`@tesseract.js-data/${pack}`), `${language} has no OCR pack`).not.toThrow();
@@ -54,12 +55,15 @@ describe('the OCR language packs', () => {
   });
 
   /**
-   * Mongolia is deliberately absent from the list above: legalinfo.mn renders its documents as
-   * HTML and no Mongolian scan has turned up. Russia's did on 28 September 2026 -- the Eurasian
-   * Economic Union's acts before 2015 are copier scans with no text layer -- so `rus` is packaged.
-   * Adding `mon` before a scan turns up would be building against a guess, which is what
-   * docs/thailand-integration-plan.md's "what shouldn't be built speculatively" section warns
-   * against. Both packs exist on npm at MIT if one does.
+   * Neither Cyrillic economy was packaged at first: legalinfo.mn renders its documents as HTML
+   * and publication.pravo.gov.ru is server-rendered. Then four legalinfo.mn instruments came back
+   * with an empty content block, each a scan pasted into the page -- so `mon` is packaged. And the
+   * Eurasian Economic Union's acts before 2015, which apply in Russia directly and which Russia's
+   * register reads from docs.eaeunion.org, are copier scans with no text layer -- so `rus` is
+   * packaged. (Russia's own gazette scans, under publication.pravo.gov.ru's /file/pdf, are still
+   * disallowed by its robots.txt.) Adding a pack before a scan turns up would be building against a
+   * guess, which is what docs/thailand-integration-plan.md's "what shouldn't be built
+   * speculatively" section warns against.
    */
   it('does not package a language no profile has yet needed', () => {
     const declared = localRequire('../package.json') as { dependencies: Record<string, string> };
@@ -68,6 +72,7 @@ describe('the OCR language packs', () => {
       '@tesseract.js-data/eng',
       '@tesseract.js-data/hin',
       '@tesseract.js-data/lao',
+      '@tesseract.js-data/mon',
       '@tesseract.js-data/rus',
       '@tesseract.js-data/tha',
     ]);

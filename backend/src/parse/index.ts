@@ -14,7 +14,8 @@ import { parseFrl } from './frl.js';
 import { parseHtml } from './html.js';
 import { parseIndiaCode } from './indiacode.js';
 import { parseIps } from './ips.js';
-import { parseLegalinfo } from './legalinfo.js';
+import { legalinfoScans, parseLegalinfo, parseLegalinfoScan } from './legalinfo.js';
+import { ocrImages, type OcrPage } from './ocr.js';
 import { parseOcs } from './ocs.js';
 import { parsePdf } from './pdf.js';
 import { parseSso } from './sso.js';
@@ -38,6 +39,26 @@ const BY_HOST: Record<string, (html: string, url: string) => ParsedDocument> = {
   // The Eurasian Economic Union's acts, read from their Word files as Russian acts are (discover/eaeu.ts).
   'docs.eaeunion.org': parseIps,
 };
+
+/**
+ * Sites that sometimes show an instrument as a scan in place of its text: where to find the scans
+ * on the page, and how to section what OCR reads from them.
+ */
+const SCANS_BY_HOST: Record<string, { find(html: string, url: string): string[]; read(pages: OcrPage[], url: string): ParsedDocument }> = {
+  'legalinfo.mn': { find: legalinfoScans, read: parseLegalinfoScan },
+};
+
+/** The scans a page shows, if it is on a site known to do so: data: URIs or absolute addresses. */
+export function scannedPages(res: FetchResult): string[] {
+  const site = SCANS_BY_HOST[new URL(res.finalUrl || res.url).host];
+  return site ? site.find(decodeBody(res), res.finalUrl || res.url) : [];
+}
+
+/** Read a scanned page by OCR in the economy's languages, one image per page. */
+export async function parseScans(res: FetchResult, images: readonly Buffer[], languages: readonly string[]): Promise<ParsedDocument> {
+  const site = SCANS_BY_HOST[new URL(res.finalUrl || res.url).host]!;
+  return site.read(await ocrImages(images, languages), res.url);
+}
 
 /** `languages`: the economy's official languages, among which a PDF's language is guessed. */
 export async function parseDocument(res: FetchResult, opts: { languages?: readonly string[] } = {}): Promise<ParsedDocument> {

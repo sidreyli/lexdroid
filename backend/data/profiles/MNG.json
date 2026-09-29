@@ -122,12 +122,24 @@
       "pillars": [
         5,
         7,
+        8,
+        9,
         10,
-        11
+        11,
+        12
       ],
-      "adapter": null,
-      "adapterConfig": {},
-      "notes": "PERMITTED: robots.txt returns 'User-agent: * / Disallow:' -- an empty disallow, which permits everything -- read directly 21 September 2026. Page structure not yet inspected, so no adapter is claimed. The telecommunications regulator, and the likely source for pillars 5 and 11. Full trace: docs/lao-mongolia-russia-recon.md."
+      "adapter": "crawl",
+      "adapterConfig": {
+        "seeds": [
+          "/directions-terms-and-requirements-of-procedures-and-regulations-approved-by-the-crc",
+          "/documents/xxzx-togtool",
+          "/caxim-orcny-zoxicuulalt/onlain-kontentyn-zoxicuulalt",
+          "/salbaryn-standartyn-zhagsaalt",
+          "/batalgaazuulaltyn-tanilcuulga"
+        ],
+        "urlMustMatch": "/storage/"
+      },
+      "notes": "PERMITTED: robots.txt returns 'User-agent: * / Disallow:' -- an empty disallow, which permits everything -- read directly 21 September 2026. The Commission keeps the procedures, conditions and requirements it approves as tables of PDFs under /storage/ -- read directly 29 September 2026: each row is number, name, date, resolution number, and a link captioned with a code, so the crawl names a link from its row. Seeded at its register of approved procedures, its resolutions, its online-content regulation and its equipment certification pages; only files under /storage/ are instruments, which keeps its news and FAQ pages out."
     },
     {
       "name": "State Great Khural (Улсын Их Хурал)",

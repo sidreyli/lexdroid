@@ -126,6 +126,10 @@
         "resolutionsPerSubject": true,
         "queries": [
           { "type": "102000486", "kind": "act", "maxPages": 5 },
+          { "type": "102000505", "kind": "act", "sort": "7", "principalOnly": true, "maxPages": 620 },
+          { "type": "102000505", "kind": "act", "sort": "7", "maxPages": 3 },
+          { "type": "102000506", "kind": "act", "sort": "7", "maxPages": 1 },
+          { "type": "102000503", "kind": "order", "sort": "7", "maxPages": 3 },
           { "type": "102000505", "kind": "act", "title": "персональных данных" },
           { "type": "102000505", "kind": "act", "title": "об информации" },
           { "type": "102000505", "kind": "act", "title": "о связи" },
@@ -136,8 +140,12 @@
           { "type": "102000505", "kind": "act", "title": "о техническом регулировании" },
           { "type": "102000505", "kind": "act", "title": "об иностранных инвестициях" },
           { "type": "102000496", "kind": "regulation", "title": "персональных данных", "issuer": "Правительства Российской Федерации" },
-          { "type": "102000496", "kind": "regulation", "title": "информационн", "issuer": "Правительства Российской Федерации", "maxPages": 5 },
+          { "type": "102000496", "kind": "regulation", "title": "информационн", "issuer": "Правительства Российской Федерации", "maxPages": 40 },
           { "type": "102000503", "kind": "order", "title": "информационной безопасности" },
+          { "type": "102000497", "kind": "order", "issuedBy": "102000266", "sort": "7", "principalOnly": true, "maxPages": 60 },
+          { "type": "102000497", "kind": "order", "issuedBy": "102000208", "sort": "7", "principalOnly": true, "maxPages": 60 },
+          { "type": "102000497", "kind": "order", "issuedBy": "102000367", "sort": "7", "principalOnly": true, "maxPages": 60 },
+          { "type": "102000497", "kind": "order", "issuedBy": "102472498", "sort": "7", "principalOnly": true, "maxPages": 60 },
           { "type": "102000505", "kind": "act", "title": "закуп*", "sort": "-7", "principalOnly": true, "maxPages": 3 },
           { "type": "102000505", "kind": "act", "title": "иностранных инвестиций", "sort": "-7", "principalOnly": true, "maxPages": 3 },
           { "type": "102000505", "kind": "act", "title": "обществах", "sort": "-7", "principalOnly": true, "maxPages": 3 },
@@ -160,7 +168,7 @@
           { "kind": "act", "title": "банках", "issuer": "Закон РСФСР", "sort": "-7", "principalOnly": true, "maxPages": 3 }
         ]
       },
-      "notes": "The parent legal-information portal, walked through its legal information system (IPS, /proxy/ips) by the ips adapter: the consolidated current text of every federal act as HTML, with the standing the system gives it. robots.txt is 'User-Agent: * / Disallow:' -- an empty disallow, fully permissive -- read directly 21 September 2026. Queries are act-type codes from the system's own classifier plus title words, aimed at the digital-trade pillars; all 12,155 federal laws would be mostly amending laws. Pages are windows-1251. Recorded over http because the environment used on 21 September could not complete a TLS handshake to it while reaching it normally on port 80; that is a fact about that network rather than about this host, and the scheme should be re-checked from an ordinary connection. Full trace: docs/lao-mongolia-russia-recon.md."
+      "notes": "The parent legal-information portal, walked through its legal information system (IPS, /proxy/ips) by the ips adapter: the consolidated current text of every federal act as HTML, with the standing the system gives it. robots.txt is 'User-Agent: * / Disallow:' -- an empty disallow, fully permissive -- read directly 21 September 2026. Queries are act-type codes from the system's own classifier plus title words, aimed at the digital-trade pillars; all 12,155 federal laws would be mostly amending laws, so the whole statute book is walked principal-only. The orders of the regulators that set the information-security, communications and data rules -- FSTEC (102000266), FSB (102000208), Roskomnadzor (102000367) and the Ministry of Digital Development (102472498) -- are walked by issuer code (a6) from the classifier of issuers, read 29 September 2026 from ?autocomplete&bpa=cd00000&nclassif=6&area=110&query=<cp1251 name>. Pages are windows-1251. Recorded over http because the environment used on 21 September could not complete a TLS handshake to it while reaching it normally on port 80; that is a fact about that network rather than about this host, and the scheme should be re-checked from an ordinary connection. Full trace: docs/lao-mongolia-russia-recon.md."
     },
     {
       "name": "Eurasian Economic Union legal portal (Правовой портал Евразийского экономического союза)",

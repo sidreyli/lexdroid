@@ -207,8 +207,11 @@ export function instrumentWords(
 
 /** The kind a title names in the economy's own words, or null where it names none of them. */
 function kindFromVocabulary(title: string, vocabulary: readonly InstrumentWord[]): InstrumentKind | null {
+  // In either case: a profile writes the noun as it heads a type's name, "Журам", and a title
+  // carries it mid-sentence, "... хянах журам".
+  const t = title.toLocaleLowerCase();
   const found = new Set<InstrumentKind>();
-  for (const { word, kind } of vocabulary) if (title.includes(word)) found.add(kind);
+  for (const { word, kind } of vocabulary) if (t.includes(word.toLocaleLowerCase())) found.add(kind);
   if (found.size === 0) return null;
   return KIND_PRECEDENCE.find((k) => found.has(k)) ?? null;
 }

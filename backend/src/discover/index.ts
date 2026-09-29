@@ -17,7 +17,7 @@ import type { Db } from '../db/index.js';
 import type { Fetcher, FetchResult } from '../fetch/index.js';
 import { RobotsDisallowed, CacheMiss, HostSuspended } from '../fetch/index.js';
 import { decodeBody } from '../fetch/decode.js';
-import { parseDocument, storeDocument, verifyOffsets } from '../parse/index.js';
+import { parseDocument, parseScans, scannedPages, storeDocument, verifyOffsets } from '../parse/index.js';
 import { namedDocumentLink, pointedDocumentLink, soleDocumentLink } from '../parse/html.js';
 import { namesAnInstrument, ownName, statedKind } from '../parse/identity.js';
 import { registeredKind } from './titles.js';
@@ -459,6 +459,25 @@ async function linkedFile(fetcher: Fetcher, url: string, pageUrl: string, log: (
   }
 }
 
+/**
+ * The images of a scanned page, in order: decoded where the page carries them inline, fetched where
+ * it links them. Null when any page of it cannot be had, since an instrument missing a page is
+ * not one to read as whole.
+ */
+async function scanImages(fetcher: Fetcher, scans: readonly string[], pageUrl: string, log: (line: string) => void): Promise<Buffer[] | null> {
+  const images: Buffer[] = [];
+  for (const scan of scans) {
+    if (scan.startsWith('data:')) {
+      images.push(Buffer.from(scan.slice(scan.indexOf(',') + 1), 'base64'));
+      continue;
+    }
+    const fetched = await linkedFile(fetcher, scan, pageUrl, log);
+    if (!fetched || fetched.status !== 200 || !/^image\//i.test(fetched.mediaType)) return null;
+    images.push(fetched.body);
+  }
+  return images;
+}
+
 /** What a parse actually yielded to search, which is the only comparable measure of a document. */
 function textLength(parsed: { sections: { text: string }[] }): number {
   return parsed.sections.reduce((n, s) => n + s.text.length, 0);
@@ -593,6 +612,16 @@ export async function materialise(
               `  [${n + 1}/${rows.length}] the page announces the document (${held} -> ${offered} chars): ${named}`,
             );
           }
+        }
+      }
+
+      // A page with nothing to read may be showing the instrument as a scan: read the images.
+      if (parsed.unread?.reason === 'empty' && /html/i.test(fetched.mediaType)) {
+        const scans = scannedPages(fetched);
+        const images = scans.length ? await scanImages(fetcher, scans, fetched.finalUrl, log) : null;
+        if (images) {
+          parsed = await parseScans(fetched, images, profile.officialLanguages);
+          log(`  [${n + 1}/${rows.length}] the page is ${images.length} scanned page(s): ${parsed.unread ? parsed.unread.detail : `${parsed.sections.length} section(s) by OCR`}`);
         }
       }
 

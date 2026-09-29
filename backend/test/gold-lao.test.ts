@@ -156,3 +156,38 @@ describe('the sequence repair does not invent', () => {
     expect(builder.sections.map((s) => s.label)).toEqual(['1', '2']);
   });
 });
+
+describe('an instrument drafted in points, not articles', () => {
+  const page = (lines: string[]): PageText[] => [{ page: 1, lines: ['ສາທາລະນະລັດ ປະຊາທິປະໄຕ ປະຊາຊົນລາວ', ...lines] }];
+
+  it('sections an instruction on its top-level points, under the Roman part each sits in', () => {
+    const { builder } = sectioniseLao(
+      page([
+        'ຄໍາແນະນໍາ ການຈັດຕັ້ງປະຕິບັດ ກົດໝາຍ',
+        '|. ຈຸດປະສົງ',
+        'ຄໍາແນະນໍາສະບັບນີ້ ຜັນຂະຫຍາຍ ເນື້ອໃນບາງມາດຕາ',
+        '[[. ແນະນໍາການຈັດຕັ້ງປະຕິບັດເນື້ອໃນບາງມາດຕາ',
+        '1. ມາດຕາ 6 ຂອບເຂດການນໍາໃຊ້ກົດໝາຍ',
+        '1.1. ລາຍລະອຽດຂອງຂອບເຂດ',
+        '2. ມາດຕາ 7 ການຮ່ວມມືສາກົນ',
+        '1) ຂັ້ນສູນກາງ ເປັນຜູ້ອອກອະນຸຍາດ',
+        'ລັດຖະມົນຕີ',
+      ]),
+    );
+    expect(builder.sections.map((s) => s.label)).toEqual(['1', '2']);
+    expect(builder.sections[0]!.headingPath).toMatch(/^2\. ແນະນຳການຈັດຕັ້ງປະຕິບັດ.* > 1\. ມາດຕາ 6/u);
+    expect(builder.sections[0]!.text).toContain('1.1. ລາຍລະອຽດຂອງຂອບເຂດ');
+    expect(builder.sections[1]!.text).toContain('1) ຂັ້ນສູນກາງ');
+    expect(builder.sections[1]!.text).not.toContain('ລັດຖະມົນຕີ');
+  });
+
+  it('leaves a document with fewer than two points whole', () => {
+    const { builder } = sectioniseLao(page(['ຄໍາສັ່ງ ວ່າດ້ວຍການປ້ອງກັນ', '1. ຫ້າມນໍາໃຊ້ຢາທີ່ບໍ່ໄດ້ມາດຕະຖານ', 'ເນື້ອໃນຕໍ່ໄປ']));
+    expect(builder.sections).toEqual([]);
+  });
+
+  it('does not use points where the instrument has articles', () => {
+    const { builder } = sectioniseLao(page(['ມາດຕາ 1 ຈຸດປະສົງ', '1. ຂໍ້ທີໜຶ່ງ', '2. ຂໍ້ທີສອງ', 'ມາດຕາ 2 ຂອບເຂດ', 'ເນື້ອໃນ']));
+    expect(builder.sections.map((s) => s.label)).toEqual(['1', '2']);
+  });
+});

@@ -125,6 +125,7 @@ export function sectioniseLao(pages: PageText[]): LaoSectioning {
 
   // Article numbers as read, then repaired where the sequence says what they are.
   const heads = lines.map((l, i) => ({ i, m: ARTICLE.exec(l.key) })).filter((x) => x.m !== null);
+  if (heads.length === 0) return { builder: byPoints(lines, pages.at(-1)?.page), inferred: [], dropped };
   const read = heads.map((h) => Number(ascii(h.m![1]!)));
 
   // A gazetted law is a bundle: the President's decree promulgating it (articles 1-2), the
@@ -297,4 +298,80 @@ export function sectioniseLao(pages: PageText[]): LaoSectioning {
   for (const l of lines.slice(signature)) builder.addProse(l.text);
 
   return { builder, inferred, dropped };
+}
+
+/**
+ * A top-level point: "3. ...", "3) ..." is a sub-point and "3.1." a nested one, so neither opens a
+ * section. Lao digits count too.
+ */
+const POINT = new RegExp(`^(${DIGIT}{1,3})\\s*\\.(?!\\s*${DIGIT})\\s*\\S`, 'u');
+
+/**
+ * A part numbered in Roman: "I. ຈຸດປະສົງ". The numeral does not survive OCR -- "|.", "[[.", "||." --
+ * so any short run of the strokes it is read as, then a point, then Lao.
+ */
+const ROMAN_PART = /^[IVXl|[\]!]{1,5}\s*\.\s*[ກ-໿]/u;
+
+/**
+ * An instrument with no articles: a Minister's instruction (ຄຳແນະນຳ) or order (ຄຳສັ່ງ) is drafted
+ * in Roman-numbered parts and numbered points, and read for articles it came out as one section of
+ * the whole document -- 107 of 141 instructions on the gazette, 29,000 characters on average, more
+ * than retrieval can rank or the index can embed whole. Each top-level point is a section, under
+ * the part it sits in; two points at least, or the document is left whole as before.
+ */
+function byPoints(lines: Line[], lastPage: number | undefined): SectionBuilder {
+  const builder = new SectionBuilder();
+  const points = lines.filter((l) => POINT.test(l.key));
+  if (points.length < 2) {
+    for (const l of lines) builder.addProse(l.text);
+    return builder;
+  }
+
+  const lastPointAt = lines.lastIndexOf(points.at(-1)!);
+  let signature = lines.length;
+  for (let i = lastPointAt + 1; i < lines.length; i += 1) {
+    if (lines[i]!.page === lastPage && lines[i]!.key.length < 60 && SIGNATORY.test(lines[i]!.key)) {
+      signature = i;
+      break;
+    }
+  }
+
+  let part: string | null = null;
+  let partCount = 0;
+  let open: { label: string; heading: string; body: string[]; page: number } | null = null;
+  const close = (): void => {
+    if (!open) return;
+    builder.add({
+      headingPath: [part, key(open.heading)].filter(Boolean).join(' > '),
+      label: open.label,
+      text: [open.heading, ...open.body].join('\n'),
+      page: open.page,
+      language: 'lo',
+      repealed: false,
+      anchor: null,
+    });
+    open = null;
+  };
+
+  for (let i = 0; i < signature; i += 1) {
+    const l = lines[i]!;
+    if (ROMAN_PART.test(l.text.trim())) {
+      close();
+      partCount += 1;
+      part = `${partCount}. ${key(l.text.trim().replace(/^[IVXl|[\]!]{1,5}\s*\.\s*/u, ''))}`;
+      builder.addProse(l.text);
+      continue;
+    }
+    const p = POINT.exec(l.key);
+    if (p) {
+      close();
+      open = { label: ascii(p[1]!), heading: l.text, body: [], page: l.page };
+      continue;
+    }
+    if (open) open.body.push(l.text);
+    else builder.addProse(l.text);
+  }
+  close();
+  for (const l of lines.slice(signature)) builder.addProse(l.text);
+  return builder;
 }
