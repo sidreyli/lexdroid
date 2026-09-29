@@ -60,3 +60,22 @@ describe('quotes in the corpus\'s other scripts', () => {
     expect(wholeWordAt(LAO, 3, 5)).toBe(true);
   });
 });
+
+describe("a list's stem quoted with one of its items", () => {
+  const items = Array.from({ length: 6 }, (_, n) => `${n + 1}. the intermediary is not required to monitor any content stored on its system by a user;`).join('\n');
+  const act = `An intermediary is not liable for:\n${items}\n7. a data message it did not actually know would give rise to liability.\nArticle 30 Duties of intermediaries`;
+
+  it('is a rule quoted from the provision, though it skips the items between', () => {
+    expect(quoteIsInSection('An intermediary is not liable for: ... a data message it did not actually know would give rise to liability', act, 40)).toBe(true);
+  });
+
+  it('is not an item from anywhere later in the Act', () => {
+    const far = `${act}\n${'Unrelated provisions follow. '.repeat(40)}\na data message it did not actually know would give rise to liability`;
+    expect(quoteIsInSection('An intermediary is not liable for: ... Article 31 a data message', far, 40)).toBe(false);
+    expect(quoteIsInSection('Duties of intermediaries: ... a data message it did not actually know would give rise to liability', far, 40)).toBe(false);
+  });
+
+  it('is still weighed as an elision without the stem', () => {
+    expect(quoteIsInSection('An intermediary is not liable for ... a data message it did not actually know would give rise to liability', act, 40)).toBe(false);
+  });
+});

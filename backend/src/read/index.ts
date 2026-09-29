@@ -826,6 +826,8 @@ const MIN_ANCHOR_CHARS = 12;
  */
 const MIN_RULE_CHARS = 40;
 const ELIDED_WEIGHT = 5;
+/** How far after a list's stem an item quoted with it may sit: the Lao safe harbour's is 224 characters on. */
+const LIST_REACH = 600;
 
 /**
  * A quote that skips over text is still a quote, provided every part of it is really there and in
@@ -850,18 +852,25 @@ export function quoteIsInSection(quote: string, sectionText: string, min = MIN_Q
   const joined = parts.join(' ');
   if (joined.length < min) return false;
 
+  // A list's stem and one of its items is how a list is quoted: "an intermediary is not liable
+  // for: ... a data message it did not actually know would give rise to liability" skips the
+  // items between, and says nothing the stem and the item do not. So it is not weighed as an
+  // elision, provided the item is under the stem -- close after it, not anywhere later in the Act.
+  const stemAndItem = parts.length === 2 && /[:：]\s*$/.test(quote.split(/\s*(?:\.\.\.|…)\s*/)[0] ?? '');
+
   // A snippet is the evidence, so its elisions must not carry the argument. A phrase names one
   // element of a snippet already checked, and "may ... declare" is how a split verb is quoted.
-  if (parts.length > 1 && min >= MIN_QUOTE_CHARS) {
+  if (parts.length > 1 && min >= MIN_QUOTE_CHARS && !stemAndItem) {
     if (joined.length < min * ELIDED_WEIGHT) return false;
     if (Math.max(...parts.map((p) => p.length)) < MIN_ANCHOR_CHARS) return false;
   }
 
   let from = 0;
-  for (const part of parts) {
+  for (const [n, part] of parts.entries()) {
     if (part.length < MIN_FRAGMENT_CHARS) return false;
     const at = findFragment(haystack, part, from, part.length < MIN_ANCHOR_CHARS);
     if (at < 0) return false;
+    if (stemAndItem && n === 1 && at - from > LIST_REACH) return false;
     from = at + part.length;
   }
   return true;
