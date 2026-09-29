@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
+import { ClearSlate } from "./clear-slate";
 import { EngineTarget, type Target } from "./engine-target";
 
 export interface RunFormPillar {
@@ -242,6 +243,17 @@ export function StartRun({
               aria-label="Fetch new documents"
             />
           </div>
+          {fetchNew && !readOnly ? (
+            <ClearSlate
+              economies={picked}
+              names={
+                economies
+                  .filter((e) => picked.includes(e.code))
+                  .map((e) => e.name)
+                  .join(" and ") || "the picked economies"
+              }
+            />
+          ) : null}
         </div>
       </div>
 
