@@ -29,8 +29,10 @@ export const DEFAULT_MAX_USD_PER_HOUR = 0.34;
 /**
  * The most pods one engine may hold. A pillar's reads divide across them, one read per pod at a
  * time, so four cut the slowest stage of the live test about fourfold for four times the rent.
+ * LEXDROID_MAX_PODS raises it for a command that runs several economies side by side, each on
+ * pods of its own.
  */
-export const MAX_PODS = 4;
+export const MAX_PODS = Math.max(1, Number(process.env['LEXDROID_MAX_PODS']) || 4);
 
 export interface Rental {
   provider: 'RunPod';

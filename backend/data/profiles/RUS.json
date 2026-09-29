@@ -127,6 +127,9 @@
         "queries": [
           { "type": "102000486", "kind": "act", "maxPages": 5 },
           { "type": "102000505", "kind": "act", "sort": "7", "principalOnly": true, "maxPages": 620 },
+          { "type": "102000505", "kind": "act", "sort": "7", "maxPages": 3 },
+          { "type": "102000506", "kind": "act", "sort": "7", "maxPages": 1 },
+          { "type": "102000503", "kind": "order", "sort": "7", "maxPages": 3 },
           { "type": "102000505", "kind": "act", "title": "персональных данных" },
           { "type": "102000505", "kind": "act", "title": "об информации" },
           { "type": "102000505", "kind": "act", "title": "о связи" },
