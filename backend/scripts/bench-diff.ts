@@ -5,6 +5,7 @@
  *   npm run -w backend bench-diff -- --use IND:12=<run>    pillar 12 of India from a new run
  *   npm run -w backend bench-diff -- --use MYS=<run>       all of Malaysia from a new run
  *   npm run -w backend bench-diff -- --write-reference     re-bank reference.json
+ *   npm run -w backend bench-diff -- --guard               fail if anything the reference had right is lost
  *
  * The packs (scripts/bench-pack.ts) sit in ../bench-pack unless --packs says otherwise. A run named
  * by --use must be in the pack the manifest gives that economy; a re-read made with
@@ -168,7 +169,9 @@ const cells = sources.flatMap((s) => {
   process.stderr.write(`grading ${s.economy} from ${s.run.slice(0, 8)}${s.pillars ? ` pillars ${s.pillars.join(',')}` : ''}${s.skip ? ` (not ${s.skip.join(',')})` : ''}\n`);
   return grade(s);
 });
-const order = ['AUS', 'MYS', 'SGP', 'IND', 'THA'];
+// The manifest's economies in the order it names them, so an economy added there is graded and
+// totalled with the rest rather than listed and left out of the table.
+const order = [...new Set(sources.map((s) => s.economy))];
 cells.sort((a, b) => order.indexOf(a.economy) - order.indexOf(b.economy) || a.indicator.localeCompare(b.indicator, 'en', { numeric: true }));
 
 // ESCAP's score for every cell is its answer key, which the repository never carries (see .gitignore),
@@ -241,3 +244,26 @@ for (const eco of order) {
 }
 const [aa, ba, ae, be, ar, br, graded] = totals as [number, number, number, number, number, number, number];
 console.log(`  all  ${`${aa}${aa === ba ? '' : ` -> ${ba}`}`.padEnd(11)} ${`${ae}${ae === be ? '' : ` -> ${be}`}`.padEnd(11)} ${`${ar}${ar === br ? '' : ` -> ${br}`}`.padEnd(11)}  of ${graded}`);
+
+// A rule change is made for one economy's cells and runs on all of them. Totals can hide what it
+// cost the others -- a cell gained in Lao PDR and one lost in Thailand leave the sum where it was
+// -- so the guard asks cell by cell: everything the reference had right must still be right, and
+// no economy may declare fewer pillars. It exits non-zero on any loss, so no change that moves the
+// benchmark down anywhere is committed on a total that looks unchanged.
+if (argv.includes('--guard')) {
+  const wasRight = new Set(reference.filter((r) => r.label === 'earned' || r.label === 'find').map(key));
+  const lost = cells.filter((c) => wasRight.has(key(c)) && !right(c));
+  const fewer = order.filter((eco) => {
+    const a = was.get(eco);
+    const b = now.get(eco);
+    return a && b && b.declarable.length < a.declarable.length;
+  });
+  if (lost.length === 0 && fewer.length === 0) {
+    console.log('\nguard: nothing the reference had right was lost.');
+  } else {
+    console.log(`\nguard: FAILED. ${lost.length} cell(s) the reference had right are not now:`);
+    for (const c of lost) console.log(`  ${key(c).padEnd(11)} ${c.ours ?? '-'} vs ESCAP ${c.escap ?? '-'}, ${c.verdict}`);
+    if (fewer.length > 0) console.log(`  fewer declarable pillars in ${fewer.join(', ')}`);
+    process.exitCode = 1;
+  }
+}

@@ -1968,3 +1968,236 @@ describe('a finding the rubric moves into 6.4', () => {
     expect(d.excluded).toHaveLength(0);
   });
 });
+
+// 29 September: Lao PDR's rule that an internet café "must have suitable premises" was confirmed in
+// Lao as a local presence requirement and scored 12.8's top band.
+describe('a requirement to be present in the economy', () => {
+  const indicator128 = indicator12('12.8', [
+    { score: 1, criterion: 'Local presence requirement for at least one sector' },
+    { score: 0, criterion: 'No requirement' },
+  ]);
+  const lao = (words: string) => ({
+    ...p12('12.8', 'local-presence', {
+      quote: `ຜູ້ໃຫ້ບໍລິການອອນລາຍ ຕ້ອງມີ${words}`,
+      definingWords: words,
+      subjectWords: 'ຜູ້ໃຫ້ບໍລິການອອນລາຍ',
+      dutyBearer: 'ຜູ້ໃຫ້ບໍລິການອອນລາຍ',
+    }),
+    sectionLanguage: 'lo',
+    confirmed: true,
+  });
+
+  it('is not made out by premises that are nowhere in particular', () => {
+    const d = decide({ indicator: indicator128, economy: 'LAO', evidence: [lao('ສະຖານທີ່ເໝາະສົມ')], surfaced, coverage });
+    expect(d.basis).toHaveLength(0);
+    expect(d.excluded.map((x) => x.reason).join(' ')).toContain('names no place');
+  });
+
+  it('is made out where the provision puts the provider in the country', () => {
+    const d = decide({ indicator: indicator128, economy: 'LAO', evidence: [lao('ທີ່ຕັ້ງສໍານັກງານ ຢູ່ ສປປ ລາວ')], surfaced, coverage });
+    expect(d.excluded.map((x) => x.reason).join(' ')).not.toContain('names no place');
+  });
+});
+
+describe('Lao PDR read in its own words', () => {
+  const indicatorAt = (id: string, bands: { score: number; criterion: string }[], exception: string | null = null): Indicator => ({
+    ...indicator12(id, bands),
+    pillarId: Number(id.split('.')[0]),
+    exception,
+  });
+  const lao = (indicatorId: string, measure: string, over: Partial<Finding>): Evidence => ({
+    ...p12(indicatorId, measure, over),
+    sectionLanguage: 'lo',
+    confirmed: true,
+  });
+  const reasons = (d: ReturnType<typeof decide>) => [...d.excluded, ...d.held].map((x) => x.reason).join(' | ');
+
+  const indicator64 = indicatorAt('6.4', [
+    { score: 1, criterion: 'Conditions for all sectors or personal data' },
+    { score: 0.5, criterion: 'Conditions for specific data or non-personal data' },
+    { score: 0, criterion: 'No condition' },
+  ]);
+  const transfer = (borderWords: string) =>
+    lao('6.4', 'transfer-condition', {
+      quote: `ບໍ່ສາມາດສົ່ງ ຫຼື ໂອນ ຂໍ້ມູນສ່ວນບຸກຄົນ ${borderWords} ຖ້າຫາກບໍ່ໄດ້ຮັບຄໍາເຫັນດີຂອງເຈົ້າຂອງຂໍ້ມູນນັ້ນ`,
+      borderWords,
+      definingWords: 'ຖ້າຫາກບໍ່ໄດ້ຮັບຄໍາເຫັນດີຂອງເຈົ້າຂອງຂໍ້ມູນນັ້ນ',
+      subjectWords: 'ຂໍ້ມູນສ່ວນບຸກຄົນ',
+      dutyBearer: 'ບຸກຄົນ, ນິຕິບຸກຄົນ ແລະ ການຈັດຕັ້ງ',
+      dutyForce: 'forbids',
+    });
+
+  it('finds the border in "out of the Lao PDR", with or without the marks the text layer drops', () => {
+    for (const words of ['ການອອກນອກ ສປປ ລາວ', 'ໄປຕາງປະເທດ', 'ການນາໍເຂົາ']) {
+      const d = decide({ indicator: indicator64, economy: 'LAO', evidence: [transfer(words)], surfaced, coverage });
+      expect(reasons(d)).not.toContain('enters or leaves the economy');
+    }
+  });
+
+  it('finds none where nothing leaves the country', () => {
+    const d = decide({ indicator: indicator64, economy: 'LAO', evidence: [transfer('ຈາກໂຮງງານ')], surfaced, coverage });
+    expect(reasons(d)).toContain('enters or leaves the economy');
+  });
+
+  const indicator94 = indicatorAt(
+    '9.4',
+    [
+      { score: 1, criterion: 'Any strict licence requirement' },
+      { score: 0.5, criterion: 'Any licensing scheme' },
+      { score: 0, criterion: 'No restriction' },
+    ],
+    'Not cover license for telecommunication facilities and service providers (captured under Pillar 5), License for e-commerce platform (captured under Pillar 12)',
+  );
+  const licence = (subjectWords: string) =>
+    lao('9.4', 'content-licence', {
+      quote: `ຜູ້ທີ່ມີຈຸດປະສົງດໍາເນີນທຸລະກິດ${subjectWords} ຕ້ອງຂໍອະນຸຍາດ`,
+      definingWords: 'ຕ້ອງຂໍອະນຸຍາດ',
+      subjectWords,
+      dutyBearer: `ຜູ້ດໍາເນີນທຸລະກິດ${subjectWords}`,
+    });
+
+  it("leaves an internet service provider's licence to pillar 5, as the rubric's exception says", () => {
+    const d = decide({ indicator: indicator94, economy: 'LAO', evidence: [licence('ບໍລິການອິນເຕີເນັດ')], surfaced, coverage });
+    expect(d.basis).toHaveLength(0);
+    expect(reasons(d)).toContain('captured under Pillar 5');
+  });
+
+  it('keeps a licence to publish news online', () => {
+    const d = decide({ indicator: indicator94, economy: 'LAO', evidence: [licence('ຂ່າວສານຜ່ານເວັບໄຊ')], surfaced, coverage });
+    expect(reasons(d)).not.toContain('captured under Pillar 5');
+  });
+
+  it('reads "must comply with the relevant laws and regulations" as a pointer to them, not a licence condition', () => {
+    const d = decide({
+      indicator: indicator94,
+      economy: 'LAO',
+      evidence: [
+        lao('9.4', 'strict-content-licence', {
+          quote: 'ຕ້ອງປະຕິບັດຕາມກົດຫມາຍ ແລະ ລະບຽບການທີ່ກ່ຽວຂ້ອງ',
+          definingWords: 'ກົດຫມາຍ ແລະ ລະບຽບການ',
+          subjectWords: 'ສູນຂໍ້ມູນຂ່າວສານຜ່ານອິນເຕີເນັດ',
+          dutyBearer: 'ບຸກຄົນ, ນິຕິບຸກຄົນ ຫຼື ການຈັດຕັ້ງ',
+        }),
+      ],
+      surfaced,
+      coverage,
+    });
+    expect(d.basis).toHaveLength(0);
+    expect(reasons(d)).toContain('rules made elsewhere');
+  });
+
+  const indicator55 = indicatorAt('5.5', [
+    { score: 1, criterion: 'For any strict licensing scheme (e.g., discrimination for foreign providers, minimum capital requirements, and mandatory performances requirements)' },
+    { score: 0, criterion: 'No strict licensing scheme' },
+  ]);
+  const telecom = (definingWords: string): Evidence =>
+    lao('5.5', 'strict-telecom-licence', {
+      quote: `ຜູ້ຂໍອະນຸຍາດດໍາເນີນທຸລະກິດໂທລະຄົມມະນາຄົມ ຕ້ອງ${definingWords}`,
+      definingWords,
+      subjectWords: 'ທຸລະກິດໂທລະຄົມມະນາຄົມ',
+      dutyBearer: 'ຜູ້ຂໍອະນຸຍາດ',
+      sector: 'telecommunications',
+    });
+  const notStrict = 'which is what makes a licence strict';
+
+  it('does not call a licence strict for conditions every licence has', () => {
+    for (const words of ['ມີທະບຽນວິສາຫະກິດ', 'ມີຖານະທາງດ້ານການເງິນທີ່ຫມັ້ນຄົງ']) {
+      const d = decide({ indicator: indicator55, economy: 'LAO', evidence: [telecom(words)], surfaced, coverage });
+      expect(d.basis).toHaveLength(0);
+      expect(reasons(d)).toContain(notStrict);
+    }
+  });
+
+  it('calls it strict for a minimum of capital, or for what the regulator writes into the licence', () => {
+    const capital = decide({ indicator: indicator55, economy: 'LAO', evidence: [telecom('ມີທຶນຈົດທະບຽນ ບໍ່ໜ້ອຍກວ່າ 10 ຕື້ກີບ')], surfaced, coverage });
+    expect(reasons(capital)).not.toContain(notStrict);
+    const singapore = decide({
+      indicator: indicator55,
+      economy: 'SGP',
+      evidence: [
+        p12('5.5', 'strict-telecom-licence', {
+          quote: 'A licence may include conditions requiring the licensee to do, or not to do, such things as are specified in the licence',
+          definingWords: 'such things as are specified in the licence',
+          subjectWords: 'telecommunication licence',
+          dutyBearer: 'the licensee',
+          sector: 'telecommunications',
+        }),
+      ],
+      surfaced,
+      coverage,
+    });
+    expect(reasons(singapore)).not.toContain(notStrict);
+  });
+
+  const indicator1242 = indicatorAt('12.4.2', [
+    { score: 1, criterion: 'Requirements on the currency used for international payments' },
+    { score: 0, criterion: 'No restriction' },
+  ]);
+
+  it('reads Lao "must" as a duty, whatever the reader called it', () => {
+    const d = decide({
+      indicator: indicator1242,
+      economy: 'LAO',
+      evidence: [
+        lao('12.4.2', 'payment-currency', {
+          quote: 'ເງິນເອເລັກໂຕຣນິກ ຕ້ອງເປັນສະກຸນເງິນກີບ ເທົ່ານັ້ນ',
+          definingWords: 'ສະກຸນເງິນກີບ',
+          subjectWords: 'ເງິນເອເລັກໂຕຣນິກ',
+          dutyBearer: 'ຜູ້ໃຫ້ບໍລິການຊໍາລະເງິນ',
+          dutyAct: 'ຕ້ອງເປັນ',
+          dutyForce: 'declares',
+        }),
+      ],
+      surfaced,
+      coverage,
+    });
+    expect(reasons(d)).not.toContain('declares what is the case');
+  });
+
+  it('does not take the words naming what a duty binds for words leaving it to another instrument', () => {
+    const d = decide({
+      indicator: indicator1242,
+      economy: 'LAO',
+      evidence: [
+        p12('12.4.2', 'payment-currency', {
+          quote: 'Electronic money issued by Payment Service Providers in the Lao PDR shall be in KIP only.',
+          definingWords: 'in KIP only',
+          subjectWords: 'Electronic money',
+          dutyBearer: 'Payment Service Providers',
+          dutyAct: 'shall be in KIP only',
+          imposingWords: null,
+          prescribingWords: null,
+        }),
+      ],
+      surfaced,
+      coverage,
+    });
+    expect(reasons(d)).not.toContain('empowers another instrument');
+  });
+
+  const indicator45 = indicatorAt('4.5', [
+    { score: 1, criterion: 'Lack of copyright legal framework OR lack of copyright exceptions' },
+    { score: 0.5, criterion: 'Unclear copyright exceptions, such as three-step test and other types of copyright exceptions' },
+    { score: 0, criterion: 'Clear copyright exceptions following fair use or fair dealing model' },
+  ]);
+  const fairUse = (instrumentTitle: string): Evidence => ({
+    ...lao('4.5', 'fair-use-exception', {
+      quote: 'ການນໍາໃຊ້ທີ່ເຫນາະສົມ',
+      definingWords: 'ການນໍາໃຊ້ທີ່ເຫນາະສົມ',
+      subjectWords: 'ການນໍາໃຊ້ທີ່ເຫນາະສົມ',
+      dutyForce: 'permits',
+    }),
+    instrumentTitle,
+  });
+
+  it("takes a copyright exception's domain from the title of the copyright decree it is in", () => {
+    const d = decide({ indicator: indicator45, economy: 'LAO', evidence: [fairUse('ຂໍ້ຕົກລົງວ່າດ້ວຍ ລິຂະສິດ ແລະ ສິດກ່ຽວຂ້ອງກັບລິຂະສິດ')], surfaced, coverage });
+    expect(reasons(d)).not.toContain("this indicator's subject is stated only in English");
+    expect(d.score).toBe(0);
+  });
+
+  it('does not take it from a law about something else', () => {
+    const d = decide({ indicator: indicator45, economy: 'LAO', evidence: [fairUse('ກົດໝາຍວ່າດ້ວຍ ທີ່ດິນ')], surfaced, coverage });
+    expect(d.basis).toHaveLength(0);
+  });
+});

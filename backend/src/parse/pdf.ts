@@ -11,7 +11,7 @@
 import { detectLanguage } from './language.js';
 import { SectionBuilder, type ParsedDocument } from './types.js';
 import { readsAsAClause } from './identity.js';
-import { ocrPdfPages, type OcrEngine } from './ocr.js';
+import { ocrPdfPages, ocrScriptOf, type OcrEngine } from './ocr.js';
 import { amendmentHistory } from './lom.js';
 import { isMostlyLao, sectioniseLao } from './lao.js';
 
@@ -47,7 +47,32 @@ export function hasCorruptTextLayer(lines: readonly string[]): boolean {
 }
 
 /**
- * Whether what OCR read replaces what the text layer gave, for the two reasons a page is re-read.
+ * Whether a page's text layer is Latin letters where the page is printed in another script.
+ *
+ * Lao typeset before Unicode used fonts that draw Lao glyphs at ASCII code points, and the text layer
+ * reports the code points: the Decree on Electronic Commerce reads "c~i2sj c5u ,~ @'l:1JscmsJJm1J"
+ * where the page prints Lao. Each such font assigns its own code points, so there is no map back,
+ * but the glyphs are drawn correctly -- so the page is rendered and read, as a damaged page is. 17 of
+ * the 59 Lao documents that arrived with a text layer were stored this way, 99 sections of that
+ * decree among them, all unreadable by the reader and unmatchable by retrieval.
+ *
+ * Asked only where every language the economy publishes law in has a script OCR can read, and only
+ * of a page carrying almost none of that script and whose Latin letters make no language: an English
+ * translation in a Lao corpus is English, and is kept.
+ */
+export function isInAnotherScript(lines: readonly string[], languages?: readonly string[]): boolean {
+  const scripts = (languages ?? []).map(ocrScriptOf);
+  if (scripts.length === 0 || scripts.some((s) => s === null)) return false;
+  const text = lines.join(' ');
+  const latin = (text.match(/\p{Script=Latin}/gu) ?? []).length;
+  if (latin < MIN_CHARS_PER_PAGE) return false;
+  const own = scripts.reduce((n, s) => n + (text.match(s!) ?? []).length, 0);
+  if (own * 10 > latin) return false;
+  return detectLanguage(text) === null;
+}
+
+/**
+ * Whether what OCR read replaces what the text layer gave, for the reasons a page is re-read.
  *
  * A sparse page had almost nothing, so OCR has to beat it and be a page at all. The length test
  * alone would let OCR overwrite a short but accurate page with a longer misreading.
@@ -60,7 +85,15 @@ export function hasCorruptTextLayer(lines: readonly string[]): boolean {
  * that takes 363 and holds 40, and the 40 are cover pages whose OCR is the logo: the Commission
  * Act's front page reads "LEE) B / £1:1 0.4%".
  */
-export function ocrReplacesThePage(why: 'sparse' | 'damaged', before: string, after: string): boolean {
+export function ocrReplacesThePage(why: 'sparse' | 'damaged' | 'unscripted', before: string, after: string): boolean {
+  // A page read for being in the wrong script is recovered when OCR finds a script there other than
+  // Latin, and not otherwise: an English page it was wrong to doubt comes back English, and stays
+  // as the text layer gave it.
+  if (why === 'unscripted') {
+    const latin = (after.match(/\p{Script=Latin}/gu) ?? []).length;
+    const letters = (after.match(/\p{L}/gu) ?? []).length;
+    return letters - latin > latin && legibleChars(after) >= MIN_CHARS_PER_PAGE;
+  }
   if (why === 'damaged') {
     return !CORRUPT_TEXT_LAYER.test(after) && legibleChars(after) >= legibleChars(before) && legibleChars(after) > 0;
   }
@@ -733,7 +766,11 @@ export async function parsePdf(bytes: Buffer, url: string, opts: ParsePdfOptions
   const damaged = pages
     .filter((page) => hasCorruptTextLayer(page.lines))
     .map((page) => page.page);
-  const reread = [...new Set([...sparse, ...damaged])].sort((a, b) => a - b);
+  // And a page whose text layer is in no script the page could be printed in -- see isInAnotherScript.
+  const unscripted = pages
+    .filter((page) => !sparse.includes(page.page) && !damaged.includes(page.page) && isInAnotherScript(page.lines, opts.languages))
+    .map((page) => page.page);
+  const reread = [...new Set([...sparse, ...damaged, ...unscripted])].sort((a, b) => a - b);
   const ocrUsed: number[] = [];
   const ocrFailed: number[] = [];
   const confidences: number[] = [];
@@ -749,7 +786,7 @@ export async function parsePdf(bytes: Buffer, url: string, opts: ParsePdfOptions
         const accepted =
           !!ocr &&
           ocrReplacesThePage(
-            damaged.includes(page.page) ? 'damaged' : 'sparse',
+            damaged.includes(page.page) ? 'damaged' : unscripted.includes(page.page) ? 'unscripted' : 'sparse',
             page.lines.join(' '),
             text,
           );
@@ -824,6 +861,7 @@ export async function parsePdf(bytes: Buffer, url: string, opts: ParsePdfOptions
       ...(amended ? { lastAmendedOn: amended.on, lastAmendedBasis: amended.basis } : {}),
       ...(ocrUsed.length ? { ocrPages: ocrUsed.join(',') } : {}),
       ...(damaged.length ? { corruptTextLayerPages: damaged.join(',') } : {}),
+      ...(unscripted.length ? { unscriptedTextLayerPages: unscripted.join(',') } : {}),
       ...(confidences.length
         ? { ocrConfidence: String(Math.round(confidences.reduce((sum, n) => sum + n, 0) / confidences.length)) }
         : {}),

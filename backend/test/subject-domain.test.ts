@@ -99,8 +99,13 @@ describe('a subject outside the indicator’s domain', () => {
   });
 
   it('takes the payment instrument as naming the payment, and legal tender as not', () => {
-    expect(score(ceiling, [ev('12.4.5', 'payment-ceiling', 'stored value facility')]).score).toBe(1);
-    expect(score(ceiling, [ev('12.4.5', 'payment-ceiling', 'note, coin or token')]).score).toBe(0);
+    // A ceiling is an amount (statesAnAmount), so the provision here states one.
+    const capped = (subject: string): Evidence => {
+      const e = ev('12.4.5', 'payment-ceiling', subject);
+      return { ...e, finding: { ...e.finding, quote: 'the value held must not exceed $5,000' } };
+    };
+    expect(score(ceiling, [capped('stored value facility')]).score).toBe(1);
+    expect(score(ceiling, [capped('note, coin or token')]).score).toBe(0);
   });
 
   it('leaves a reading that predates the question alone', () => {

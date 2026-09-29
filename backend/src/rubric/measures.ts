@@ -97,6 +97,15 @@ export interface Measure {
   /** Whether this measure is defined by something crossing the economy's border. */
   crossesBorder?: boolean;
   /**
+   * Whether this measure is an amount, so that a provision stating none is not it.
+   *
+   * A ceiling on a payment is the largest amount that may be paid, and a provision that names a
+   * limit without an amount, or without saying one is set elsewhere, is not one. Lao PDR's Payment
+   * System Law lists "the approved credit line limit" among what a card agreement records -- the
+   * limit a bank grants its customer -- and it scored 12.4.5's ceiling on paying electronically.
+   */
+  statesAnAmount?: boolean;
+  /**
    * Whether this measure restricts a foreign party and no one else.
    *
    * Three indicators descend a ladder of foreign shareholding, and a gate already asks their
@@ -925,6 +934,7 @@ export const MEASURES: Record<string, Measure[]> = {
       token: 'payment-ceiling',
       defines: 'the words stating the largest amount that may be paid',
       permits: true,
+      statesAnAmount: true,
       gloss:
         'a limit on the largest amount that may be paid by an electronic payment method, in one payment or over a period',
       actor: 'the payer or the payment service provider',
@@ -1297,10 +1307,135 @@ export const SUBJECTS: Readonly<Record<string, string>> = {
  * domain that only spoke English held every Thai finding as unread, so Thailand's Trade Secrets
  * Act and the Act establishing its telecommunications regulator never reached their cells.
  */
+/**
+ * A Lao term as the provisions in the corpus actually spell it.
+ *
+ * Lao text taken from a PDF's text layer often loses its tone marks -- "ລະຫັດຊືອິນເຕີເນັດ" for
+ * "ລະຫັດຊື່ອິນເຕີເນັດ", the internet domain code, 92 times in one economy's corpus -- and writes the
+ * vowel ຳ as the two characters ໍ and າ, which is how every payment provision in it spells
+ * "ຊໍາລະ". ໜ, ໝ and ຫຼ are written as ຫນ, ຫມ and ຫລ as often as not. A term with one spelling
+ * matches half the provisions that use it, so each is written once and the rest are allowed for.
+ * Only Lao characters are touched: a Cyrillic term passes through unchanged.
+ */
+function laoSpellings(terms: string): string {
+  return terms
+    .replace(/ຳ|ໍາ/g, '(?:ຳ|ໍາ)')
+    .replace(/ໜ|ຫນ/g, '(?:ໜ|ຫນ)')
+    .replace(/ໝ|ຫມ/g, '(?:ໝ|ຫມ)')
+    .replace(/ຫຼ|ຫລ/g, '(?:ຫຼ|ຫລ)')
+    .replace(/([່-໋])/g, '$1?');
+}
+
+/**
+ * The two sectors the rubric asks about in pillars of their own and carves out of the others:
+ * telecommunications (pillar 5) -- which is carrying traffic, so an internet service provider, an
+ * internet cafe and a domain registry with it -- and e-commerce (pillar 12). 3.1 says "not cover
+ * foreign equity cap in telecom sector ... and e-commerce sector", 9.4 "not cover license for
+ * telecommunication facilities and service providers ... License for e-commerce platform".
+ */
+export const SECTOR_ASKED_IN_ITS_OWN_PILLAR = new RegExp(
+  [
+    /telecom|e-?commerce|online market|\binternet (?:access |service )+provi\w*|\bISPs?\b|\binternet caf[eé]|\bdomain name regist\w*/.source,
+    'โทรคมนาคม|ผู้ให้บริการอินเทอร์เน็ต|พาณิชย์อิเล็กทรอนิกส์',
+    laoSpellings('ໂທລະຄົມ|ບໍລິການອິນເຕີເນັດ|ລະຫັດຊື່ອິນເຕີເນັດ|ໂດເມນ|ການຄ້າທາງເອເລັກໂຕຣນິກ|ຊື້-ຂາຍ\\S*\\s*ຜ່ານທາງເອເລັກໂຕຣນິກ'),
+    'оператор[а-яё]* связи|услуг[а-яё]* связи|электронн[а-яё]* торговл|маркетплейс',
+  ].join('|'),
+  'i',
+);
+
+/**
+ * The domains below in Russian, Mongolian and Lao, beside the Thai each already carries.
+ *
+ * The indicator's subject was stated only in English and Thai, so a Lao provision on internet
+ * services, a Russian one on payment systems or a Mongolian one on public procurement could never
+ * be shown to be about its indicator: each was held as "stated only in English", and a cell with a
+ * held finding can neither score on it nor report the thing absent. Measured on Lao PDR, 352
+ * findings were held this way -- among them the Electronic Data Protection Law's condition on
+ * sending personal data abroad, the Public Procurement Law's bidding conditions and the payment
+ * rules that settle in kip through a Lao bank. Each list renders the English one beside it
+ * category for category and names no instrument; stems, never beside `\b`, for the reason given
+ * at REMEDY_LOCAL below.
+ *
+ * Russian "данных" is written with its endings, because "данного" (this) is in every Russian law.
+ */
+const ONLINE_LOCAL = [
+  'интернет|онлайн|электронн|цифров|сайт|веб-|кибер|компьютер|информационно-телекоммуникационн|информационн[а-яё]* систем|информационн[а-яё]* технологи|платформ|маркетплейс|программн[а-яё]* обеспечени|мобильн',
+  'цахим|дижитал|вэб|программ хангамж|мэдээллийн технологи|мэдээллийн систем|сүлжээ|гар утас|хөдөлгөөнт холбоо|өгөгдөл|аппликейшн',
+  laoSpellings('ອິນເຕີເນັດ|ອອນລາຍ|ເອເລັກ|ດີຈີຕອນ|ດິຈິຕອນ|ເວັບ|ໄຊເບີ|ຄອມພິວເຕີ|ເຄືອຂ່າຍ|ເຄື່ອຂ່າຍ|ແພລັດຟອມ|ຊອບແວ|ແອັບ|ມືຖື|ຂໍ້ມູນ'),
+].join('|');
+const TRADE_LOCAL = [
+  'продаж|купл|покуп|розничн|оптов|торгов|коммерц|рын[оке]|продав[её]?ц|поставк|поставщ|товар',
+  'худалдаа|худалдах|худалдан авах|борлуулах|борлуулалт|жижиглэн|бөөний|зах зээл|бараа|нийлүүл|арилжаа',
+  laoSpellings('ຂາຍ|ຊື້|ການຄ້າ|ພໍ່ຄ້າ|ຕະຫຼາດ|ສິນຄ້າ|ສະໜອງ'),
+].join('|');
+// The payment instrument and its service, as the English list asks: "ການຊໍາລະ" alone is paying a
+// tax or a debt as much as paying for anything online, so it is asked for with its service, its
+// system or its business.
+const PAYMENT_LOCAL = [
+  'плат[её]жн|перевод[а-яё]* денежн|денежн[а-яё]* перевод|электронн[а-яё]* денежн|банковск[а-яё]* карт|эквайринг|кошел[её]к|цифров[а-яё]* валют|криптовалют|цифров[а-яё]* рубл|цифров[а-яё]* финансов[а-яё]* актив',
+  'төлбөр тооцоо|төлбөрийн систем|төлбөрийн үйлчилгээ|төлбөрийн хэрэгсэл|төлбөрийн карт|цахим мөнгө|мөнгөн гуйвуулга|мөнгө шилжүүл|цахим түрийвч|виртуал хөрөнгө|картын',
+  laoSpellings('ບໍລິການຊຳລະ|ບໍລິການການຊຳລະ|ລະບົບການຊຳລະ|ລະບົບຊຳລະ|ທຸລະກິດການຊຳລະ|ທຸລະກິດຊຳລະ|ການຊຳລະເງິນ|ຊຳລະເງິນຂ້າມແດນ|ໂອນເງິນ|ເງິນເອເລັກ|ເງິນດິຈິຕອນ|ກະເປົາເງິນ|ບັດເຄຣດິດ|ບັດເດບິດ|ບັດທະນາຄານ|ສົ່ງເງິນ'),
+].join('|');
+const DATA_LOCAL = [
+  'данн[ыо][хеймю]|информаци|сведени|документ|реестр',
+  'мэдээлэл|мэдээллийн|өгөгдөл|бүртгэл|баримт бичиг',
+  laoSpellings('ຂໍ້ມູນ|ຂ່າວສານ|ເອກະສານ|ບັນທຶກ'),
+].join('|');
+// Money on its own is left out in Lao, where "ເງິນ" is in the investment capital of every sector.
+const DIGITAL_TRADE_SECTOR_LOCAL = [
+  'вычислительн|программ[а-яё]* для|средств[а-яё]* массов[а-яё]* информаци|медиа|вещани|издател|телевиз|кинематограф|фильм|логист|почтов|курьер|грузоперевоз|склад|банк|финансов|страхов|ценн[а-яё]* бумаг|инвестиционн[а-яё]* фонд|кредит|денежн',
+  'программ хангамж|хэвлэл мэдээлл|мэдээллийн хэрэгсэл|өргөн нэвтрүүлэг|телевиз|радио|кино|хэвлэл|логистик|шуудан|ачаа тээвэр|агуулах|банк|санхүү|даатгал|үнэт цаас|зээл|мөнгө',
+  laoSpellings('ສື່ມວນຊົນ|ກະຈາຍສຽງ|ໂທລະທັດ|ວິທະຍຸ|ສິ່ງພິມ|ໜັງສືພິມ|ຮູບເງົາ|ໂລຈິດສະຕິກ|ໂລຊິດສະຕິກ|ໄປສະນີ|ຂົນສົ່ງສິນຄ້າ|ຄັງສິນຄ້າ|ທະນາຄານ|ການເງິນ|ປະກັນໄພ|ຫຼັກຊັບ|ກອງທຶນ|ສິນເຊື່ອ'),
+].join('|');
+const ICT_GOODS_LOCAL = [
+  'телекоммуникац|электросвяз|радиоэлектрон|полупроводник|вычислительн[а-яё]* техник|сервер|телефон|оборудовани|устройств|микросхем|шифровальн|криптографическ',
+  'харилцаа холбоо|радио|хагас дамжуулагч|сервер|утас|тоног төхөөрөмж|төхөөрөмж|эд анги|шифр|технологи',
+  laoSpellings('ໄອຊີທີ|ໂທລະຄົມ|ວິທະຍຸ|ຮາດແວ|ເຊີເວີ|ໂທລະສັບ|ອຸປະກອນ|ຊິ້ນສ່ວນ|ວົງຈອນ|ເຂົ້າລະຫັດ|ເຕັກໂນໂລຊີ'),
+].join('|');
+// The medium, not the product: see ADVERTISING_MEDIUM. Bare "ສື່" is communication as well as media.
+const ADVERTISING_MEDIUM_LOCAL = [
+  'интернет|онлайн|сайт|веб-|платформ|социальн[а-яё]* сет|поисков|вещани|телевиз|радио|телекоммуникац|электросвяз|информационно-телекоммуникационн|средств[а-яё]* массов[а-яё]* информаци',
+  'интернет|онлайн|цахим|вэб|платформ|олон нийтийн сүлжээ|нийгмийн сүлжээ|хайлтын систем|өргөн нэвтрүүлэг|телевиз|радио|кабель|харилцаа холбоо',
+  laoSpellings('ອິນເຕີເນັດ|ອອນລາຍ|ເວັບ|ແພລັດຟອມ|ສື່ສັງຄົມ|ສື່ອອນລາຍ|ສື່ເອເລັກ|ສື່ມວນຊົນ|ກະຈາຍສຽງ|ໂທລະທັດ|ວິທະຍຸ|ໂທລະຄົມ'),
+].join('|');
+// Not "конкурс" alone, which is also a bankruptcy's "конкурсное производство".
+const PROCUREMENT_LOCAL = [
+  'закупк|закупоч|тендер|аукцион|котировк|государственн[а-яё]* контракт|муниципальн[а-яё]* контракт|государственн[а-яё]* заказ|конкурентн[а-яё]* способ',
+  'худалдан авах ажиллагаа|худалдан авалт|тендер|сонгон шалгаруулалт|үнийн санал',
+  laoSpellings('ຈັດຊື້|ຈັດຈ້າງ|ປະມູນ|ປະກວດລາຄາ|ສະເໜີລາຄາ'),
+].join('|');
+const TECHNICAL_STANDARD_LOCAL = [
+  'стандарт|технич[а-яё]* регламент|техническ[а-яё]* услови|спецификаци|соответстви|свод[а-яё]* правил',
+  'стандарт|техникийн зохицуулалт|техникийн шаардлага|тохирлын үнэлгээ|тохирол|норматив',
+  laoSpellings('ມາດຕະຖານ|ທາງເຕັກນິກ|ຄວາມສອດຄ່ອງ'),
+].join('|');
+const ENCRYPTION_LOCAL = ['шифр|криптограф', 'шифр|криптограф|нууцлал', laoSpellings('ເຂົ້າລະຫັດ|ຖອດລະຫັດ|ລະຫັດລັບ')].join('|');
+// An online service, in words that name the service and not every user of anything: "пользователь"
+// alone is a subsoil user as readily as an internet one.
+const ONLINE_SERVICE_LOCAL = [
+  'интернет|онлайн|сайт|веб-|кибер|электронн[а-яё]* коммерц|цифров[а-яё]* (?:платформ|сервис|услуг|идентификац)|платформ|социальн[а-яё]* сет|поисков[а-яё]* систем|пользовател[а-яё]* (?:сет|сайт|интернет|услуг|информаци)|информационн[а-яё]* посредник|мессенджер|организатор[а-яё]* распространени|информационно-телекоммуникационн',
+  'интернет|онлайн|цахим|вэб|кибер|дижитал|платформ|олон нийтийн сүлжээ|нийгмийн сүлжээ|хайлтын систем|эцсийн хэрэглэгч|зуучлагч',
+  laoSpellings('ອິນເຕີເນັດ|ອອນລາຍ|ເວັບ|ໄຊເບີ|ເອເລັກ|ດີຈີຕອນ|ດິຈິຕອນ|ແພລັດຟອມ|ສື່ສັງຄົມ|ສື່ອອນລາຍ|ເຄື່ອງມືຄົ້ນຫາ|ຕົວກາງ'),
+].join('|');
+// Content carried on a service. "информация" alone is left out: a duty to erase personal data
+// removes information and takes down nothing anyone published -- see ONLINE_MATERIAL.
+const ONLINE_MATERIAL_LOCAL = [
+  'контент|материал|публикац|интернет|онлайн|сайт|веб-|платформ|социальн[а-яё]* сет|компьютерн[а-яё]* информаци|информационно-телекоммуникационн',
+  'агуулга|контент|нийтлэл|нийтлэх|интернет|онлайн|цахим|вэб|платформ|нийгмийн сүлжээ|олон нийтийн сүлжээ',
+  laoSpellings('ເນື້ອໃນ|ເນື້ອຫາ|ອິນເຕີເນັດ|ອອນລາຍ|ເວັບ|ແພລັດຟອມ|ສື່ສັງຄົມ|ຂໍ້ມູນເອເລັກ|ຂໍ້ມູນຄອມພິວເຕີ|ຕົວກາງ'),
+].join('|');
+const ONLINE_CONTENT_LOCAL = [
+  'интернет|онлайн|сайт|веб-|платформ|мобильн[а-яё]* приложени|онлайн-игр|сетев[а-яё]* издани|аудиовизуальн[а-яё]* сервис',
+  'интернет|онлайн|цахим|вэб|платформ|аппликейшн|онлайн тоглоом',
+  laoSpellings('ອິນເຕີເນັດ|ອອນລາຍ|ເວັບ|ແພລັດຟອມ|ແອັບ|ເກມອອນລາຍ'),
+].join('|');
+const DOMAIN_NAME_LOCAL = ['доменн|домен|сайт', 'домэйн|домен|вэб', laoSpellings('ໂດເມນ|ລະຫັດຊື່ອິນເຕີເນັດ|ເວັບ')].join('|');
+
 const ONLINE = new RegExp(
   [
     /\b(online|on-line|internet|e-?commerce|e-?business|e-?retail|electronic|digital|web|website|cyber|computer|network|platform|marketplace|application|app|software|data|mobile)\b/.source,
     'ออนไลน์|อินเทอร์เน็ต|อิเล็กทรอนิกส์|ดิจิทัล|เว็บไซต์|ไซเบอร์|คอมพิวเตอร์|เครือข่าย|แพลตฟอร์ม|ซอฟต์แวร์|แอปพลิเคชัน',
+    ONLINE_LOCAL,
   ].join('|'),
   'i',
 );
@@ -1317,12 +1452,13 @@ const PAYMENT = new RegExp(
     ONLINE.source,
     /\bpayment\s+(service|system|facility|instrument|account|card|gateway|aggregator|method|surcharge|order)/.source,
     /\b(e-?money|stored[- ]value|digital currency|crypto\w*|virtual asset|funds transfer|money transfer|remittance|non-?cash payment|wallet|credit card|debit card)s?\b/.source,
+    PAYMENT_LOCAL,
   ].join('|'),
   'i',
 );
 
 /** 12.7 asks about the domain name itself, which is narrower than the pillar around it. */
-const DOMAIN_NAME = /\b(domain|url|website|web address|hostname|dns|registrar|registry)\b/i;
+const DOMAIN_NAME = new RegExp([/\b(domain|url|website|web address|hostname|dns|registrar|registry)\b/.source, DOMAIN_NAME_LOCAL].join('|'), 'i');
 
 const PILLAR_12_DOMAINS: Readonly<Record<string, RegExp>> = {
   '12.01': ONLINE,
@@ -1364,7 +1500,7 @@ const PERIOD = /\b(year|month|day|week|period|时|\d+\s*(year|month|day|week))\w
 const AMOUNT = /(\d|\bquota\b|\bceiling\b|\blimit\b|\bmaximum\b|\bexceed\b|\bnot more than\b)/i;
 const STANDARD = /\b(standard\w*|specification\w*|technical regulation\w*|conform\w*|compliance)\b/i;
 const TESTING = /\b(test\w*|assess\w*|certif\w*|verif\w*|examin\w*|inspect\w*|accredit\w*|conformity)\b/i;
-const ENCRYPTION = /\b(encrypt\w*|cryptograph\w*|cipher\w*|key length|AES|DES|RSA|ECC|FIPS)\b/i;
+const ENCRYPTION = new RegExp([/\b(encrypt\w*|cryptograph\w*|cipher\w*|key length|AES|DES|RSA|ECC|FIPS)\b/.source, ENCRYPTION_LOCAL].join('|'), 'i');
 /**
  * Nationality and residence, in the forms a statute writes them.
  *
@@ -1503,7 +1639,9 @@ const SDOC_LOCAL = 'деклараци[а-яё]* о соответствии|д�
 const FOREIGN_BODY_LOCAL = 'иностранн|международн[а-яё]* договор|признани|за пределами|гадаад|харилцан хүлээн зөвшөөр|ຕ່າງປະເທດ|ຕາງປະເທດ|ຮັບຮູ້ເຊິ່ງກັນ';
 const SECRETS_LOCAL = 'коммерческ[а-яё]* тайн|секрет[а-яё]* производств|ноу-хау|исходн[а-яё]* код|шифровани|байгууллагын нууц|худалдааны нууц|эх код|ຄວາມລັບທາງການຄ້າ|ຄວາມລັບທາງທຸລະກິດ';
 const PATENT_LOCAL = 'патент|изобретени|полезн[а-яё]* модел|шинэ бүтээл|ашигтай загвар|ສິດທິບັດ|ອະນຸສິດທິບັດ|ການປະດິດ';
-const COPYRIGHT_LOCAL = 'авторск|смежн[а-яё]* прав|произведени|зохиогч|бүтээл|ລິຂະສິດ|ສິດກ່ຽວຂ້ອງ|ຜົນງານ';
+// Infringement too, as the Thai beside it has ละเมิด: a Lao customs rule detaining "goods suspected of
+// infringing intellectual property rights" is a provisional measure against infringing copies.
+const COPYRIGHT_LOCAL = 'авторск|смежн[а-яё]* прав|произведени|зохиогч|бүтээл|ລິຂະສິດ|ສິດກ່ຽວຂ້ອງ|ຜົນງານ|ລະເມີດ';
 const COMMUNICATIONS_LOCAL = 'электросвяз|телекоммуникац|радиочастот|вещани|услуг[а-яё]* связи|средств[а-яё]* связи|сет[ьи] связи|операто[а-яё]* связи|о связи|харилцаа холбоо|цахилгаан холбоо|ໂທລະຄົມ|ສື່ສານ|ຄື້ນຄວາມຖີ່';
 const RADIO_EMC_LOCAL = 'радиоэлектрон|электромагнит|электрическ|продукци|оборудовани|издели|бүтээгдэхүүн|тоног төхөөрөмж|цахилгаан|ຜະລິດຕະພັນ|ອຸປະກອນ|ເຄື່ອງໃຊ້ໄຟຟ້າ';
 
@@ -1632,10 +1770,11 @@ const ICT_GOODS = new RegExp(
   [
     ONLINE.source,
     /\b(ict|telecom\w*|radio[- ]?communication\w*|semiconductor\w*|hardware|server\w*|handset\w*|equipment|device\w*|component\w*|circuit\w*|encryption|technolog\w*|information technology)\b/.source,
+    ICT_GOODS_LOCAL,
   ].join('|'),
   'i',
 );
-const PROCUREMENT = new RegExp([/\b(procure\w*|tender\w*|bid\w*|public contract\w*|government contract\w*|supply to the (Government|State)|Commonwealth contract\w*|purchas\w* by (a|the) (public|government)\w*)\b/.source, 'จัดซื้อจัดจ้าง|ประกวดราคา|เสนอราคา'].join('|'), 'i');
+const PROCUREMENT = new RegExp([/\b(procure\w*|tender\w*|bid\w*|public contract\w*|government contract\w*|supply to the (Government|State)|Commonwealth contract\w*|purchas\w* by (a|the) (public|government)\w*)\b/.source, 'จัดซื้อจัดจ้าง|ประกวดราคา|เสนอราคา', PROCUREMENT_LOCAL].join('|'), 'i');
 const SECRETS = new RegExp([/\b(trade secret\w*|source code\w*|algorithm\w*|confidential (business )?information|proprietary information|encrypt\w*|cryptograph\w*|know-how)\b/.source, 'ความลับทางการค้า|รหัสต้นฉบับ|ซอร์สโค้ด|อัลกอริทึม|เข้ารหัส', SECRETS_LOCAL].join('|'), 'i');
 const PATENT = new RegExp([/\b(patent\w*|invention\w*|utility model\w*|patentee\w*)\b/.source, 'สิทธิบัตร|การประดิษฐ์', PATENT_LOCAL].join('|'), 'i');
 const COPYRIGHT = new RegExp([/\b(copyright\w*|author\w*|literary|artistic|musical|cinematograph\w*|performer\w*|work\w*|broadcast\w*|infring\w*)\b/.source, 'ลิขสิทธิ์|ผู้สร้างสรรค์|นักแสดง|ละเมิด', COPYRIGHT_LOCAL].join('|'), 'i');
@@ -1651,7 +1790,7 @@ const INVESTMENT = /\b(invest\w*|acquisi\w*|acquire\w*|takeover\w*|merger\w*|sha
 const DIGITAL_SECTOR = new RegExp([ONLINE.source, TELECOM.source, /\b(sector\w*|industry|business\w*|service\w*)\b/.source].join('|'), 'i');
 const ADVERTISING = new RegExp([/\b(advertis\w*|promotion\w*|marketing|sponsor\w*)\b/.source, ONLINE.source].join('|'), 'i');
 const PRODUCT_CERT = /\b(product\w*|goods|equipment|device\w*|apparatus|appliance\w*|radiocommunication\w*|emission\w*|electromagnetic|safety|conformity|standard\w*)\b/i;
-const TECHNICAL_STANDARD = new RegExp([/\b(standard\w*|specification\w*|technical regulation\w*|code of practice|conformity)\b/.source, 'มาตรฐาน|ข้อกำหนดทางเทคนิค'].join('|'), 'i');
+const TECHNICAL_STANDARD = new RegExp([/\b(standard\w*|specification\w*|technical regulation\w*|code of practice|conformity)\b/.source, 'มาตรฐาน|ข้อกำหนดทางเทคนิค', TECHNICAL_STANDARD_LOCAL].join('|'), 'i');
 const CUSTOMS = /\b(import\w*|consign\w*|customs|duty|duties|goods|parcel\w*|shipment\w*|value of the goods|declaration\w*)\b/i;
 
 /**
@@ -1680,6 +1819,7 @@ const ONLINE_SERVICE = new RegExp(
   [
     ONLINE_SERVICE_WORDS.source,
     'อินเทอร์เน็ต|ออนไลน์|เว็บ|ไซเบอร์|พาณิชย์อิเล็กทรอนิกส์|บริการดิจิทัล|แพลตฟอร์ม|ตัวตนทางดิจิทัล|สื่อสังคมออนไลน์|เครื่องมือค้นหา|ผู้ใช้ปลายทาง|ตัวกลาง',
+    ONLINE_SERVICE_LOCAL,
   ].join('|'),
   'i',
 );
@@ -1691,6 +1831,7 @@ const ONLINE_MATERIAL = new RegExp(
   [
     /\b(content|material|online|on-line|internet|web\w*|posts?|posting|publication|intermediar(?:y|ies)|platform\w*|end-?users?|social media|computer (?:resource|system|data)s?)\b/.source,
     'เนื้อหา|ข้อมูลคอมพิวเตอร์|ออนไลน์|อินเทอร์เน็ต|เว็บไซต์|แพลตฟอร์ม|ตัวกลาง|สื่อสังคมออนไลน์',
+    ONLINE_MATERIAL_LOCAL,
   ].join('|'),
   'i',
 );
@@ -1717,12 +1858,21 @@ const TRADE = new RegExp(
   [
     /\b(sell\w*|sale|sales|sold|buy\w*|purchas\w*|retail\w*|wholesal\w*|trad(e|er|ers|ing)|commerc\w*|market(place|ing)?|merchant\w*|vendor\w*|supply|supplying|suppliers?|goods|distributive)\b/.source,
     'ขาย|ซื้อ|จำหน่าย|ค้าปลีก|ค้าส่ง|การค้า|ผู้ค้า|พาณิชย์|ตลาด|สินค้า',
+    TRADE_LOCAL,
   ].join('|'),
   'i',
 );
 
-/** Both halves, in either order: it has to be trade, and it has to be trade done online. */
-const ONLINE_TRADE = new RegExp(`(?=.*${TRADE.source})(?=.*${ONLINE.source})`, 'i');
+/**
+ * Both halves, in either order: it has to be trade, and it has to be trade done online.
+ *
+ * Each half is grouped. Both are alternations, and `.*` set before an ungrouped one reaches only
+ * its first branch -- the English words -- so every Thai, Russian, Mongolian and Lao term was
+ * asked for at the very start of the subject. "ການຄ້າທາງເອເລັກໂຕຣນິກ", electronic commerce, opens on
+ * its trade word and failed on its online one, and Lao PDR's Decree on Electronic Commerce had
+ * each of its licensing provisions held as "stated only in English".
+ */
+const ONLINE_TRADE = new RegExp(`(?=.*(?:${TRADE.source}))(?=.*(?:${ONLINE.source}))`, 'i');
 
 /**
  * What a licence has to be a licence *for* to be a licence to provide online content.
@@ -1737,7 +1887,7 @@ const ONLINE_TRADE = new RegExp(`(?=.*${TRADE.source})(?=.*${ONLINE.source})`, '
 // and it answered 9.4 beside the applications service licence that does. The platform, the app and
 // the website are what the indicator licenses; the security of them is not.
 const ONLINE_CONTENT = new RegExp(
-  [ONLINE_SERVICE_WORDS.source.replace('cyber\\w*|', ''), /\b(applications? services?|content applications?|apps?|online games?|news websites?)\b/.source, 'ออนไลน์|อินเทอร์เน็ต|แพลตฟอร์ม|เว็บไซต์|แอปพลิเคชัน'].join('|'),
+  [ONLINE_SERVICE_WORDS.source.replace('cyber\\w*|', ''), /\b(applications? services?|content applications?|apps?|online games?|news websites?)\b/.source, 'ออนไลน์|อินเทอร์เน็ต|แพลตฟอร์ม|เว็บไซต์|แอปพลิเคชัน', ONLINE_CONTENT_LOCAL].join('|'),
   'i',
 );
 
@@ -1845,6 +1995,7 @@ const ADVERTISING_MEDIUM = new RegExp(
   [
     /\b(internet|online|on-line|web\w*|e-?commerce|platform\w*|social media|electronic media|search engine\w*|broadcast\w*|television|radio|cable|multimedia|telecom\w*|communications|content (code|service\w*|provider\w*))\b/.source,
     'ออนไลน์|อินเทอร์เน็ต|แพลตฟอร์ม|เว็บไซต์|สื่ออิเล็กทรอนิกส์|กระจายเสียง|โทรทัศน์|โทรคมนาคม|วิทยุ',
+    ADVERTISING_MEDIUM_LOCAL,
   ].join('|'),
   'i',
 );
@@ -1862,6 +2013,7 @@ const DIGITAL_TRADE_SECTOR = new RegExp(
     ONLINE.source,
     /\b(comput\w*|information technology|information services?|software|data\w*|media|broadcast\w*|publish\w*|newspaper\w*|press|television|film\w*|logistic\w*|postal|post office|courier\w*|freight|warehous\w*|bank\w*|financ\w*|insur\w*|takaful|securities|capital markets?|fund\w*|payment\w*|credit|money)\b/.source,
     'คอมพิวเตอร์|ข้อมูล|สื่อ|กระจายเสียง|โทรทัศน์|ไปรษณีย์|โลจิสติกส์|ธนาคาร|การเงิน|สถาบันการเงิน|ประกัน|หลักทรัพย์|การชำระเงิน|สินเชื่อ',
+    DIGITAL_TRADE_SECTOR_LOCAL,
   ].join('|'),
   'i',
 );
@@ -1877,7 +2029,7 @@ const DIGITAL_TRADE_SECTOR = new RegExp(
  * conditions a transfer of data says so, because the data is what it is regulating.
  */
 const DATA_SUBJECT = new RegExp(
-  [/\b(data|information|records?|databases?|documents?|files?)\b/.source, 'ข้อมูล|สารสนเทศ'].join('|'),
+  [/\b(data|information|records?|databases?|documents?|files?)\b/.source, 'ข้อมูล|สารสนเทศ', DATA_LOCAL].join('|'),
   'i',
 );
 
@@ -1957,7 +2109,7 @@ export const SUBJECT_DOMAIN: Readonly<Record<string, RegExp>> = {
   '11.1': TECHNICAL_STANDARD,
   // See ONLINE_CONTENT above: a licence answers 9.4 only when it is a licence to provide online content.
   '9.4': ONLINE_CONTENT,
-  '11.4': /\b(encrypt\w*|cryptograph\w*|cipher\w*|key length|algorithm\w*|AES|DES|RSA|ECC|FIPS|ISO|IEC|ITU)\b/i,
+  '11.4': new RegExp([/\b(encrypt\w*|cryptograph\w*|cipher\w*|key length|algorithm\w*|AES|DES|RSA|ECC|FIPS|ISO|IEC|ITU)\b/.source, ENCRYPTION_LOCAL].join('|'), 'i'),
 };
 
 /**

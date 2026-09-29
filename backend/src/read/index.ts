@@ -787,6 +787,13 @@ function normaliseForQuoteCheck(s: string): string {
     // and the words do not. Nothing here loosens which words must be there, or in what order.
     .replace(/[,;]/g, ' ')
     .replace(/\s+/g, ' ')
+    // Lao writes no space between words, so a line the page wrapped breaks a word where it falls:
+    // the Lao gazette's "ຂະແຫນ\nງການ" is one word, and the reader, rightly, copies it as one. Every
+    // such copy was refused as words not in the provision -- 95 of Lao PDR's confirmation answers
+    // -- and each refusal left a finding held as unevaluated. Between two Lao letters a space is
+    // dropped on both sides, so the letters and their order still have to match. Thai is left as
+    // it was: dropping its spaces shortens a fragment and with it the slip a copy is allowed.
+    .replace(/(?<=[຀-໿]) (?=[຀-໿])/g, '')
     .trim()
     .toLowerCase()
     // Spelling, not wording. Australia's Payment Systems (Regulation) Act says "authorised or
@@ -819,6 +826,8 @@ const MIN_ANCHOR_CHARS = 12;
  */
 const MIN_RULE_CHARS = 40;
 const ELIDED_WEIGHT = 5;
+/** How far after a list's stem an item quoted with it may sit: the Lao safe harbour's is 224 characters on. */
+const LIST_REACH = 600;
 
 /**
  * A quote that skips over text is still a quote, provided every part of it is really there and in
@@ -843,18 +852,25 @@ export function quoteIsInSection(quote: string, sectionText: string, min = MIN_Q
   const joined = parts.join(' ');
   if (joined.length < min) return false;
 
+  // A list's stem and one of its items is how a list is quoted: "an intermediary is not liable
+  // for: ... a data message it did not actually know would give rise to liability" skips the
+  // items between, and says nothing the stem and the item do not. So it is not weighed as an
+  // elision, provided the item is under the stem -- close after it, not anywhere later in the Act.
+  const stemAndItem = parts.length === 2 && /[:：]\s*$/.test(quote.split(/\s*(?:\.\.\.|…)\s*/)[0] ?? '');
+
   // A snippet is the evidence, so its elisions must not carry the argument. A phrase names one
   // element of a snippet already checked, and "may ... declare" is how a split verb is quoted.
-  if (parts.length > 1 && min >= MIN_QUOTE_CHARS) {
+  if (parts.length > 1 && min >= MIN_QUOTE_CHARS && !stemAndItem) {
     if (joined.length < min * ELIDED_WEIGHT) return false;
     if (Math.max(...parts.map((p) => p.length)) < MIN_ANCHOR_CHARS) return false;
   }
 
   let from = 0;
-  for (const part of parts) {
+  for (const [n, part] of parts.entries()) {
     if (part.length < MIN_FRAGMENT_CHARS) return false;
     const at = findFragment(haystack, part, from, part.length < MIN_ANCHOR_CHARS);
     if (at < 0) return false;
+    if (stemAndItem && n === 1 && at - from > LIST_REACH) return false;
     from = at + part.length;
   }
   return true;
@@ -1677,7 +1693,19 @@ const SUBJECT_NAMES_IN_OTHER_LANGUAGES: Record<string, Record<FrameworkSubject, 
     'data-protection': ['ຂໍ້ມູນສ່ວນບຸກຄົນ', 'ປົກປ້ອງຂໍ້ມູນ'],
     cybersecurity: ['ໄຊເບີ', 'ລະບົບຄອມພິວເຕີ', 'ຄວາມປອດໄພທາງໄຊເບີ'],
     'copyright-safe-harbour': ['ລິຂະສິດ'],
-    'intermediary-liability': ['ຜູ້ໃຫ້ບໍລິການ'],
+    // Lao law calls the intermediary ສື່ກາງ, and states its shield in the shapes Thai does: the
+    // intermediary's liability, and an intermediary that has none or need bear none. With only
+    // "ຜູ້ໃຫ້ບໍລິການ", every bank's service provider, the section search handed 8.2 payment and
+    // anti-money-laundering rules, and the E-Transactions Law's article on an intermediary's
+    // non-liability was never examined. With the name alone it was fifth among the section search's
+    // instruments, past the five examined; with the shield's shapes it is the first.
+    'intermediary-liability': [
+      'ຜູ້ໃຫ້ບໍລິການ',
+      'ສື່ກາງ',
+      'ຄວາມຮັບຜິດຊອບຂອງສື່ກາງ',
+      'ສື່ກາງ ບໍ່ມີຄວາມຮັບຜິດຊອບ',
+      'ສື່ກາງບໍ່ຕ້ອງຮັບຜິດຊອບ',
+    ],
     'consumer-protection': ['ຜູ້ຊົມໃຊ້'],
   },
 };
@@ -1689,9 +1717,11 @@ function namesIn(subject: FrameworkSubject, languages: readonly string[]): strin
 
 /** Whether quoted words name the subject at all, as opposed to merely coming from the instrument. */
 function namesSubject(words: string, subject: FrameworkSubject): boolean {
-  // Lao OCR writes ຳ as ໍ + າ as often as not; the names use the single character.
-  const w = words.toLowerCase().replace(/ໍາ/g, 'ຳ');
-  return [...SUBJECT_NAMES[subject], ...namesIn(subject, Object.keys(SUBJECT_NAMES_IN_OTHER_LANGUAGES))].some((n) => w.includes(n));
+  // Lao OCR writes ຳ as ໍ + າ as often as not, and drops tone marks ("ສືກາງ" for "ສື່ກາງ"); the
+  // names use the single character, and are compared without tones on both sides.
+  const lao = (s: string) => s.replace(/ໍາ/g, 'ຳ').replace(/[່-໋]/g, '');
+  const w = lao(words.toLowerCase());
+  return [...SUBJECT_NAMES[subject], ...namesIn(subject, Object.keys(SUBJECT_NAMES_IN_OTHER_LANGUAGES))].some((n) => w.includes(lao(n)));
 }
 
 /**

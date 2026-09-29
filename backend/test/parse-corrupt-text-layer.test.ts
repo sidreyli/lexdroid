@@ -16,7 +16,7 @@
  * the text layer offers the same codepoint for both digits.
  */
 import { describe, expect, it } from 'vitest';
-import { hasCorruptTextLayer, ocrReplacesThePage } from '../src/parse/pdf.js';
+import { hasCorruptTextLayer, isInAnotherScript, ocrReplacesThePage } from '../src/parse/pdf.js';
 
 // The Commission Act's own commencement line, as pdf.js reports it and as the page prints it.
 const AS_REPORTED = 'date of Royal assent \u0018\u00183 september \u0018998';
@@ -56,5 +56,44 @@ describe('a text layer reporting characters the page does not have', () => {
     expect(ocrReplacesThePage('sparse', scanned, 'A'.repeat(200))).toBe(true);
     // And a sparse page is never replaced by something no longer than it already had.
     expect(ocrReplacesThePage('sparse', 'B'.repeat(300), 'C'.repeat(300))).toBe(false);
+  });
+});
+
+describe('a text layer in Latin letters on a page printed in another script', () => {
+  // The Decree on Electronic Commerce, as its pre-Unicode Lao font reports it, a line at a time.
+  const LEGACY_FONT = [
+    "c~i2sj c5u ,~ @'l:1JscmsJJm1J{iimiJrnc;Sn tr1sDn; L1J~sJmiJm1J{iimiJcsc;Sn tnsDn @~1J~ns1Jsu cc;J~ ~j~.1.J1J°c",
+    "airniavuuf,n Uvqrfitlvtm Uvqr{uam fiufiuru Genualn tlvqrfiuv EluiayuvSn rJvqrff rJvtn r_/vqrQuaro Sufforru",
+  ];
+  const ENGLISH = [
+    'Article 16 Personal data may be disclosed to a third party at the request of the competent State organisation',
+    'as provided by the law, and the data controller shall inform the owner of the data of the disclosure.',
+  ];
+
+  it('is detected in an economy that publishes in Lao', () => {
+    expect(isInAnotherScript(LEGACY_FONT, ['lo'])).toBe(true);
+  });
+
+  it('leaves an English translation in the same corpus alone', () => {
+    expect(isInAnotherScript(ENGLISH, ['lo'])).toBe(false);
+  });
+
+  it('leaves a page that is in the script alone', () => {
+    expect(isInAnotherScript(['ມາດຕາ 16 ການເປີດເຜີຍຂໍ້ມູນສ່ວນບຸກຄົນ ໃຫ້ພາກສ່ວນທີສາມ', ...LEGACY_FONT.slice(0, 1)], ['lo'])).toBe(false);
+  });
+
+  it('is never asked of an economy that publishes in a language OCR cannot read, or in English', () => {
+    expect(isInAnotherScript(LEGACY_FONT, ['en'])).toBe(false);
+    expect(isInAnotherScript(LEGACY_FONT, ['ja'])).toBe(false);
+    expect(isInAnotherScript(LEGACY_FONT, ['lo', 'en'])).toBe(false);
+    expect(isInAnotherScript(LEGACY_FONT, undefined)).toBe(false);
+  });
+
+  it('takes the OCR reading only when it comes back in a script other than Latin', () => {
+    const lao = 'ມາດຕາ 1 ຈຸດປະສົງ ດຳລັດສະບັບນີ້ ກຳນົດຫຼັກການ, ລະບຽບການ ແລະ ມາດຕະການ ກ່ຽວກັບການຄຸ້ມຄອງ ການຄ້າທາງເອເລັກໂຕຣນິກ ເພື່ອເຮັດໃຫ້ການຄ້າທາງເອເລັກໂຕຣນິກ';
+    expect(ocrReplacesThePage('unscripted', LEGACY_FONT.join(' '), lao)).toBe(true);
+    // An English page it was wrong to doubt comes back English, and the text layer stays.
+    expect(ocrReplacesThePage('unscripted', ENGLISH.join(' '), ENGLISH.join(' '))).toBe(false);
+    expect(ocrReplacesThePage('unscripted', LEGACY_FONT.join(' '), 'ມາດຕາ 1')).toBe(false);
   });
 });
