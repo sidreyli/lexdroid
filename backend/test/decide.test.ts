@@ -2154,6 +2154,126 @@ describe('a local-bank-account requirement that never says bank', () => {
   });
 });
 
+describe('a residual payment restriction that names no restricting word', () => {
+  const indicator1247 = indicator12('12.4.7', [
+    { score: 1, criterion: 'Any other restriction on making or receiving payment online' },
+    { score: 0, criterion: 'No restriction' },
+  ]);
+  const other = (economy: string, language: string, definingWords: string, quote: string, subjectWords: string = quote) => ({
+    ...p12('12.4.7', 'other-payment-restriction', { quote, definingWords, subjectWords }),
+    sectionLanguage: language,
+    confirmed: true,
+  });
+
+  it('is not made out by a bare noun phrase confirmed in Russian as this measure', () => {
+    const d = decide({
+      indicator: indicator1247,
+      economy: 'RUS',
+      evidence: [other('RUS', 'ru', 'Количество товара', 'Количество товара, подлежащего передаче покупателю, предусматривается договором')],
+      surfaced,
+      coverage,
+    });
+    expect(d.score).toBe(0);
+    expect(d.excluded.map((x) => x.reason).join(' ')).toContain('names nothing that prohibits');
+  });
+
+  it('is made out where the same Act name is quoted alongside its own prohibition word', () => {
+    const d = decide({
+      indicator: indicator1247,
+      economy: 'MNG',
+      evidence: [
+        other(
+          'MNG',
+          'mn',
+          'Үндэсний төлбөрийн системийн тухай хууль',
+          'Үндэсний төлбөрийн системийн тухай хуулиар хориглосон үйл ажиллагааг эрхэлсэн бол',
+        ),
+      ],
+      surfaced,
+      coverage,
+    });
+    expect(d.score).toBe(1);
+  });
+
+  it('is not made out where the Act name is the whole of the quote, with no restricting word at all', () => {
+    const d = decide({
+      indicator: indicator1247,
+      economy: 'MNG',
+      evidence: [other('MNG', 'mn', 'Үндэсний төлбөрийн системийн тухай хууль', 'Үндэсний төлбөрийн системийн тухай хууль')],
+      surfaced,
+      coverage,
+    });
+    expect(d.score).toBe(0);
+  });
+
+  it('is not made out where Mongolian negates the requirement word with -гүй', () => {
+    const d = decide({
+      indicator: indicator1247,
+      economy: 'MNG',
+      evidence: [
+        other(
+          'MNG',
+          'mn',
+          'Цахим худалдааны токенжуулсан гүйлгээнд',
+          'Цахим худалдааны токенжуулсан гүйлгээнд энэ журмын 5.36.2-т заасан баталгаажуулалтыг шаардахгүй',
+        ),
+      ],
+      surfaced,
+      coverage,
+    });
+    expect(d.score).toBe(0);
+  });
+
+  it('is made out by a genuine prohibition confirmed in Russian', () => {
+    const d = decide({
+      indicator: indicator1247,
+      economy: 'RUS',
+      evidence: [
+        other(
+          'RUS',
+          'ru',
+          'запрет приема',
+          'запрет приема на территории Российской Федерации электронных средств платежа, предоставленных иностранным поставщиком',
+          'электронных средств платежа, предоставленных иностранным поставщиком платежных услуг',
+        ),
+      ],
+      surfaced,
+      coverage,
+    });
+    expect(d.score).toBe(1);
+  });
+
+  it('is made out by a genuine prohibition confirmed in Mongolian', () => {
+    const d = decide({
+      indicator: indicator1247,
+      economy: 'MNG',
+      evidence: [
+        other(
+          'MNG',
+          'mn',
+          'нэвтрүүлэхийг хориглоно',
+          'амьтан, ургамал, түүхий эд, бүтээгдэхүүнийг улсын хилээр нэвтрүүлэхийг хориглоно',
+          'цахим мөнгө',
+        ),
+      ],
+      surfaced,
+      coverage,
+    });
+    expect(d.score).toBe(1);
+  });
+
+  it('is made out by a genuine prohibition confirmed in Lao', () => {
+    const d = decide({
+      indicator: indicator1247,
+      economy: 'LAO',
+      evidence: [other('LAO', 'lo', 'ຫ້າມທະນາຄານທຸລະກິດ', 'ຫ້າມທະນາຄານທຸລະກິດ', 'ການຊຳລະເງິນ')],
+      surfaced,
+      coverage,
+    });
+    expect(d.score).toBe(1);
+  });
+});
+
 describe('Lao PDR read in its own words', () => {
   const indicatorAt = (id: string, bands: { score: number; criterion: string }[], exception: string | null = null): Indicator => ({
     ...indicator12(id, bands),

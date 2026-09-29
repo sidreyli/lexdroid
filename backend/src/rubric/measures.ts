@@ -1633,6 +1633,32 @@ const RESTRICTION = new RegExp(
 );
 
 /**
+ * RESTRICTION above is English, and RESTRICTION has no `_LOCAL` counterpart of its own -- so a
+ * Russian, Mongolian or Lao provision confirmed in its own language could satisfy 12.4.7 or 12.2's
+ * two measures on a bare noun phrase, the same failure the comment above documents for English,
+ * because the confirmation pass never asks for a restricting word at all. Mongolia's Customs Act
+ * named "цахим мөнгө" (electronic money) as the whole of its defining words for six unrelated
+ * payment measures at once, and its Law on Violations named the National Payment System Act by
+ * title, twice, as the "restriction" a person committed -- a penalty clause that borrows its
+ * prohibition from elsewhere states none of its own (both confirmed against the MNG bench pack).
+ *
+ * "запре", not "запрещ": "запрет" (the noun, "a ban") is what the corpus actually uses on its own
+ * ("Запрет розничной продажи товаров", "запрет на допуск товаров") and does not contain the verb
+ * stem "запрещ". "шаард" (require) carries a negative lookahead against "-гvй" directly after it,
+ * because Mongolian negates a verb by suffixing it, and "шаардахгvй" -- "not required" -- names the
+ * opposite of a requirement, confirmed against the one MNG finding that reads exactly that way
+ * ("... баталгаажуулалтыг шаардахгvй"). Thai and Lao each confirmed present, with a genuine
+ * prohibit/restrict meaning, in their own bench packs' findings for these same three measures.
+ */
+const RESTRICTION_LOCAL = [
+  'запре|огранич|лимит|обязан|требу',
+  '(?:хоригло|хязгаарла|шаард)(?!\\S{0,4}гүй)',
+  'ห้าม|จำกัด',
+  laoSpellings('ຫ້າມ|ຈໍາກັດ'),
+].join('|');
+export const RESTRICTION_ANY = new RegExp([RESTRICTION.source, RESTRICTION_LOCAL].join('|'), 'i');
+
+/**
  * A list of algorithm names was tried here for 'deviating-encryption-standard' and removed.
  *
  * It was worth a cell and it was wrong. Auditing every gate by what it threw out across the three

@@ -18,7 +18,7 @@
  */
 import type { Indicator, ScoreBand } from '../rubric/types.js';
 import type { Finding } from '../read/index.js';
-import { DATA_SUBJECT, FRAMEWORK_TITLE_DOMAIN, HEADING_CLASS_DOMAIN, MEASURES, MEASURE_DOMAIN, MEASURE_NAMES, SECTOR_ASKED_IN_ITS_OWN_PILLAR, SECTOR_DOMAINS, SUBJECTS, TITLE_CARRIES_DOMAIN, SUBJECT_DOMAIN, TARIFF_CODED_DOMAIN } from '../rubric/measures.js';
+import { DATA_SUBJECT, FRAMEWORK_TITLE_DOMAIN, HEADING_CLASS_DOMAIN, MEASURES, MEASURE_DOMAIN, MEASURE_NAMES, RESTRICTION_ANY, SECTOR_ASKED_IN_ITS_OWN_PILLAR, SECTOR_DOMAINS, SUBJECTS, TITLE_CARRIES_DOMAIN, SUBJECT_DOMAIN, TARIFF_CODED_DOMAIN } from '../rubric/measures.js';
 import { tallyConfirmations, type ConfirmationTally } from '../read/confirmations.js';
 import { inUsd, moneyIn, type FxRates } from './currency.js';
 import { determinesAParticularCase } from '../discover/titles.js';
@@ -1824,6 +1824,27 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
       });
       continue;
     }
+    // RESTRICTION (in measures.ts) is the only term of art 12.4.7's and 12.2's two measures have,
+    // and the same confirmation pass that let a bare bank-less noun through for local-bank-account
+    // above lets a bare noun phrase through here too. Mongolia's Customs Act named "цахим мөнгө"
+    // (electronic money) as the whole of its defining words for six unrelated payment measures at
+    // once, and its Law on Violations named the National Payment System Act by title, twice, as the
+    // "restriction" a person committed -- a penalty clause that borrows its prohibition from
+    // elsewhere states none of its own. Checked regardless of readInItsLanguage, exactly like
+    // BANK_STEM, and only for the three measures RESTRICTION alone answers.
+    if (
+      e.finding.measure !== null &&
+      e.finding.measure !== undefined &&
+      RESTRICTION_MEASURES.has(e.finding.measure) &&
+      !RESTRICTION_ANY.test(e.finding.definingWords ?? '') &&
+      !RESTRICTION_ANY.test(e.finding.quote ?? '')
+    ) {
+      ruledOut.push({
+        evidence: e,
+        reason: `"${e.finding.definingWords ?? e.finding.quote}" names nothing that prohibits, limits or requires anything, and this measure is a residual restriction`,
+      });
+      continue;
+    }
     // A requirement to be present in the economy says where. Lao PDR's rule that an internet café
     // "must have suitable premises" was confirmed in Lao as a local presence requirement and
     // scored 12.8's top band: a shop needs a room, which is not the same as a provider having to
@@ -2557,6 +2578,10 @@ function inDomain(indicatorId: string, measure: string | null): RegExp | null {
  * only the one the bug was first found in.
  */
 const BANK_STEM = /\bbank\w*\b|банк|ທະນາຄານ/i;
+
+/** The three measures whose only term of art is RESTRICTION_ANY (in measures.ts): no amount, no
+ * licence, no named instrument, just a word that restricts, prohibits or requires something. */
+const RESTRICTION_MEASURES = new Set(['other-payment-restriction', 'online-purchase-limit', 'online-delivery-limit']);
 
 /**
  * Does this finding restrict holders by nationality or residence, either way round?
