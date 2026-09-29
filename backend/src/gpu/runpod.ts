@@ -39,6 +39,8 @@ export interface Rental {
   /** The least GPU memory the engine fits in at its declared context. */
   minGpuMemoryGb: number;
   maxUsdPerHour?: number;
+  /** GPU types not to rent, matched against RunPod's type id (e.g. "3090"), for cards that have misbehaved. */
+  avoid?: string[];
 }
 
 export type Cloud = 'COMMUNITY' | 'SECURE';
@@ -143,7 +145,9 @@ export async function offers(rental: Rental): Promise<Offer[]> {
     };
   };
   const cap = rental.maxUsdPerHour ?? DEFAULT_MAX_USD_PER_HOUR;
-  const fits = (json.data?.gpuTypes ?? []).filter((g) => g.memoryInGb >= rental.minGpuMemoryGb);
+  const fits = (json.data?.gpuTypes ?? []).filter(
+    (g) => g.memoryInGb >= rental.minGpuMemoryGb && !(rental.avoid ?? []).some((a) => g.id.includes(a)),
+  );
   const tier = (cloud: Cloud): Offer[] =>
     fits
       .map((g) => ({
