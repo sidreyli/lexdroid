@@ -72,6 +72,12 @@ const SCRIPTS: Record<string, { pack: Pack; chars: RegExp }> = {
   mn: { pack: 'mon', chars: /[\u0400-\u04ff]/g },
 };
 
+/** The characters of the script OCR reads for this language, or null where it reads none but English's. */
+export function ocrScriptOf(language: string): RegExp | null {
+  const script = SCRIPTS[language.toLowerCase().slice(0, 2)];
+  return script ? new RegExp(script.chars.source, 'g') : null;
+}
+
 /** The packs to consult for an economy's languages. With none stated, Hindi, as before Thailand. */
 function secondaryPacks(languages?: readonly string[]): { pack: Pack; chars: RegExp }[] {
   const wanted = (languages ?? ['hi']).map((l) => SCRIPTS[l.toLowerCase().slice(0, 2)]).filter((s) => s !== undefined);
