@@ -84,7 +84,8 @@ describe('a text layer in Latin letters on a page printed in another script', ()
 
   it('is never asked of an economy that publishes in a language OCR cannot read, or in English', () => {
     expect(isInAnotherScript(LEGACY_FONT, ['en'])).toBe(false);
-    expect(isInAnotherScript(LEGACY_FONT, ['ja'])).toBe(false);
+    // Not Russian any more: its pack came with the Eurasian Economic Union's scans.
+    expect(isInAnotherScript(LEGACY_FONT, ['ko'])).toBe(false);
     expect(isInAnotherScript(LEGACY_FONT, ['lo', 'en'])).toBe(false);
     expect(isInAnotherScript(LEGACY_FONT, undefined)).toBe(false);
   });
