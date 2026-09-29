@@ -787,6 +787,13 @@ function normaliseForQuoteCheck(s: string): string {
     // and the words do not. Nothing here loosens which words must be there, or in what order.
     .replace(/[,;]/g, ' ')
     .replace(/\s+/g, ' ')
+    // Lao writes no space between words, so a line the page wrapped breaks a word where it falls:
+    // the Lao gazette's "ຂະແຫນ\nງການ" is one word, and the reader, rightly, copies it as one. Every
+    // such copy was refused as words not in the provision -- 95 of Lao PDR's confirmation answers
+    // -- and each refusal left a finding held as unevaluated. Between two Lao letters a space is
+    // dropped on both sides, so the letters and their order still have to match. Thai is left as
+    // it was: dropping its spaces shortens a fragment and with it the slip a copy is allowed.
+    .replace(/(?<=[຀-໿]) (?=[຀-໿])/g, '')
     .trim()
     .toLowerCase()
     // Spelling, not wording. Australia's Payment Systems (Regulation) Act says "authorised or

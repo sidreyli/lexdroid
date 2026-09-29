@@ -118,6 +118,8 @@ function normalise(s: string): string {
     .replace(/ຳ/g, 'ໍາ')
     .replace(/ /g, ' ')
     .replace(/\s+/g, ' ')
+    // Lao writes no space between words -- see normaliseForQuoteCheck in ../read.
+    .replace(/(?<=[຀-໿]) (?=[຀-໿])/g, '')
     .trim()
     .toLowerCase();
 }

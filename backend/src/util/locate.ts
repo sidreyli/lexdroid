@@ -28,6 +28,9 @@ function fold(ch: string): string {
   return ch.toLowerCase();
 }
 
+/** A Lao letter: Lao writes no space between words. */
+const NO_WORD_SPACES = /[຀-໿]/;
+
 interface Folded {
   text: string;
   /** For each character of `text`, the offset just past the source character it came from. */
@@ -43,6 +46,9 @@ function foldWithOffsets(s: string): Folded {
   for (let i = 0; i < s.length; i += 1) {
     const f = fold(s[i]!);
     if (f === ' ' && text.endsWith(' ')) continue;
+    // Lao writes no space between words, so a space between two Lao letters may be a line the page
+    // wrapped inside a word -- see normaliseForQuoteCheck in ../read.
+    if (f === ' ' && NO_WORD_SPACES.test(text.slice(-1)) && NO_WORD_SPACES.test(s.slice(i).trimStart().charAt(0))) continue;
     for (const c of f) {
       text += c;
       starts.push(i);
