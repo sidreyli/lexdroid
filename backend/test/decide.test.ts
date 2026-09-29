@@ -1968,3 +1968,33 @@ describe('a finding the rubric moves into 6.4', () => {
     expect(d.excluded).toHaveLength(0);
   });
 });
+
+// 29 September: Lao PDR's rule that an internet café "must have suitable premises" was confirmed in
+// Lao as a local presence requirement and scored 12.8's top band.
+describe('a requirement to be present in the economy', () => {
+  const indicator128 = indicator12('12.8', [
+    { score: 1, criterion: 'Local presence requirement for at least one sector' },
+    { score: 0, criterion: 'No requirement' },
+  ]);
+  const lao = (words: string) => ({
+    ...p12('12.8', 'local-presence', {
+      quote: `ຜູ້ໃຫ້ບໍລິການອອນລາຍ ຕ້ອງມີ${words}`,
+      definingWords: words,
+      subjectWords: 'ຜູ້ໃຫ້ບໍລິການອອນລາຍ',
+      dutyBearer: 'ຜູ້ໃຫ້ບໍລິການອອນລາຍ',
+    }),
+    sectionLanguage: 'lo',
+    confirmed: true,
+  });
+
+  it('is not made out by premises that are nowhere in particular', () => {
+    const d = decide({ indicator: indicator128, economy: 'LAO', evidence: [lao('ສະຖານທີ່ເໝາະສົມ')], surfaced, coverage });
+    expect(d.basis).toHaveLength(0);
+    expect(d.excluded.map((x) => x.reason).join(' ')).toContain('names no place');
+  });
+
+  it('is made out where the provision puts the provider in the country', () => {
+    const d = decide({ indicator: indicator128, economy: 'LAO', evidence: [lao('ທີ່ຕັ້ງສໍານັກງານ ຢູ່ ສປປ ລາວ')], surfaced, coverage });
+    expect(d.excluded.map((x) => x.reason).join(' ')).not.toContain('names no place');
+  });
+});

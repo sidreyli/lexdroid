@@ -1758,6 +1758,25 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
       });
       continue;
     }
+    // A requirement to be present in the economy says where. Lao PDR's rule that an internet café
+    // "must have suitable premises" was confirmed in Lao as a local presence requirement and
+    // scored 12.8's top band: a shop needs a room, which is not the same as a provider having to
+    // be in the country. The provision, its words or the place the reader named has to put the
+    // provider somewhere -- the economy, a country, a territory. In English a place's name is
+    // capitalised, so this reaches the scripts where the name test above is answered by the
+    // confirmation instead.
+    // "Local" says it as well as a name does: Singapore's registration rules require "a local
+    // agent as its administrative contact".
+    if (
+      PRESENT_IN_THE_ECONOMY.has(e.finding.measure ?? '') &&
+      ![e.finding.placeWords, e.finding.definingWords, e.finding.quote].some((w) => namesAPlace(w) || HERE.test(w ?? ''))
+    ) {
+      ruledOut.push({
+        evidence: e,
+        reason: 'the provision names no place anyone has to be in, and this measure is a requirement to be present in the economy',
+      });
+      continue;
+    }
     // And a provision that never says what it is about. Every question before this one asks what
     // the provision does, and a provision can do exactly the right thing to the wrong subject: the
     // Competition Commission's duty to bank in Malaysia scored the online-payment cell, and a
@@ -2538,7 +2557,12 @@ const PLACE_KIND =
 /** A place has a name, and a name is capitalised. */
 const PLACE_NAME = /\p{Lu}\p{L}{2,}/u;
 
-function namesAPlace(words: string | null): boolean {
+/** Measures made out only by a requirement to be in the economy: an office, a branch, an agent. */
+const PRESENT_IN_THE_ECONOMY = new Set(['local-presence', 'local-representative', 'commercial-presence']);
+/** Words that put someone in the economy without naming it. */
+const HERE = /\b(local(ly)?|resident|domestic)\b|местн/i;
+
+function namesAPlace(words: string | null | undefined): boolean {
   return !!words && (PLACE_KIND.test(words) || PLACE_KIND_TH.test(words) || PLACE_NAME.test(words) || PLACE_LOCAL.test(words));
 }
 
