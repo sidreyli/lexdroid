@@ -137,3 +137,37 @@ describe('the pod script builds the model this repo declares', () => {
     expect(bootstrap).toContain('EXPOSE:-0');
   });
 });
+
+// 29 September: a pod's proxy sent the headers and then spaces while its engine sat on the request,
+// so neither undici timeout fired and Mongolia's fleet waited forty minutes in its engine check.
+describe('an engine that takes the probe and holds it', () => {
+  it('is reported, not waited on forever', async () => {
+    const { createServer } = await import('node:http');
+    const server = createServer((req, res) => {
+      if (req.url === '/api/tags') {
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ models: [{ name: 'gemma4-lex-16k:latest' }] }));
+        return;
+      }
+      if (req.url === '/api/show') {
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ details: { family: 'gemma3' } }));
+        return;
+      }
+      req.resume();
+      res.writeHead(200, { 'content-type': 'application/json' });
+      const keepAlive = setInterval(() => res.write(' '), 10);
+      res.on('close', () => clearInterval(keepAlive));
+    });
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', () => r()));
+    const port = (server.address() as { port: number }).port;
+    const { probeEngine } = await import('../src/engines/probe.js');
+    const started = Date.now();
+    const report = await probeEngine(`http://127.0.0.1:${port}`, 'gemma4-lex-16k', { timeoutMs: 150 });
+    server.closeAllConnections();
+    server.close();
+    expect(Date.now() - started).toBeLessThan(5_000);
+    expect(report.reachable).toBe(true);
+    expect(report.ratio).toBeNull();
+  });
+});
