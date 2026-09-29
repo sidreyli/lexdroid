@@ -65,9 +65,13 @@ describe('the engine declaration', () => {
     for (const e of declared) expect(e.checkpoint, e.id).not.toMatch(/:latest$|^[^:]+$/);
   });
 
+  // $0.55 since 29 September: with the 4090, 5090 and 3090 avoided, Engine B's 24 GB cards under
+  // $0.34 were all A5000s, and on the evening they were out of stock nothing could be rented. The
+  // L4 it rented instead cost $0.49.
   it('caps what a rented GPU may cost', () => {
     for (const e of declared.filter((x) => x.rented)) {
-      expect(e.rented!.maxUsdPerHour ?? 0.34, e.id).toBeLessThanOrEqual(0.34);
+      expect(e.rented!.maxUsdPerHour, e.id).toBeDefined();
+      expect(e.rented!.maxUsdPerHour!, e.id).toBeLessThanOrEqual(0.55);
     }
   });
 
