@@ -43,6 +43,20 @@ describe('the independent telecom authority measure', () => {
     expect(word.test('to monitor, and report each year to the Minister on, significant matters')).toBe(false);
   });
 
+  it('is made out by the same words in Russian, Mongolian, Lao and Thai, not just English', () => {
+    const word = MEASURE_NAMES['independent-telecom-authority']!;
+    // Roskomnadzor's own establishing clause (RUS corpus, indicator 5.7).
+    expect(word.test('является федеральным органом исполнительной власти, осуществляющим контроль')).toBe(true);
+    // Mongolia's Communications Law empowering the government to set up the regulator (MNG corpus).
+    expect(word.test('харилцаа холбооны зохицуулах хороо байгуулах, түүний дүрмийг батлах')).toBe(true);
+    expect(word.test('ສ້າງຕັ້ງຄະນະກໍາມະການກໍາກັບດູແລໂທລະຄົມ')).toBe(true);
+    expect(word.test('จัดตั้งคณะกรรมการกำกับดูแลโทรคมนาคม')).toBe(true);
+    // A body that merely performs a function, without any word for establishing or constituting one,
+    // is not made out -- this is what Roskomnadzor's other 21 readings all looked like.
+    expect(word.test('Государственный контроль осуществляется Федеральной службой по надзору в сфере связи')).toBe(false);
+    expect(word.test('харилцаа холбооны асуудал эрхэлсэн төрийн захиргааны төв байгууллага')).toBe(false);
+  });
+
   it('is about the communications sector, whichever word the drafter chose for it', () => {
     const domain = SUBJECT_DOMAIN['5.7']!;
     // "communications" and "telecommunications" are not the same word, and the authority this

@@ -1678,6 +1678,24 @@ const PATENT_LOCAL = 'патент|изобретени|полезн[а-яё]* �
 const COPYRIGHT_LOCAL = 'авторск|смежн[а-яё]* прав|произведени|зохиогч|бүтээл|ລິຂະສິດ|ສິດກ່ຽວຂ້ອງ|ຜົນງານ|ລະເມີດ';
 const COMMUNICATIONS_LOCAL = 'электросвяз|телекоммуникац|радиочастот|вещани|услуг[а-яё]* связи|средств[а-яё]* связи|сет[ьи] связи|операто[а-яё]* связи|о связи|харилцаа холбоо|цахилгаан холбоо|ໂທລະຄົມ|ສື່ສານ|ຄື້ນຄວາມຖີ່';
 const RADIO_EMC_LOCAL = 'радиоэлектрон|электромагнит|электрическ|продукци|оборудовани|издели|бүтээгдэхүүн|тоног төхөөрөмж|цахилгаан|ຜະລິດຕະພັນ|ອຸປະກອນ|ເຄື່ອງໃຊ້ໄຟຟ້າ';
+// "Independent telecom authority is established" -- the concept is establishing/constituting a
+// body, in whichever language. Words about the concept, not the name of any agency: Roskomnadzor's
+// own establishing clause reads "... является федеральным органом исполнительной власти" (is a
+// federal executive body); Mongolia's Communications Law empowers the government "харилцаа
+// холбооны зохицуулах хороо байгуулах" (to establish the communications regulatory committee) --
+// both confirmed against the RUS/MNG corpora. "байгуул(ах|ав|агдсан|агдах|алт)" is Mongolian's own
+// establish/found stem, deliberately not the bare "байгуул" that "байгууллага" (organisation, the
+// generic noun for "body" used in nearly every Mongolian provision) would also match -- that bare
+// stem would have made this a no-op, matching almost everything read for pillar 5. Lao "ສ້າງຕັ້ງ"/
+// "ກໍ່ຕັ້ງ" and Thai "จัดตั้ง"/"ก่อตั้ง" are the same establish/found terms, each confirmed present in
+// their own corpus (though not in this exact measure's own quotes, since LAO and THA already agree
+// with ESCAP here without them).
+const ESTABLISH_BODY_LOCAL = [
+  'учрежд|создан|образован|явля[а-яё]* .{0,15}(орган|ведомств|служб)|наделен[а-яё]* (правами|статусом) юридического лица',
+  'байгуул(ах|ав|агдсан|агдах|алт)',
+  laoSpellings('ສ້າງຕັ້ງ|ກໍ່ຕັ້ງ'),
+  'จัดตั้ง|ก่อตั้ง',
+].join('|');
 
 const REMEDY =
   /\b(remed\w*|injunct\w*|damages|account of profits|compensat\w*|liable|liability|relief|restrain\w*|action\w*|proceeding\w*|sue|sued|suit|claim\w*|breach of confidence|enforc\w*)\b/i;
@@ -1763,7 +1781,10 @@ export const MEASURE_NAMES: Readonly<Record<string, RegExp>> = {
   // Authority" -- a definitions entry -- and on a simplified outline saying ACMA reports to the
   // Minister each year. Naming a regulator is not establishing one, and a system that creates a
   // statutory body says so in one of these words.
-  'independent-telecom-authority': /\b(establish\w*|constitut\w*|incorporat\w*|body corporate|listed entity|statutory (?:authority|body|agency|corporation)|created by|set up)\b/i,
+  'independent-telecom-authority': new RegExp(
+    [/\b(establish\w*|constitut\w*|incorporat\w*|body corporate|listed entity|statutory (?:authority|body|agency|corporation)|created by|set up)\b/.source, ESTABLISH_BODY_LOCAL].join('|'),
+    'i',
+  ),
   // The officer measure is a person put in a position, and the role words already carry that.
   // Pillar 8's two identity measures are named by identity, and were not asked for it. The top
   // band took a customs declaration for imported timber, a duty to keep a record of "personal
