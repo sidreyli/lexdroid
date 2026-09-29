@@ -1375,6 +1375,11 @@ const PAYMENT_LOCAL = [
   'плат[её]жн|перевод[а-яё]* денежн|денежн[а-яё]* перевод|электронн[а-яё]* денежн|банковск[а-яё]* карт|эквайринг|кошел[её]к|цифров[а-яё]* валют|криптовалют|цифров[а-яё]* рубл|цифров[а-яё]* финансов[а-яё]* актив',
   'төлбөр тооцоо|төлбөрийн систем|төлбөрийн үйлчилгээ|төлбөрийн хэрэгсэл|төлбөрийн карт|цахим мөнгө|мөнгөн гуйвуулга|мөнгө шилжүүл|цахим түрийвч|виртуал хөрөнгө|картын',
   laoSpellings('ບໍລິການຊຳລະ|ບໍລິການການຊຳລະ|ລະບົບການຊຳລະ|ລະບົບຊຳລະ|ທຸລະກິດການຊຳລະ|ທຸລະກິດຊຳລະ|ການຊຳລະເງິນ|ຊຳລະເງິນຂ້າມແດນ|ໂອນເງິນ|ເງິນເອເລັກ|ເງິນດິຈິຕອນ|ກະເປົາເງິນ|ບັດເຄຣດິດ|ບັດເດບິດ|ບັດທະນາຄານ|ສົ່ງເງິນ'),
+  // Thai: unlike the other three, ONLINE's own Thai line used to carry this domain (a bare
+  // "อิเล็กทรอนิกส์"/"ดิจิทัล" match), which is how "เงินอิเล็กทรอนิกส์" (electronic money) named
+  // pillar-12.4's domain at all. Named here in its own right, the way the other three languages
+  // already are.
+  'เงินอิเล็กทรอนิกส์|บริการชำระเงิน|ระบบการชำระเงิน|เครื่องมือชำระเงิน|บัตรเครดิต|บัตรเดบิต|สินทรัพย์ดิจิทัล|กระเป๋าเงินอิเล็กทรอนิกส์|คริปโทเคอร์เรนซี|โอนเงิน',
 ].join('|');
 const DATA_LOCAL = [
   'данн[ыо][хеймю]|информаци|сведени|документ|реестр',
@@ -1446,12 +1451,25 @@ const ONLINE = new RegExp(
  * money for Malaysia, the Payment Services Act for Singapore. A limit on the instrument is a limit
  * on paying with it, so the instrument names the domain. The nouns are payment's own, so a sum
  * payable to the World Bank and a rule on minting legal tender still name neither.
+ *
+ * ONLINE.source used to sit in this alternation too, on the theory that an "online payment" is
+ * still a payment. It let ONLINE_LOCAL's bare digital/electronic stems -- Mongolian "цахим" and
+ * Russian "цифров|электронн" among them, present with no payment word nearby -- stand in for a
+ * payment instrument on their own: a Mongolian customs rule on posting "цахим төлбөрийн баримт" (an
+ * e-invoice, a tax receipt) named the domain by "цахим" alone and scored as if it limited paying
+ * for something. Dropped: a provision now has to say a payment word, in whichever of these
+ * languages, not merely a digital one.
+ *
+ * Losing ONLINE.source also lost the only Thai payment vocabulary this domain had, since PAYMENT_LOCAL
+ * never carried a Thai line of its own -- Malaysia's and Thailand's own "electronic money" limits
+ * (a title, "ELECTRONIC MONEY... EXEMPTION ORDER", and a Thai one naming "เงินอิเล็กทรอนิกส์") went
+ * with it. Both are genuine payment instruments, named in full rather than by a bare digital word,
+ * so "electronic money" is named explicitly in English and PAYMENT_LOCAL now carries its own Thai line.
  */
 const PAYMENT = new RegExp(
   [
-    ONLINE.source,
     /\bpayment\s+(service|system|facility|instrument|account|card|gateway|aggregator|method|surcharge|order)/.source,
-    /\b(e-?money|stored[- ]value|digital currency|crypto\w*|virtual asset|funds transfer|money transfer|remittance|non-?cash payment|wallet|credit card|debit card)s?\b/.source,
+    /\b(e-?money|electronic money|stored[- ]value|digital currency|crypto\w*|virtual asset|funds transfer|money transfer|remittance|non-?cash payment|wallet|credit card|debit card)s?\b/.source,
     PAYMENT_LOCAL,
   ].join('|'),
   'i',

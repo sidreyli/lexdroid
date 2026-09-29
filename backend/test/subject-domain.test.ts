@@ -113,6 +113,41 @@ describe('a subject outside the indicator’s domain', () => {
   });
 });
 
+describe('a bare digital word does not name the payment domain', () => {
+  // A Mongolian customs rule banning the posting of "цахим мөнгө" (e-money) and an e-invoicing
+  // receipt were both filed under pillar-12.4 measures on nothing more than a bare digital/
+  // electronic stem in the subject -- PAYMENT used to inherit ONLINE's "digital"/"цахим"/
+  // "электронн" wholesale. The instrument has to name an actual payment instrument or service.
+  const restriction = indicator('12.4.7', [
+    { score: 1, criterion: 'A restriction on making or receiving a payment' },
+    { score: 0, criterion: 'No restriction' },
+  ]);
+  const restricts = (subject: string): Evidence => {
+    const e = ev('12.4.7', 'other-payment-restriction', subject);
+    return { ...e, finding: { ...e.finding, quote: 'a person must not transfer more than the stated amount', definingWords: 'must not transfer more than the stated amount' } };
+  };
+
+  it('holds a restriction whose subject is only a bare digital record', () => {
+    const d = score(restriction, [restricts('a digital record')]);
+    expect(d.score).toBe(0);
+    expect(d.excluded[0]?.reason).toContain('is not');
+  });
+
+  it('scores the same restriction where the subject names a payment instrument', () => {
+    expect(score(restriction, [restricts('a digital currency')]).score).toBe(1);
+    expect(score(restriction, [restricts('a payment service')]).score).toBe(1);
+  });
+
+  // "electronic money" is a real payment instrument, named in full -- not the bare "electronic"
+  // this describe block is about excluding. Malaysia's and Thailand's own ceilings on it (title:
+  // "ELECTRONIC MONEY ... EXEMPTION ORDER"; Thai: "เงินอิเล็กทรอนิกส์") were lost when
+  // ONLINE.source came out, because neither language's explicit payment list had named it yet.
+  it('still scores "electronic money" and its Thai equivalent, named in full', () => {
+    expect(score(restriction, [restricts('electronic money')]).score).toBe(1);
+    expect(score(restriction, [restricts('เงินอิเล็กทรอนิกส์')]).score).toBe(1);
+  });
+});
+
 describe('goods named by their tariff code', () => {
   const tradeDefence = { ...indicator('1.4', [
     { score: 1, criterion: 'More than three measures' },
