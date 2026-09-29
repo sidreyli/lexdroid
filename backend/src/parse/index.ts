@@ -36,6 +36,8 @@ const BY_HOST: Record<string, (html: string, url: string) => ParsedDocument> = {
   // Russia's legal information system: IPS, proxied on the government's own domain.
   'pravo.gov.ru': parseIps,
   'www.pravo.gov.ru': parseIps,
+  // The Eurasian Economic Union's acts, read from their Word files as Russian acts are (discover/eaeu.ts).
+  'docs.eaeunion.org': parseIps,
 };
 
 /**

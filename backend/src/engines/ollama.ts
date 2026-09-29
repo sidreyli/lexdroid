@@ -14,10 +14,10 @@
 import { request } from 'undici';
 import { cacheEnabled, cacheGet, cacheKey, cachePut, resumePath } from './cache.js';
 import { enginePool, engineHosts } from './pool.js';
-import { OllamaUnavailable } from './errors.js';
+import { EngineUnresponsive, OllamaUnavailable } from './errors.js';
 import { hostedConfig, hostedGenerate } from './hosted.js';
 import { loadEngines } from './registry.js';
-export { OllamaUnavailable, NoEnginesLeft } from './errors.js';
+export { EngineUnresponsive, OllamaUnavailable, NoEnginesLeft } from './errors.js';
 
 /**
  * The first engine named. Reads go to whichever engine the pool frees; this is for one-offs.
@@ -168,9 +168,17 @@ export function engineReconnects(): number {
  */
 //
 // A connection the proxy did not accept in time is the same: nothing was sent, so nothing was
-// spent, and the next attempt found the engine there -- see the connect-timeout test.
+// spent, and the next attempt found the engine there -- see the connect-timeout test. So is the
+// rented engine's own proxy saying the engine behind it did not answer ("engine unavailable"):
+// the pod is there and its engine is starting, restarting or stuck, which waiting is the cure for.
 const CONNECTION_LOST =
-  /ECONNRESET|ECONNREFUSED|ECONNABORTED|EPIPE|ETIMEDOUT|EHOSTUNREACH|ENETUNREACH|ENETDOWN|ENOTFOUND|EAI_AGAIN|UND_ERR_SOCKET|UND_ERR_CONNECT_TIMEOUT|Connect Timeout|SocketError|socket hang up|other side closed|fetch failed|terminated/i;
+  /ECONNRESET|ECONNREFUSED|ECONNABORTED|EPIPE|ETIMEDOUT|EHOSTUNREACH|ENETUNREACH|ENETDOWN|ENOTFOUND|EAI_AGAIN|UND_ERR_SOCKET|UND_ERR_CONNECT_TIMEOUT|Connect Timeout|SocketError|socket hang up|other side closed|fetch failed|terminated|engine unavailable/i;
+
+/**
+ * How long a batch of texts may take to embed. The largest batch is 64 headings, which a GPU embeds
+ * in seconds and the laptop in well under a minute; past this the engine is stuck, not busy.
+ */
+const EMBED_DEADLINE_MS = Number(process.env['LEXDROID_EMBED_DEADLINE_MS'] ?? 180_000);
 
 /** The engine said the request timed out, which is about this prompt and not about the link. */
 const STALLED = /UND_ERR_(HEADERS|BODY)_TIMEOUT|Headers Timeout|Body Timeout/i;
@@ -194,7 +202,19 @@ function failureText(err: unknown): string {
   return parts.length > 0 ? parts.join(' | ') : String(err);
 }
 
-async function once<T>(host: string, path: string, body: unknown, timeoutMs: number, model: string): Promise<T> {
+/**
+ * One request. `deadlineMs` bounds the whole exchange, which the idle timeouts cannot: a rented
+ * engine's proxy sends a space every few seconds while it waits, so a stuck engine is never idle.
+ */
+async function once<T>(
+  host: string,
+  path: string,
+  body: unknown,
+  timeoutMs: number,
+  model: string,
+  deadlineMs?: number,
+): Promise<T> {
+  const signal = deadlineMs ? AbortSignal.timeout(deadlineMs) : undefined;
   try {
     const res = await request(`${host}${path}`, {
       method: 'POST',
@@ -202,6 +222,7 @@ async function once<T>(host: string, path: string, body: unknown, timeoutMs: num
       body: JSON.stringify(body),
       headersTimeout: timeoutMs,
       bodyTimeout: timeoutMs,
+      ...(signal ? { signal } : {}),
     });
     const text = await res.body.text();
     if (res.statusCode >= 400) throw new Error(`HTTP ${res.statusCode}: ${text.slice(0, 300)}`);
@@ -211,6 +232,7 @@ async function once<T>(host: string, path: string, body: unknown, timeoutMs: num
     if (typeof parsed.error === 'string') throw new Error(`engine: ${parsed.error.slice(0, 300)}`);
     return parsed;
   } catch (err) {
+    if (signal?.aborted) throw new EngineUnresponsive(host, Math.round((deadlineMs ?? 0) / 1000));
     const message = failureText(err);
     // Stall first: a prompt the engine took and did not answer costs that provision, not the link.
     if (STALLED.test(message)) throw new EngineTimeout(model, message);
@@ -224,14 +246,23 @@ async function once<T>(host: string, path: string, body: unknown, timeoutMs: num
  * The same request, retried while the engine is only briefly away. Past the budget it really has
  * gone, and the caller must stop rather than report a search that found nothing.
  */
-async function post<T>(host: string, path: string, body: unknown, timeoutMs = 600_000, model = ''): Promise<T> {
+async function post<T>(
+  host: string,
+  path: string,
+  body: unknown,
+  timeoutMs = 600_000,
+  model = '',
+  deadlineMs?: number,
+): Promise<T> {
   for (let attempt = 0; ; attempt += 1) {
     try {
-      const value = await once<T>(host, path, body, timeoutMs, model);
+      const value = await once<T>(host, path, body, timeoutMs, model, deadlineMs);
       if (attempt > 0) console.warn(`  engine answered again after ${attempt} attempt(s) waiting`);
       return value;
     } catch (err) {
       const wait = RECONNECT_WAITS_MS[attempt];
+      // A stuck engine is left to the pool, which rests it and hands the request to another.
+      if (err instanceof EngineUnresponsive) throw err;
       if (!(err instanceof OllamaUnavailable) || wait === undefined) throw err;
       reconnectAttempts += 1;
       console.warn(`  ${host} unreachable; waiting ${wait / 1000}s, then attempt ${attempt + 2}`);
@@ -244,24 +275,42 @@ async function post<T>(host: string, path: string, body: unknown, timeoutMs = 60
  * The same request, on whichever engine is free. Past its reconnect budget an engine really has
  * gone, so it is retired and the request is tried on another rather than costing the pillar.
  */
-async function onAnyEngine<T>(path: string, body: unknown, timeoutMs: number, model: string): Promise<T> {
+async function onAnyEngine<T>(
+  path: string,
+  body: unknown,
+  timeoutMs: number,
+  model: string,
+  deadlineMs?: number,
+): Promise<T> {
   return enginePool().run(
-    (host) => post<T>(host, path, body, timeoutMs, model),
+    (host) => post<T>(host, path, body, timeoutMs, model, deadlineMs),
     (err) => err instanceof OllamaUnavailable,
   );
 }
 
+/**
+ * The models the first engine holds, asked for on the same reconnect ladder as a read. A gate
+ * checks this before it reads anything, and one unanswered connection there ended Mongolia's
+ * pillar 7 on 29 September before a single provision was read.
+ */
 export async function listModels(): Promise<string[]> {
-  try {
-    const res = await request(`${firstHost()}/api/tags`, {
-      headers: authHeaders(),
-      headersTimeout: 10_000,
-      bodyTimeout: 10_000,
-    });
-    const body = (await res.body.json()) as { models?: { name: string }[] };
-    return (body.models ?? []).map((m) => m.name);
-  } catch (err) {
-    throw new OllamaUnavailable(err instanceof Error ? err.message : String(err), firstHost());
+  const host = firstHost();
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      const res = await request(`${host}/api/tags`, {
+        headers: authHeaders(),
+        headersTimeout: 10_000,
+        bodyTimeout: 10_000,
+      });
+      const body = (await res.body.json()) as { models?: { name: string }[] };
+      return (body.models ?? []).map((m) => m.name);
+    } catch (err) {
+      const wait = RECONNECT_WAITS_MS[attempt];
+      if (wait === undefined) throw new OllamaUnavailable(err instanceof Error ? err.message : String(err), host);
+      reconnectAttempts += 1;
+      console.warn(`  ${host} unreachable; waiting ${wait / 1000}s, then attempt ${attempt + 2}`);
+      await new Promise((r) => setTimeout(r, wait));
+    }
   }
 }
 
@@ -274,7 +323,13 @@ export async function haveModel(name: string): Promise<boolean> {
 /** One batch of texts to vectors. Ollama embeds sequentially; the batch is for fewer round trips. */
 export async function embed(texts: string[], model: string = EMBEDDING_MODEL): Promise<Float32Array[]> {
   if (texts.length === 0) return [];
-  const res = await onAnyEngine<{ embeddings: number[][] }>('/api/embed', { model, input: texts }, 600_000, model);
+  const res = await onAnyEngine<{ embeddings: number[][] }>(
+    '/api/embed',
+    { model, input: texts },
+    600_000,
+    model,
+    EMBED_DEADLINE_MS,
+  );
   if (!res.embeddings || res.embeddings.length !== texts.length) {
     throw new Error(`${model} returned ${res.embeddings?.length ?? 0} vectors for ${texts.length} inputs`);
   }

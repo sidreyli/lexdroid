@@ -70,7 +70,7 @@ describe('an engine that has gone for good', () => {
     expect(pool.width()).toBe(1);
   });
 
-  it('is never handed out again', async () => {
+  it('is not handed out again while it rests', async () => {
     const pool = new EnginePool([A, B]);
     await pool.run(async (host) => {
       if (host === A) throw new Error('tunnel closed');
@@ -81,8 +81,8 @@ describe('an engine that has gone for good', () => {
     expect(seen.every((h) => h === B)).toBe(true);
   });
 
-  it('wakes the readers queued behind it instead of leaving them waiting forever', async () => {
-    const pool = new EnginePool([A]);
+  it('wakes the readers queued behind it, once it is given up, instead of leaving them waiting', async () => {
+    const pool = new EnginePool([A], { giveUpMs: 0 });
     const runs = Array.from({ length: 4 }, () => pool.run(async () => { await tick(2); throw new Error('gone'); }, always));
     const results = await Promise.allSettled(runs);
     expect(results.every((r) => r.status === 'rejected')).toBe(true);
@@ -95,6 +95,46 @@ describe('an engine that has gone for good', () => {
     const pool = new EnginePool([A, B]);
     await expect(pool.run(async () => { throw new Error('overran'); }, never)).rejects.toThrow('overran');
     expect(pool.width()).toBe(2);
+  });
+});
+
+// 29 September: Mongolia's fleet of six retired each pod on its first bad stretch through the
+// proxy, and then lost the pillar with every pod still running and answering a minute later.
+describe('an engine that stopped answering for a while', () => {
+  it('is tried again after resting, so a pod that blinked is not abandoned', async () => {
+    const pool = new EnginePool([A], { restMs: 5, giveUpMs: 60_000 });
+    let calls = 0;
+    const answer = await pool.run(async (host) => {
+      calls += 1;
+      if (calls === 1) throw new Error('proxy did not answer');
+      return `read on ${host}`;
+    }, always);
+
+    expect(answer).toBe(`read on ${A}`);
+    expect(pool.width()).toBe(1);
+    expect(pool.retiredHosts()).toEqual([]);
+  });
+
+  it('keeps the others reading while it rests, and rejoins them after', async () => {
+    const pool = new EnginePool([A, B], { restMs: 5, giveUpMs: 60_000 });
+    await pool.run(async (host) => {
+      if (host === A) throw new Error('proxy did not answer');
+    }, always);
+    expect(pool.width()).toBe(1);
+
+    await tick(20);
+    const seen = new Set<string>();
+    await Promise.all(Array.from({ length: 8 }, () => pool.run(async (h) => { seen.add(h); await tick(2); }, never)));
+    expect([...seen].sort()).toEqual([A, B]);
+  });
+
+  it('is given up once it has been away past the give-up, and the run is told', async () => {
+    const pool = new EnginePool([A], { restMs: 5, giveUpMs: 12 });
+    let calls = 0;
+    await expect(pool.run(async () => { calls += 1; throw new Error('gone'); }, always)).rejects.toBeInstanceOf(NoEnginesLeft);
+    // Tried at about 0, 5 and 10 ms; a fourth try would fall past the give-up.
+    expect(calls).toBeGreaterThanOrEqual(2);
+    expect(calls).toBeLessThanOrEqual(3);
   });
 });
 

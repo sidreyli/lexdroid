@@ -171,6 +171,18 @@
       "notes": "The parent legal-information portal, walked through its legal information system (IPS, /proxy/ips) by the ips adapter: the consolidated current text of every federal act as HTML, with the standing the system gives it. robots.txt is 'User-Agent: * / Disallow:' -- an empty disallow, fully permissive -- read directly 21 September 2026. Queries are act-type codes from the system's own classifier plus title words, aimed at the digital-trade pillars; all 12,155 federal laws would be mostly amending laws, so the whole statute book is walked principal-only. The orders of the regulators that set the information-security, communications and data rules -- FSTEC (102000266), FSB (102000208), Roskomnadzor (102000367) and the Ministry of Digital Development (102472498) -- are walked by issuer code (a6) from the classifier of issuers, read 29 September 2026 from ?autocomplete&bpa=cd00000&nclassif=6&area=110&query=<cp1251 name>. Pages are windows-1251. Recorded over http because the environment used on 21 September could not complete a TLS handshake to it while reaching it normally on port 80; that is a fact about that network rather than about this host, and the scheme should be re-checked from an ordinary connection. Full trace: docs/lao-mongolia-russia-recon.md."
     },
     {
+      "name": "Eurasian Economic Union legal portal (Правовой портал Евразийского экономического союза)",
+      "url": "https://docs.eaeunion.org",
+      "kind": "legislation-database",
+      "authority": "Eurasian Economic Commission",
+      "pillars": [1, 2, 10, 11, 12],
+      "adapter": "eaeu",
+      "adapterConfig": {
+        "listings": ["sphere:110", "sphere:111", "sphere:112", "section:164"]
+      },
+      "notes": "Supranational law that applies in the Russian Federation directly and that no Russian federal portal publishes: the Treaty on the Union, the Union's Customs Code, and the decisions of the Eurasian Economic Commission on customs, trade defence, non-tariff measures and technical regulation. Walked by the eaeu adapter through the portal's own subject classification -- spheres 110 Торговля, 111 Техническое регулирование, 112 Таможенное сотрудничество -- and its section of international treaties (164); the Commission's notices, the Union Court's judgments, its internal распоряжения and acts that only amend another are set aside. Each act is read from the Word file its page offers; the PDF beside it is a scan. robots.txt is empty, read 28 September 2026."
+    },
+    {
       "name": "Bank of Russia (Банк России)",
       "url": "https://www.cbr.ru",
       "kind": "regulator",
@@ -212,7 +224,7 @@
       ],
       "adapter": null,
       "adapterConfig": {},
-      "notes": "UNVERIFIED, not blocked -- the same timeout on both ports and the same environment caveat as Roskomnadzor above. Customs and trade law, so it matters for pillars 10 and 12. Note that customs law here is partly supranational: the Customs Code of the Eurasian Economic Union applies directly and is not published on a Russian federal portal, which is a scope limit to state rather than to work around. Full trace: docs/lao-mongolia-russia-recon.md."
+      "notes": "UNVERIFIED, not blocked -- the same timeout on both ports and the same environment caveat as Roskomnadzor above. Customs and trade law, so it matters for pillars 10 and 12. Note that customs law here is partly supranational: the Customs Code of the Eurasian Economic Union applies directly and is not published on a Russian federal portal; it is registered from the Union's own legal portal, above. Full trace: docs/lao-mongolia-russia-recon.md."
     }
   ],
   "commitments": [

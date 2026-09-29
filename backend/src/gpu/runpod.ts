@@ -47,6 +47,8 @@ export interface Rental {
    * the interface rented it every time.
    */
   avoidGpus?: string[];
+  /** The same, asked for by one rental rather than set on the engine (e.g. "3090"). */
+  avoid?: string[];
 }
 
 export type Cloud = 'COMMUNITY' | 'SECURE';
@@ -151,7 +153,7 @@ export async function offers(rental: Rental): Promise<Offer[]> {
     };
   };
   const cap = rental.maxUsdPerHour ?? DEFAULT_MAX_USD_PER_HOUR;
-  const avoid = (rental.avoidGpus ?? []).map((a) => a.toLowerCase());
+  const avoid = [...(rental.avoidGpus ?? []), ...(rental.avoid ?? [])].map((a) => a.toLowerCase());
   const fits = (json.data?.gpuTypes ?? []).filter(
     (g) => g.memoryInGb >= rental.minGpuMemoryGb && !avoid.some((a) => g.id.toLowerCase().includes(a)),
   );

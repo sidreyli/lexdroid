@@ -58,7 +58,7 @@ export interface OcrPage {
  * of these if the pack finds its script on it -- the English pack reads Thai as Latin gibberish,
  * and before Thailand had a pack the Hindi one read a Thai notification as Devanagari.
  */
-type Pack = 'hin' | 'tha' | 'lao' | 'mon';
+type Pack = 'hin' | 'tha' | 'lao' | 'mon' | 'rus';
 
 const SCRIPTS: Record<string, { pack: Pack; chars: RegExp }> = {
   hi: { pack: 'hin', chars: /[\u0900-\u097f]/g },
@@ -70,6 +70,9 @@ const SCRIPTS: Record<string, { pack: Pack; chars: RegExp }> = {
   // order, a six-page forestry procedure -- with no text beside it. The Cyrillic block is the
   // pack's evidence; the English pass has already declined the page by then.
   mn: { pack: 'mon', chars: /[\u0400-\u04ff]/g },
+  // The Eurasian Economic Union's acts before 2015 are copier scans with no text layer (measured
+  // 28 September 2026: no /Font), and the English pack read them as Latin gibberish.
+  ru: { pack: 'rus', chars: /[\u0400-\u04ff]/g },
 };
 
 /** The characters of the script OCR reads for this language, or null where it reads none but English's. */
@@ -95,6 +98,7 @@ function localLanguageData(): string {
     localRequire('@tesseract.js-data/tha') as LanguagePackage,
     localRequire('@tesseract.js-data/lao') as LanguagePackage,
     localRequire('@tesseract.js-data/mon') as LanguagePackage,
+    localRequire('@tesseract.js-data/rus') as LanguagePackage,
   ];
   mkdirSync(TESSDATA_DIR, { recursive: true });
   mkdirSync(TESSERACT_CACHE, { recursive: true });
