@@ -1845,6 +1845,27 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
       });
       continue;
     }
+    // 3.4's own gloss says so, and its own exception says so too: "not ordinary competition-law
+    // merger review, which this indicator excludes" / "Anti-trust measures related to M&A are not
+    // considered a restriction, unless discriminatory." A second token, discriminatory-merger-review,
+    // exists precisely for the carve-back -- but nothing enforced the exclusion itself, so an
+    // ordinary merger-clearance duty under a competition act, applying alike to any acquirer,
+    // counted as investment screening regardless. Thailand's Trade Competition Act ("a business
+    // operator that will carry out a merger ... that may create a monopoly ... must be authorised by
+    // the Committee") and Singapore's Competition Act ("notify the Commission of the merger; and
+    // apply to it for a decision") both confirmed this, and neither names a foreign party anywhere
+    // in the quote. Checked against the instrument's title, not the quote, because an ordinary
+    // merger-clearance section rarely repeats the Act's own name in its own sentence; checked only
+    // for investment-screening, not its own discriminatory-merger-review carve-back, and only where
+    // the finding itself never names a foreign party either -- a competition act *can* still single
+    // out a foreign acquirer, and that is exactly what the second token is for.
+    if (e.finding.measure === 'investment-screening' && COMPETITION_LAW.test(e.instrumentTitle ?? '') && !namesNationality(e.finding)) {
+      ruledOut.push({
+        evidence: e,
+        reason: `"${e.instrumentTitle}" is ordinary competition-law merger review, which this indicator excludes unless it treats a foreign acquirer differently from a local one`,
+      });
+      continue;
+    }
     // A requirement to be present in the economy says where. Lao PDR's rule that an internet café
     // "must have suitable premises" was confirmed in Lao as a local presence requirement and
     // scored 12.8's top band: a shop needs a room, which is not the same as a provider having to
@@ -2617,6 +2638,19 @@ const DURATION_LOCAL =
 function namesNationality(f: Finding): boolean {
   return [f.dutyBearer, f.definingWords, f.subjectWords, f.quote].some((w) => w && (NATIONALITY.test(w) || NATIONALITY_LOCAL.test(w)));
 }
+
+/**
+ * The instrument's own name, where the law is an ordinary competition/anti-trust act rather than an
+ * investment-screening one. "Competition" alone is too common a word in a merger-review sentence to
+ * ask of the quote (a genuine investment-screening clause can mention "competition" in passing), so
+ * this is asked of the instrument's title instead -- Thailand's "พระราชบัญญัติการแข่งขันทางการค้า"
+ * (Trade Competition Act), Singapore's and India's "Competition Act", Australia's "Competition and
+ * Consumer Act" (the up-to-25-character gap allows "and Consumer" between the two words) and Lao
+ * PDR's "ກົດໝາຍ ວ່າດ້ວຍແຂ່ງຂັນທາງທຸລະກິດ" (Law on Business Competition) were each confirmed as the
+ * instrument named for an investment-screening finding that turned out, on inspection, to be an
+ * ordinary merger-clearance duty applying alike to any acquirer.
+ */
+const COMPETITION_LAW = /\bcompetition\b.{0,25}\bact\b|anti-?trust|trade competition|merger control|monopol(?:y|ies)(?:\s+commission)?|การแข่งขันทางการค้า|ແຂ່ງຂັນທາງທຸລະກິດ/i;
 
 /** Words that make a party foreign to the economy, as opposed to merely naming a nationality. */
 const FOREIGN_PARTY = /\b(foreign(er|ers|ly|-owned|-ownership)?|non-?residents?|non-?citizens?|non-?nationals?|overseas|aliens?)\b|คนต่างด้าว|ต่างด้าว|ต่างชาติ/i;

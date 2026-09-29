@@ -221,6 +221,40 @@ describe('investment screening, as far as law shows it', () => {
   it('declares the top band out of reach rather than approximating it', () => {
     expect(UNREACHABLE_BANDS['3.4']?.[1]).toMatch(/decided case/i);
   });
+
+  // 3.4's own exception: "Anti-trust measures related to M&A are not considered a restriction,
+  // unless discriminatory." An ordinary merger-clearance duty under a competition act, applying
+  // alike to any acquirer, is not a screening mechanism just because it sits beside genuine ones.
+  const competitionAct = (n: number): Evidence => ({
+    ...ev(
+      '3.4',
+      'investment-screening',
+      {
+        dutyBearer: 'a business operator',
+        quote: 'a business operator that will carry out a merger that may create a monopoly must be authorised by the Committee',
+      },
+      n,
+    ),
+    instrumentTitle: 'Trade Competition Act',
+  });
+
+  it('does not count an ordinary merger-clearance duty under a competition act', () => {
+    expect(score('3.4', [competitionAct(1)])).toBe(0);
+  });
+
+  it('does not let a competition act inflate a real mechanism into two', () => {
+    expect(score('3.4', [mechanism(1), competitionAct(2)])).toBe(0.25);
+  });
+
+  it('still counts a competition act review that treats a foreign acquirer differently from a local one', () => {
+    const discriminatory: Evidence = {
+      ...ev('3.4', 'investment-screening', {
+        quote: 'a merger involving a foreign acquirer requires additional clearance not required of a local acquirer',
+      }, 1),
+      instrumentTitle: 'Trade Competition Act',
+    };
+    expect(score('3.4', [discriminatory])).toBe(0.25);
+  });
 });
 
 describe('blocking and filtering', () => {
