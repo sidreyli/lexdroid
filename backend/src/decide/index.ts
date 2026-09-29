@@ -18,7 +18,7 @@
  */
 import type { Indicator, ScoreBand } from '../rubric/types.js';
 import type { Finding } from '../read/index.js';
-import { FRAMEWORK_TITLE_DOMAIN, HEADING_CLASS_DOMAIN, MEASURES, MEASURE_DOMAIN, MEASURE_NAMES, SECTOR_ASKED_IN_ITS_OWN_PILLAR, SECTOR_DOMAINS, SUBJECTS, TITLE_CARRIES_DOMAIN, SUBJECT_DOMAIN, TARIFF_CODED_DOMAIN } from '../rubric/measures.js';
+import { DATA_SUBJECT, FRAMEWORK_TITLE_DOMAIN, HEADING_CLASS_DOMAIN, MEASURES, MEASURE_DOMAIN, MEASURE_NAMES, SECTOR_ASKED_IN_ITS_OWN_PILLAR, SECTOR_DOMAINS, SUBJECTS, TITLE_CARRIES_DOMAIN, SUBJECT_DOMAIN, TARIFF_CODED_DOMAIN } from '../rubric/measures.js';
 import { tallyConfirmations, type ConfirmationTally } from '../read/confirmations.js';
 import { inUsd, moneyIn, type FxRates } from './currency.js';
 import { determinesAParticularCase } from '../discover/titles.js';
@@ -2263,6 +2263,25 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
       ruledOut.push({
         evidence: e,
         reason: 'the provision appoints no one, and this measure is a duty to put someone in that position',
+      });
+      continue;
+    }
+    // And an appointed officer is not necessarily a data-protection one. Mongolia's Insurance Act
+    // has "the insurer ... appoints an authorised official" score this measure: a generic
+    // compliance appointment, of the kind every regulated industry's supervision statute makes,
+    // that never says data, information or privacy. Asked of the words naming the appointee, or --
+    // the way local-bank-account's title carries "the account" once the statute has said it -- of
+    // the instrument's own title: Singapore's "an organisation must designate one or more
+    // individuals" never repeats "data" itself, and sits inside the Personal Data Protection Act.
+    if (
+      e.finding.measure === 'data-protection-officer' &&
+      !DATA_SUBJECT.test(e.finding.roleWords ?? '') &&
+      !DATA_SUBJECT.test(e.finding.quote ?? '') &&
+      !DATA_SUBJECT.test(e.instrumentTitle)
+    ) {
+      ruledOut.push({
+        evidence: e,
+        reason: `"${e.finding.roleWords ?? e.finding.quote}" appoints an officer, not one named for data or information`,
       });
       continue;
     }

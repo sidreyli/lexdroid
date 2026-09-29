@@ -1288,6 +1288,59 @@ describe('which sentence the row leads with', () => {
     expect(d.basis).toHaveLength(0);
     expect(d.excluded[0]!.reason).toContain('which is the State');
   });
+
+  it('will not count an officer whose role names nothing about data', () => {
+    // Mongolia's Insurance Act art. 55: a generic compliance officer for insurance supervision,
+    // not a data protection officer. Nothing in the quote or the role mentions data or information.
+    const d = decide({
+      indicator: i74,
+      economy: 'MNG',
+      evidence: [
+        evidence(1, 'Insurance Act', {
+          indicatorId: '7.4',
+          measure: 'data-protection-officer',
+          placeWords: null,
+          locatedData: null,
+          informationWords: null,
+          dataScope: 'all',
+          quote: 'the insurer shall appoint an authorised official responsible for compliance',
+          dutyBearer: 'the insurer', dutyAct: 'shall appoint', dutyForce: 'requires',
+          roleWords: 'an authorised official responsible for compliance',
+        }),
+      ],
+      surfaced,
+      coverage,
+    });
+    expect(d.score).toBe(0);
+    expect(d.basis).toHaveLength(0);
+    expect(d.excluded[0]!.reason).toContain('not one named for data or information');
+  });
+
+  it('still counts a designated individual where the Act itself is the data protection one', () => {
+    // Singapore's own s.11(3): "must designate one or more individuals" never repeats "data" in
+    // the sentence; the Act it sits in is the Personal Data Protection Act.
+    const d = decide({
+      indicator: i74,
+      economy: 'SGP',
+      evidence: [
+        evidence(1, 'Personal Data Protection Act 2012', {
+          indicatorId: '7.4',
+          measure: 'data-protection-officer',
+          placeWords: null,
+          locatedData: null,
+          informationWords: null,
+          dataScope: 'all',
+          quote: 'An organisation must designate one or more individuals',
+          dutyBearer: 'An organisation', dutyAct: 'must designate', dutyForce: 'requires',
+          roleWords: 'one or more individuals',
+        }),
+      ],
+      surfaced,
+      coverage,
+    });
+    expect(d.score).toBe(1);
+    expect(d.basis).toHaveLength(1);
+  });
 });
 
 describe('a framework indicator, which asks about instruments rather than provisions', () => {

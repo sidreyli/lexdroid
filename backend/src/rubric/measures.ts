@@ -2046,7 +2046,7 @@ const DIGITAL_TRADE_SECTOR = new RegExp(
  * indicator's own title says what moves: "conditions on cross-border data flows". A statute that
  * conditions a transfer of data says so, because the data is what it is regulating.
  */
-const DATA_SUBJECT = new RegExp(
+export const DATA_SUBJECT = new RegExp(
   [/\b(data|information|records?|databases?|documents?|files?)\b/.source, 'ข้อมูล|สารสนเทศ', DATA_LOCAL].join('|'),
   'i',
 );
