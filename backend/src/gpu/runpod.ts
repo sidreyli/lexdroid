@@ -39,6 +39,14 @@ export interface Rental {
   /** The least GPU memory the engine fits in at its declared context. */
   minGpuMemoryGb: number;
   maxUsdPerHour?: number;
+  /**
+   * GPU types never rented for this engine, matched as part of RunPod's type id. Some hosts give
+   * Ollama a card it cannot use: on 27 and 29 September Engine B's Qwen loaded on the CPU of an
+   * RTX 4090 and an RTX 5090 whose nvidia-smi saw the card ("loaded with 0.0 of 17.8 GB"), while
+   * an A5000 and an A40 loaded it on the GPU. The cheapest card under the ceiling was the 4090, so
+   * the interface rented it every time.
+   */
+  avoidGpus?: string[];
 }
 
 export type Cloud = 'COMMUNITY' | 'SECURE';
@@ -143,7 +151,10 @@ export async function offers(rental: Rental): Promise<Offer[]> {
     };
   };
   const cap = rental.maxUsdPerHour ?? DEFAULT_MAX_USD_PER_HOUR;
-  const fits = (json.data?.gpuTypes ?? []).filter((g) => g.memoryInGb >= rental.minGpuMemoryGb);
+  const avoid = (rental.avoidGpus ?? []).map((a) => a.toLowerCase());
+  const fits = (json.data?.gpuTypes ?? []).filter(
+    (g) => g.memoryInGb >= rental.minGpuMemoryGb && !avoid.some((a) => g.id.toLowerCase().includes(a)),
+  );
   const tier = (cloud: Cloud): Offer[] =>
     fits
       .map((g) => ({
