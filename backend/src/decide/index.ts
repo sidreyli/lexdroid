@@ -2666,8 +2666,15 @@ function namesNationality(f: Finding): boolean {
  * PDR's "ກົດໝາຍ ວ່າດ້ວຍແຂ່ງຂັນທາງທຸລະກິດ" (Law on Business Competition) were each confirmed as the
  * instrument named for an investment-screening finding that turned out, on inspection, to be an
  * ordinary merger-clearance duty applying alike to any acquirer.
+ *
+ * Mongolia had no stem here at all, so its own ordinary merger-clearance procedure -- "ЖУРАМ БАТЛАХ
+ * ТУХАЙ (өрсөлдөгчийн хувьцааг худалдан авахад дүгнэлт гаргах)", "Procedure for issuing an opinion
+ * on acquiring a competitor's shares" -- still counted. "өрсөлд" (compete/competitor) is confirmed
+ * as the corpus's own term of art, title-only and correct on two other instruments as well as this
+ * one (a cartel/price-fixing procedure, a tender's "competitive" selection procedure), and nothing
+ * else in a title-only regex.
  */
-const COMPETITION_LAW = /\bcompetition\b.{0,25}\bact\b|anti-?trust|trade competition|merger control|monopol(?:y|ies)(?:\s+commission)?|การแข่งขันทางการค้า|ແຂ່ງຂັນທາງທຸລະກິດ/i;
+const COMPETITION_LAW = /\bcompetition\b.{0,25}\bact\b|anti-?trust|trade competition|merger control|monopol(?:y|ies)(?:\s+commission)?|การแข่งขันทางการค้า|ແຂ່ງຂັນທາງທຸລະກິດ|өрсөлд/i;
 
 /** Words that make a party foreign to the economy, as opposed to merely naming a nationality. */
 const FOREIGN_PARTY = /\b(foreign(er|ers|ly|-owned|-ownership)?|non-?residents?|non-?citizens?|non-?nationals?|overseas|aliens?)\b|คนต่างด้าว|ต่างด้าว|ต่างชาติ/i;

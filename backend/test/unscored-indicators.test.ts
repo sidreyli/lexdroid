@@ -255,6 +255,24 @@ describe('investment screening, as far as law shows it', () => {
     };
     expect(score('3.4', [discriminatory])).toBe(0.25);
   });
+
+  // Mongolia's own merger-clearance procedure names the same exception in its own language:
+  // "ЖУРАМ БАТЛАХ ТУХАЙ (өрсөлдөгчийн хувьцааг худалдан авахад дүгнэлт гаргах)" is "Procedure for
+  // issuing an opinion on acquiring a competitor's shares", the identical shape as Thailand's and
+  // Singapore's Competition Acts, applying alike to any acquirer.
+  const mongolianCompetitionAct = (n: number): Evidence => ({
+    ...ev(
+      '3.4',
+      'investment-screening',
+      { dutyBearer: 'Төрийн захиргааны байгууллага', quote: 'хувьцаа худалдан авахыг' },
+      n,
+    ),
+    instrumentTitle: 'ЖУРАМ БАТЛАХ ТУХАЙ (өрсөлдөгчийн хувьцааг худалдан авахад дүгнэлт гаргах)',
+  });
+
+  it('does not count an ordinary merger-clearance duty under a Mongolian competition procedure', () => {
+    expect(score('3.4', [mongolianCompetitionAct(1)])).toBe(0);
+  });
 });
 
 describe('blocking and filtering', () => {
