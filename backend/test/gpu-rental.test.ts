@@ -88,6 +88,9 @@ describe('more than one GPU for an engine', () => {
   it("reads a slot back only from the engine's own names", () => {
     expect(slotOf('lexdroid-engine-b', 'engine-b')).toBe(1);
     expect(slotOf('lexdroid-engine-b-4', 'engine-b')).toBe(4);
+    // Past nine, when LEXDROID_MAX_PODS is raised: a pod in slot 10 was rented, billed and unseen.
+    expect(slotOf('lexdroid-engine-b-10', 'engine-b')).toBe(10);
+    expect(slotOf('lexdroid-engine-b-01', 'engine-b')).toBeNull();
     // Another engine whose id starts the same is not this engine's pod.
     expect(slotOf('lexdroid-engine-b-large', 'engine-b')).toBeNull();
     expect(slotOf('lexdroid-engine-b-1', 'engine-b')).toBeNull();
