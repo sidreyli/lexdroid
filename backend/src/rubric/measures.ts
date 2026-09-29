@@ -1327,6 +1327,23 @@ function laoSpellings(terms: string): string {
 }
 
 /**
+ * The two sectors the rubric asks about in pillars of their own and carves out of the others:
+ * telecommunications (pillar 5) -- which is carrying traffic, so an internet service provider, an
+ * internet cafe and a domain registry with it -- and e-commerce (pillar 12). 3.1 says "not cover
+ * foreign equity cap in telecom sector ... and e-commerce sector", 9.4 "not cover license for
+ * telecommunication facilities and service providers ... License for e-commerce platform".
+ */
+export const SECTOR_ASKED_IN_ITS_OWN_PILLAR = new RegExp(
+  [
+    /telecom|e-?commerce|online market|\binternet (?:access |service )+provi\w*|\bISPs?\b|\binternet caf[eé]|\bdomain name regist\w*/.source,
+    'โทรคมนาคม|ผู้ให้บริการอินเทอร์เน็ต|พาณิชย์อิเล็กทรอนิกส์',
+    laoSpellings('ໂທລະຄົມ|ບໍລິການອິນເຕີເນັດ|ລະຫັດຊື່ອິນເຕີເນັດ|ໂດເມນ|ການຄ້າທາງເອເລັກໂຕຣນິກ|ຊື້-ຂາຍ\\S*\\s*ຜ່ານທາງເອເລັກໂຕຣນິກ'),
+    'оператор[а-яё]* связи|услуг[а-яё]* связи|электронн[а-яё]* торговл|маркетплейс',
+  ].join('|'),
+  'i',
+);
+
+/**
  * The domains below in Russian, Mongolian and Lao, beside the Thai each already carries.
  *
  * The indicator's subject was stated only in English and Thai, so a Lao provision on internet

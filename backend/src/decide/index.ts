@@ -18,7 +18,7 @@
  */
 import type { Indicator, ScoreBand } from '../rubric/types.js';
 import type { Finding } from '../read/index.js';
-import { FRAMEWORK_TITLE_DOMAIN, HEADING_CLASS_DOMAIN, MEASURES, MEASURE_DOMAIN, MEASURE_NAMES, SECTOR_DOMAINS, SUBJECTS, TITLE_CARRIES_DOMAIN, SUBJECT_DOMAIN, TARIFF_CODED_DOMAIN } from '../rubric/measures.js';
+import { FRAMEWORK_TITLE_DOMAIN, HEADING_CLASS_DOMAIN, MEASURES, MEASURE_DOMAIN, MEASURE_NAMES, SECTOR_ASKED_IN_ITS_OWN_PILLAR, SECTOR_DOMAINS, SUBJECTS, TITLE_CARRIES_DOMAIN, SUBJECT_DOMAIN, TARIFF_CODED_DOMAIN } from '../rubric/measures.js';
 import { tallyConfirmations, type ConfirmationTally } from '../read/confirmations.js';
 import { inUsd, moneyIn, type FxRates } from './currency.js';
 import { determinesAParticularCase } from '../discover/titles.js';
@@ -333,7 +333,7 @@ const isPublishedAboutTheLaw = (e: Evidence): boolean => e.instrumentKind === 'p
  *  opening the words that define it. Those words are checked to be in the provision before they get
  *  here, and have to belong to the duty the finding is about: its quote or its defining words. */
 const isRequirement = (f: Finding): boolean =>
-  f.dutyForce === 'requires' || f.dutyForce === 'forbids' || imposesTheDutyItDefines(f) || confinesPermission(f);
+  f.dutyForce === 'requires' || f.dutyForce === 'forbids' || mandatesByItself(f.dutyAct) || imposesTheDutyItDefines(f) || confinesPermission(f);
 
 function imposesTheDutyItDefines(f: Finding): boolean {
   const words = f.imposingWords?.trim();
@@ -667,8 +667,15 @@ function equityLadder(
 const LICENSEE = /\b(licensee\w*|beneficiar\w* of the (?:compulsory )?licen[cs]e|holder of (?:a|the) (?:compulsory )?licen[cs]e)\b/i;
 const PATENTEE = /\b(patentee\w*|proprietor\w*|owner of the patent|patent (?:holder|owner)\w*)\b/i;
 /** A duty to comply with rules, laws or requirements made somewhere other than this provision. */
-const COMPLY_WITH_RULES =
-  /\bcomply\s+with\s+(?:the\s+|any\s+|all\s+)?(?:prevailing\s+|applicable\s+|relevant\s+|existing\s+)?[\w\s-]{0,50}?\b(?:rules|regulations|laws|requirements|policies|guidelines|directions|notices|standards)\b[^.;]*/i;
+const COMPLY_WITH_RULES = new RegExp(
+  [
+    /\bcomply\s+with\s+(?:the\s+|any\s+|all\s+)?(?:prevailing\s+|applicable\s+|relevant\s+|existing\s+)?[\w\s-]{0,50}?\b(?:rules|regulations|laws|requirements|policies|guidelines|directions|notices|standards)\b[^.;]*/.source,
+    // Thai and Lao: "must comply with the relevant laws and regulations" (ປະຕິບັດຕາມ ກົດໝາຍ ແລະ
+    // ລະບຽບການທີ່ກ່ຽວຂ້ອງ) was the strict condition of a Lao internet data centre's licence.
+    '(?:ปฏิบัติตาม|ປະຕິບັດຕາມ)\\s*(?:กฎหมาย|ระเบียบ|ກົດ(?:ໝ|ຫມ|ຫນ)າຍ|ລະບຽບ)[^.;]*',
+  ].join('|'),
+  'i',
+);
 function definedOnlyInAPointer(quote: string, definingWords: string | null): boolean {
   if (!definingWords) return false;
   const m = COMPLY_WITH_RULES.exec(quote);
@@ -681,9 +688,24 @@ function definedOnlyInAPointer(quote: string, definingWords: string | null): boo
 const BANS_A_LIST =
   /\b(?:set\s+out|specified|listed|described|mentioned|enumerated)\s+in\s+(?:the\s+)?(?:\w+\s+)?(?:Schedule|list|table)\b|\bany\s+of\s+the\s+following\b/i;
 /** Words that put a duty on someone, in the languages of the law read here. Thai is written without spaces between words, so its words stand outside the word boundaries. */
-const MANDATES = /\b(?:shall|must|is required to|are required to|hendaklah|mesti)\b|ต้อง|ห้าม/i;
+const MANDATES = /\b(?:shall|must|is required to|are required to|hendaklah|mesti)\b|ต้อง|ห้าม|ຕ້ອງ|ຫ້າມ/i;
 /** A mandate word turned into its absence: "need not", "shall not be required to", "ไม่ต้อง". */
-const WAIVES = /\b(?:need not|not be required|not required|tidak perlu)\b|ไม่ต้อง/i;
+const WAIVES = /\b(?:need not|not be required|not required|tidak perlu)\b|ไม่ต้อง|ບໍ່ຕ້ອງ/i;
+/**
+ * The same in Thai and Lao alone, whose "must" and "prohibited" are single words the reader copies
+ * as the act. English is not here: "shall be deemed" is how a deeming rule is written.
+ */
+const MANDATES_BY_ITSELF = /ต้อง|ห้าม|ຕ້ອງ|ຫ້າມ/;
+const mandatesByItself = (act: string | null | undefined): boolean => !!act && MANDATES_BY_ITSELF.test(act) && !WAIVES.test(act);
+/**
+ * What a duty is to do, which is what follows the word that imposes it. The words before are who
+ * or what it binds, and can say anything: "Electronic money issued by Payment Service Providers in
+ * the Lao PDR shall be in KIP only" was taken to leave its content to something "issued" elsewhere.
+ */
+const dutyContent = (quote: string): string => {
+  const at = quote.search(MANDATES);
+  return at > 0 ? quote.slice(at) : quote;
+};
 /** Words that leave the content of a duty to something specified, prescribed or imposed elsewhere. */
 const DEFERS = /\b(?:in accordance with|specified|prescribed|determined|imposed|issued|conditions of (?:the|a|its) licen[cs]e)\b|กำหนด|ตามหลักเกณฑ์/i;
 
@@ -1392,8 +1414,16 @@ function applyException(indicator: Indicator, evidence: Evidence[]): {
   excluded: { evidence: Evidence; reason: string }[];
 } {
   const governmentData = /government data/i.test(indicator.exception ?? '');
-  // 3.1 carves out the two sectors 5.2 and 12.01 ask about, so a cap on either is not its cap.
-  const sectorsAskedElsewhere = indicator.id === '3.1';
+  // 3.1 carves out the two sectors 5.2 and 12.01 ask about, so a cap on either is not its cap; 9.4
+  // the licences of the same two, so Lao PDR's internet service, internet cafe and domain registry
+  // licences, and its online gold-trading platform's, are not licences for online content.
+  const sectorsAskedElsewhere = /(?:covered|captured) under Pillar/i.test(indicator.exception ?? '');
+  const inTheirOwnPillar = (e: Evidence): boolean =>
+    indicator.id === '3.1'
+      ? /telecom|e-?commerce|online market/i.test(e.finding.sector ?? '')
+      : // The instrument's title too: a licensing instrument for internet service businesses says
+        // once whose licence it is, and its provisions call it "the licence".
+        [e.finding.sector, e.finding.subjectWords, e.finding.dutyBearer, e.instrumentTitle].some((w) => !!w && SECTOR_ASKED_IN_ITS_OWN_PILLAR.test(w));
   if (!indicator.exception) return { kept: evidence, excluded: [] };
   const kept: Evidence[] = [];
   const excluded: { evidence: Evidence; reason: string }[] = [];
@@ -1403,7 +1433,7 @@ function applyException(indicator: Indicator, evidence: Evidence[]): {
     // Those words are verified in Zone 2, so a claim with nothing to check is not applied.
     const out =
       (governmentData && e.finding.appliesOnlyToGovernmentData) ||
-      (sectorsAskedElsewhere && /telecom|e-?commerce|online market/i.test(e.finding.sector ?? '')) ||
+      (sectorsAskedElsewhere && inTheirOwnPillar(e)) ||
       (e.finding.withinException === true && !!e.finding.targetWords);
     if (out) excluded.push({ evidence: e, reason: indicator.exception });
     else kept.push(e);
@@ -1551,8 +1581,12 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     // exceeding RM500 per user" -- which is the answer ESCAP gives for that cell and is a
     // declaration by grammar. The reader was right about the verb; the gate was asking the wrong
     // measures for one.
+    //
+    // Nor an act that is itself "must". Lao PDR's Payment System Law says e-money "ຕ້ອງເປັນ" -- must
+    // be -- in kip only, and the reader copied that as the act and called it a declaration.
     if (
       e.finding.dutyForce === 'declares' &&
+      !mandatesByItself(e.finding.dutyAct) &&
       !permits(indicatorId, e.finding.measure) &&
       !confinesPermission(e.finding) &&
       !laysTheCharge(indicatorId, e.finding)
@@ -1568,6 +1602,18 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
       ruledOut.push({
         evidence: e,
         reason: 'the provision states no amount and says none is set elsewhere, and this measure is an amount',
+      });
+      continue;
+    }
+    // A strict licence is strict in one of the ways the band names: a minimum of capital, an
+    // obligation to cover, roll out or perform, or a worse term for foreign operators. Lao PDR's
+    // telecommunications licence scored strict on "having enterprise registration", "having stable
+    // financial standing" and on needing the licence at all -- conditions of every licence, which
+    // ESCAP scores 0 there.
+    if (STRICT_LICENCE_MEASURES.has(e.finding.measure ?? '') && !STRICT_CONDITION.test(`${e.finding.quote ?? ''} ${e.finding.definingWords ?? ''}`)) {
+      ruledOut.push({
+        evidence: e,
+        reason: 'the condition is not a minimum of capital, an obligation to cover, roll out or perform, or a worse term for foreign operators, which is what makes a licence strict',
       });
       continue;
     }
@@ -2032,9 +2078,9 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     // quoted, and leaves nothing for another instrument to do.
     const imposesItself =
       !e.finding.prescribingWords &&
-      !DEFERS.test(e.finding.quote) &&
+      !DEFERS.test(dutyContent(e.finding.quote)) &&
       ((e.finding.mandatory &&
-        (e.finding.dutyForce === 'requires' || e.finding.dutyForce === 'forbids') &&
+        (e.finding.dutyForce === 'requires' || e.finding.dutyForce === 'forbids' || mandatesByItself(e.finding.dutyAct)) &&
         MANDATES.test(e.finding.quote)) ||
         confinesPermission(e.finding));
     if (!e.finding.imposingWords && !imposesItself && !permits(indicatorId, e.finding.measure)) {
@@ -2647,6 +2693,12 @@ const FRONTIER = new RegExp(
     // "diimport" and "pengeksportan".
     /import|export|eksport/.source,
     'นำเข้า|ส่งออก|นำ\\S*เข้า|ส่ง\\S*ออก|นำออก|ราชอาณาจักร|ศุลกากร|ผ่านแดน|นำผ่าน|ถ่ายลำ|ประเทศ|ตางประเทศ|ภายนอก',
+    // Lao, which had none, so Lao PDR's Data Protection Law -- personal data may not be sent "ອອກນອກ
+    // ສປປ ລາວ", out of the Lao PDR, without its owner's consent -- was found to take nothing across a
+    // border. The marks are optional because the gazette's text layer drops them as often as not:
+    // import is written ນໍາເຂົ້າ, ນາໍເຂົາ and ນ້າເຂົ້າ, foreign ຕ່າງປະເທດ, ຕາງປະເທດ and ຕ້າງປະເທດ.
+    // ແດນ is the frontier itself, in ຊາຍແດນ (border), ຂ້າມແດນ (across it) and ຜ່ານແດນ (transit).
+    'ນ[ໍາຳ້]{1,3}ເຂົ|ສ[ົິ]່?ງອ?ອກ|ຂາອອກ|ແດນ|ສົ່ງຜ່ານ|ຕ[່້]?າງປະເທ|ນອກປະເທດ|ອອກນອກ|ອອກຈາກ ?ສປປ|ເຂົ້?າ\\S* ?ສປປ|ເຂົ້?າ-ອອກ|ພາຍນອກ',
   ].join('|'),
   'i',
 );
@@ -2805,6 +2857,22 @@ function statesAnAmount(indicatorId: string, measure: string | null): boolean {
  */
 const NAMES_AN_AMOUNT =
   /[0-9๐-๙໐-໙]|\b(?:hundred|thousand|million|billion|lakh|crore|ratus|ribu|juta)\b|\b(?:prescribed|specified|determined|fixed|set)\s+(?:by|in|under)\b|\b(?:maximum|not exceed\w*|specify)\b|กำหนด|สูงสุด|ไม่เกิน|ກໍານົດ|ກຳນົດ|ສູງສຸດ|ບໍ່ເກີນ|установлен|определ|максимальн|не более|не превыша|тогтоо|дээд|хэтрүүлэхгүй/i;
+
+const STRICT_LICENCE_MEASURES = new Set(['strict-telecom-licence']);
+/** The three kinds of strict licence condition 5.5's band names, in the languages read here. */
+const STRICT_CONDITION = new RegExp(
+  [
+    /\b(capital|paid[- ]up|net worth|coverage|cover(?:s|ing)?\b|roll[- ]?out|performance|build[- ]out|universal service|service obligation|foreign\w*|national\w*|citizen\w*|local(?:ly)? (?:owned|ownership|incorporated|partner)|equity|shareholding)\b/.source,
+    // Or whatever the regulator writes into the licence: Singapore's Telecommunications Act lets a
+    // licence require "the licensee to do, or not to do, such things as are specified in the
+    // licence", which is how its performance and rollout obligations are imposed.
+    /\bsuch (?:things|conditions)\b[^.;]{0,40}\bspecified in the licen[cs]e/.source,
+    'ทุน|ต่างด้าว|สัญชาติ|ครอบคลุม',
+    'ທຶນ|ຕ່າງປະເທດ|ຕາງປະເທດ|ຕ້າງປະເທດ|ສັນຊາດ|ຄອບຄຸມ',
+    'капитал|иностран|покрыти|гражданств',
+  ].join('|'),
+  'i',
+);
 
 function permits(indicatorId: string, measure: string | null): boolean {
   if (!measure) return false;
