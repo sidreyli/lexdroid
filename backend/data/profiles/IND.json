@@ -10,6 +10,7 @@
     "en"
   ],
   "languageNote": "Union legislation is published in English and in authorised Hindi text. India Code carries English and regional-title metadata, while Gazette PDFs may contain Hindi and English editions in the same file. Each parsed section records the language of the words actually cited rather than inheriting one language for the whole instrument.",
+  "demonym": ["india"],
   "instrumentTypes": [
     {
       "rank": 1,

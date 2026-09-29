@@ -10,6 +10,7 @@
   ],
   "authoritativeLanguage": "lo",
   "languageNote": "Lao, in Lao script. Two consequences, both of them facts about processing rather than about the law. First, Lao is written without spaces between words, exactly as Thai and Chinese are -- so it needs the spaceless-script handling in backend/src/index/index.ts, whose SPACELESS and SPACELESS_RUN patterns currently name Han, Hiragana, Katakana and Thai and omit Lao. Until \\p{Script=Lao} is added to both, a Lao query reaches FTS5 as a single enormous token that the trigram tokenizer can satisfy only by an exact contiguous match, so Lao lexical search returns nothing and does so silently, indistinguishable from a genuine absence of results. Second, detectLanguage in backend/src/parse/language.ts already classifies the Lao block as 'lo' correctly, so Language of Source needs no work here. No Lao text is translated anywhere in the pipeline: provisions are quoted in Lao and language_of_source records it, per docs/architecture.md's rule against full-document translation.",
+  "demonym": ["ລາວ"],
   "jurisdictionScope": {
     "held": "national",
     "note": "Lao PDR is unitary and legislates nationally; provincial authorities administer rather than legislate in their own right, so there is no second tier of law this corpus fails to hold. Declared explicitly rather than left null so that the audit can distinguish 'no other tier exists' from 'nobody has said', which is the gap backend/test/jurisdiction-scope.test.ts exists to close.",

@@ -26,6 +26,19 @@ describe('the economy profile', () => {
     expect(indiaCode.adapterConfig['jurisdiction']).toBe('CENTRAL');
   });
 
+  // 30 September: decide/index.ts's PLACE_LOCAL had no stem for an economy's own name or
+  // nationality adjective ("российское", "Монгол"), so a provision naming the place only by naming
+  // the economy itself named no place by the shared word lists. The fix reads the economy's own
+  // `demonym` off its profile; every profiled economy declares one, even where its own script
+  // already carries proper-noun capitalisation and PLACE_NAME already covers it.
+  it('declares a demonym, a compilable one, for every profiled economy', () => {
+    for (const code of availableProfiles()) {
+      const p = loadProfile(code);
+      expect(p.demonym.length).toBeGreaterThan(0);
+      expect(() => new RegExp(p.demonym.join('|'), 'i')).not.toThrow();
+    }
+  });
+
   it('describes the Singapore legal system, its languages and its portals', () => {
     const p = loadProfile('SGP');
     expect(p.legalSystem.family).toBe('common-law');

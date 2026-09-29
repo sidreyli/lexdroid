@@ -23,6 +23,7 @@ import { tallyConfirmations, type ConfirmationTally } from '../read/confirmation
 import { inUsd, moneyIn, type FxRates } from './currency.js';
 import { determinesAParticularCase } from '../discover/titles.js';
 import { REPLACEABLE_FIGURE } from '../parse/identity.js';
+import { loadProfile } from '../profile/index.js';
 
 /** One finding, with enough of its origin to cite it. */
 export interface Evidence {
@@ -1834,7 +1835,7 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     // agent as its administrative contact".
     if (
       PRESENT_IN_THE_ECONOMY.has(e.finding.measure ?? '') &&
-      ![e.finding.placeWords, e.finding.definingWords, e.finding.quote].some((w) => namesAPlace(w) || HERE.test(w ?? ''))
+      ![e.finding.placeWords, e.finding.definingWords, e.finding.quote].some((w) => namesAPlace(w, ctx.economy) || HERE.test(w ?? ''))
     ) {
       ruledOut.push({
         evidence: e,
@@ -2226,7 +2227,7 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     // about flood and fire, naming nowhere -- decided the cell and named its controlling
     // instrument. Ruled out rather than held, for the reason the test above it is: the provision
     // was read, and the words it gave are not words about where anything has to be.
-    if (locational(indicatorId, e.finding.measure) && !namesAPlace(e.finding.placeWords)) {
+    if (locational(indicatorId, e.finding.measure) && !namesAPlace(e.finding.placeWords, ctx.economy)) {
       excludeOnWords(`the provision puts the data "${e.finding.placeWords}", which names no country, territory or jurisdiction`);
       continue;
     }
@@ -2668,8 +2669,37 @@ const PRESENT_IN_THE_ECONOMY = new Set(['local-presence', 'local-representative'
 /** Words that put someone in the economy without naming it. */
 const HERE = /\b(local(ly)?|resident|domestic)\b|местн/i;
 
-function namesAPlace(words: string | null | undefined): boolean {
-  return !!words && (PLACE_KIND.test(words) || PLACE_KIND_TH.test(words) || PLACE_NAME.test(words) || PLACE_LOCAL.test(words));
+/**
+ * The economy's own name or nationality adjective, from its Zone 0 profile's `demonym`.
+ *
+ * English economies never needed this: `PLACE_NAME` already catches "Australian" or "Singapore" by
+ * their capital letter, the way it catches any proper noun. Russian and Mongolian have no case for a
+ * regex to use that way, so "учредить российское юридическое лицо" (establish a Russian legal
+ * entity) named no place by the shared word lists alone -- not because Russia is a special case, but
+ * because naming the economy by its own name is a category every legal system has, the same
+ * reasoning PLACE_KIND and INFORMATION are kept on. Cached per economy code; an economy the tests
+ * exercise but never profile (e.g. "XXX") or one with nothing declared yet simply adds nothing.
+ */
+const demonymCache = new Map<string, RegExp | null>();
+function demonymPattern(economy: string): RegExp | null {
+  if (!demonymCache.has(economy)) {
+    let pattern: RegExp | null = null;
+    try {
+      const stems = loadProfile(economy).demonym;
+      if (stems.length > 0) pattern = new RegExp(stems.join('|'), 'i');
+    } catch {
+      // No profile for this code, or it fails to parse: fall back to the shared word lists.
+    }
+    demonymCache.set(economy, pattern);
+  }
+  return demonymCache.get(economy)!;
+}
+
+function namesAPlace(words: string | null | undefined, economy?: string): boolean {
+  if (!words) return false;
+  if (PLACE_KIND.test(words) || PLACE_KIND_TH.test(words) || PLACE_NAME.test(words) || PLACE_LOCAL.test(words)) return true;
+  const demonym = economy ? demonymPattern(economy) : null;
+  return !!demonym && demonym.test(words);
 }
 
 /**

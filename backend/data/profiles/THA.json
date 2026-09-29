@@ -9,6 +9,7 @@
     "th"
   ],
   "languageNote": "Thai law is published in Thai only; this profile follows docs/architecture.md's rule against full-document translation and reads Thai source text as-is. Thai script has no spaces between words, which is a fact about search rather than about the law itself -- see backend/src/index/index.ts's SPACELESS handling (expand() and canonicalizeThai()) for how lexical search stays correct over Thai text.",
+  "demonym": ["ไทย"],
   "instrumentTypes": [
     {
       "rank": 1,

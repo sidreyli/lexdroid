@@ -2052,6 +2052,52 @@ describe('a requirement to be present in the economy', () => {
   });
 });
 
+// 30 September: 236-ФЗ art.5 requires a foreign online seller to "создать филиал, или открыть
+// представительство, или учредить российское юридическое лицо" (open a branch, a representative
+// office, or establish a Russian legal entity). The last option names no place by the shared word
+// lists -- "российское" (Russian) is not "территории" or "иностранн" -- even though it plainly
+// puts the seller in the country by naming the country's own adjective. The place test now also
+// asks the economy's own profile, via `demonym`.
+describe('a requirement to be present in the economy, named by the economy’s own demonym', () => {
+  const indicator128 = indicator12('12.8', [
+    { score: 1, criterion: 'Local presence requirement for at least one sector' },
+    { score: 0, criterion: 'No requirement' },
+  ]);
+
+  it('names no place by a Russian legal-entity requirement before the demonym is checked, in an unprofiled economy', () => {
+    const d = decide({
+      indicator: indicator128,
+      economy: 'XXX',
+      evidence: [p12('12.8', 'commercial-presence', { definingWords: 'учредить российское юридическое лицо', quote: 'учредить российское юридическое лицо' })],
+      surfaced,
+      coverage,
+    });
+    expect(d.excluded.map((x) => x.reason).join(' ')).toContain('names no place');
+  });
+
+  it('is made out for Russia by "российское юридическое лицо", the country’s own adjective', () => {
+    const d = decide({
+      indicator: indicator128,
+      economy: 'RUS',
+      evidence: [p12('12.8', 'commercial-presence', { definingWords: 'учредить российское юридическое лицо', quote: 'учредить российское юридическое лицо' })],
+      surfaced,
+      coverage,
+    });
+    expect(d.excluded.map((x) => x.reason).join(' ')).not.toContain('names no place');
+  });
+
+  it('is made out for Mongolia by "Монгол Улсын", the country’s own name', () => {
+    const d = decide({
+      indicator: indicator128,
+      economy: 'MNG',
+      evidence: [p12('12.8', 'commercial-presence', { definingWords: 'Монгол Улсын хуулийн этгээд байгуулах', quote: 'Монгол Улсын хуулийн этгээд байгуулах' })],
+      surfaced,
+      coverage,
+    });
+    expect(d.excluded.map((x) => x.reason).join(' ')).not.toContain('names no place');
+  });
+});
+
 // A local-bank-account requirement that never says the word bank, in any language, is not
 // credible evidence of one -- confirmation or not. Mongolia's e-invoicing rule ("цахим төлбөрийн
 // баримт", an electronic tax receipt) was confirmed as naming this measure and scored it.
