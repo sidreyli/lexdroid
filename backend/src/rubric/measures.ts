@@ -97,6 +97,15 @@ export interface Measure {
   /** Whether this measure is defined by something crossing the economy's border. */
   crossesBorder?: boolean;
   /**
+   * Whether this measure is an amount, so that a provision stating none is not it.
+   *
+   * A ceiling on a payment is the largest amount that may be paid, and a provision that names a
+   * limit without an amount, or without saying one is set elsewhere, is not one. Lao PDR's Payment
+   * System Law lists "the approved credit line limit" among what a card agreement records -- the
+   * limit a bank grants its customer -- and it scored 12.4.5's ceiling on paying electronically.
+   */
+  statesAnAmount?: boolean;
+  /**
    * Whether this measure restricts a foreign party and no one else.
    *
    * Three indicators descend a ladder of foreign shareholding, and a gate already asks their
@@ -925,6 +934,7 @@ export const MEASURES: Record<string, Measure[]> = {
       token: 'payment-ceiling',
       defines: 'the words stating the largest amount that may be paid',
       permits: true,
+      statesAnAmount: true,
       gloss:
         'a limit on the largest amount that may be paid by an electronic payment method, in one payment or over a period',
       actor: 'the payer or the payment service provider',

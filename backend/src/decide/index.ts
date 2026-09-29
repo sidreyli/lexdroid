@@ -1563,6 +1563,14 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
       });
       continue;
     }
+    // An amount is made out by an amount. See statesAnAmount on the measure.
+    if (statesAnAmount(indicatorId, e.finding.measure) && !NAMES_AN_AMOUNT.test(`${e.finding.quote ?? ''} ${e.finding.definingWords ?? ''}`)) {
+      ruledOut.push({
+        evidence: e,
+        reason: 'the provision states no amount and says none is set elsewhere, and this measure is an amount',
+      });
+      continue;
+    }
     // A duty not to do the act is not the duty to do it. Secrecy provisions -- "shall not
     // disclose", "nothing requires the giving of information" -- were making out 4.9 in all three.
     if (commanded(indicatorId, e.finding.measure) && e.finding.dutyForce === 'forbids') {
@@ -2761,6 +2769,18 @@ function laysTheCharge(indicatorId: string, f: Pick<Finding, 'measure' | 'dutyAc
 }
 const LAYS_A_CHARGE = /\b(impos|levi|levy|charg)\w*/i;
 const REFERS_TO_A_CHARGE_LAID = /\b(had|has|have|was|were|been|to be|shall be|may)\b/i;
+
+function statesAnAmount(indicatorId: string, measure: string | null): boolean {
+  return !!measure && (MEASURES[indicatorId] ?? []).some((m) => m.token === measure && m.statesAnAmount === true);
+}
+/**
+ * A figure, in any numerals the law is written in, a number in words, a maximum or a sum not to be
+ * exceeded, or a limit the provision says is fixed by someone else: "the limit prescribed by the
+ * Bank" and "specify the maximum value of electronic money" are ceilings whose amount is elsewhere,
+ * where "the approved credit line limit" is the customer's own.
+ */
+const NAMES_AN_AMOUNT =
+  /[0-9๐-๙໐-໙]|\b(?:hundred|thousand|million|billion|lakh|crore|ratus|ribu|juta)\b|\b(?:prescribed|specified|determined|fixed|set)\s+(?:by|in|under)\b|\b(?:maximum|not exceed\w*|specify)\b|กำหนด|สูงสุด|ไม่เกิน|ກໍານົດ|ກຳນົດ|ສູງສຸດ|ບໍ່ເກີນ|установлен|определ|максимальн|не более|не превыша|тогтоо|дээд|хэтрүүлэхгүй/i;
 
 function permits(indicatorId: string, measure: string | null): boolean {
   if (!measure) return false;

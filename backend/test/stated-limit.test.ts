@@ -88,3 +88,34 @@ describe('a ceiling stated rather than commanded', () => {
     expect(d.excluded[0]?.reason).toContain('declares what is the case');
   });
 });
+
+describe('a ceiling is an amount', () => {
+  it('rules out a limit that states none', () => {
+    const d = at('12.4.5', {
+      dutyAct: 'records',
+      definingWords: 'the approved credit line limit',
+      imposingWords: null,
+      quote: 'the approved credit line limit;',
+    });
+    expect(d.score).toBe(0);
+    expect(d.excluded[0]?.reason).toContain('states no amount');
+  });
+
+  it('keeps a maximum whose amount another instrument fixes', () => {
+    const d = at('12.4.5', {
+      definingWords: 'the maximum value of electronic money',
+      imposingWords: null,
+      quote: 'Specify the maximum value of electronic money that can be used per card or per account',
+    });
+    expect(d.score).toBe(1);
+  });
+
+  it('keeps a figure in the numerals the law is written in', () => {
+    const d = at('12.4.5', {
+      definingWords: 'ວົງເງິນ ໕໐໐ ລ້ານກີບ',
+      imposingWords: null,
+      quote: 'ວົງເງິນ ໕໐໐ ລ້ານກີບ',
+    });
+    expect(d.score).toBe(1);
+  });
+});
