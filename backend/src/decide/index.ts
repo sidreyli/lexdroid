@@ -1804,6 +1804,25 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
       });
       continue;
     }
+    // "Local" is the half of local-bank-account that MEASURE_NAMES asks for above, and the other
+    // half -- the account being a bank's -- is not asked at all, so a confirmation in the
+    // provision's own language can echo any local requirement back as this one. Mongolia's e-
+    // invoicing rule ("цахим төлбөрийн баримт", an electronic tax receipt) was confirmed in
+    // Mongolian as naming a local-bank-account requirement and never says the word bank in any
+    // language; a Payment System Procedure requiring settlement "through their account at
+    // Mongolbank" does. Checked regardless of readInItsLanguage, because the confirmation pass is
+    // exactly what let the first one through.
+    if (
+      e.finding.measure === 'local-bank-account' &&
+      !BANK_STEM.test(e.finding.definingWords ?? '') &&
+      !BANK_STEM.test(e.finding.quote ?? '')
+    ) {
+      ruledOut.push({
+        evidence: e,
+        reason: `"${e.finding.definingWords ?? e.finding.quote}" names no bank, and a local-bank-account requirement has to`,
+      });
+      continue;
+    }
     // A requirement to be present in the economy says where. Lao PDR's rule that an internet café
     // "must have suitable premises" was confirmed in Lao as a local presence requirement and
     // scored 12.8's top band: a shop needs a room, which is not the same as a provider having to
@@ -2508,6 +2527,16 @@ function inDomain(indicatorId: string, measure: string | null): RegExp | null {
   const off = (MEASURES[indicatorId] ?? []).some((m) => m.token === measure && m.offSubject === true);
   return off ? null : declared;
 }
+
+/**
+ * The word for "bank" itself, English, the Cyrillic economies and Lao alike. Not beside `\b` for
+ * "банк", for the reason NATIONALITY_LOCAL below is not: Russian and Mongolian inflect, and
+ * "Монголбанк" (the Mongolian central bank) is one word with "банк" inside it, not two. First cut
+ * left "ທະນາຄານ" out and lost a real Lao land-payment agreement that settles "ຜ່ານລະບົບທະນາຄານ" --
+ * through the banking system -- the reason this is asked of every economy this rule reaches, not
+ * only the one the bug was first found in.
+ */
+const BANK_STEM = /\bbank\w*\b|банк|ທະນາຄານ/i;
 
 /**
  * Does this finding restrict holders by nationality or residence, either way round?

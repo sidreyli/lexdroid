@@ -1999,6 +1999,62 @@ describe('a requirement to be present in the economy', () => {
   });
 });
 
+// A local-bank-account requirement that never says the word bank, in any language, is not
+// credible evidence of one -- confirmation or not. Mongolia's e-invoicing rule ("цахим төлбөрийн
+// баримт", an electronic tax receipt) was confirmed as naming this measure and scored it.
+describe('a local-bank-account requirement that never says bank', () => {
+  const indicator1241 = indicator12('12.4.1', [
+    { score: 1, criterion: 'Requirement to use a local bank account' },
+    { score: 0, criterion: 'No requirement' },
+  ]);
+  const mng = (definingWords: string, quote: string, subjectWords: string) => ({
+    ...p12('12.4.1', 'local-bank-account', {
+      quote,
+      definingWords,
+      subjectWords,
+      dutyBearer: 'татвар төлөгч',
+    }),
+    sectionLanguage: 'mn',
+    confirmed: true,
+  });
+
+  it('is not made out by an e-invoice receipt confirmed in Mongolian as this measure', () => {
+    const d = decide({
+      indicator: indicator1241,
+      economy: 'MNG',
+      evidence: [
+        mng(
+          'цахим төлбөрийн баримт',
+          'татвар төлөгч нь цахим төлбөрийн баримт үйлдэнэ',
+          'цахим төлбөрийн баримт',
+        ),
+      ],
+      surfaced,
+      coverage,
+    });
+    expect(d.score).toBe(0);
+    expect(d.excluded.map((x) => x.reason).join(' ')).toContain('names no bank');
+  });
+
+  it('is made out where the account is at a named bank', () => {
+    const d = decide({
+      indicator: indicator1241,
+      economy: 'MNG',
+      evidence: [
+        mng(
+          'дансаараа Монголбанкинд тооцоо хийнэ',
+          'шууд бус оролцогч Монголбанкинд байгаа дансаараа тооцоо хийнэ',
+          'төлбөр тооцоо',
+        ),
+      ],
+      surfaced,
+      coverage,
+    });
+    expect(d.score).toBe(1);
+    expect(d.excluded.map((x) => x.reason).join(' ')).not.toContain('names no bank');
+  });
+});
+
 describe('Lao PDR read in its own words', () => {
   const indicatorAt = (id: string, bands: { score: number; criterion: string }[], exception: string | null = null): Indicator => ({
     ...indicator12(id, bands),
