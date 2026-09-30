@@ -2719,3 +2719,64 @@ describe('foreign-exclusion-from-standards, named by the accrediting or certifyi
     expect(d.basis).toHaveLength(0);
   });
 });
+
+// India's Public Procurement (Preference to Make in India) Order 2017 cl.13A requires a joint
+// venture with an Indian company only "to participate in the tender" -- a bidder's condition on
+// one public contract, which is pillar 2's subject, not a standing market-entry requirement.
+describe('a joint-venture duty scoped to the tender, not to entering the market', () => {
+  const indicator32: Indicator = {
+    id: '3.2',
+    pillarId: 3,
+    pillarName: 'Foreign Investment Policies',
+    category: 'test',
+    exception: null,
+    criteriaText: '...',
+    bands: [
+      { score: 1, criterion: 'Requirement to form a joint venture with a local company', ordinal: 1 },
+      { score: 0, criterion: 'No requirement', ordinal: 2 },
+    ],
+    shape: 'provision',
+    shapeBasis: 'test',
+    provenance: { document: 'test', locator: 'test' },
+  };
+  // Real cl.13A shape: subjectWords names the goods, not the tender -- the tender scoping sits in
+  // the quote and conditionWords instead, so the carve-out has to look at those too.
+  const ind = evidence(1, 'Public Procurement (Preference to Make in India) Order 2017', {
+    indicatorId: '3.2',
+    measure: 'joint-venture',
+    dutyBearer: 'foreign companies',
+    subjectWords: 'all goods, services or works',
+    definingWords: 'joint venture',
+    targetWords: 'tender',
+    conditionWords: 'beyond which foreign companies shall enter into a joint venture with an Indian company to participate in the tender',
+    quote: 'foreign companies shall enter into a joint venture with an Indian company to participate in the tender',
+  });
+
+  it('is excluded as scoped to the tender, not to market entry', () => {
+    const d = decide({ indicator: indicator32, economy: 'IND', evidence: [ind], surfaced, coverage });
+    expect(d.excluded.map((x) => x.reason).join(' ')).toContain('scoped to the tender');
+    expect(d.basis).toHaveLength(0);
+    expect(d.score).toBe(0);
+  });
+
+  it('still counts an ordinary joint-venture requirement naming no tender or procurement', () => {
+    const d = decide({
+      indicator: indicator32,
+      economy: 'IND',
+      evidence: [
+        evidence(2, 'Foreign Exchange Management Act', {
+          indicatorId: '3.2',
+          measure: 'joint-venture',
+          dutyBearer: 'a foreign investor',
+          subjectWords: 'a joint venture with a local company',
+          definingWords: 'joint venture',
+          quote: 'a foreign investor may only invest through a joint venture with a local company',
+        }),
+      ],
+      surfaced,
+      coverage,
+    });
+    expect(d.excluded.map((x) => x.reason).join(' ')).not.toContain('scoped to the tender');
+    expect(d.basis).toHaveLength(1);
+  });
+});

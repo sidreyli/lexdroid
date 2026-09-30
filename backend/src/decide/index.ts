@@ -2133,6 +2133,14 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
       excludeOnWords(`the provision names no foreign party, and this measure is borne by ${actorOf(indicatorId, e.finding.measure) ?? 'a foreign one'}`);
       continue;
     }
+    // A joint-venture duty scoped to "the tender"/"the procurement"/"the bid" is a condition on
+    // winning a public contract -- pillar 2's subject -- not a market-entry requirement on doing
+    // business here at all. India's Public Procurement (Preference to Make in India) Order 2017
+    // cl.13A requires the joint venture only "to participate in the tender".
+    if (indicatorId === '3.2' && e.finding.measure === 'joint-venture' && scopedToProcurement(e.finding, e.headingPath)) {
+      excludeOnWords('the joint-venture duty is scoped to the tender, the procurement or the bid, and that is a condition on a public contract, not a market-entry requirement');
+      continue;
+    }
     // And the direction of a presence: it has to be one required here. A bank regulator's approval
     // for a domestic bank "seeking to establish an overseas branch" names a foreign place, which is
     // why it passed the gate above, and is the opposite measure -- the local firm going out.
@@ -3019,6 +3027,19 @@ export function limitsLicenceTerms(f: Pick<Finding, 'quote' | 'definingWords'>):
 
 export function presenceAbroad(subject: string | null): boolean {
   return /\b(overseas|offshore) (branch|office|subsidiar)\w*|\b(branch|office|subsidiar\w*)\w* (abroad|overseas|outside)\b|สาขาในต่างประเทศ/i.test(subject ?? '');
+}
+
+/**
+ * Is a joint-venture duty's own scope the tender, the procurement or the bid, rather than doing
+ * business in the economy at all? A duty to form a joint venture "to participate in the tender" is
+ * a bidder's condition on one contract, not a standing requirement to enter the market. India's
+ * Public Procurement (Preference to Make in India) Order 2017 cl.13A puts that scoping in the
+ * quote and its condition/target words, not in subjectWords (which names the goods, not the
+ * tender) -- so every field the reader might have put it in is checked.
+ */
+export function scopedToProcurement(f: Pick<Finding, 'subjectWords' | 'quote' | 'targetWords' | 'conditionWords'>, headingPath: string | null | undefined): boolean {
+  const words = `${f.subjectWords ?? ''} ${f.quote ?? ''} ${f.targetWords ?? ''} ${f.conditionWords ?? ''} ${headingPath ?? ''}`;
+  return /\b(the|a|this|that) (tender|procurement|bid)\b|\bpublic procurement\b/i.test(words);
 }
 
 /** Who the catalogue says bears this measure, for the reason given when it is not borne. */
