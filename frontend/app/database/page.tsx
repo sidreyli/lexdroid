@@ -21,7 +21,8 @@ export default function DatabasePage() {
             {board.answeredTotal} of {board.indicatorsTotal} indicators answered.
           </p>
         </div>
-        <div className="ml-auto">
+        {/* Its own row under the title: nine economies no longer fit beside it. */}
+        <div className="w-full sm:pl-10">
           <EconomyLinks economies={board.economies} />
         </div>
       </header>

@@ -55,12 +55,17 @@ export default function EconomiesPage() {
       </section>
 
       {/*
-        As many columns as divide the set evenly, up to four. A fixed three left the fourth
-        economy alone on a row of its own; the count is not a constant, so neither is the grid.
+        As many columns as divide the set evenly, up to four, once the screen is wide enough. A
+        fixed three left the fourth economy alone on a row of its own; the count is not a constant,
+        so neither is the grid. Set as a variable so the narrow breakpoints still apply.
       */}
       <div
-        className="grid gap-4 sm:grid-cols-2"
-        style={{ gridTemplateColumns: `repeat(${evenColumns(columns.length)}, minmax(0, 1fr))` }}
+        className="grid gap-4 sm:grid-cols-2 xl:grid-cols-(--even-columns)"
+        style={
+          {
+            "--even-columns": `repeat(${evenColumns(columns.length)}, minmax(0, 1fr))`,
+          } as React.CSSProperties
+        }
       >
         {columns.map(({ economy, corpus: c }) => (
           <Link

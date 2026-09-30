@@ -161,13 +161,6 @@ export default async function EconomyProfilePage({ params }: PageProps<"/economi
           </section>
         ) : null}
       </div>
-
-      {economy.sources?.length ? (
-        <footer className="mt-8 max-w-[80ch] text-[11.5px] leading-relaxed text-muted-foreground">
-          This profile was written from {economy.sources.join("; ")}
-          {economy.authoredOn ? `. Last revised ${economy.authoredOn}` : ""}.
-        </footer>
-      ) : null}
     </div>
   );
 }

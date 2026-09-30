@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { cn } from "@/lib/utils";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import type { CoverageState } from "@/lib/data/types";
 
 export interface LadderMark {
@@ -39,6 +40,52 @@ function Ticks({ ticks }: { ticks: number[] }) {
         />
       ))}
     </>
+  );
+}
+
+/**
+ * How many codes a chip spells out. Bands sit 0.2 apart, which is room for two codes a side;
+ * with nine economies a chip of five ran into its neighbour, so a crowded chip names one and
+ * counts the rest behind a popover.
+ */
+const CHIP_MAX = 2;
+
+/** The focused economy first, so dimming the rest never hides the one being followed. */
+function shown(group: LadderMark[], focus?: string | null): LadderMark[] {
+  if (group.length <= CHIP_MAX) return group;
+  return [group.find((m) => m.economy === focus) ?? group[0]!];
+}
+
+/** A short list of codes beside the ruler, or a count once it would crowd the ruler out. */
+function codes(marks: LadderMark[]): string {
+  return marks.length <= 3 ? marks.map((m) => m.economy).join(" ") : `${marks.length}`;
+}
+
+function Code({
+  mark: m,
+  score,
+  quiet,
+  focus,
+}: {
+  mark: LadderMark;
+  score: number;
+  quiet: boolean;
+  focus?: string | null;
+}) {
+  return m.href ? (
+    <Link
+      href={m.href}
+      title={`${m.name}, scored ${score.toFixed(2)}`}
+      className={cn(
+        "rounded-full px-0.5 outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring",
+        quiet ? "hover:text-navy-deep" : "hover:text-paper/70",
+        focus === m.economy && "underline underline-offset-[3px]",
+      )}
+    >
+      {m.economy}
+    </Link>
+  ) : (
+    <span className="px-0.5">{m.economy}</span>
   );
 }
 
@@ -85,39 +132,63 @@ export function Ladder({
                 lit ? "opacity-100" : "opacity-25",
               )}
             >
-              {group.map((m) =>
-                m.href ? (
-                  <Link
-                    key={m.economy}
-                    href={m.href}
-                    title={`${m.name}, scored ${score.toFixed(2)}`}
+              {shown(group, focus).map((m) => (
+                <Code key={m.economy} mark={m} score={score} quiet={quiet} focus={focus} />
+              ))}
+              {group.length > CHIP_MAX ? (
+                <Popover>
+                  <PopoverTrigger
                     className={cn(
-                      "rounded-full px-0.5 outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring",
+                      "rounded-full px-1 outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring",
                       quiet ? "hover:text-navy-deep" : "hover:text-paper/70",
-                      focus === m.economy && "underline underline-offset-[3px]",
                     )}
+                    aria-label={`${group.length} economies scored ${score.toFixed(2)}`}
                   >
-                    {m.economy}
-                  </Link>
-                ) : (
-                  <span key={m.economy} className="px-0.5">
-                    {m.economy}
-                  </span>
-                ),
-              )}
+                    +{group.length - 1}
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto min-w-44 gap-1 rounded-xl p-2" align="start">
+                    <p className="px-1.5 pb-0.5 text-[11px] text-muted-foreground">
+                      Scored {score.toFixed(2)}
+                    </p>
+                    {group.map((m) =>
+                      m.href ? (
+                        <Link
+                          key={m.economy}
+                          href={m.href}
+                          className="flex items-baseline gap-2 rounded-lg px-1.5 py-1 text-[12.5px] text-ink hover:bg-inset"
+                        >
+                          <span className="tnum w-8 text-[11px] font-medium text-navy">{m.economy}</span>
+                          {m.name}
+                        </Link>
+                      ) : (
+                        <span key={m.economy} className="flex items-baseline gap-2 px-1.5 py-1 text-[12.5px] text-ink">
+                          <span className="tnum w-8 text-[11px] font-medium text-navy">{m.economy}</span>
+                          {m.name}
+                        </span>
+                      ),
+                    )}
+                  </PopoverContent>
+                </Popover>
+              ) : null}
             </span>
           );
         })}
       </div>
 
       {unresolved.length ? (
-        <span className="shrink-0 rounded-full bg-ochre-soft px-2 py-1 text-[10.5px] font-medium text-ochre">
-          {unresolved.map((m) => m.economy).join(" ")} unresolved
+        <span
+          title={unresolved.map((m) => m.name).join(", ")}
+          className="shrink-0 rounded-full bg-ochre-soft px-2 py-1 text-[10.5px] font-medium whitespace-nowrap text-ochre"
+        >
+          {codes(unresolved)} unresolved
         </span>
       ) : null}
       {missing.length && missing.length < marks.length ? (
-        <span className="shrink-0 text-[10.5px] text-muted-foreground/70">
-          {missing.map((m) => m.economy).join(" ")} not attempted
+        <span
+          title={missing.map((m) => m.name).join(", ")}
+          className="shrink-0 text-[10.5px] whitespace-nowrap text-muted-foreground/70"
+        >
+          {codes(missing)} not attempted
         </span>
       ) : null}
     </div>

@@ -92,10 +92,14 @@ export function ClearSlate({ economies, names }: { economies: string[]; names: s
           type="button"
           disabled={busy || economies.length === 0}
           onClick={ask}
-          className="flex h-10 items-center justify-between rounded-xl bg-inset px-3.5 text-left text-[13.5px] text-navy-deep transition-colors hover:bg-edge disabled:opacity-50"
+          className="flex min-h-10 items-center justify-between gap-3 rounded-xl bg-inset px-3.5 py-2 text-left text-[13.5px] leading-snug text-navy-deep transition-colors hover:bg-edge disabled:opacity-50"
         >
-          <span>Clear the cache and downloaded documents for {names}</span>
-          {busy ? <Loader2 className="size-4 animate-spin" /> : <Eraser className="size-4 text-muted-foreground" />}
+          <span className="min-w-0">Clear the cache and downloaded documents for {names}</span>
+          {busy ? (
+            <Loader2 className="size-4 shrink-0 animate-spin" />
+          ) : (
+            <Eraser className="size-4 shrink-0 text-muted-foreground" />
+          )}
         </button>
       )}
       {done ? <p className="text-[12px] leading-snug text-muted-foreground">{done}</p> : null}

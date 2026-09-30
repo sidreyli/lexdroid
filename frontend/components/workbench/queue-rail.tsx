@@ -118,6 +118,7 @@ export function QueueRail({
               type="button"
               onClick={() => setEconomy(economy === e.code ? null : e.code)}
               aria-pressed={economy === e.code}
+              title={e.name}
               className={cn(
                 "rounded-full px-2.5 py-1 text-[12px] transition-colors",
                 economy === e.code
@@ -125,7 +126,8 @@ export function QueueRail({
                   : "text-muted-foreground hover:bg-inset hover:text-navy-deep",
               )}
             >
-              {e.name}
+              {/* Codes once there are more than a few: the rail is 17rem and names took five rows. */}
+              {economies.length > 4 ? e.code : e.name}
             </button>
           ))}
         </div>

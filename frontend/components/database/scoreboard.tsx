@@ -75,7 +75,8 @@ function Focus({
   // "All" rather than a counted word: the set of economies is whatever has a profile.
   const options = [{ code: "", name: "All" }, ...economies];
   return (
-    <div className={cn("inset-surface flex w-fit gap-1 rounded-full p-1", className)}>
+    // Wraps rather than running on: a single pill row outgrew the card once there were nine.
+    <div className={cn("inset-surface flex w-fit max-w-full flex-wrap gap-1 rounded-[18px] p-1", className)}>
       {options.map((o) => {
         const on = (focus ?? "") === o.code;
         return (
@@ -84,7 +85,7 @@ function Focus({
             type="button"
             onClick={() => onFocus(o.code || null)}
             className={cn(
-              "rounded-full px-3 py-1.5 text-[12.5px] font-medium transition-colors",
+              "rounded-full px-3 py-1.5 text-[12.5px] font-medium whitespace-nowrap transition-colors",
               on
                 ? "bg-navy text-paper shadow-[0_1px_5px_-2px_rgb(23_50_78/0.6)]"
                 : "text-muted-foreground hover:text-navy-deep",

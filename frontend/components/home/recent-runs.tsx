@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { cn } from "@/lib/utils";
-import { relativeTime } from "@/lib/format";
+import { listOf, relativeTime } from "@/lib/format";
 import type { Run } from "@/lib/data/types";
 
 const statusTone: Record<string, string> = {
@@ -18,7 +18,7 @@ function what(run: Run): string {
   if (run.pillars === "all") return "all pillars";
   return run.pillars.length === 1
     ? `pillar ${run.pillars[0]}`
-    : `pillars ${run.pillars.join(" and ")}`;
+    : `pillars ${listOf(run.pillars.map(String))}`;
 }
 
 export function RecentRuns({

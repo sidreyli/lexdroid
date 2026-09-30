@@ -10,7 +10,8 @@ const BINDING: Record<string, { label: string; rule: string; dot: string }> = {
   advisory: { label: "Advisory", rule: "bg-slate-soft", dot: "bg-slate-soft" },
 };
 
-const INDENT = ["ml-0", "ml-3", "ml-6", "ml-9", "ml-12"];
+// Indented by rank, so rungs of equal standing line up; capped so a deep hierarchy keeps its width.
+const INDENT = ["ml-0", "ml-3", "ml-6", "ml-9", "ml-12", "ml-15"];
 
 export function InstrumentLadder({
   types,
@@ -28,8 +29,9 @@ export function InstrumentLadder({
         const registered = counts.get(type.kind) ?? 0;
         return (
           <li
-            key={type.kind}
-            className={`${INDENT[i] ?? "ml-12"} inset-surface flex gap-3.5 rounded-2xl p-4 pl-3.5`}
+            // A kind can sit on two rungs (China has regulations at ranks 2 and 4).
+            key={`${type.rank}:${type.kind}:${i}`}
+            className={`${INDENT[type.rank - 1] ?? INDENT.at(-1)} inset-surface flex gap-3.5 rounded-2xl p-4 pl-3.5`}
           >
             <span className={`mt-0.5 w-[3px] shrink-0 rounded-full ${binding.rule}`} aria-hidden />
             <div className="min-w-0 flex-1">

@@ -45,12 +45,6 @@ export default function RubricPage() {
       </section>
 
       <RubricBook book={book} names={names} />
-
-      <footer className="mt-8 max-w-[72ch] text-[11.5px] leading-relaxed text-muted-foreground">
-        Derived, not transcribed. Every criterion on this page is read from{" "}
-        {book.sources.map((s) => s.document).join(", ")} by a script in this repository, so a
-        correction to the source becomes a correction here.
-      </footer>
     </div>
   );
 }

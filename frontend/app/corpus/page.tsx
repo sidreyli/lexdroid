@@ -133,11 +133,6 @@ export default async function CorpusPage({ searchParams }: PageProps<"/corpus">)
           economies={economies.map((e) => ({ code: e.code, name: e.name }))}
         />
       </div>
-
-      <footer className="mt-8 max-w-[78ch] text-[11.5px] leading-relaxed text-muted-foreground">
-        Counted from the working store as this page was rendered, across {overview.portals} declared
-        source portals. Fetches honour each host&rsquo;s robots.txt and are rate limited per host.
-      </footer>
     </div>
   );
 }

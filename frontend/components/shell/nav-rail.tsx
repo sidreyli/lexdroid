@@ -14,7 +14,6 @@ import {
 import {
   Sidebar,
   SidebarContent,
-  SidebarFooter,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuBadge,
@@ -37,13 +36,7 @@ const reference = [
   { href: "/rubric", label: "Rubric", icon: BookMarked },
 ];
 
-export function NavRail({
-  reviewCount = 0,
-  economies = "",
-}: {
-  reviewCount?: number;
-  economies?: string;
-}) {
+export function NavRail({ reviewCount = 0 }: { reviewCount?: number }) {
   const pathname = usePathname();
   const { decisions } = useReview();
   const waiting = Math.max(0, reviewCount - Object.keys(decisions).length);
@@ -125,13 +118,6 @@ export function NavRail({
         </SidebarMenu>
       </SidebarContent>
 
-      <SidebarFooter className="px-4 pb-4 group-data-[collapsible=icon]:hidden">
-        <p className="text-[11.5px] leading-relaxed text-muted-foreground">
-          {economies}
-          <br />
-          against 61 regulatory indicators
-        </p>
-      </SidebarFooter>
       <SidebarRail />
     </Sidebar>
   );

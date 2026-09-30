@@ -85,20 +85,26 @@ export function Coverage({
         <div className="flex flex-wrap items-start gap-x-9 gap-y-4">
           <div>
             <p className="mb-1.5 text-[11.5px] text-muted-foreground/70">Rows, top down</p>
-            <div className="flex items-start gap-2.5">
-              <div className="mt-[3px] grid gap-[3px]">
-                {economies.map((e) => (
-                  <span key={e.code} className="size-[11px] rounded-[3px] bg-[#dedad1]" />
-                ))}
-              </div>
-              <ul className="grid gap-[3px]">
-                {economies.map((e) => (
-                  <li key={e.code} className="text-[12px] leading-[14px] text-muted-foreground">
-                    {e.name}
-                  </li>
-                ))}
-              </ul>
-            </div>
+            {/*
+              Numbered rather than paired with a blank square, and set in columns of five: one
+              column of nine names made the header taller than the grid it explains.
+            */}
+            <ol
+              className="grid grid-flow-col gap-x-5 gap-y-[3px]"
+              style={{ gridTemplateRows: `repeat(${Math.min(economies.length, 5)}, auto)` }}
+            >
+              {economies.map((e, i) => (
+                <li
+                  key={e.code}
+                  className="flex items-baseline gap-1.5 text-[12px] leading-[14px] whitespace-nowrap text-muted-foreground"
+                >
+                  <span className="tnum w-3 text-right text-[11px] text-muted-foreground/70">
+                    {i + 1}
+                  </span>
+                  {e.name}
+                </li>
+              ))}
+            </ol>
           </div>
 
           <div>

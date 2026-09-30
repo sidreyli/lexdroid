@@ -13,6 +13,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { listOf } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { ClearSlate } from "./clear-slate";
 import { EngineTarget, type Target } from "./engine-target";
@@ -247,10 +248,10 @@ export function StartRun({
             <ClearSlate
               economies={picked}
               names={
-                economies
-                  .filter((e) => picked.includes(e.code))
-                  .map((e) => e.name)
-                  .join(" and ") || "the picked economies"
+                picked.length > 3
+                  ? `${picked.length} economies`
+                  : listOf(economies.filter((e) => picked.includes(e.code)).map((e) => e.name)) ||
+                    "the picked economies"
               }
             />
           ) : null}
