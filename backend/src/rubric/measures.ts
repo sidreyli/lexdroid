@@ -1453,7 +1453,7 @@ const ONLINE_CONTENT_LOCAL = [
 ].join('|');
 const DOMAIN_NAME_LOCAL = ['доменн|домен|сайт', 'домэйн|домен|вэб', laoSpellings('ໂດເມນ|ລະຫັດຊື່ອິນເຕີເນັດ|ເວັບ')].join('|');
 
-const ONLINE = new RegExp(
+export const ONLINE = new RegExp(
   [
     /\b(online|on-line|internet|e-?commerce|e-?business|e-?retail|electronic|digital|web|website|cyber|computer|network|platform|marketplace|application|app|software|data|mobile)\b/.source,
     'ออนไลน์|อินเทอร์เน็ต|อิเล็กทรอนิกส์|ดิจิทัล|เว็บไซต์|ไซเบอร์|คอมพิวเตอร์|เครือข่าย|แพลตฟอร์ม|ซอฟต์แวร์|แอปพลิเคชัน',
@@ -1686,6 +1686,30 @@ export const RESTRICTION_ANY = new RegExp([RESTRICTION.source, RESTRICTION_LOCAL
  */
 const STANDARD_LOCAL = [TECHNICAL_STANDARD_LOCAL, 'требован\\w*[\\s\\S]{0,20}защит'].join('|');
 export const STANDARD_ANY = new RegExp([STANDARD.source, 'มาตรฐาน|ข้อกำหนดทางเทคนิค', STANDARD_LOCAL].join('|'), 'i');
+
+/**
+ * What 12.6's duty has to be a duty on: something delivered or transmitted electronically -- not
+ * merely something traded online. transmission-duty and transmission-duty-power are named by
+ * DUTY_OR_TAX alone (a duty is a duty), and the one thing distinguishing this measure from any
+ * other customs charge is its own gloss: "imposed on something delivered electronically". ONLINE's
+ * bare "электронн"/"electronic" stem does not carry that distinction -- it reaches "товаров
+ * электронной торговли" (goods of electronic commerce, the customs category for a cross-border
+ * online order that still arrives by post) exactly as it reaches "электронной передачи товаров"
+ * (the electronic transmission of goods this measure means). Russia's federal budget law states
+ * interest on a late customs-duty refund for the former, mentioning "electronic" only as part of
+ * "electronic commerce", and reads as a duty on the latter for that reason.
+ *
+ * So one electronic/digital word is not enough; a transmission, transfer or delivery word has to
+ * be there too, wherever in the sentence it falls -- the shape ONLINE_TRADE above uses for the same
+ * reason, to keep "online" and "trade" from being satisfied by two different halves of an unrelated
+ * sentence.
+ */
+const ELECTRONIC_WORD = new RegExp([/\b(electronic\w*|digital\w*)\b/.source, 'электронн|цифров', 'цахим|дижитал', laoSpellings('ເອເລັກ|ດີຈີຕອນ|ດິຈິຕອນ')].join('|'), 'i');
+const DELIVERY_WORD = new RegExp(
+  [/\b(transmi\w+|deliver\w+|transfer\w*)\b/.source, 'передач|достав|переслан', 'дамжуул|хүргэ|шилжүүл', laoSpellings('ສົ່ງ|ຖ່າຍທອດ|ໂອນ')].join('|'),
+  'i',
+);
+export const ELECTRONIC_DELIVERY = new RegExp(`(?=.*(?:${ELECTRONIC_WORD.source}))(?=.*(?:${DELIVERY_WORD.source}))`, 'i');
 
 /**
  * A list of algorithm names was tried here for 'deviating-encryption-standard' and removed.

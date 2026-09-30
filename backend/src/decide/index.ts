@@ -18,7 +18,7 @@
  */
 import type { Indicator, ScoreBand } from '../rubric/types.js';
 import type { Finding } from '../read/index.js';
-import { DATA_SUBJECT, FRAMEWORK_TITLE_DOMAIN, HEADING_CLASS_DOMAIN, MEASURES, MEASURE_DOMAIN, MEASURE_NAMES, RESTRICTION_ANY, SECTOR_ASKED_IN_ITS_OWN_PILLAR, SECTOR_DOMAINS, STANDARD_ANY, SUBJECTS, TITLE_CARRIES_DOMAIN, SUBJECT_DOMAIN, TARIFF_CODED_DOMAIN } from '../rubric/measures.js';
+import { DATA_SUBJECT, ELECTRONIC_DELIVERY, FRAMEWORK_TITLE_DOMAIN, HEADING_CLASS_DOMAIN, MEASURES, MEASURE_DOMAIN, MEASURE_NAMES, RESTRICTION_ANY, SECTOR_ASKED_IN_ITS_OWN_PILLAR, SECTOR_DOMAINS, STANDARD_ANY, SUBJECTS, TITLE_CARRIES_DOMAIN, SUBJECT_DOMAIN, TARIFF_CODED_DOMAIN } from '../rubric/measures.js';
 import { tallyConfirmations, type ConfirmationTally } from '../read/confirmations.js';
 import { inUsd, moneyIn, type FxRates } from './currency.js';
 import { determinesAParticularCase } from '../discover/titles.js';
@@ -1859,6 +1859,30 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
       ruledOut.push({
         evidence: e,
         reason: `"${e.finding.definingWords ?? e.finding.quote}" names no standard or requirement, and a national-payment-standard measure has to`,
+      });
+      continue;
+    }
+    // transmission-duty and transmission-duty-power are named by DUTY_OR_TAX alone (see
+    // MEASURE_NAMES in measures.ts), and a duty is a duty whatever it is charged on. 12.6 is about
+    // one thing charged on: something delivered electronically -- not merely something traded
+    // online. Russia's federal budget law refunds interest on a duty charged on "товаров
+    // электронной торговли" (goods of electronic commerce, a customs category for a cross-border
+    // online order that still arrives by post), and it was filed as this measure on that bare
+    // "electronic" word alone. 12.6's own SUBJECT_DOMAIN (ONLINE) would pass it the same way --
+    // reached, in fact, only where subjectWords is stated and reaches statesASubject, and this
+    // clause's subject need not be phrased as a noun phrase at all -- so ELECTRONIC_DELIVERY (see
+    // measures.ts) is asked of the quote instead, exactly like BANK_STEM and STANDARD_ANY above,
+    // and asks for the transmission or delivery word ONLINE alone does not: a duty is on something
+    // delivered electronically only where the words say both electronic and delivered, not either
+    // one alone.
+    if (
+      (e.finding.measure === 'transmission-duty' || e.finding.measure === 'transmission-duty-power') &&
+      !ELECTRONIC_DELIVERY.test(e.finding.definingWords ?? '') &&
+      !ELECTRONIC_DELIVERY.test(e.finding.quote ?? '')
+    ) {
+      ruledOut.push({
+        evidence: e,
+        reason: `"${e.finding.definingWords ?? e.finding.quote}" does not say something was delivered or transmitted electronically, and a transmission duty has to be on that`,
       });
       continue;
     }

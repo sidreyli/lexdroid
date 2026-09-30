@@ -1580,8 +1580,8 @@ const indicator127 = indicator12('12.7', [
 /** A pillar-12 finding: none of these measures is locational or appointing unless it says so. */
 /** Words that make each measure out, as the provision would put them. The catalogue checks these. */
 const DEFINING: Record<string, string> = {
-  'transmission-duty': 'a duty of customs on the transmission',
-  'transmission-duty-power': 'may impose a duty of customs',
+  'transmission-duty': 'a duty of customs on goods delivered electronically',
+  'transmission-duty-power': 'may impose a duty of customs on goods transmitted electronically',
   'local-representative': 'a representative resident in Singapore',
   'local-domain-or-presence': 'a registered office in Singapore',
   'local-presence': 'a place of business in Singapore',
@@ -1661,6 +1661,46 @@ describe('12.6, where a power and a duty are different bands', () => {
     });
     expect(d.score).toBe(0.5);
     expect(d.decidingFact).toContain('not exercised');
+  });
+
+  it('does not score an ordinary customs duty with no electronic or digital word anywhere in it', () => {
+    const d = decide({
+      indicator: indicator126,
+      economy: 'RUS',
+      evidence: [
+        p12('12.6', 'transmission-duty', {
+          definingWords: 'interest on the amount of the duty overpaid',
+          subjectWords: 'a refund of customs duty already paid',
+          quote: 'interest is payable on the amount of customs duty refunded to the declarant',
+        }),
+      ],
+      surfaced,
+      coverage,
+    });
+    expect(d.score).toBe(0);
+    expect(d.decidingFact).toContain('no customs duty on electronic transmissions found');
+  });
+
+  it('does not score a duty on electronic-commerce goods, which is traded online but not delivered electronically', () => {
+    // The actual shape of Russia's false agreement: a federal budget law refunding interest on a
+    // late customs-duty refund for "goods of electronic commerce" -- a cross-border online order
+    // that still arrives by post, not something transmitted electronically. The bare word
+    // "electronic" is there; the word for a transmission or delivery is not.
+    const d = decide({
+      indicator: indicator126,
+      economy: 'RUS',
+      evidence: [
+        p12('12.6', 'transmission-duty', {
+          definingWords: 'interest accrued on a late refund of customs duty on goods of electronic commerce',
+          subjectWords: 'goods of electronic commerce',
+          quote: 'interest accrued on a late refund of customs duty on goods of electronic commerce',
+        }),
+      ],
+      surfaced,
+      coverage,
+    });
+    expect(d.score).toBe(0);
+    expect(d.decidingFact).toContain('no customs duty on electronic transmissions found');
   });
 });
 
