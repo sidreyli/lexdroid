@@ -339,7 +339,7 @@ on request. A run in your own store is exported from the interface (**Runs** →
 | Role | Name | Responsibility |
 | :---- | :---- | :---- |
 | Team Lead and Technical Lead | Sidharth Rajesh | AI architecture, OCR, pipeline |
-| Substantive Lead | Sidharth Rajesh | Legal and policy analysis, output QA |
+| Substantive Lead | Gwyneth Voon | Legal and policy analysis, output QA |
 
 ---
 
