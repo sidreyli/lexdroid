@@ -41,7 +41,7 @@
 import * as cheerio from 'cheerio';
 import type { AnyNode } from 'domhandler';
 import { nodeText } from './html-text.js';
-import type { OcrPage } from './ocr.js';
+import { OCR_MIN_CONFIDENCE, type OcrPage } from './ocr.js';
 import { SectionBuilder, type ParsedDocument } from './types.js';
 
 /** Where the instrument's own text lives, most specific first. */
@@ -214,11 +214,29 @@ function paragraphsOf($: cheerio.CheerioAPI, block: cheerio.Cheerio<AnyNode>): P
     $(tr).replaceWith($('<p></p>').text(row));
   }
 
-  return nodeText(block.toArray())
+  const lines = nodeText(block.toArray())
     .split('\n')
     .map(clean)
-    .filter((t) => t && !isFurniture(t))
-    .map((text) => ({ text, struck: struck.has(text), inTable: tabled.has(text) }));
+    .filter((t) => t && !isFurniture(t));
+
+  // A table is a device for one price list or schedule sitting among a document's ordinary <p>
+  // provisions, and `inTable` exists to keep such a schedule's rows from being read as points of
+  // the instrument. An international treaty page -- the Paris Convention, the PCT, TRIPS -- lays
+  // its whole text out in <tr> rows instead of <p> tags, so every one of its lines matched that
+  // same test and `structural` (the lines `readBlock` looks for an article or a point in) came out
+  // empty: no article, no point, "1 дугаар зүйл" itself filed the same as a tariff row, and 59,283
+  // characters of the Convention landed in one section under a heading path that was just its own
+  // first line. A genuine tariff schedule is a fraction of a page that has ordinary provisions
+  // around it; a page whose whole content came from <tr> is not a table at all, only laid out as
+  // one, and no line of it should be excluded on that account.
+  const fromTable = lines.filter((t) => tabled.has(t)).length;
+  const wholePageIsATable = lines.length > 8 && fromTable >= lines.length * 0.8;
+
+  return lines.map((text) => ({
+    text,
+    struck: struck.has(text),
+    inTable: !wholePageIsATable && tabled.has(text),
+  }));
 }
 
 /**
@@ -530,9 +548,13 @@ function scanParagraphs(pages: readonly OcrPage[]): Paragraph[] {
   return out.map((text) => ({ text, struck: false, inTable: false }));
 }
 
-/** The least a scan must yield to be read as the instrument, in characters and in the engine's confidence. */
+/**
+ * The least a scan must yield to be read as the instrument, in characters and in the engine's
+ * confidence. The confidence floor is `ocr.ts`'s own -- see `OCR_MIN_CONFIDENCE` there -- so a scan
+ * is held to the same bar whichever parser reads it, rather than each drawing its own line.
+ */
 const SCAN_MIN_CHARS = 200;
-const SCAN_MIN_CONFIDENCE = 50;
+const SCAN_MIN_CONFIDENCE = OCR_MIN_CONFIDENCE;
 
 /**
  * A page that heads an annex: "...А-134 дугаар тушаалын хавсралт" ending a line at its top, where

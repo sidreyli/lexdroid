@@ -9,7 +9,28 @@ const here = dirname(fileURLToPath(import.meta.url));
 const OCR_ROOT = join(here, '..', '..', 'data', 'ocr');
 const TESSDATA_DIR = join(OCR_ROOT, 'tessdata');
 const TESSERACT_CACHE = join(OCR_ROOT, 'cache');
+/** A PDF's own coordinate space is 72 units to the inch, so a render scale is a dpi in disguise. */
+const PDF_BASE_DPI = 72;
 const RENDER_SCALE = 2.5;
+/** What that scale actually renders at -- not the 300 the engine used to be told regardless. */
+const RENDER_DPI = Math.round(PDF_BASE_DPI * RENDER_SCALE);
+/**
+ * The retry scale, genuinely reaching the 300 dpi the engine is told either way.
+ *
+ * The first pass renders at 2.5x (180 dpi) for speed, which is enough for most pages. Below the
+ * shared confidence floor the page is rendered again at this scale before it is given up on --
+ * `user_defined_dpi` finally matches what the page was actually drawn at on both passes, where
+ * before it claimed 300 unconditionally while rendering 180.
+ */
+const RETRY_RENDER_SCALE = 300 / PDF_BASE_DPI;
+const RETRY_RENDER_DPI = 300;
+/**
+ * The confidence below which a page's OCR is not simply accepted -- shared with
+ * `legalinfo.ts`'s `SCAN_MIN_CONFIDENCE` so a scan is held to the same bar whichever parser reads
+ * it. A 22%-confidence page and an 85%-confidence one were being accepted on the same terms; they
+ * are not the same evidence.
+ */
+export const OCR_MIN_CONFIDENCE = 50;
 const localRequire = createRequire(import.meta.url);
 const pdfRequire = createRequire(localRequire.resolve('pdfjs-dist/package.json'));
 const { createCanvas, loadImage } = pdfRequire('@napi-rs/canvas') as {
@@ -40,7 +61,14 @@ export interface OcrRecognition {
 }
 
 export interface OcrEngine {
-  recognize(image: Buffer, page: number): Promise<OcrRecognition>;
+  recognize(image: Buffer, page: number, dpi?: number): Promise<OcrRecognition>;
+  /**
+   * One pass over every one of the economy's own scripts at once, alongside English, instead of
+   * English first and a script consulted only on its failure. Used for the retry a low-confidence
+   * first pass earns, where trying the scripts in sequence is the slower way to find the reading
+   * that was there to find; a page with no other script just repeats the English pass.
+   */
+  recognizeCombined(image: Buffer, page: number, dpi?: number): Promise<OcrRecognition>;
   close(): Promise<void>;
 }
 
@@ -122,49 +150,69 @@ export async function createTesseractEngine(languages?: readonly string[]): Prom
   // same English page together changed "17." into "E" in the supplied procurement order. Start
   // with English and consult the economy's other scripts only when the English pass does not
   // look like English prose.
-  const parameters = {
+  const parametersAt = (dpi: number) => ({
     // Gazette and legislation scans are single-column pages. AUTO split the narrow paragraph-
     // number column from its headings ("11." through "20." arrived as a block of bare numbers),
     // while SINGLE_BLOCK preserved each number beside the provision it identifies.
     tessedit_pageseg_mode: Tesseract.PSM.SINGLE_BLOCK,
     preserve_interword_spaces: '1',
-    user_defined_dpi: '300',
-  };
-  const useLanguage = async (language: 'eng' | Pack): Promise<void> => {
+    // What the page was actually rendered at, not a fixed "300" regardless of the render scale
+    // the caller used -- a mismatched dpi is a lie the engine has no way to notice.
+    user_defined_dpi: String(dpi),
+  });
+  // Tesseract's own convention for asking several languages of one pass, "tha+eng": already loaded
+  // by createWorker above, so this never triggers a download, only a re-initialisation.
+  const useLanguage = async (language: string): Promise<void> => {
     await worker.reinitialize(language);
-    // reinitialize resets Tesseract's variables, so keep the document-layout assumptions stable
-    // after every language switch.
-    await worker.setParameters(parameters);
   };
   await useLanguage('eng');
-  const recognize = async (image: Buffer): Promise<OcrRecognition> => {
+  const recognizeAt = async (image: Buffer, dpi: number): Promise<OcrRecognition> => {
+    // reinitialize resets Tesseract's variables, so the layout assumptions are set fresh for
+    // every recognition rather than surviving from whichever language was loaded last.
+    await worker.setParameters(parametersAt(dpi));
     const result = await worker.recognize(image, {}, { text: true });
     return { text: result.data.text, confidence: result.data.confidence };
   };
-  return {
-    async recognize(image) {
-      const english = await recognize(image);
-      const legalEnglish = (english.text.match(/\b(?:the|and|shall|act|rules?|order|government|section)\b/gi) ?? []).length;
-      if (english.confidence >= 70 && legalEnglish >= 2) return english;
+  const recognizeWithFallback = async (image: Buffer, dpi: number): Promise<OcrRecognition> => {
+    await useLanguage('eng');
+    const english = await recognizeAt(image, dpi);
+    const legalEnglish = (english.text.match(/\b(?:the|and|shall|act|rules?|order|government|section)\b/gi) ?? []).length;
+    if (english.confidence >= 70 && legalEnglish >= 2) return english;
 
-      let best = english;
-      for (const script of secondary) {
-        await useLanguage(script.pack);
-        let other: OcrRecognition;
-        try {
-          other = await recognize(image);
-        } finally {
-          await useLanguage('eng');
-        }
-        const found = (other.text.match(script.chars) ?? []).length;
-        if (found >= 20 && other.confidence >= best.confidence - 10) best = other;
+    let best = english;
+    for (const script of secondary) {
+      await useLanguage(script.pack);
+      let other: OcrRecognition;
+      try {
+        other = await recognizeAt(image, dpi);
+      } finally {
+        await useLanguage('eng');
       }
-      return best;
+      const found = (other.text.match(script.chars) ?? []).length;
+      if (found >= 20 && other.confidence >= best.confidence - 10) best = other;
+    }
+    return best;
+  };
+
+  const engine: OcrEngine = {
+    async recognize(image, _page, dpi = RENDER_DPI) {
+      return recognizeWithFallback(image, dpi);
+    },
+    async recognizeCombined(image, _page, dpi = RETRY_RENDER_DPI) {
+      if (secondary.length === 0) return recognizeWithFallback(image, dpi);
+      const combined = [...new Set([...secondary.map((s) => s.pack), 'eng'])].join('+');
+      await useLanguage(combined);
+      try {
+        return await recognizeAt(image, dpi);
+      } finally {
+        await useLanguage('eng');
+      }
     },
     async close() {
       await worker.terminate();
     },
   };
+  return engine;
 }
 
 function linesOf(text: string): string[] {
@@ -192,19 +240,28 @@ export async function ocrPdfPages(
   const ownsEngine = suppliedEngine === undefined;
   const pages: OcrPage[] = [];
 
+  const renderAt = async (page: Awaited<ReturnType<typeof doc.getPage>>, scale: number): Promise<Buffer> => {
+    const viewport = page.getViewport({ scale });
+    const canvas = createCanvas(Math.ceil(viewport.width), Math.ceil(viewport.height));
+    const context = canvas.getContext('2d');
+    await page.render({ canvasContext: context as never, viewport, background: 'white' }).promise;
+    return canvas.toBuffer('image/png');
+  };
+
   try {
     for (const pageNumber of pageNumbers) {
       if (pageNumber < 1 || pageNumber > doc.numPages) continue;
       const page = await doc.getPage(pageNumber);
-      const viewport = page.getViewport({ scale: RENDER_SCALE });
-      const canvas = createCanvas(Math.ceil(viewport.width), Math.ceil(viewport.height));
-      const context = canvas.getContext('2d');
-      await page.render({
-        canvasContext: context as never,
-        viewport,
-        background: 'white',
-      }).promise;
-      const recognized = await engine.recognize(canvas.toBuffer('image/png'), pageNumber);
+      let recognized = await engine.recognize(await renderAt(page, RENDER_SCALE), pageNumber, RENDER_DPI);
+      // Below the shared floor, one retry: a render that actually reaches 300 dpi rather than the
+      // 180 the first pass drew at, read with every one of the economy's own scripts alongside
+      // English in a single pass rather than English first and a script tried only on its
+      // failure. Whichever attempt reads better is kept -- a retry that reads worse is not a
+      // reason to prefer it, and a genuine improvement is not thrown away for costing a second pass.
+      if (recognized.confidence < OCR_MIN_CONFIDENCE) {
+        const retried = await engine.recognizeCombined(await renderAt(page, RETRY_RENDER_SCALE), pageNumber, RETRY_RENDER_DPI);
+        if (retried.confidence > recognized.confidence) recognized = retried;
+      }
       pages.push({ page: pageNumber, lines: linesOf(recognized.text), confidence: recognized.confidence });
       page.cleanup();
     }
@@ -223,6 +280,8 @@ export async function ocrPdfPages(
  * on letters the size a printed page has at 300 dpi, which is about what this width gives an A4 page.
  */
 const MIN_WIDTH = 1400;
+/** What `readable()`'s upscale approximates for an A4 page, and what it is honest to tell Tesseract. */
+const IMAGE_DPI = 300;
 
 /** An image enlarged to a readable width, on white: a transparent PNG would otherwise read as black. */
 async function readable(image: Buffer): Promise<Buffer> {
@@ -250,7 +309,7 @@ export async function ocrImages(
   const pages: OcrPage[] = [];
   try {
     for (const [i, image] of images.entries()) {
-      const recognized = await engine.recognize(await readable(image), i + 1);
+      const recognized = await engine.recognize(await readable(image), i + 1, IMAGE_DPI);
       pages.push({ page: i + 1, lines: linesOf(recognized.text), confidence: recognized.confidence, text: recognized.text });
     }
   } finally {

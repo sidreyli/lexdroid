@@ -11,7 +11,7 @@
 import { detectLanguage } from './language.js';
 import { SectionBuilder, type ParsedDocument } from './types.js';
 import { readsAsAClause } from './identity.js';
-import { ocrPdfPages, ocrScriptOf, type OcrEngine } from './ocr.js';
+import { ocrPdfPages, ocrScriptOf, OCR_MIN_CONFIDENCE, type OcrEngine } from './ocr.js';
 import { amendmentHistory } from './lom.js';
 import { isMostlyLao, sectioniseLao } from './lao.js';
 
@@ -85,7 +85,23 @@ export function isInAnotherScript(lines: readonly string[], languages?: readonly
  * that takes 363 and holds 40, and the 40 are cover pages whose OCR is the logo: the Commission
  * Act's front page reads "LEE) B / £1:1 0.4%".
  */
-export function ocrReplacesThePage(why: 'sparse' | 'damaged' | 'unscripted', before: string, after: string): boolean {
+/**
+ * `confidence` defaults high enough to pass unconditionally, for the callers -- tests among them --
+ * that judge a reading with no Tesseract confidence to hand at all and mean the character-count
+ * tests alone to decide it, exactly as this function did before OCR carried a confidence gate.
+ */
+export function ocrReplacesThePage(
+  why: 'sparse' | 'damaged' | 'unscripted',
+  before: string,
+  after: string,
+  confidence = 100,
+): boolean {
+  // A confident misreading is still a misreading, but an *unconfident* one is worse than the page
+  // it would replace: MNG's licensing orders were kept at 22-34% confidence purely because OCR
+  // returned more characters than the scan's own (near-empty) text layer had, which is the length
+  // test alone rewarding whatever Tesseract guessed. Below the shared floor `legalinfo.ts` already
+  // holds a scan to, none of the three readings below is accepted, however long it runs.
+  if (confidence < OCR_MIN_CONFIDENCE) return false;
   // A page read for being in the wrong script is recovered when OCR finds a script there other than
   // Latin, and not otherwise: an English page it was wrong to doubt comes back English, and stays
   // as the text layer gave it.
@@ -783,19 +799,23 @@ export async function parsePdf(bytes: Buffer, url: string, opts: ParsePdfOptions
         if (!reread.includes(page.page)) return page;
         const ocr = byPage.get(page.page);
         const text = ocr?.lines.join(' ') ?? '';
+        // Recorded whether or not the reading is accepted below: a page OCR could not clear the
+        // confidence floor for is still a page whose best achieved confidence a human auditing the
+        // document -- or the rest of it, if other pages did clear the floor -- should be able to see.
+        if (ocr) confidences.push(ocr.confidence);
         const accepted =
           !!ocr &&
           ocrReplacesThePage(
             damaged.includes(page.page) ? 'damaged' : unscripted.includes(page.page) ? 'unscripted' : 'sparse',
             page.lines.join(' '),
             text,
+            ocr.confidence,
           );
         if (!ocr || !accepted) {
           ocrFailed.push(page.page);
           return page;
         }
         ocrUsed.push(page.page);
-        confidences.push(ocr.confidence);
         return {
           page: page.page,
           lines: ocr.lines,
@@ -818,6 +838,11 @@ export async function parsePdf(bytes: Buffer, url: string, opts: ParsePdfOptions
         charsPerPage: String(Math.round(chars / Math.max(1, pages.length))),
         ...(ocrFailed.length ? { ocrFailedPages: ocrFailed.join(',') } : {}),
         ...(ocrError ? { ocrError } : {}),
+        // Kept even for a document this unread: the best OCR could do is still worth a human
+        // being able to see, rather than the column reading NULL as though OCR were never tried.
+        ...(confidences.length
+          ? { ocrConfidence: String(Math.round(confidences.reduce((sum, n) => sum + n, 0) / confidences.length)) }
+          : {}),
       },
       unread: {
         reason: 'ocr-below-threshold',
