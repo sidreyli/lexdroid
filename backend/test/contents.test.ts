@@ -1,7 +1,7 @@
 /**
  * The contents index -- the artefact discovery ranks on instead of titles.
  *
- * The measurement that produced it: against ESCAP's own citations for Singapore pillars 6 and 7,
+ * The measurement that produced it: on Singapore pillars 6 and 7,
  * title ranking surfaced 7 of 23 cited instruments in a list of 100. The Companies Act, Income Tax
  * Act, Employment Act, Banking Act and Criminal Procedure Code were all registered, all cited and
  * all past rank 200 -- and restricting the search to Acts alone did not move them, because

@@ -3,8 +3,8 @@
  *
  * The register could not answer this. The Laws of Malaysia catalogue publishes an "As At" date --
  * the day the reprint it serves is current to -- and that is a weaker claim than an amendment:
- * the Personal Data Protection Act is served as at 2023 while the duty ESCAP scores arrived in a
- * 2024 amendment. Reporting the reprint date as the last amendment said the Act had not changed
+ * the Personal Data Protection Act is served as at 2023 while the duty indicator 6.4 turns on
+ * arrived in a 2024 amendment. Reporting the reprint date as the last amendment said the Act had not changed
  * since 2023. It had.
  *
  * The document answers it properly. Every Act revised under the Revision of Laws Act 1968 closes

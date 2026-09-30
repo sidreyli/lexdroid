@@ -343,8 +343,8 @@ export function identityMismatch(
  *
  * "The principal Act is amended by inserting before section 36" was cited as Malaysia's data
  * retention rule. The inserted words are law, but they are law of the Stamp Act; the vehicle that
- * carries them imposes nothing itself, and ESCAP marks an amending act cited in place of its
- * principal at zero.
+ * carries them imposes nothing itself, and an amending act cited in place of its principal
+ * cites the wrong law.
  */
 const AMENDMENT_INSTRUCTION =
   /\b(?:principal|the)\s+Act\s+is\s+amended\b|\bis\s+amended\s+by\s+(?:inserting|substituting|deleting|omitting)\b|\bAmendment\s+of\s+section\b/i;
@@ -363,8 +363,8 @@ export function amendsAnotherAct(text: string): boolean {
  * requirement is, and the words cited are the dictionary entry that points at it. Australia's
  * cybersecurity cell cited "any cybersecurity officer appointed under section 4(3)" the same way.
  *
- * This is the citation defect ESCAP marks directly -- "section 125 did not mention the minimum 7
- * years period" -- arrived at from the other end: the section cited is real and the words are
+ * This is the classic citation defect -- a cited section that does not say what the row claims --
+ * arrived at from the other end: the section cited is real and the words are
  * really in it, but they are not the words that impose anything.
  *
  * The test is on drafting form rather than on heading words, because a definition is a definition
@@ -641,7 +641,7 @@ export function statesItsForce(sections: Pick<ParsedSection, 'text'>[], within =
  * duties scored for seven cells; the consolidation on the statute book is current to 1 July 2023
  * and contains the words "breach" and "data protection officer" no times at all.
  *
- * ESCAP's own method allows both readings -- its extraction slide says of an amendment, "insert in
+ * The RDTII method allows both readings -- its extraction guidance says of an amendment, "insert in
  * main law, or a single file" -- and its guide scores a safe-harbour provision straight out of New
  * Zealand's Copyright (New Technologies) Amendment Act. So the line is not between the principal
  * Act and the amending one. It is between an instruction and the text the instruction enacts, and

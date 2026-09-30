@@ -166,7 +166,7 @@ export interface AnswerOptions {
   /**
    * A run whose recorded retrieval this pillar reads instead of searching again. For measuring a
    * reader change on a database that holds a run's provisions but not the indexes that found them
-   * (a benchmark pack); see retrieve/replay.ts.
+   * (a snapshot of a run); see retrieve/replay.ts.
    */
   retrievalFrom?: string;
 }
@@ -198,7 +198,7 @@ interface SectionRow {
  *
  * Words an amendment sets out for insertion are the principal Act's words. Cited under the
  * amending instrument they would name the vehicle instead of the statute that carries the duty,
- * which is the citation defect ESCAP marks directly. Where the register knows the principal, the
+ * which is a citation defect a reviewer catches at once. Where the register knows the principal, the
  * citation names it and says which instrument put the words there; where it does not, the finding
  * still stands on the words and is cited where they were actually read.
  */
@@ -566,7 +566,7 @@ export async function answerPillar(
 
   stage('framework', frameworkReadings.length);
 
-  // 5. Decide. No model, no network, no ESCAP answers.
+  // 5. Decide. No model and no network.
   const indexedSections = retrieval[0]?.indexedSections ?? 0;
   // A zero read out of a stale consolidation is a weaker claim than one read out of current law.
   // The consolidation's own currency date answers this; the last amendment is the fallback for a
@@ -586,7 +586,7 @@ export async function answerPillar(
 
     // The instruments this indicator's own search returned, best rank first and one entry each.
     // A zero is reported against one of these, so a cell that scores nothing still cites the Act
-    // it read -- which is the shape of every zero row in ESCAP's own database.
+    // it read, which is what a zero row in the RDTII template is expected to do.
     const record = retrieval.find((r) => r.indicatorId === indicator.id);
     const surfaced: SurfacedInstrument[] = [];
     for (const section of record?.sections ?? []) {
@@ -683,7 +683,7 @@ function frameworkSubject(indicator: Indicator): FrameworkSubject | null {
  * The register is asked about the subject first, and what it returns leads. A framework question
  * is a question about an instrument -- is this Act the country's data protection law -- so the
  * thing to rank is instruments, by the subject, not provisions by the indicator's band prose.
- * Australia's first graded run examined five candidates for 7.1 and the Privacy Act 1988 was not
+ * Australia's first full run examined five candidates for 7.1 and the Privacy Act 1988 was not
  * among them: it had contributed one provision to that indicator's search where the Data
  * Availability and Transparency Act contributed six, and candidacy was decided by that count. The
  * answer came out right and cited the wrong Act for it.
@@ -757,7 +757,8 @@ async function frameworkCandidates(
   // A framework indicator searched instruments by its subject and sections by its band prose, and
   // never searched sections for its subject. So Singapore's Electronic Transactions Act 2010 --
   // whose section 26 reads "a network service provider shall not be subject to any civil or
-  // criminal liability", which is the provision ESCAP cites for 8.2 -- was unreachable from both.
+  // criminal liability", which is the intermediary liability provision 8.2 asks about -- was
+  // unreachable from both.
   // Not ranked low: absent, under every wording tried, because its title says "Electronic
   // Transactions" and 8.2's band prose is about unlawful content. Asked of sections, the subject
   // puts it fourth. The comment this replaces asserted the band prose found it sixth; that was

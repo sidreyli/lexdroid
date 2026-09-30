@@ -18,7 +18,7 @@
  * different job with a different budget.
  *
  * A cache-only run does none of it. That is not an optimisation -- it is the second-engine pass
- * ESCAP checks on the day, whose document list has to be empty.
+ * checked on the day, whose document list has to be empty.
  */
 import type { Db } from '../db/index.js';
 import { Fetcher, type SourceMode } from '../fetch/index.js';
@@ -41,7 +41,7 @@ export interface PrepareOptions {
   /**
    * The run these fetches belong to.
    *
-   * Not bookkeeping: ESCAP's Run Record sheet asks for every document downloaded during the hour
+   * Not bookkeeping: the Run Record sheet asks for every document downloaded during the hour
    * and checks the second engine's count is zero. A fetch recorded against no run cannot answer
    * that question, so the claim would rest on our word rather than on the log.
    */

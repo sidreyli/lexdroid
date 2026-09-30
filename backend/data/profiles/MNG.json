@@ -175,7 +175,7 @@
       "sourceUrl": "https://www.wto.org/english/thewto_e/countries_e/mongolia_e.htm"
     }
   ],
-  "notes": "Researched from Mongolian government portals read directly with curl on 21 September 2026; every structural claim above was produced by an actual request, and the full trace with response sizes is docs/lao-mongolia-russia-recon.md. ESCAP's completed Mongolia Round 2 answer sheet remains quarantined in the isolated baseline store per docs/architecture.md and was not opened to write this profile -- portals were found the way a researcher finds them, which is what backend/test/baseline-isolation.test.ts protects and what makes the discovery claim worth anything on a sealed economy. Coverage is genuinely better than Thailand's or India's first slice: the primary legislation database is reachable, server-rendered, enumerable through its own listing endpoint, and publishes per-category counts that give the register an exact shortfall check the way Australia's OData count does. Two things stand between this profile and cells: the small bespoke adapter for legalinfo.mn's listing endpoint, and the Cyrillic language-detection fix named in languageNote above.",
+  "notes": "Researched from Mongolian government portals read directly with curl on 21 September 2026; every structural claim above was produced by an actual request. Portals were found the way a researcher finds them, which is what makes the discovery claim worth anything on a sealed economy. Coverage is genuinely better than Thailand's or India's first slice: the primary legislation database is reachable, server-rendered, enumerable through its own listing endpoint, and publishes per-category counts that give the register an exact shortfall check the way Australia's OData count does. Two things stand between this profile and cells: the small bespoke adapter for legalinfo.mn's listing endpoint, and the Cyrillic language-detection fix named in languageNote above.",
   "authoredBy": "LexDroid team",
   "authoredOn": "2026-09-21",
   "sources": [
@@ -185,6 +185,6 @@
     "POST https://legalinfo.mn/mn/ajaxListBody/ -- called directly, 21 Sep 2026; 200, 48 KB, 20 rows with titles, gazette references and dates",
     "https://legalinfo.mn/mn/detail?lawId=16532151599871 -- read directly, 21 Sep 2026; 125 KB, 16,848 visible characters, the Minister of Labour and Social Protection's order A/123 of 2022-06-10, including its enabling-power citation. The instrument-category counts in this profile are taken from this page's own footer",
     "https://www.mongolbank.mn/robots.txt, https://crc.gov.mn/robots.txt, https://www.parliament.mn/robots.txt -- read directly, 21 Sep 2026",
-    "NOT ESCAP's Round 2 database or legal inventory for Mongolia: those remain evaluation-only, per the isolation this profile is required to respect"
+    "NOT the sample kit: discovery finds portals the way a researcher does"
   ]
 }

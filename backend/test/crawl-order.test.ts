@@ -4,7 +4,7 @@
  * The crawl is the corpus. Australia registered 23,693 regulations and fetched 109, and among the
  * 23,584 left undone were the Customs (Prohibited Imports) Regulations 1956, the Customs
  * (Prohibited Exports) Regulations 1958, the Customs Regulation 2015, the Radiocommunications
- * Regulations 2023 and the Commonwealth Procurement Rules -- the instrument ESCAP itself cites for
+ * Regulations 2023 and the Commonwealth Procurement Rules -- the instrument that governs
  * Australia's procurement indicators. None is obscure. They were late in a list.
  */
 import { describe, expect, it } from 'vitest';

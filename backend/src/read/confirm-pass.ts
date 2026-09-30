@@ -2,10 +2,8 @@
  * The confirmation pass, as something a run does rather than something somebody remembers to run.
  *
  * Asking every finding whether its provision really states the measure it was filed as is the
- * single largest accuracy move this system has: on the three mandatory economies it moved agreement
- * with ESCAP from 104 cells to 119. It lived in scripts/confirm.ts and was nobody's job to call, so
- * the runs that produced the submission never had it, and the number that proved it came from a
- * diagnostic nobody downstream could see.
+ * single largest accuracy move this system has. It lived in scripts/confirm.ts and was nobody's job
+ * to call, so the runs that produced the submission never had it.
  *
  * The pass is keyed by the question -- one provision, one indicator, one measure -- and not by the
  * run. So the same provision filed under the same measure in three cells is one question with one

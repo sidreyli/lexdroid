@@ -1,5 +1,5 @@
 /**
- * Clearing the slate before the live hour: ESCAP checklist item 26, "cache and downloaded-document
+ * Clearing the slate before the live hour: checklist item 26, "cache and downloaded-document
  * folders can be cleared on screen before the clock starts".
  *
  * An economy already in the store would never be downloaded again. `materialise` reads only an

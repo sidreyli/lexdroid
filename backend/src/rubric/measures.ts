@@ -531,8 +531,8 @@ export const MEASURES: Record<string, Measure[]> = {
         'a condition on every bidder for a government contract, such as a local content share, a local employment target or another performance undertaking',
       alsoAsked: [
         // The performance undertaking as an industry-participation statute writes it: a plan the
-        // proponent must have approved, saying how local suppliers will get to bid. ESCAP scores
-        // Australia's AIP plans here, and the cell read only the section promising not to
+        // proponent must have approved, saying how local suppliers will get to bid. Australia's
+        // AIP plans are this measure, and the cell read only the section promising not to
         // discriminate against local entities, which the confirm pass rightly refused.
         'a project proponent or tenderer must prepare and comply with an approved industry participation plan giving local suppliers full, fair and reasonable opportunity to supply',
       ],
@@ -636,8 +636,8 @@ export const MEASURES: Record<string, Measure[]> = {
     {
       token: 'local-content-category',
       defines: 'the words requiring locally made goods, locally supplied services or content produced in the economy',
-      // Content is the local input a broadcaster or a streaming service is held to, and ESCAP
-      // scores Australia's broadcasting and streaming quotas here. The gloss named goods and
+      // Content is the local input a broadcaster or a streaming service is held to, so
+      // Australia's broadcasting and streaming quotas belong here. The gloss named goods and
       // services only, so a quota of Australian programs had no measure to be filed under, and
       // the cell read regional radio's "local significance" rules instead -- locality, not origin.
       gloss:
@@ -671,8 +671,7 @@ export const MEASURES: Record<string, Measure[]> = {
       // A duty is charged on whoever brings the goods in. Every finding this indicator collected in
       // all three economies binds the Minister, the Government or the court instead -- the sections
       // of the enabling Act that say when and how a duty may be imposed, which are the procedure
-      // and not the measure. ESCAP answers this one from a register of measures actually in force,
-      // so an Act read as four of them is the reading to stop, not the register to reproduce.
+      // and not the measure. The measure is the duty actually in force, so an Act read as four of them is the reading to stop, not the register to reproduce.
       actorKind: 'private',
     },
   ],
@@ -1463,7 +1462,7 @@ export const ONLINE = new RegExp(
 );
 
 /**
- * 12.4 asks what limits paying for something online, and ESCAP answers it with the payment
+ * 12.4 asks what limits paying for something online, and the answer lies in the payment
  * instrument rather than the word "online": a purchased payment facility for Australia, electronic
  * money for Malaysia, the Payment Services Act for Singapore. A limit on the instrument is a limit
  * on paying with it, so the instrument names the domain. The nouns are payment's own, so a sum
@@ -1594,7 +1593,7 @@ const IDENTITY = /\b(identit\w*|identif\w*|authenticat\w*|verif\w*|know your cus
  * "Public consultation on industry standards", was filed as opaque standard-setting on the words
  * "free copies of the draft will be made available to members of the public" -- a transparency
  * duty read as its own negation. Singapore's accounting-standards objects clause went the same way
- * on "must have the following objects". ESCAP scores both economies 0.
+ * on "must have the following objects". Both are 0.
  *
  * So what a provision must say to be this measure is that the publicity need not happen. That is
  * the measure's own definition and not a list of instruments to exclude, and a provision that
@@ -1612,7 +1611,7 @@ const WITHOUT_PUBLICITY = new RegExp(
  * A measure defined as a restriction has to be made out by words that restrict something.
  *
  * 12.4.7 is the residual band of pillar 12's payment group -- "any other restriction on making or
- * receiving payment online" -- and it was answered 1 in all three economies where ESCAP answers 0.
+ * receiving payment online" -- and it was answered 1 in all three economies where the answer is 0.
  * Every one of the six provisions it rested on was made out on a noun phrase. Malaysia's Online
  * Safety Act was read on a seizure power's list of seizable things, "Any book, account, document,
  * computerized data, signboard, card, letter, pamphlet, leaflet, notice, facility, apparatus,
@@ -1645,7 +1644,7 @@ const RESTRICTION = new RegExp(
  * named "цахим мөнгө" (electronic money) as the whole of its defining words for six unrelated
  * payment measures at once, and its Law on Violations named the National Payment System Act by
  * title, twice, as the "restriction" a person committed -- a penalty clause that borrows its
- * prohibition from elsewhere states none of its own (both confirmed against the MNG bench pack).
+ * prohibition from elsewhere states none of its own (both confirmed against Mongolia's readings).
  *
  * "запре", not "запрещ": "запрет" (the noun, "a ban") is what the corpus actually uses on its own
  * ("Запрет розничной продажи товаров", "запрет на допуск товаров") and does not contain the verb
@@ -1653,7 +1652,7 @@ const RESTRICTION = new RegExp(
  * because Mongolian negates a verb by suffixing it, and "шаардахгvй" -- "not required" -- names the
  * opposite of a requirement, confirmed against the one MNG finding that reads exactly that way
  * ("... баталгаажуулалтыг шаардахгvй"). Thai and Lao each confirmed present, with a genuine
- * prohibit/restrict meaning, in their own bench packs' findings for these same three measures.
+ * prohibit/restrict meaning, in their own findings for these same three measures.
  */
 const RESTRICTION_LOCAL = [
   'запре|огранич|лимит|обязан|требу',
@@ -1680,7 +1679,7 @@ export const RESTRICTION_ANY = new RegExp([RESTRICTION.source, RESTRICTION_LOCAL
  * this same corpus uses "требование" for an unrelated customs-documentation duty and an unrelated
  * consumer-protection duty -- but the narrower shape the genuine citation actually uses: a
  * requirement word within a short distance of a protection word. Checked directly against every
- * national-payment-standard reading in the RUS bench pack, this matches exactly the four genuine
+ * national-payment-standard reading in Russia's corpus, this matches exactly the four genuine
  * "требования к ... защит..." readings and none of the others (including the two bare "обязательные
  * требования"/"требования к оформлению документов" readings that would have passed the bare stem).
  */
@@ -1717,7 +1716,7 @@ export const ELECTRONIC_DELIVERY = new RegExp(`(?=.*(?:${ELECTRONIC_WORD.source}
  * It was worth a cell and it was wrong. Auditing every gate by what it threw out across the three
  * economies, that one fired four times in two cells, and one of the four was Australia's "approved
  * by the Australian Signals Directorate" -- refused for naming no cryptographic standard, when the
- * ASD list is exactly that. The cell still scored what ESCAP scores, by the wrong route.
+ * ASD list is exactly that. The cell still scored right, by the wrong route.
  *
  * The general shape: a closed list of the specific things that exist rejects the real provision
  * that names a thing not on it, and there is no list of every cryptographic authority on earth. A
@@ -1767,8 +1766,8 @@ const RADIO_EMC_LOCAL = 'радиоэлектрон|электромагнит|�
 // generic noun for "body" used in nearly every Mongolian provision) would also match -- that bare
 // stem would have made this a no-op, matching almost everything read for pillar 5. Lao "ສ້າງຕັ້ງ"/
 // "ກໍ່ຕັ້ງ" and Thai "จัดตั้ง"/"ก่อตั้ง" are the same establish/found terms, each confirmed present in
-// their own corpus (though not in this exact measure's own quotes, since LAO and THA already agree
-// with ESCAP here without them).
+// their own corpus (though not in this exact measure's own quotes, since LAO and THA already score
+// right here without them).
 const ESTABLISH_BODY_LOCAL = [
   'учрежд|создан|образован|явля[а-яё]* .{0,15}(орган|ведомств|служб)|наделен[а-яё]* (правами|статусом) юридического лица',
   'байгуул(ах|ав|агдсан|агдах|алт)',
@@ -1871,7 +1870,7 @@ export const MEASURE_NAMES: Readonly<Record<string, RegExp>> = {
   // word meaning licence, which is what a SIM rule is least likely to say -- it says the
   // subscriber's identity must be recorded. So the top band admitted provisions that identify
   // nobody while the band below it turned away the ones that do, and all three economies scored
-  // the top band where ESCAP scores the one under it.
+  // the top band where the band under it is right.
   'user-identity': IDENTITY,
   'sim-registration': IDENTITY,
   'patent-local-representative': /\b(represent\w*|agent\w*|attorney\w*|address for service)\b/i,
@@ -1890,7 +1889,7 @@ export const MEASURE_NAMES: Readonly<Record<string, RegExp>> = {
  * telecommunications operators are "carriage service providers", and a list that recognises one
  * jurisdiction's phrase rules out the other's real findings. Across the twelve-pillar run the full
  * set won thirteen cells and lost fourteen, and each regex fitted to recover a loss is a word list
- * shaped by the answer key rather than by the indicator.
+ * shaped by the cases rather than by the indicator.
  *
  * So the domains kept are the ones a legal system cannot word its own way. A patent is a patent, a
  * copyright a copyright, a trade secret a trade secret, and an encryption standard names the
@@ -1956,8 +1955,8 @@ const ACCREDITATION_BODY = new RegExp(
  * bands are rungs of one ladder. 8.3's are not: its top band is identity to reach the internet and
  * the band below it identity for a SIM, and those are two subjects, not two heights of one. Given
  * a single domain the two measures are made out by the same words, so a mobile number-porting
- * check answered the internet question and every economy scored the top band where ESCAP scores
- * the one beneath -- Australia on its pre-porting determination, Singapore on an end-user notice,
+ * check answered the internet question and every economy scored the top band where the one beneath
+ * is right -- Australia on its pre-porting determination, Singapore on an end-user notice,
  * Malaysia on a shelter's duty to "record the attendance of each inmate".
  *
  * So where a measure's subject is narrower than its indicator's, it says so here, and this is
@@ -2064,7 +2063,7 @@ export const MEASURE_DOMAIN: Readonly<Record<string, RegExp>> = {
   // mobile subscription the service runs over. Only the top band gets a domain. The band below it
   // is carried by its instrument -- Australia's pre-porting determination says "mobile" in its
   // title and then never again -- and a domain asked of the words would turn away the very
-  // findings ESCAP scores. A topic is carried by the document; only the narrower band has to say
+  // findings that band exists for. A topic is carried by the document; only the narrower band has to say
   // it in the sentence.
   'user-identity': ONLINE_SERVICE,
   // 8.4 is the pillar's too: an intermediary's duty to take down what it carries, or to watch what

@@ -1,20 +1,18 @@
 /**
- * The export row: the unit ESCAP actually grades.
+ * The export row: the unit a reviewer actually reads.
  *
  * Everything before this stage is our own bookkeeping. This is where a run becomes the thing a
  * reviewer reads, and it is a pure projection -- no model, no network, nothing decided here that
  * was not already decided upstream. If a fact is not in the run record it does not appear in a
  * row, and if it is in the run record it appears unchanged.
  *
- * Three rules from ESCAP's own marking of the fifteen graded submissions are structural here
- * rather than advisory:
+ * Four rules are structural here rather than advisory:
  *
- *   One measure per row.  "if the single entry includes multi measures, suggest to separate."
- *                         A reading may carry several findings for one indicator; each becomes
+ *   One measure per row.  A reading may carry several findings for one indicator; each becomes
  *                         its own row, because a reviewer accepts or rejects one claim at a time.
  *
- *   One official URL.     "better not to compile the links... add one official link for one
- *                         document." Secondary links belong in the notes.
+ *   One official URL.     One official link for one document. Secondary links belong in the
+ *                         notes.
  *
  *   Every cell answered.  A cell that found no requirement still produces a row, naming the
  *                         instrument it was read against -- the Australia 2.2 shape. A cell we
@@ -26,8 +24,8 @@
  *                         the rule -- and a finding it refused to score is not a measure. They
  *                         stay in `reading`, which is the record of what was read.
  *
- * The discovery tag is deliberately not set here. NEW versus KNOWN is defined against ESCAP's
- * sample kit, and no module under src/ outside the quarantine may read it -- so the tag is applied
+ * The discovery tag is deliberately not set here. NEW versus KNOWN is defined against the sample
+ * kit, and no module under src/ outside src/baseline may read it -- so the tag is applied
  * by the caller that is allowed to, and a row leaves this module without one.
  */
 import type { Db } from '../db/index.js';
@@ -252,8 +250,7 @@ const MONTHS = [
 /**
  * "Since March 2013, last amended in February 2021".
  *
- * ESCAP's reviewers asked for exactly this and no more: "suggest to just keep Since Month Year,
- * last amended in Month year". A day is precision we cannot always evidence, so it is not shown
+ * Month and year, and no more. A day is precision we cannot always evidence, so it is not shown
  * even when the document happens to state one.
  */
 export function timeframe(commencedOn: string | null, lastAmendedOn: string | null): string | null {
@@ -362,11 +359,9 @@ export function citationUrl(docUrl: string, anchor: string | null, target: Citat
  * The template wants column L as a number between 0.00 and 1.00 and validates it programmatically,
  * so the number goes there and the sentence that earned it goes in Notes, which is free text.
  *
- * **These are ordinal, not calibrated probabilities.** `npm run -w backend calibration` measures the
- * agreement behind each rung against ESCAP's published answers; on run 82673dbf the two rungs
- * holding 89% of rows came out at 0.755 (CONFIRMED) and 0.694 (LOCATED). The ordering is real and
- * the separation is 0.061, which is why a reviewer should read the sentence in Notes rather than
- * threshold on the number. Anything at or below LOCATED deserves a human check.
+ * **These are ordinal, not calibrated probabilities.** The ordering is real and the rungs sit
+ * close together, which is why a reviewer should read the sentence in Notes rather than threshold
+ * on the number. Anything at or below LOCATED deserves a human check.
  */
 export const CONFIDENCE = {
   /** Quoted words located in the stored source, and a second reading confirmed the measure. */
@@ -463,8 +458,7 @@ export function translationNote(economy: string, language: string | null): strin
 /**
  * The sentence a reviewer reads first.
  *
- * "rationale quotes before it interprets" appears six times across the graded submissions, so the
- * quotation leads and our reading follows it. Capped at the template's 300 characters by trimming
+ * The rationale quotes before it interprets: the quotation leads and our reading follows it. Capped at the template's 300 characters by trimming
  * the interpretation, never the quotation: the quotation is the evidence and our sentence is the
  * claim, and a claim shortened past sense is better than evidence shortened past checking.
  */
@@ -531,8 +525,8 @@ export function buildExportRows(db: Db, runId: string): BuildResult {
       ORDER BY b.ordinal`,
   );
 
-  // A framework indicator cites the instrument, not a provision: ESCAP is explicit that a
-  // per-provision citation there is not a discovery.
+  // A framework indicator cites the instrument, not a provision: the methodology is explicit that
+  // a per-provision citation there is not a discovery.
   const frameworkBasisFor = db.prepare(
     `SELECT i.title, i.official_number, i.commenced_on, i.last_amended_on, i.source_url,
             i.language AS instrument_language, f.quote, f.sector, f.sectoral_shown, f.quote_verified
@@ -543,8 +537,8 @@ export function buildExportRows(db: Db, runId: string): BuildResult {
       ORDER BY b.ordinal`,
   );
 
-  // The instruments carrying the same framework. ESCAP asked for one official link per row and
-  // the rest in the notes, so they are named rather than given rows of their own.
+  // The instruments carrying the same framework. One official link per row and the rest in the
+  // notes, so they are named rather than given rows of their own.
   const alsoCarrying = db.prepare(
     `SELECT i.title
        FROM framework_reading f
@@ -714,7 +708,7 @@ export function buildExportRows(db: Db, runId: string): BuildResult {
 
       // A cell that found no requirement still names what it was read against. Without this row
       // the export would simply be missing the cell, and a missing cell reads as an oversight
-      // where a finding of absence belongs -- more than half of ESCAP's own rows are this shape.
+      // where a finding of absence belongs.
       if (cell.state === 'no-restriction' && made === 0) {
         const inst = cell.controlling_instrument_id
           ? (instrument.get(cell.controlling_instrument_id) as
@@ -804,8 +798,8 @@ export function buildExportRows(db: Db, runId: string): BuildResult {
 /**
  * What the row should say about itself beyond the claim.
  *
- * OCR is named because ESCAP marks a tool that flags text it could not read cleanly above one
- * that presents everything with equal confidence.
+ * OCR is named because a tool that flags text it could not read cleanly is more trustworthy than
+ * one that presents everything with equal confidence.
  */
 function noteFor(f: Finding, extraction: string | null): string | null {
   const parts: string[] = [];

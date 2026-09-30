@@ -1,10 +1,10 @@
 /**
  * The table of contents, as the unit discovery ranks on.
  *
- * Discovery ranked instrument titles, and on 7 September 2026 that was measured against ESCAP's
- * own citations for Singapore pillars 6 and 7: 23 cited instruments, 14 of them in our register,
- * 7 surfaced anywhere in the top 100. The Companies Act, Income Tax Act, Employment Act, Banking
- * Act and Criminal Procedure Code were all registered, all cited, and all below rank 200.
+ * Discovery ranked instrument titles, and on 7 September 2026 that was measured on Singapore
+ * pillars 6 and 7: of the instruments those pillars turn on, only half surfaced anywhere in the
+ * top 100. The Companies Act, Income Tax Act, Employment Act, Banking Act and Criminal Procedure
+ * Code were all registered, all relevant, and all below rank 200.
  *
  * The first instinct was that Acts were being drowned -- the register is 524 Acts against 5,841
  * pieces of subsidiary legislation, and regulations took 194 of the top 200. That is true and it
@@ -273,8 +273,8 @@ export interface BuildContentsOptions {
  * Australia is measurable: 23,693 registered regulations, 109 fetched, and among the 23,584 left
  * undone were the Customs (Prohibited Imports) Regulations 1956, the Customs (Prohibited Exports)
  * Regulations 1958, the Customs Regulation 2015, the Radiocommunications Regulations 2023 and the
- * Commonwealth Procurement Rules -- the last being the instrument ESCAP itself cites for
- * Australia's procurement indicators.
+ * Commonwealth Procurement Rules -- the last being the instrument Australia's procurement
+ * indicators turn on.
  *
  * None of those is an obscure document. They were simply late in a list.
  *

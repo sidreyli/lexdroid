@@ -140,7 +140,7 @@
       "pillars": [1, 2, 3, 12],
       "adapter": null,
       "adapterConfig": {},
-      "notes": "PERMITTED, real server-rendered PHP -- but the crawl adapter finds 0 instruments (formally re-confirmed twice). Root cause is not access: instrumentTitle()'s title-recognition grammar is English-trailing-noun-only, structurally backwards for Thai's leading-noun drafting convention, and a safe fix needs calibration data (ESCAP citations) this profile must keep quarantined. Full trace: docs/thailand-integration-plan.md, section \"Three more portals checked, each stopped on its own real signal (17 September 2026)\"."
+      "notes": "PERMITTED, real server-rendered PHP -- but the crawl adapter finds 0 instruments (formally re-confirmed twice). Root cause is not access: instrumentTitle()'s title-recognition grammar is English-trailing-noun-only, structurally backwards for Thai's leading-noun drafting convention, and a safe fix needs real Thai titles to calibrate against."
     },
     {
       "name": "Department of Business Development",
@@ -175,7 +175,7 @@
       "sourceUrl": "https://www.tfadatabase.org/en/members/thailand"
     }
   ],
-  "notes": "This profile was researched from current official Thai portals, live-checked on 15 September 2026 from an environment that could actually reach them (curl, and where relevant backend/src/fetch's own Fetcher class). ESCAP's completed Thailand Round 2 answer sheet remains quarantined in the isolated baseline store per docs/architecture.md §5 and docs/thailand-integration-plan.md, and was not read to write this profile. Coverage is genuinely narrower than India's or Malaysia's first slice: Thailand's primary legislation database and its Royal Gazette (the actual commencement-date evidence) are both currently unreadable by this codebase -- one is an API-backed SPA with no adapter yet, the other is confirmedly blocked by a Cloudflare Managed Challenge that survives even the repo's browser-shaped-TLS fetcher. Only two portals (Bank of Thailand, Thai Customs) are ready with existing adapters today.",
+  "notes": "This profile was researched from current official Thai portals, live-checked on 15 September 2026 from an environment that could actually reach them (curl, and where relevant backend/src/fetch's own Fetcher class). Coverage is genuinely narrower than India's or Malaysia's first slice: Thailand's primary legislation database and its Royal Gazette (the actual commencement-date evidence) are both currently unreadable by this codebase -- one is an API-backed SPA with no adapter yet, the other is confirmedly blocked by a Cloudflare Managed Challenge that survives even the repo's browser-shaped-TLS fetcher. Only two portals (Bank of Thailand, Thai Customs) are ready with existing adapters today.",
   "authoredBy": "LexDroid team",
   "authoredOn": "2026-09-15",
   "sources": [
@@ -186,6 +186,6 @@
     "https://law.go.th/ and its robots.txt -- read directly, 15 Sep 2026",
     "https://ratchakitcha.soc.go.th/, https://pdpc.or.th/, https://nbtc.go.th/, https://broadcast.nbtc.go.th/ -- read directly with curl AND with backend/src/fetch's Fetcher class, 15 Sep 2026, both returning an identical Cloudflare Managed Challenge",
     "https://www.dbd.go.th/law -- read directly, 15 Sep 2026, confirmed client-side-rendered",
-    "NOT ESCAP's Round 2 database or legal inventory for Thailand: those remain evaluation-only, per the isolation this profile is required to respect"
+    "NOT the sample kit: discovery finds portals the way a researcher does"
   ]
 }

@@ -1,14 +1,12 @@
 /**
  * Adding an economy is adding a profile, and nothing else.
  *
- * The defect this exists for: India had a written profile, a working discovery adapter and 146
- * completed rows waiting in the quarantined baseline, and would still have come back `ungraded`
- * on every cell. The scorecard translated our economy code into ESCAP's economy name through a
- * list of three pairs written by hand. A code absent from that list fell through to itself,
- * matched no baseline row, and produced a run that looked compared and was not.
+ * The defect this exists for: India had a written profile and a working discovery adapter, but
+ * economy codes were translated into names through a list of three pairs written by hand. A code
+ * absent from that list fell through to itself and quietly matched nothing.
  *
- * The failure is quiet in the worst way: nothing throws, no count is short, and the scorecard
- * prints a clean table of cells it never actually graded. So the rule is tested as a rule --
+ * The failure is quiet in the worst way: nothing throws and no count is short. So the rule is
+ * tested as a rule --
  * every profile carries its own name, and no name is written down twice.
  */
 import { describe, expect, it } from 'vitest';

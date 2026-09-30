@@ -77,7 +77,7 @@ describe('a duty worded in an advisory document', () => {
   });
 
   it('counts a notice that binds the licensees it is issued to', () => {
-    // ESCAP's own Singapore rows cite MAS Notices, and the profile ranks them binding-on-licensees.
+    // Singapore's financial-sector measures live in MAS Notices, and the profile ranks them binding-on-licensees.
     const d = answer({ ...carriedBy(3, 'MAS Notice 626'), bindingness: 'binding-on-licensees' });
     expect(d.state).toBe('restricted');
   });

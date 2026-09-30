@@ -9,9 +9,9 @@
  *                 resumable -- an instrument already parsed is skipped, so a corpus build that
  *                 stops halfway continues rather than starting again.
  *
- * Nothing here reads ESCAP's legal inventory. If it did, every instrument would be KNOWN by
- * construction and the discovery criterion would be unearned. The register is what the portal
- * says it publishes, and where that disagrees with ESCAP's sheet, the disagreement is a finding.
+ * Nothing here reads the sample kit. If it did, every instrument would be KNOWN by construction
+ * and the discovery criterion would be unearned. The register is what the portal says it
+ * publishes, and nothing else.
  */
 import type { Db } from '../db/index.js';
 import type { Fetcher, FetchResult } from '../fetch/index.js';

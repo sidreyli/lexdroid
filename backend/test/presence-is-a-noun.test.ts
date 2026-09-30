@@ -8,7 +8,7 @@
  *
  * auDA's licensing rule 2.4.1 -- "A Person applying for a Licence must: have an Australian
  * Presence" -- was surfaced and read for Australia's 12.7, and the cell was answered "No
- * restriction" against ESCAP's "Physical presence required". Across the three economies 485
+ * restriction" against the rubric's "Physical presence required". Across the three economies 485
  * provisions say "presence" without also saying establish, office, branch, subsidiary,
  * incorporate or resident, so for those the stem was the only way in.
  *

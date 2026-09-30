@@ -60,7 +60,6 @@ interface Args {
   /** Provisions read afresh although carried; see answerPillar's reread. */
   reread: string | null;
   joinRunId: string | null;
-  compare: boolean;
   probe: boolean;
   usdPerHour: number;
   requireSerial: boolean;
@@ -111,7 +110,6 @@ function parseArgs(argv: string[]): Args {
     retrievalFrom: get('retrieval-from'),
     reread: get('reread'),
     joinRunId: get('run'),
-    compare: !argv.includes('--no-compare'),
     probe: !argv.includes('--no-probe'),
     usdPerHour: Number(get('usd-per-hour') ?? 0),
     requireSerial: argv.includes('--require-serial'),
@@ -159,7 +157,6 @@ function runUnit(unit: Unit, hosts: string[], runId: string, logDir: string, arg
   if (args.carryFrom) argv.push('--carry', args.carryFrom);
   if (args.retrievalFrom) argv.push('--retrieval-from', args.retrievalFrom);
   if (args.reread) argv.push('--reread', args.reread);
-  if (!args.compare) argv.push('--no-compare');
 
   return new Promise((resolve) => {
     // No shell: the arguments go to the program as an array, so an economy code or a run id can

@@ -5,19 +5,18 @@
  * they are not, the offset points at them or it does not, the instrument is in force or it is not.
  * No model is consulted, because a model's opinion of a model's output is not verification.
  *
- * These are not gates we invented. Each one answers a comment ESCAP's reviewers actually wrote on
- * the fifteen graded submissions:
+ * Each one catches a way a legal citation goes wrong:
  *
- *   quote-in-source     "section 125 did not mention the minimum 7 years period"
+ *   quote-in-source     the cited section does not contain the quoted words
  *   offsets-resolve     the same defect, caught before a human has to read the Act
- *   pinpoint-citation   "none of the reference links lead to the right document"
+ *   pinpoint-citation   the reference link does not lead to the cited document
  *   official-host       a citation to a law-firm summary instead of the statute
- *   in-force            the MAS Notice cancelled 01 July 2022
- *   timeframe-evidenced "no evidence that the Act was last amended in 2023, please double check"
- *   one-measure         "if the single entry includes multi measures, suggest to separate"
- *   quote-leads         "rationale quotes before it interprets", six times over
- *   score-recomputes    ours, and the one no other submission could run: the score is a pure
- *                       function of recorded attributes, so it can be derived again and compared.
+ *   in-force            an instrument that has been cancelled or repealed
+ *   timeframe-evidenced a "last amended" date the source does not evidence
+ *   one-measure         a single row carrying several measures
+ *   quote-leads         a rationale that interprets before it quotes
+ *   score-recomputes    the score is a pure function of recorded attributes, so it can be
+ *                       derived again and compared.
  *
  * A row that fails a gate is HELD, with the failure named. Nothing is dropped, nothing is deleted,
  * and no pattern is written to make a bad row disappear -- a held row is a row a reviewer is asked

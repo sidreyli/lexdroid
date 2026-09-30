@@ -4,7 +4,7 @@ import { decide, type Evidence, type SurfacedInstrument } from '../src/decide/in
 import type { Finding } from '../src/read/index.js';
 import type { Indicator } from '../src/rubric/types.js';
 
-// Malaysia's Act A1727 section 6, which inserted the duties ESCAP scores for seven cells.
+// Malaysia's Act A1727 section 6, which inserted the duties seven cells turn on.
 const INSERTING = `6. The principal Act is amended in Part II by inserting after
 section 12 the following division:
 “Division 1A

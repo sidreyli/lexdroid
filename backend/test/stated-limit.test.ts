@@ -3,7 +3,7 @@
  *
  * Malaysia's e-money exemption gives its ceiling as a criterion in a schedule -- "a wallet limit
  * not exceeding RM500 per user" -- and that sentence commands nobody. It is also exactly the
- * answer ESCAP records for the cell. The reader read the verb correctly; the gate that drops
+ * right answer for the cell. The reader read the verb correctly; the gate that drops
  * declaring provisions was asking a ceiling to command something.
  */
 import { describe, expect, it } from 'vitest';
@@ -70,7 +70,7 @@ function at(id: string, over: Partial<Finding> = {}) {
 }
 
 describe('a ceiling stated rather than commanded', () => {
-  it('scores the wallet limit ESCAP cites, whose sentence obliges nobody', () => {
+  it('scores the wallet limit, whose sentence obliges nobody', () => {
     expect(at('12.4.5').score).toBe(1);
   });
 

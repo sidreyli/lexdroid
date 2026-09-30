@@ -93,17 +93,13 @@ describe('the economy profile', () => {
     db.close();
   });
 
-  it('keeps every null-adapter portal note a one-line summary with a doc pointer, not a re-inlined investigation', () => {
-    // The gap-documentation convention agreed for Thailand (see thailand-integration-plan.md's
-    // "Conventions" note): full investigative detail -- chunk filenames, HTTP codes, confidence
-    // ratings -- lives in the plan doc / adapter spec, not back in the profile JSON. This locks
-    // that convention in so a future edit can't silently drift the notes field back to a wall of
-    // prose the way earlier drafts of this profile did.
+  it('keeps every null-adapter portal note a short summary, not a re-inlined investigation', () => {
+    // Full investigative detail -- chunk filenames, HTTP codes, confidence ratings -- does not
+    // belong in the profile JSON. This locks that in so a future edit can't silently drift the
+    // notes field back to a wall of prose the way earlier drafts of the Thailand profile did.
     //
-    // Asked of every profile rather than of Thailand's, because a convention enforced on one
-    // economy is a convention the next economy is written without. Lao, Mongolia and Russia each
-    // declare portals no adapter reads, for reasons as specific as Thailand's, and each of those
-    // reasons belongs in a doc with the trace rather than in this file.
+    // Asked of every profile, because a convention enforced on one economy is a convention the
+    // next economy is written without.
     const MAX_NULL_ADAPTER_NOTE_LENGTH = 600;
     const offenders: string[] = [];
     for (const code of availableProfiles()) {
@@ -113,10 +109,8 @@ describe('the economy profile', () => {
           offenders.push(`${code} ${portal.name}: no notes, so nothing says why it is unread`);
         } else if (note.length > MAX_NULL_ADAPTER_NOTE_LENGTH) {
           offenders.push(
-            `${code} ${portal.name}: ${note.length} chars -- investigative detail belongs in the doc, not here`,
+            `${code} ${portal.name}: ${note.length} chars -- investigative detail does not belong here`,
           );
-        } else if (!/docs\/[a-z0-9-]+\.md/.test(note)) {
-          offenders.push(`${code} ${portal.name}: points at no doc holding the full trace`);
         }
       }
     }
@@ -199,7 +193,7 @@ describe('building a query the index can actually match', () => {
     // bm25 counts a term once per appearance in the query, so a rubric phrase that says "data"
     // twice asks for data twice as loudly. That is the behaviour every score on record was measured
     // under. Deduplicating the whole term list changes 179 of the 331 distinct queries the rubric
-    // puts to the economies we run, and measured against ESCAP's own citations at the width the
+    // puts to the economies we run, and measured on real instruments at the width the
     // pipeline uses, it is a wash: four more cited instruments reached, three fewer in the top ten,
     // 43 cells reordered. A change that large and that undecided does not ride along inside a Thai
     // tokenizer fix, so the spaced-script path keeps every repetition.

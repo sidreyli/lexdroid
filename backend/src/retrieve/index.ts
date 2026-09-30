@@ -4,7 +4,7 @@
  * This stage produces no findings. It produces a *search record*: the queries that were asked, the
  * channels that answered, and the rank each section came back at. That record is the evidence
  * behind every "no restriction" this system reports, and without it a zero is an assertion rather
- * than a finding. ESCAP's reviewers rejected assertions repeatedly across the graded submissions.
+ * than a finding.
  *
  * The query set is derived from the rubric rather than written by hand, so it moves when the
  * methodology moves and so a stranger can see why a particular question was asked. For one
@@ -105,7 +105,7 @@ const PER_QUERY_DEPTH = 40;
  *
  * Measured on Singapore. Section 199 of the Companies Act -- accounting records kept abroad must
  * have statements "sent to and kept at a place in Singapore", which is the local storage
- * requirement ESCAP cites for that cell -- came back second out of 6,143 sections on the query
+ * requirement that cell turns on -- came back second out of 6,143 sections on the query
  * that describes the measure, appeared in two of the eight runs, and fused to 37th. The depth is
  * 24. Sections seen in five of eight runs at middling ranks took every slot above it.
  *
@@ -1122,10 +1122,10 @@ const CODED_SCAN = 3000;
 /**
  * The provisions that charge goods named by an ICT tariff code, one per instrument, best first.
  *
- * ESCAP defines 1.4's goods by tariff code (ict-goods.ts), and a duty notice names them by code
+ * The methodology defines 1.4's goods by tariff code (ict-goods.ts), and a duty notice names them by code
  * and by a trade name no question can anticipate. The questions ask for "ICT or electronic goods",
  * which India's duty on printed circuit boards never says, so among 173 duty notices that all use
- * the same words the four ESCAP counted ranked 135th to 250th and none was read. The code is the
+ * the same words the four that count ranked 135th to 250th and none was read. The code is the
  * one thing every such notice states and no other kind of notice does, so it is looked for here
  * rather than asked for: among the provisions the questions reach lexically, those that state an
  * ICT code and the measure's own words, in the order the questions ranked them.

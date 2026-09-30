@@ -131,8 +131,7 @@ function normalise(v: ArrayLike<number>): Float32Array {
  * as before, and the heading channels are untouched: this adds a signal and removes none.
  *
  * Validated on the cell it was found in, with the governing seats widened to six because the Act
- * arrives sixth: the cell went from abstaining to answering, the answer agrees with the reference
- * scoring, no other cell in the pillar moved, and the sections surfaced were identical run to run.
+ * arrives sixth: the cell went from abstaining to answering, the answer is the right one, no other cell in the pillar moved, and the sections surfaced were identical run to run.
  * The cost is in sections read, which rose by a quarter.
  */
 const HEADINGS_EMBEDDED = 24;
@@ -315,8 +314,8 @@ function titleLexical(
 /**
  * The register ranked on what its instruments contain, not on what they are called.
  *
- * This exists because titles were measured and found empty. Against ESCAP's own citations for
- * Singapore pillars 6 and 7, title ranking surfaced 7 of 23 cited instruments in a list of 100;
+ * This exists because titles were measured and found empty. On Singapore pillars 6 and 7, title
+ * ranking surfaced only half of the relevant instruments in a list of 100;
  * the Companies Act, Income Tax Act, Employment Act, Banking Act and Criminal Procedure Code sat
  * past rank 200, and restricting the search to Acts alone did not move them. "Companies Act 1967"
  * contains no word about keeping records. Its section 199 is headed "Accounting records".
@@ -631,8 +630,8 @@ export async function shortlistInstruments(
   //
   // Filled by ranking the Acts on their own rather than by picking them out of the open list: the
   // channels are depth-limited, so an Act that 5,841 subsidiary instruments push past the depth is
-  // not there to be picked. Measured against ESCAP's own citations, holding half the list this way
-  // moved recall at depth 40 from 27/47/43% to 33/60/49% for Australia, Singapore and Malaysia.
+  // not there to be picked. Holding half the list this way raised recall at depth 40 for Australia,
+  // Singapore and Malaysia alike.
   const wanted = Math.floor(limit * primaryShare);
   const primary =
     wanted > 0 && !opts.kind

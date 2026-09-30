@@ -53,7 +53,7 @@ describe('what a listing will support calling an instrument', () => {
     // The rule corroborates primary legislation and nothing else. A regulator's genuine guidance
     // carries no gazette number and is not "in force" as a statute is, so testing every kind this
     // way retires the real ones -- Australia's .au Domain Administration Rules at 84 sections,
-    // which ESCAP cites for 12.7, and Malaysia's PDPA Codes of Practice at 737.
+    // which 12.7 turns on, and Malaysia's PDPA Codes of Practice at 737.
     const uncorroborated = { officialNumber: null, status: 'unknown' };
     expect(registeredKind('guideline', uncorroborated)).toBe('guideline');
     expect(registeredKind('rule', uncorroborated)).toBe('rule');
@@ -304,7 +304,7 @@ describe('a publication quoted as the law itself', () => {
  * the set because "Overview of the Personal Data Protection Act 2010" is a page about a law. The
  * .au Registrar Rules open every Part with "The following is an overview of this Part", so auDA's
  * own rules were fetched, parsed into 84 sections, and then thrown out as a publication -- and
- * AUS 12.7, which ESCAP scores from those rules, was answered from an absence sitting in the cache.
+ * AUS 12.7, which is answered from those rules, was answered from an absence sitting in the cache.
  * Measured over every document the corpus has rejected this way: these two flip and the other 25
  * stand.
  */

@@ -3,7 +3,7 @@
  *
  * The detector this replaces counted Devanagari against Latin and called everything else English.
  * Malaysia's statute book is Latin script and authoritative in Malay, so the corpus recorded 54,316
- * Malaysian sections with no language at all and every Malaysian export row went to ESCAP with the
+ * Malaysian sections with no language at all and every Malaysian export row went out with the
  * Language of Source column blank -- the column they added for this round, and the evidence for
  * C1c, which asks whether the same provision reaches the same indicator whatever the language.
  *

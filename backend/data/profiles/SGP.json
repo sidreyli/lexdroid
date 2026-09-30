@@ -159,7 +159,7 @@
       ],
       "adapter": "sitemap",
       "adapterConfig": {},
-      "notes": "MAS Notices bind financial institutions and are where sector-specific data and outsourcing requirements live. A cancelled Notice is a trap ESCAP's reviewers have flagged, so status must be read from the document."
+      "notes": "MAS Notices bind financial institutions and are where sector-specific data and outsourcing requirements live. A cancelled Notice is an easy trap, so status must be read from the document."
     },
     {
       "name": "Cyber Security Agency of Singapore",
@@ -270,12 +270,12 @@
       "sourceUrl": "https://www.pdpc.gov.sg/overview-of-data-protection/business-owner/apec-cbpr-and-prp-certification"
     }
   ],
-  "notes": "Singapore is the first economy built because ESCAP's own Round 1 database answers all 61 indicators for it, which makes the pillar 6 and 7 gate checkable against their sheet rather than against our own opinion.",
+  "notes": "Singapore was the first economy built: one consolidated, well-structured statute portal makes it the clearest place to prove the pipeline end to end.",
   "authoredBy": "LexDroid team",
   "authoredOn": "2026-09-06",
   "sources": [
     "sso.agc.gov.sg -- site structure and robots.txt read directly on 2026-09-06",
     "Each regulator's own site, for its remit and the instruments it issues",
-    "NOT ESCAP's legal inventory or portal table: those are the answer key and are quarantined in the baseline store"
+    "NOT the sample kit: discovery finds portals the way a researcher does"
   ]
 }

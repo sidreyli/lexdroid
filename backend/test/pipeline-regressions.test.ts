@@ -187,7 +187,7 @@ const retention = (text: string, definingWords: string, statedPeriod: string | n
   requirement: 'A duty to retain records.', sectorScope: 'all', dataScope: 'personal',
 });
 
-describe('F02: 7.3 is a stated minimum period (RDTII 2.1 internal guide; finals mapping traps)', () => {
+describe('F02: 7.3 is a stated minimum period (RDTII 2.1 guide; finals mapping traps)', () => {
   it('records a retention duty with no stated period and scores it 0.00', async () => {
     const text = 'Every employer shall retain employee records for the prescribed period.';
     const d = await decideOne('7.3', text, retention(text, 'for the prescribed period', null));

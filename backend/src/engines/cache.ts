@@ -6,7 +6,7 @@
  * seconds, which is the difference between trying five variations of a rule and trying one.
  *
  * The danger is not staleness, it is what validation means here. A change is accepted by running
- * two economies and checking whether it moves both toward ESCAP's answers. If the readings come
+ * two economies and checking whether it moves both in the right direction. If the readings come
  * from a cache, that stops being a measurement and becomes a replay -- and a scoring change could
  * be "validated" without ever being put in front of a fresh reading. So: off unless asked for,
  * every cached call counted, and a run that used one marked in its own record. See recordPillarAnswer.

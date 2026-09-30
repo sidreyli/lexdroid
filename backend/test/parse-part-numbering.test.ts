@@ -9,7 +9,7 @@
  * The Malaysian Communications and Multimedia Content Code 2022 came out of this as 103 sections
  * of a 74-page code -- Part 5 reduced to a single stub clause, Part 7 gone entirely, and 56,036
  * characters stored where the document holds 153,635. Part 5 clause 2.1 is the innocent carrier
- * rule, and it is the provision ESCAP cites for Malaysia's 8.2, so the cell was unanswerable from
+ * rule, and it is the provision Malaysia's 8.2 turns on, so the cell was unanswerable from
  * a document the corpus supposedly held. With the Part in the key: 324 sections and 134,577
  * characters.
  */

@@ -178,13 +178,13 @@ describe('what the decision does with a framework that was only claimed', () => 
 
   it('will not count one whose rule is not in the instrument it is attributed to', () => {
     // Australia's 8.2 answered with a real immunity from the Consumer Data Right, which shields a
-    // data provider rather than an intermediary. ESCAP scores that cell 1, and so does this.
+    // data provider rather than an intermediary. That cell is 1, and so is this.
     expect(at(false)).toBe(1);
   });
 
   it('leaves a reading taken before the rule was asked for exactly where it was', () => {
     // Every run banked before 17 September stores null here. Scoring those as refusals would move
-    // every framework cell in the benchmark without an engine ever running.
+    // every framework cell without an engine ever running.
     expect(at(null)).toBe(0);
   });
 

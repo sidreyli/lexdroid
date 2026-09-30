@@ -12,13 +12,13 @@ type Rule = (indicator: Indicator, qualifying: never[]) => { ordinal: number };
 const rubric = loadRubric();
 
 describe('scope', () => {
-  it('carries ESCAP\'s 61 regulatory indicators across 12 pillars', () => {
+  it('carries the 61 regulatory indicators across 12 pillars', () => {
     expect(rubric.indicators).toHaveLength(61);
     expect(rubric.pillars).toHaveLength(12);
     expect(rubric.pillars.map((p) => p.id)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
   });
 
-  it('excludes the 14 indicators ESCAP draws from external databases', () => {
+  it('excludes the 14 indicators drawn from external databases', () => {
     expect(rubric.nonRegulatory).toHaveLength(14);
     const inScope = new Set(rubric.indicators.map((i) => i.id));
     for (const id of rubric.nonRegulatory) expect(inScope.has(id)).toBe(false);
@@ -32,7 +32,7 @@ describe('scope', () => {
 
 describe('indicator ids are text, never numbers', () => {
   it('keeps 4.01 and 4.1 apart', () => {
-    // ESCAP's own output template: "entered as a number, 12.10 collapses to 12.1 and 4.01 to 4.1,
+    // The output template: "entered as a number, 12.10 collapses to 12.1 and 4.01 to 4.1,
     // and the two are different indicators."
     expect(indicator('4.01').category).toMatch(/patent application/i);
     expect(indicator('4.1').category).toMatch(/trade secret/i);

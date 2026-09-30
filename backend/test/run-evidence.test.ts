@@ -1,8 +1,8 @@
 /**
  * A run that no longer holds the readings it was decided on.
  *
- * The defect: Malaysia's banked run graded 40/61 -> 30/61 with eleven cells broken, and the number
- * was written into two documents as a measurement of the rules. It was a measurement of a re-parse.
+ * The defect: Malaysia's banked run came back with eleven cells broken after a re-parse, and it
+ * looked like a change in the rules. It was a measurement of the re-parse.
  * `reading` cascades with the sections a re-parse rebuilds, `answer_basis` is detached and
  * re-attached because a citation is a record rather than a derived value, and `recordedDecider`
  * rebuilds from the run's own readings -- so the cells came back empty however the rules were

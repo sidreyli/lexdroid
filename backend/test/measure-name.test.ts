@@ -44,7 +44,7 @@ describe('a measure named by what a rule lets happen without', () => {
 
   it('turns away a provision that publishes, consults or invites comment', () => {
     // Section 132 of the Telecommunications Act 1997, headed "Public consultation on industry
-    // standards", decided Australia's 11.1 cell on these words. ESCAP scores the economy 0.
+    // standards", decided Australia's 11.1 cell on these words. The economy is 0.
     expect(opaque.test('free copies of the draft will be made available to members of the public')).toBe(false);
     expect(opaque.test('must have the following objects')).toBe(false);
     expect(opaque.test('standards, condition, restriction, specification, requirement or code')).toBe(false);
@@ -92,7 +92,7 @@ describe('a residual band with no term of art to ask for', () => {
   const other = gate('other-payment-restriction');
 
   it('turns away the list of nouns an enforcement power is made of', () => {
-    // All six provisions behind 12.4.7 were made out on a noun phrase, and ESCAP scores all three
+    // All six provisions behind 12.4.7 were made out on a noun phrase, and the answer is 0 for all three
     // economies 0. Two of them are the seizable-things list of a search power, which mentions
     // accounts and cards for reasons that have nothing to do with paying for anything.
     expect(

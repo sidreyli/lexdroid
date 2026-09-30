@@ -3,8 +3,8 @@
 -- One file, no services. Everything a run produces lands here and can be read back with any
 -- SQLite client, which is what makes a run auditable by someone who did not build it.
 --
--- ESCAP's completed databases are NOT in this file. They live in a separate database
--- (data/baseline.db) that only the tagger and the evaluator open. See src/baseline/README.md.
+-- The sample kit's instrument list is NOT in this file. It lives in a separate database
+-- (data/baseline.db) that only the NEW/KNOWN tagger opens.
 
 PRAGMA journal_mode = WAL;
 PRAGMA foreign_keys = ON;
@@ -156,7 +156,7 @@ CREATE TABLE IF NOT EXISTS instrument (
   official_number TEXT,                       -- "Act 709", "No. 31/2015"
   kind            TEXT,                       -- act | regulation | notice | guideline | order | rule
   -- 'in-force' is the only status a row may cite. A draft, a repealed provision, or an amending
-  -- act cited in place of its principal act each score zero in ESCAP's marking.
+  -- act cited in place of its principal act is not the law in force.
   status          TEXT NOT NULL DEFAULT 'unknown'
                   CHECK (status IN ('in-force', 'repealed', 'draft', 'amending', 'unknown')),
   status_basis    TEXT,                       -- the sentence in the document that establishes it
@@ -172,7 +172,7 @@ CREATE TABLE IF NOT EXISTS instrument (
   last_amended_on TEXT,                       -- ISO date of an amendment, never of a republication
   -- The date the published consolidation is current to. A separate column because it is a weaker
   -- claim than last_amended_on and was being reported as one: Malaysia serves the Personal Data
-  -- Protection Act "as at 2023" while the duty ESCAP scores arrived in a 2024 amendment, so a
+  -- Protection Act "as at 2023" while the duty indicator 6.4 turns on arrived in a 2024 amendment, so a
   -- row built from the catalogue's date said the Act was last amended in 2023. It was not.
   current_to      TEXT,
   timeframe_basis TEXT,                       -- quoted evidence for the dates above
@@ -199,8 +199,8 @@ CREATE TABLE IF NOT EXISTS document (
   http_status     INTEGER NOT NULL,
   fetched_at      TEXT NOT NULL,
   from_cache      INTEGER NOT NULL DEFAULT 0,
-  -- How the text was recovered. 'ocr' is flagged in the export, because ESCAP marks a tool that
-  -- says what it could not read above one that presents everything with equal confidence.
+  -- How the text was recovered. 'ocr' is flagged in the export: a tool that says what it could
+  -- not read is more trustworthy than one that presents everything with equal confidence.
   extraction      TEXT CHECK (extraction IN ('html', 'pdf-text', 'ocr', 'plain', 'none')),
   section_count   INTEGER NOT NULL DEFAULT 0,
   -- The mean confidence Tesseract gave the pages it read, 0-100, where any page was OCR'd. Every
@@ -313,10 +313,9 @@ CREATE TABLE IF NOT EXISTS instrument_embedding (
 -- An instrument's table of contents: the headings it gives its own provisions.
 --
 -- The register knows 6,365 Singapore instruments by title, and a title is where discovery was
--- failing. Measured 7 September 2026 against ESCAP's own citations for pillars 6 and 7: of 23
--- cited instruments, 14 are in the register and title ranking surfaced 7 of them in the top 100.
--- The Companies Act, the Income Tax Act, the Employment Act and the Criminal Procedure Code -- all
--- registered, all cited, all below rank 200. Restricting the search to Acts did not recover them,
+-- failing. Measured 7 September 2026 on pillars 6 and 7: title ranking surfaced only half of the
+-- relevant registered instruments in the top 100. The Companies Act, the Income Tax Act, the
+-- Employment Act and the Criminal Procedure Code -- all registered, all relevant, all below rank 200. Restricting the search to Acts did not recover them,
 -- because the failure is not ranking. "Companies Act 1967" contains no word about keeping records,
 -- so no weighting of those words can find it: the information is not in the title.
 --
@@ -445,7 +444,7 @@ CREATE TABLE IF NOT EXISTS cell (
 );
 
 -- What the search actually did for this cell. This record is the evidence behind a zero:
--- ESCAP never proves exhaustion, but they do say which instrument they read.
+-- nobody can prove exhaustion, but a zero can say which instrument it was read against.
 CREATE TABLE IF NOT EXISTS shortlist_entry (
   id              INTEGER PRIMARY KEY,
   cell_id         INTEGER NOT NULL REFERENCES cell(id) ON DELETE CASCADE,
@@ -499,8 +498,8 @@ CREATE TABLE IF NOT EXISTS reading (
 );
 
 -- A framework indicator asks about an instrument, not a provision, so its reading has no section
--- to hang on. 7.1 and 7.2 are the only two, and ESCAP is explicit that a per-provision citation
--- for them is not a discovery.
+-- to hang on. 7.1 and 7.2 are the only two, and the methodology is explicit that a per-provision
+-- citation for them is not a discovery.
 CREATE TABLE IF NOT EXISTS framework_reading (
   id              INTEGER PRIMARY KEY,
   cell_id         INTEGER NOT NULL REFERENCES cell(id) ON DELETE CASCADE,

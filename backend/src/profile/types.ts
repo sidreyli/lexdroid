@@ -1,13 +1,12 @@
 /**
  * Zone 0 -- the economy profile.
  *
- * ESCAP's step 1 is to understand the legal system before searching it: what the instrument types
+ * The RDTII method's step 1 is to understand the legal system before searching it: what the instrument types
  * are called locally, which body publishes what, and where. v1 skipped this and went straight to
  * searching, which is why it could not tell a Malaysian Act from a BNM circular.
  *
  * A profile is small, human-authored, checked-in configuration. It is deliberately NOT derived
- * from ESCAP's legal inventory: that file is the answer key, and reading it here would make
- * discovery a lookup. Portals are the public front doors of a government -- the legislation
+ * from the sample kit: reading a list of known instruments here would make discovery a lookup. Portals are the public front doors of a government -- the legislation
  * database, the gazette, the sectoral regulators -- and are found the way a researcher finds them.
  *
  * This is also the file someone fills in during the live hour for an economy nobody has touched.
@@ -29,7 +28,7 @@ export const Portal = z.object({
   name: z.string().min(1),
   url: z.string().url(),
   kind: PortalKind,
-  /** The body that publishes it. Named because ESCAP records the issuing authority per row. */
+  /** The body that publishes it. Named because the template records the issuing authority per row. */
   authority: z.string().min(1),
   /** Pillars this portal plausibly serves. A hint for ordering work, never a filter on evidence. */
   pillars: z.array(z.number().int().min(1).max(12)).default([]),

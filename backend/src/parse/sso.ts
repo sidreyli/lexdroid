@@ -101,8 +101,7 @@ function realDate(year: number, month: number, day: number): string | null {
 
 /**
  * What the document says about itself: its official number, when it commenced, when it was last
- * amended. Read off SSO's own version timeline, which is the evidence ESCAP asks for when they
- * write "no evidence that the Act was last amended in 2023, please double check".
+ * amended. Read off SSO's own version timeline, which is the evidence a "last amended" date needs.
  */
 function readTimeline($: cheerio.CheerioAPI): Record<string, string> {
   const meta: Record<string, string> = {};

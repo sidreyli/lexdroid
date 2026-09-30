@@ -9,7 +9,7 @@
  *
  * The Telecommunications (Service Provider - Identity Checks for Prepaid Mobile Carriage Services)
  * Determination 2017 came out of that as a single section of 63,179 characters whose heading path
- * was the source URL. It is the instrument ESCAP cites for Australia's 8.3, and the reader, given
+ * was the source URL. It is the instrument Australia's 8.3 turns on, and the reader, given
  * the blob, quoted "Requirements to be satisfied before service is activated" -- entry 4.2 of the
  * document's own table of contents, not the provision. 330 Australian documents were in that state.
  */

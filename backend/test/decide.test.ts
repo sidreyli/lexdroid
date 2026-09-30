@@ -1,10 +1,9 @@
 /**
  * Zone 3, and in particular what a zero is allowed to say.
  *
- * More than half of every economy's rows in ESCAP's own database score zero, and none of their
- * zeros is a silence: Australia 2.2 scores 0 citing the Commonwealth Procurement Rules 2024 and
- * states that no source-code or encryption condition is found in them. A zero that names nothing
- * is an assertion, and their reviewers rejected assertions across the fifteen graded submissions.
+ * A zero should never be a silence: Australia 2.2 scores 0 against the Commonwealth Procurement
+ * Rules and states that no source-code or encryption condition is found in them. A zero that names
+ * nothing is an assertion nobody can check.
  *
  * The risk in fixing that is worse than the defect: naming an irrelevant instrument as "the
  * governing instrument" would be a confident false claim where there had merely been silence. So
@@ -298,7 +297,7 @@ describe('a prohibition that carries a way through', () => {
     { score: 0, criterion: 'No condition', ordinal: 3 },
   ]);
 
-  // Section 26 of the PDPA, verbatim. ESCAP scores Singapore 0 on 6.1 and 1 on 6.4 from this
+  // Section 26 of the PDPA, verbatim. Singapore is 0 on 6.1 and 1 on 6.4 from this
   // sentence, and the reader filed it as a ban because the prohibition is its louder half.
   const section26 = evidence(1, 'Personal Data Protection Act 2012', {
     indicatorId: '6.1',
@@ -485,7 +484,7 @@ describe('what a government access power needs first', () => {
   });
 });
 
-// ESCAP's guide, on 6.1 and 6.2: a horizontal requirement "will get a higher score than a
+// The RDTII guide, on 6.1 and 6.2: a horizontal requirement "will get a higher score than a
 // requirement that applies only to a specific sector ... or specific data types (such as
 // accounting data and health records)". On 6.4 it says the opposite in as many words: score 1 "if
 // the conditional flow regime applies horizontally across all sectors (even if it only applies to
@@ -897,7 +896,7 @@ describe('a measure about where data must be', () => {
 });
 
 /**
- * The line between 6.1 and 6.4, which ESCAP's own internal guide devotes a question to.
+ * The line between 6.1 and 6.4, which the RDTII guide devotes a question to.
  *
  * These are the two provisions that carried Singapore's 6.1 to a top band it does not deserve,
  * once the tax exemption stopped carrying it. Both are quoted as the reader returned them.
@@ -1719,7 +1718,7 @@ describe('12.6, where a power and a duty are different bands', () => {
   });
 
   it('does not score a duty on electronic-commerce goods, which is traded online but not delivered electronically', () => {
-    // The actual shape of Russia's false agreement: a federal budget law refunding interest on a
+    // The actual shape of Russia's false positive: a federal budget law refunding interest on a
     // late customs-duty refund for "goods of electronic commerce" -- a cross-border online order
     // that still arrives by post, not something transmitted electronically. The bare word
     // "electronic" is there; the word for a transmission or delivery is not.
@@ -1888,7 +1887,7 @@ describe('an indicator whose top band is an absence', () => {
       { score: 0, criterion: 'No measure' },
     ]);
     // Distinct provisions, because the band counts measures. Reading one anti-dumping Act section
-    // by section is how Australia reported ten and Singapore eleven, against ESCAP's nought.
+    // by section is how Australia reported ten and Singapore eleven, where the answer is nought.
     let n = 0;
     const m = () => {
       n += 1;
@@ -2085,7 +2084,7 @@ describe('a measure only a command can make out', () => {
 });
 
 /**
- * Australian Privacy Principle 8 is ESCAP's whole answer for Australia 6.4, and we threw it away.
+ * Australian Privacy Principle 8 is the whole answer for Australia 6.4, and we threw it away.
  *
  * The reader filed it under 6.1 as a ban, and the rubric moved it to 6.4 -- correctly, since a
  * duty to take steps before data goes is the way through, not the wall. But the words that had

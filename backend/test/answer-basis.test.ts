@@ -99,7 +99,7 @@ describe('a band chosen because nothing was there', () => {
 describe('a framework indicator', () => {
   it('calls the cell restricted when the framework is there, though it scores zero', () => {
     // 7.1 runs the other way: a comprehensive framework scores 0. The framework is still the
-    // measure, and the row cites the Act -- ESCAP's own Singapore row cites the PDPA.
+    // measure, and the row cites the Act, the PDPA.
     const framework: FrameworkEvidence = {
       instrumentId: 1, instrumentTitle: 'Personal Data Protection Act 2012',
       citation: 'https://sso.agc.gov.sg/Act/PDPA2012', establishesFramework: true, bindingness: null,

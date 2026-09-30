@@ -6,7 +6,7 @@
  *   1. We are a good citizen of every government server we touch. One request in flight per host,
  *      a delay between requests that honours the site's own robots.txt crawl-delay when it asks
  *      for a longer one, and disallowed paths are not fetched at all.
- *   2. Every request that left the machine is written to fetch_log. That table is ESCAP's Run
+ *   2. Every request that left the machine is written to fetch_log. That table is the Run
  *      Record sheet, and it is what makes "polite crawling" evidence rather than a claim.
  *   3. A run declared cache-only cannot reach the network. Not "does not"; cannot -- the request
  *      is refused before it is made. The live test checks the second engine fetched zero
@@ -251,7 +251,7 @@ export const CACHE_DIR = process.env['LEXDROID_CACHE_DIR'] ?? join(here, '..', '
  */
 export const USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) ' +
-  'Chrome/140.0.0.0 Safari/537.36 LexDroid/0.1 (UN ESCAP RDTII research; polite, 1 req/s)';
+  'Chrome/140.0.0.0 Safari/537.36 LexDroid/0.1 (RDTII research; polite, 1 req/s)';
 
 const DEFAULT_DELAY_MS = 1000;
 const TIMEOUT_MS = 60_000;

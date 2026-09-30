@@ -3,7 +3,7 @@
  *
  * Malaysia's data protection commissioner publishes the sectoral Codes of Practice -- banking,
  * communications, insurance, aviation, water, private hospitals -- and nothing else publishes
- * them. ESCAP cites four of the six, and none were in our corpus: the pages that carry them are
+ * them. None were in our corpus: the pages that carry them are
  * built client-side, so a crawler that follows links off the front page finds announcements and
  * no documents at all.
  *

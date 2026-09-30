@@ -5,8 +5,8 @@
  * read with the packaged English and Hindi Tesseract models. OCR remains visibly marked in the
  * stored extraction method and export confidence; a weak result is unread, never clean evidence.
  *
- * ESCAP marks this directly: "a tool that flags text it could not read is better built than one
- * that presents everything with equal confidence."
+ * A tool that flags text it could not read is better built than one that presents everything with
+ * equal confidence.
  */
 import { detectLanguage } from './language.js';
 import { SectionBuilder, type ParsedDocument } from './types.js';
@@ -620,8 +620,8 @@ export function sectionise(pages: PageText[]): SectionBuilder {
   // Part, so the same key names a different provision six times over and only the last survived.
   // The Malaysian Communications and Multimedia Content Code 2022 came out of this as 103 sections
   // of a 74-page code, its Part 5 reduced to a single stub and its Part 7 gone -- and Part 5
-  // clause 2.1 is the innocent carrier rule, which is the provision ESCAP cites for Malaysia's
-  // 8.2. An arrangement of sections repeats its Part headings along with its entries, so keying on
+  // clause 2.1 is the innocent carrier rule, which is the provision Malaysia's 8.2 turns
+  // on. An arrangement of sections repeats its Part headings along with its entries, so keying on
   // both still collapses the arrangement against the body.
   const lastAt = new Map<string, number>();
   const key = (it: { language?: string | null; part?: string; label: string | null }): string =>

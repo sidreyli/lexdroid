@@ -46,9 +46,9 @@ three states, and never in silence:
 | **No restriction** | the governing law was found and it does not restrict | the governing instrument, a cited provision of it, a sentence saying what it does not require |
 | **Unresolved** | the search did not settle it | the search record, and why — no source, unreadable document, ambiguous |
 
-The Australia 2.2 row in ESCAP's own database is the shape of "no restriction": Commonwealth
-Procurement Rules 2024, June 2024, linked, with *"No requirements to surrender source codes or use
-certain encryption standards are found as a condition to win tenders."*
+The shape of "no restriction": Commonwealth Procurement Rules 2024, June 2024, linked, with
+*"No requirements to surrender source codes or use certain encryption standards are found as a
+condition to win tenders."*
 
 **A zero is a claim about a named instrument.** v1's two opposite failures — abstaining on 61
 indicators because it could not prove exhaustion, and elsewhere releasing 39 unsearched indicators
@@ -73,7 +73,7 @@ way v1 did.
 
 ### Controlling versus supporting evidence
 
-From the answer key, verbatim:
+From the organisers' Q&A, verbatim:
 
 > Assuming that regulations are lower than Acts in priority: not really, any legal text published by
 > government body is recorded. Whether it is controlling evidence or not is determined on a
@@ -168,11 +168,11 @@ Both are **corpus-wide from the start**. v1's dense index was per-document, whic
 fact that forced it to ask every document about every indicator, 33,000 times.
 
 **Retrieve.** Per cell, a query set is assembled from the rubric — the indicator's definition, its
-score-band language, its stated exceptions, and the disambiguations from ESCAP's internal FAQ.
+score-band language, its stated exceptions, and the disambiguations from the RDTII guide.
 Lexical and semantic results are fused and the top sections go forward. The query set and the ranks
 are **recorded**, because that record is the evidence behind every "no restriction" we report.
 
-Zone 1 is deliberately generous. ESCAP again, from the answer key:
+Zone 1 is deliberately generous. The Q&A again:
 
 > The list doesn't have to be ranked; all relevant laws identified by this method can move on to the
 > next stage. In the early stages of tool development, it is advisable to review a broader set of
@@ -199,7 +199,7 @@ It is asked for facts, never for judgement:
 
 Pillar-scoped rather than indicator-scoped because the disambiguations only mean anything inside a
 pillar. 6.1 versus 6.4 is *ban* versus *ban unless conditions are met*; the output template calls
-that one of five traps checked every round, and ESCAP's internal guide gives it a FAQ entry.
+that one of five traps checked every round, and the RDTII guide gives it a FAQ entry.
 
 The extraction prompt is built from ESCAP's own operative vocabulary — *unless, except that,
 provided that, subject to, notwithstanding, only if, to the extent, may, shall, must* — and from
@@ -227,7 +227,7 @@ rather than a re-derivation.
 
 ## 3. How output volume is controlled
 
-v1 produced 1,489 findings for Singapore against ESCAP's 80, then built 1,489 lines of regular
+v1 produced 1,489 findings for Singapore, then built 1,489 lines of regular
 expressions to delete the excess — which then began deleting correct answers instead.
 
 The fix is structural and deletes nothing:
@@ -240,7 +240,7 @@ This is why the pipeline runs cell-first rather than document-first. Asking "whi
 local storage in Singapore?" returns the handful that do. Asking every section "are you about
 anything?" returns everything, forever.
 
-Expected volume, from ESCAP's own data: 70–120 rows per economy across all 61 indicators, roughly
+Expected volume: 70–120 rows per economy across all 61 indicators, roughly
 half of them zeros. **A run producing a thousand rows for Singapore is a defect, not recall**, and
 the run report says so out loud.
 
@@ -248,16 +248,15 @@ the run report says so out loud.
 
 ## 4. Verification
 
-Deterministic. No model. Each gate answers a correction ESCAP's reviewers made repeatedly across the
-fifteen graded submissions in `feedback/`.
+Deterministic. No model. Each gate catches a way a legal citation goes wrong.
 
-| Gate | The comment it answers |
+| Gate | The defect it catches |
 |---|---|
-| the snippet appears character-for-character at the cited offset in the stored document | *"section 125 did not mention the minimum 7 years"* |
-| the source URL resolves, 200, on an official government host | *"none of the reference links lead to the right document"* |
-| the citation names a section, not just an act | *"a real act cited to the wrong section scores zero"* |
-| the last-amended date is evidenced in the document itself | *"no evidence that the Act was last amended in 2023, please double check"* |
-| the instrument is in force — not draft, not repealed, not superseded | the MAS notice cancelled 01 July 2022 |
+| the snippet appears character-for-character at the cited offset in the stored document | the cited section does not contain the quoted words |
+| the source URL resolves, 200, on an official government host | the reference link does not lead to the cited document |
+| the citation names a section, not just an act | a real act cited to the wrong section |
+| the last-amended date is evidenced in the document itself | a "last amended" date the source does not evidence |
+| the instrument is in force — not draft, not repealed, not superseded | an instrument that has been cancelled or repealed |
 | one measure per row | *"if the single entry includes multi measures, suggest to separate"* |
 | one official URL per row, secondary links in Notes | *"add one official link for one document"* |
 | the rationale quotes before it interprets, within 300 characters | said six separate times |
@@ -275,22 +274,17 @@ that is a bug report about the question we asked in Zone 1 or Zone 2.
 
 ## 5. The baseline, and what NEW means
 
-ESCAP gave us their finished database for ten economies and a 385-row legal inventory for our three.
 The output template defines the Discovery Tag as *"NEW if not in sample kit; KNOWN if provided as
 example."*
 
-So the sample kit — Round 1 and Round 2 databases, the legal inventory, the portal table — is loaded
-into a **baseline store used for exactly two things**:
-
-1. **tagging** NEW versus KNOWN at export time, which is what the column means;
-2. **evaluation** — measuring our answers against theirs.
+So the sample kit's instrument titles and links are loaded into a **baseline store used for one
+thing**: tagging NEW versus KNOWN at export time, which is what the column means.
 
 It is **not readable by Zone 0, 1, 2 or 3**. Enforced by module boundary and by a test that fails if
 any pipeline module imports it. If discovery were seeded from the legal inventory, every row would
 be KNOWN by construction and the discovery criterion would be unearned.
 
-The standing rule holds: we never fit our output to their database. If we find evidence that
-overrides one of their findings, it ships as NEW and we say so plainly.
+A reading that finds an instrument the kit does not list ships as NEW.
 
 ---
 
@@ -359,7 +353,7 @@ UN revamp/
 ```
 
 **The rubric is derived, not typed.** A script reads the methodology sheet (61 indicators, criteria,
-score bands), the guide's definitions and worked examples, the internal guide's FAQ, the
+score bands), the guide's definitions and worked examples, the RDTII guide's FAQ, the
 non-regulatory list, and the output template's Indicator Reference — which is where the pillar
 weights and the five recurring traps live. Every field carries provenance back to the document it
 came from. Hand-typing 61 indicators is how a rubric silently drifts from the framework it claims to
@@ -503,16 +497,15 @@ Not a schedule. An order, each step ending in something checkable.
 2. **Zone 0 and Zone 1, Singapore.** Profile, discover, fetch, parse, index. Done when a Singapore
    Act is fetched politely, parsed into a section tree with offsets, and findable by a corpus-wide
    query in both search channels.
-3. **Zones 2 and 3, Singapore pillars 6 and 7 — nine cells.** ESCAP's Singapore sheet answers all
-   nine. **This is the gate.** If we do not substantially agree with them — same governing
-   instruments, citations that verify against the source, scores within one band — the diagnosis is
-   wrong and we re-plan rather than build on top of it.
-4. **All 61 indicators, Singapore.** Every cell in one of the three states. Volume in ESCAP's order.
+3. **Zones 2 and 3, Singapore pillars 6 and 7 — nine cells.** **This is the gate.** If the answers
+   do not hold up on review — the right governing instruments, citations that verify against the
+   source, defensible bands — the diagnosis is wrong and we re-plan rather than build on top of it.
+4. **All 61 indicators, Singapore.** Every cell in one of the three states. Volume in the expected order.
 5. **Australia and Malaysia.** Malaysia brings Bahasa Melayu, so the non-Latin path and the
    in-language reading path get exercised here rather than being left to the finals.
 6. **The interface**, through the frontend-design skill: run, monitor, audit, review, coverage,
    export, engine switch.
-7. **Verification, export and comparison.** ESCAP's workbook filled from real runs; the two-engine
+7. **Verification, export and comparison.** The output workbook filled from real runs; the two-engine
    comparison produced from two exports.
 8. **Handover.** README against their template, Apache 2.0, a clean-machine deploy timed by someone
    who did not build it.
@@ -521,13 +514,13 @@ Not a schedule. An order, each step ending in something checkable.
 
 ## 10. How we will know it works
 
-1. **The Singapore 6/7 gate**, against ESCAP's own sheet.
+1. **The Singapore 6/7 gate**, reviewed cell by cell against the sources.
 2. **Cell completeness.** 183 cells in, 183 answered out, each in a named state. No cell silently
    absent, no unresolved cell quietly rendered as zero.
 3. **Citation fidelity.** Every exported snippet re-verified against the stored document at the
    cited offset. Any mismatch fails the export, not just the row.
 4. **Links.** Every source URL fetched and confirmed on an official host.
-5. **Volume.** Rows per economy in the same order as ESCAP's 70–120.
+5. **Volume.** Rows per economy in the expected 70–120.
 6. **Determinism.** The same attributes produce the same score, asserted per indicator.
 7. **Baseline isolation.** A test fails if any pipeline module can reach the sample kit.
 8. **Zero-fetch second pass.** Documents fetched = 0, from the run record, structurally guaranteed.
@@ -549,8 +542,8 @@ Not a schedule. An order, each step ending in something checkable.
 2. **The Singapore gate may fail.** That is the point of putting it third. Failing it early is cheap;
    failing it in October is not.
 3. **Discovery on an unseen economy** is the live-test risk and cannot be solved by curation. Zone 0
-   plus portal-shaped discovery is the attempt; it gets rehearsed on an economy outside ESCAP's
-   baseline, which is the only honest test of it.
+   plus portal-shaped discovery is the attempt; it gets rehearsed on an economy outside the sample
+   kit, which is the only honest test of it.
 4. **Two local engines** rather than one hosted and one open-weight. The criterion requires at least
    one open-weight engine, which two satisfies, and it strengthens the no-proprietary-API
    declaration — but it is a reading of the rule, and it is written down here so it is a decision

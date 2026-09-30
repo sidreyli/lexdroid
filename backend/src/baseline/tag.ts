@@ -1,8 +1,8 @@
 /**
  * NEW or KNOWN, written onto a run's export rows.
  *
- * ESCAP asks every evidence row whether the instrument it cites was already in the sample kit they
- * published, or whether the tool found it independently. That column is how they tell discovery
+ * The template asks of every evidence row whether the instrument it cites was already in the sample
+ * kit, or whether the tool found it independently. That column is how they tell discovery
  * from transcription, and it is the whole point of the C5 short note -- "provisions you believe
  * absent from the 2025 baseline".
  *
@@ -11,16 +11,16 @@
  * src/export left the column alone and said so in a comment. This is the caller that comment meant.
  *
  * Deliberately last, and deliberately here. Nothing upstream may see the kit: if discovery could,
- * every instrument would be KNOWN by construction, the tool would look accurate on the three
- * economies ESCAP has already done, and it would collapse on the sealed economy that counts. So
+ * every instrument would be KNOWN by construction and the tag would say nothing about the sealed
+ * economy that counts. So
  * the tag is applied after the rows exist, reads nothing but the title and the URL each row already
  * carries, and changes no score, no quote and no citation.
  */
 import type { Database } from 'better-sqlite3';
 import { discoveryTag, openBaseline, type DiscoveryTag } from './index.js';
 
-/** ESCAP name each economy. Their kit is keyed by name, our rows by code. */
-const ESCAP_NAME: Record<string, string> = {
+/** The kit is keyed by economy name, our rows by code. */
+const KIT_NAME: Record<string, string> = {
   AUS: 'Australia',
   MYS: 'Malaysia',
   SGP: 'Singapore',
@@ -72,7 +72,7 @@ export function tagRun(db: Database, runId: string, baselinePath?: string): TagR
         // An economy the kit has never heard of has nothing to be KNOWN against, and every row of
         // it is a genuine independent find. That is the sealed live-test economy, and it must not
         // be tagged by accident of a name that happens to collide.
-        const economy = ESCAP_NAME[row.economy] ?? row.economy;
+        const economy = KIT_NAME[row.economy] ?? row.economy;
         const key = `${economy}\u0000${row.title}\u0000${row.url ?? ''}`;
         let tag = seen.get(key);
         if (!tag) {

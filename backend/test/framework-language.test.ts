@@ -6,9 +6,9 @@
  * themselves read against the languages the economy publishes law in. The framework path passed the
  * portal's answer straight out and stopped there.
  *
- * So a framework row whose instrument carried no declared language went to ESCAP blank, while
+ * So a framework row whose instrument carried no declared language went out blank, while
  * holding a quotation plainly in one -- seven of them in run 82673dbf, all reading "An Act to
- * provide for the protection of consumers" or similar. Language of Source is the column ESCAP added
+ * provide for the protection of consumers" or similar. Language of Source is the column added
  * for this round and the evidence for C1c; a blank there is a row that cannot answer it.
  *
  * The same shape as the 300-character rationale cap that two paths bypassed: the ladder was right

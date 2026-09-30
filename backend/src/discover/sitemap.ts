@@ -2,9 +2,9 @@
  * Discovery on a portal that publishes a sitemap.
  *
  * Twenty-four of the thirty sources this system declares had never produced a single instrument,
- * and the documents behind that silence are the ones ESCAP cites most: IMDA's codes of practice,
- * MAS's notices, the Signals Directorate's guidelines. Pillar 11 was missing 60% of its citations
- * for this reason alone, and a cell that finds nothing scores it as no restriction.
+ * and the documents behind that silence are the ones digital-trade regulation lives in: IMDA's
+ * codes of practice, MAS's notices, the Signals Directorate's guidelines. Pillar 11 was missing
+ * most of its evidence for this reason alone, and a cell that finds nothing scores it as no restriction.
  *
  * A sitemap is the sanctioned way in. It is declared in the site's own robots.txt, it is meant to
  * be read by machines, and it costs one request instead of a crawl. What it does not do is say

@@ -1,12 +1,11 @@
 /**
  * The baseline quarantine, enforced.
  *
- * ESCAP's completed databases answer the questions we are being marked on. If discovery could see
- * them, every instrument would be tagged KNOWN by construction and the tool would look accurate on
- * the three economies they have already done -- then collapse on the sealed live-test economy,
- * which is the one that counts.
+ * The sample kit is used for one thing: the NEW/KNOWN tag on finished rows. If discovery could see
+ * it, every instrument would be tagged KNOWN by construction and the tag would say nothing about
+ * what the tool found on its own.
  *
- * So: no module under src/ may reach src/baseline, except src/baseline itself and the evaluator.
+ * So: no module under src/ may reach src/baseline, except src/baseline itself.
  */
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, relative, sep } from 'node:path';
@@ -18,7 +17,7 @@ const backendRoot = join(here, '..');
 const srcRoot = join(backendRoot, 'src');
 
 /** The only places allowed to know the baseline exists. */
-const ALLOWED = ['baseline', 'eval'];
+const ALLOWED = ['baseline'];
 
 function walk(dir: string): string[] {
   const out: string[] = [];
@@ -37,8 +36,8 @@ function topLevelModule(file: string): string {
 /**
  * A module's code with its comments removed.
  *
- * A comment saying why the boundary exists -- "this is deliberately not read from ESCAP's legal
- * inventory" -- is exactly the documentation we want, and must not be what fails the test. Only
+ * A comment saying why the boundary exists -- "this is deliberately not read from the sample
+ * kit" -- is exactly the documentation we want, and must not be what fails the test. Only
  * code that actually reaches for the sample kit should.
  */
 function code(file: string): string {
@@ -78,7 +77,7 @@ describe('the baseline is not reachable from the pipeline', () => {
     expect(offenders, `these modules reach for baseline.db: ${offenders.join(', ')}`).toEqual([]);
   });
 
-  it('no pipeline module reads ESCAP\'s completed databases directly', () => {
+  it('no pipeline module reads the sample kit directly', () => {
     const offenders: string[] = [];
     for (const file of pipelineFiles) {
       if (/Round [12] Database|Legal Inventory/i.test(code(file))) offenders.push(relative(backendRoot, file));

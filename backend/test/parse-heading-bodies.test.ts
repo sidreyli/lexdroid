@@ -4,7 +4,7 @@
  * The defect, found in the Australia/Singapore run of 21 September 2026: the body walk looked at
  * `h.next()` and nothing else. Measured across the 215 cached pages this parser handles, it cost
  * text on 45 of them and duplicated text on 13. The .au Domain Administration Rules -- the
- * instrument ESCAP cites for 12.7 -- fetched 520,638 bytes and parsed to 84 headings and 2,134
+ * instrument 12.7 turns on -- fetched 520,638 bytes and parsed to 84 headings and 2,134
  * characters, none of which said anything; the Australian presence requirement was in the half
  * megabyte dropped, so the cell scored on a university naming rule instead.
  */

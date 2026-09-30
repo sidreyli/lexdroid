@@ -2,7 +2,7 @@
  * What a framework indicator is a question about, and which instruments it may be answered from.
  *
  * Pillar 8's two framework cells gave the same answer in all three economies because they were
- * asked the same question. ESCAP asks two: 8.1 is "Lack of safe harbour for copyright
+ * asked the same question. The rubric asks two: 8.1 is "Lack of safe harbour for copyright
  * infringements", 8.2 is "...for other illegal activities", and Australia answers 0 to one and 1
  * to the other. And the instruments they were answered from were not instruments: every candidate
  * examined for Singapore's 8.1 and 8.2 was a Monetary Authority press release.
@@ -28,7 +28,7 @@ describe('the two safe-harbour indicators', () => {
   it('ask for the shield, because that is the band the score turns on', () => {
     // "Sectoral/Horizontal framework in place that LIMITS liability for intermediaries". Asked
     // about liability at large, the reader named Australia's Online Safety Act 2021 -- which
-    // imposes duties on service providers and shields nobody -- and scored the cell 0 where ESCAP
+    // imposes duties on service providers and shields nobody -- and scored the cell 0 where the answer
     // scores 1.
     for (const id of ['8.1', '8.2']) {
       expect(subjectQueries(FRAMEWORK_OF[id] as FrameworkSubject)[0]!).toMatch(/shielded from liability/i);

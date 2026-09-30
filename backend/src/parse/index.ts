@@ -285,7 +285,7 @@ function withLanguages(db: Db, instrumentId: number, parsed: ParsedDocument): Pa
     // An economy with no profile -- a test fixture -- leaves languages to the export, as before.
   }
   // Only for the economies that publish in Mongolian, Russian or Lao. The others were measured and
-  // tuned with their languages left to the export, and their answers are not to move.
+  // tuned with their languages left to the export, and their results are not to move.
   if (!languages.some((l) => DETECTED_HERE.has(l))) return parsed;
   return {
     ...parsed,

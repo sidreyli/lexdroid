@@ -90,4 +90,4 @@ db.transaction(() => {
 }).immediate();
 
 console.log(`\n  removed ${removed} row(s), each written to the discard ledger with its reason`);
-console.log('  re-score with: npm run -w backend replay -- --run ' + runId + '\n');
+console.log('  re-score with: npm run -w backend rescore -- --run ' + runId + '\n');

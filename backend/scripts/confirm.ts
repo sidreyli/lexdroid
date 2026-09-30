@@ -62,4 +62,4 @@ console.log(`\n  asked ${result.asked} in ${(result.seconds / 60).toFixed(1)} mi
 console.log(`    confirmed  ${String(result.confirmed).padStart(6)}`);
 console.log(`    ruled out  ${String(result.ruledOut).padStart(6)}`);
 console.log(`    failed     ${String(result.failed).padStart(6)}`);
-console.log(`\n  re-score with: npm run -w backend replay -- --run ${runId}\n`);
+console.log(`\n  re-score with: npm run -w backend rescore -- --run ${runId}\n`);

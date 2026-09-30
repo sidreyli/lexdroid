@@ -7,8 +7,7 @@
  * also meant nobody could check yesterday's number today.
  *
  * What is written here is deliberately more than the answers. A score without the search that
- * produced it is an assertion, and ESCAP's reviewers rejected assertions across the graded
- * submissions. So a recorded run carries, per cell: every query asked, which query and channel
+ * produced it is an assertion. So a recorded run carries, per cell: every query asked, which query and channel
  * surfaced each provision and at what rank, what the engine said about each provision including
  * when it said nothing, the score, the band, the one fact that chose that band, and everything
  * that was found and deliberately not counted.
@@ -735,8 +734,8 @@ function addCost(db: Db, run: RunContext, answer: PillarAnswer): void {
  * The instrument the answer rests on.
  *
  * For a score above zero, the instrument the leading evidence came from. For a zero, the
- * instrument the absence was read against -- ESCAP's own zero rows name what they read and say
- * what it does not require, and a zero that names nothing is an assertion rather than a finding.
+ * instrument the absence was read against. A zero row names what it read and says what it does
+ * not require, and a zero that names nothing is an assertion rather than a finding.
  */
 function controllingInstrument(decision: Decision): number | null {
   const lead: Evidence | undefined = decision.basis[0];

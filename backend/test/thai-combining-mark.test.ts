@@ -4,7 +4,7 @@
  * pdf.js and Tesseract both sometimes land a synthetic space between a base character and the
  * combining tone or vowel mark stacked on it. The Bank of Thailand's own text-layer PDF reads
  * "ต่า" ("low tone") as "ต ่า" and "ซ้ำซ้อน" ("duplication") as "ซ ้าซ้อน" -- measured against
- * bench-pack/lexdroid.bench-tha.db's doc#6157 (cited by a finding) on 30 September 2026.
+ * a Thai run's corpus, doc#6157 (cited by a finding), on 30 September 2026.
  */
 import { describe, expect, it } from 'vitest';
 import { rejoinThaiMarks } from '../src/util/thai.js';

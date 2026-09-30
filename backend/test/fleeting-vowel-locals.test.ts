@@ -4,7 +4,7 @@
  * common noun runs the opposite way, keeping the vowel only in its undeclined form ("кошелёк" but
  * "кошелька", "кошельков", ...). Several `_LOCAL` word lists were trimmed to a stem that matched only
  * one side of that pair, so a real, common statutory phrase never named the domain it plainly is.
- * Each form below is copied from an actual quote read out of the Russia bench pack (24fc8068), not
+ * Each form below is copied from an actual quote read out of Russia's corpus, not
  * invented for the test.
  */
 import { describe, expect, it } from 'vitest';

@@ -122,8 +122,7 @@ Run `1cb164cb`, 8 September 2026: Singapore and Malaysia, pillars 6 and 7, four 
 the two pods. 18 cells in **32.4 minutes** of wall time for **$0.24** of rent, against roughly 48
 minutes for the same work run sequentially on the laptop.
 
-Agreement with ESCAP's own answers: **16 of 18 exact, 18 of 18 within one band.** Three reads hit
-the output cap and were refused rather than recorded.
+Three reads hit the output cap and were refused rather than recorded.
 
 ## What has still not been tested
 

@@ -1,9 +1,8 @@
 /**
  * The working store.
  *
- * One SQLite file holds everything a run produces. ESCAP's completed databases are deliberately
- * NOT reachable from here -- they live in a second file that only src/baseline may open. See
- * src/baseline/README.md for why that boundary exists.
+ * One SQLite file holds everything a run produces. The sample kit's instrument list, used only for
+ * the NEW/KNOWN tag, lives in a second file that only src/baseline may open.
  */
 import Database from 'better-sqlite3';
 import { readFileSync, mkdirSync } from 'node:fs';
@@ -104,7 +103,7 @@ const ADDED_COLUMNS: readonly { table: string; column: string; type: string }[] 
   { table: 'fetch_log', column: 'method', type: "TEXT NOT NULL DEFAULT 'GET'" },
   { table: 'document', column: 'ocr_confidence', type: 'REAL' },
   // What each fetch returned, for the Run Record's file type: the URL of an API or a register
-  // search says nothing about it, and a guessed type is a wrong line in the list ESCAP checks.
+  // search says nothing about it, and a guessed type is a wrong line in the Run Record.
   { table: 'fetch_log', column: 'media_type', type: 'TEXT' },
 ];
 

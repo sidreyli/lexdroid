@@ -10,15 +10,14 @@
  * No engine and no network: the same decision over the same readings, with the verdicts in front
  * of it. What changes is the answer, its basis and the confirmation state recorded beside it.
  *
- * It refuses a run whose readings are no longer there. Writing is the difference: `grade` replays
- * over a remnant and rolls back, while this would overwrite the banked answer with one decided on
- * evidence a re-parse removed -- and the old answer, which was the record of what the run actually
- * found, would be gone. `--anyway` says that is wanted; `--dry-run` never needed it.
+ * It refuses a run whose readings are no longer there: re-scoring then would overwrite the banked
+ * answer with one decided on evidence a re-parse removed, and the old answer, which was the record
+ * of what the run actually found, would be gone. `--anyway` says that is wanted; `--dry-run` never
+ * needed it.
  */
 import { openDb } from '../src/db/index.js';
 import { rescoreRun } from '../src/run/rescore.js';
 import { confirmationsForRun } from '../src/read/confirmations.js';
-import { scorecard, tally } from '../src/eval/scorecard.js';
 import { evidenceIsLost, evidenceLines, runEvidence } from '../src/run/evidence.js';
 
 function arg(name: string): string | null {
@@ -51,35 +50,25 @@ if (!dryRun && !anyway && evidenceIsLost(evidence)) {
   process.exit(1);
 }
 
-const before = tally(scorecard(db, run.id));
 const banked = confirmationsForRun(db, run.id).size;
 console.log(`\nRe-scoring ${run.id}`);
 console.log(`  ${banked} banked verdict(s) in play`);
-console.log(`  before: ${before.agree}/${before.cells - before.ungraded} agree with ESCAP`);
 
 if (dryRun) {
   // Everything the real thing does, inside a transaction that is then thrown away, so a dry run
   // reports the true outcome rather than an estimate of it.
   db.exec('BEGIN');
   const result = rescoreRun(db, run.id);
-  const after = tally(scorecard(db, run.id));
   db.exec('ROLLBACK');
   console.log(`\n  would change ${result.changed} of ${result.cells} cell(s)`);
-  console.log(`  would be: ${after.agree}/${after.cells - after.ungraded} agree`);
   console.log('  nothing was written\n');
   process.exit(0);
 }
 
 const result = rescoreRun(db, run.id);
-const after = tally(scorecard(db, run.id));
 
 console.log(`\n  ${result.changed} of ${result.cells} cell(s) changed`);
 console.log(`    ${result.nowAnswered} cell(s) now answered that were not`);
 console.log(`    ${result.nowUnresolved} cell(s) now unresolved that were answered`);
-console.log(`\n  after: ${after.agree}/${after.cells - after.ungraded} agree with ESCAP`);
-console.log(`    over-claim   ${String(after['over-claim']).padStart(4)}`);
-console.log(`    under-claim  ${String(after['under-claim']).padStart(4)}`);
-console.log(`    recall-miss  ${String(after['recall-miss']).padStart(4)}`);
-console.log(`    abstained    ${String(after.abstained).padStart(4)}`);
 console.log(`\n  the export rows still describe the old answers. Rebuild them with:`);
 console.log(`    npm run -w backend verify -- --run ${run.id}\n`);

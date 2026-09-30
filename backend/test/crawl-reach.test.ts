@@ -9,7 +9,7 @@
  * only because one navigation link happened to be captioned "Legislation".
  *
  * What was behind those three links was the Malaysian Communications and Multimedia Content Code
- * 2022, which is the instrument ESCAP cites for Malaysia's 8.2, and which was therefore absent
+ * 2022, which is the instrument Malaysia's 8.2 turns on, and which was therefore absent
  * from the corpus in every status. A cell cannot report that: it searched, found nothing, and
  * said so. Measured on the MCMC on 17 September 2026, over the same sixty-page budget: 86
  * instruments named before, 111 after, the three editions of the Content Code among them.

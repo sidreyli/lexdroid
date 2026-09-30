@@ -3,7 +3,7 @@
  *
  * The store has said this since the schema was written -- "'in-force' is the only status a row may
  * cite. A draft, a repealed provision, or an amending act cited in place of its principal act each
- * score zero in ESCAP's marking" -- and nothing enforced it, because `Evidence` carried the
+ * are not the law in force" -- and nothing enforced it, because `Evidence` carried the
  * instrument's title and id but never its status.
  *
  * It showed. Malaysia's 8.4 cites the Juvenile Courts Act 1947 -- whose own title in the register

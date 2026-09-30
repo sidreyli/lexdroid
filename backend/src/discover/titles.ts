@@ -11,8 +11,8 @@
  * Guidelines on Data Protection". A headline uses the same word as a verb or mid-phrase, and a
  * sentence has a finite verb no title has.
  *
- * Measured against ESCAP's own citations, which are real titles written by hand: 78% accepted,
- * and the rejected remainder is mostly things that are not instruments -- financial statements,
+ * Measured against real instrument titles written by hand: 78% accepted, and the rejected
+ * remainder is mostly things that are not instruments -- financial statements,
  * a Bill, a public inquiry report, the address of a ministry's website.
  */
 
@@ -20,7 +20,7 @@
  * The nouns an instrument is named by, most binding first. Order decides `kindOf`.
  *
  * "Policy", "strategy", "scheme", "list" and "framework" were here and were taken out: they cost
- * three ESCAP citations and admitted "monetary policy", "skills framework" and "platform list".
+ * three real instruments and admitted "monetary policy", "skills framework" and "platform list".
  */
 const NOUN =
   '(?:act|ordinance|enactment|regulations?|rules?|order|by-?laws?|notice|notification|determination|' +
@@ -245,7 +245,7 @@ export function kindOf(title: string): InstrumentKind {
  * Scoped to that claim and no wider, because only primary legislation is corroborated this way.
  * A regulator's genuine guidance carries no gazette number and is not "in force" as a statute is,
  * so the same test applied to every kind retires the real ones: Australia's .au Domain
- * Administration Rules at 84 sections, which ESCAP cites, and Malaysia's PDPA Codes of Practice
+ * Administration Rules at 84 sections, and Malaysia's PDPA Codes of Practice
  * at 737. It is also where the damage was. The shortlist holds half of every governing list for
  * Acts, to stop 23,693 regulations burying 1,264 statutes, and a paper admitted to that reserve
  * spends the reading window a statute needed.

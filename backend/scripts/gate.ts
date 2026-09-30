@@ -4,27 +4,18 @@
  *   npm run -w backend gate -- --economy SGP --pillars 6,7
  *
  * Runs Zones 1 to 3 over a pillar and prints every cell: the score, the band it came from, the
- * provisions it rests on and the link each one resolves to. With --compare it then puts our
- * answers beside ESCAP's for the same cells.
- *
- * The comparison is the only thing in this repository that opens the baseline, and it opens it
- * after every score is computed. Nothing upstream can see it -- a test fails if anything in the
- * pipeline so much as imports the module.
+ * provisions it rests on and the link each one resolves to.
  */
 import { openDb } from '../src/db/index.js';
 import { loadRubric, chosenIndicators } from '../src/rubric/index.js';
-import type { Indicator } from '../src/rubric/types.js';
 import { answerPillar } from '../src/cell/index.js';
 import { engineReconnects, haveModel, OllamaUnavailable, READING_MODEL } from '../src/engines/ollama.js';
 import { hostedConfig, probeHosted } from '../src/engines/hosted.js';
 import { cacheEnabled, cacheSize } from '../src/engines/cache.js';
-import { openBaseline, BASELINE_DB_PATH, sameInstrument, escapScore } from '../src/baseline/index.js';
 import { openRun, joinRun, recordPillarAnswer, recordStage, recordEvent, finishRun, codeRevision, settleRates } from '../src/run/index.js';
 import { loadRates } from '../src/decide/currency.js';
 import type { RunEvent } from '../src/run/events.js';
-import { existsSync } from 'node:fs';
 import { reaches, type Decision } from '../src/decide/index.js';
-import { loadProfile } from '../src/profile/index.js';
 import { loadEnv } from '../src/env.js';
 
 // The hosted engine's key lives in .env. A gate started by the fleet is handed it (or handed a
@@ -45,7 +36,6 @@ interface Args {
   retrievalFrom: string | null;
   reread: Set<number>;
   model: string | null;
-  compare: boolean;
   verbose: boolean;
   record: boolean;
   /** Join a run somebody else opened, and leave the closing to them. */
@@ -71,7 +61,6 @@ function parseArgs(argv: string[]): Args {
     retrievalFrom: get('retrieval-from'),
     reread: new Set((get('reread') ?? '').split(',').filter(Boolean).map(Number)),
     model: get('model'),
-    compare: !argv.includes('--no-compare'),
     verbose: argv.includes('--verbose'),
     record: !argv.includes('--no-record'),
     joinRunId: get('run'),
@@ -116,33 +105,6 @@ function printDecision(d: Decision, verbose: boolean): void {
       console.log(`    (held) ${h.evidence.instrumentTitle} :: ${h.evidence.headingPath} -- ${h.reason}`);
     }
   }
-}
-
-/** ESCAP's own answers for the same cells. Read only after ours are computed. */
-type TheirAnswer = { score: number; instruments: string[]; how: string; rows: number; uncertain: boolean };
-
-function baselineScores(economy: string, indicators: Indicator[]): Map<string, TheirAnswer> {
-  const out = new Map<string, TheirAnswer>();
-  if (!existsSync(BASELINE_DB_PATH)) return out;
-
-  const db = openBaseline();
-  const baselineEconomy = loadProfile(economy).name;
-  for (const indicator of indicators) {
-    const rows = db
-      .prepare('SELECT raw_score, act_or_practice FROM baseline_row WHERE economy = ? AND indicator_id = ?')
-      .all(baselineEconomy, indicator.id) as { raw_score: number | null; act_or_practice: string | null }[];
-    if (rows.length === 0) continue;
-
-    // One row per measure, so the rows resolve to one answer by the indicator's own ladder rather
-    // than by taking the highest. escapScore says which way, in the words this prints.
-    const answer = escapScore(indicator, rows.map((r) => r.raw_score));
-    const instruments = rows
-      .map((r) => (r.act_or_practice ?? '').split(/[;\n]/)[0]?.trim() ?? '')
-      .filter((t) => t.length > 0);
-    out.set(indicator.id, { ...answer, instruments });
-  }
-  db.close();
-  return out;
 }
 
 /**
@@ -196,7 +158,7 @@ async function main(): Promise<void> {
     console.log('');
     console.log('  !! THE ENGINE CACHE IS ON. This run is a replay, not a measurement. !!');
     console.log(`     ${cacheSize()} stored answer(s). Its scores test the scoring code and nothing else:`);
-    console.log('     no timing, no engine comparison and no agreement figure from it is quotable.');
+    console.log('     no timing and no engine comparison from it is quotable.');
     console.log('     Unset LEXDROID_ENGINE_CACHE for a real run.');
     console.log('');
   }
@@ -206,7 +168,7 @@ async function main(): Promise<void> {
   // --carry takes a run id and carriedReadings matches it exactly, so a prefix -- which is what
   // every other script here accepts, and what a person reads off a log line -- silently carried
   // nothing, printed "0 carried", and re-read the whole pillar at full engine cost. Resolved the
-  // way grade, misses, rescore and benchmark resolve one, and refused outright when it names no
+  // way rescore resolves one, and refused outright when it names no
   // run: carrying nothing is never what was asked for, and it costs hours to discover.
   const carryFrom = args.carryFrom
     ? (
@@ -343,104 +305,6 @@ async function main(): Promise<void> {
     if (!args.joinRunId) finishRun(run);
     console.log(`    recorded as run ${run.id}`);
     printStages(db, run.id);
-  }
-
-  if (!args.compare) return;
-
-  const theirs = baselineScores(
-    args.economy,
-    all.flatMap((d) => rubric.indicators.filter((i) => i.id === d.indicatorId)),
-  );
-  if (theirs.size === 0) {
-    console.log('\nNo baseline rows for this economy; nothing to compare against.');
-    return;
-  }
-
-  console.log('\n=== Against ESCAP\'s own answers for the same cells ===\n');
-  console.log('  cell   ours   theirs   agreement');
-  let agree = 0;
-  let within = 0;
-  for (const d of all) {
-    const t = theirs.get(d.indicatorId);
-    const ours = d.score;
-    if (!t) {
-      console.log(`  ${d.indicatorId.padEnd(6)} ${String(ours ?? '-').padEnd(6)} ${'-'.padEnd(8)} not in the baseline`);
-      continue;
-    }
-    let verdict: string;
-    if (ours === null) verdict = 'UNRESOLVED';
-    else if (ours === t.score) {
-      verdict = 'same';
-      agree += 1;
-      within += 1;
-    } else if (Math.abs(ours - t.score) <= 0.5) {
-      verdict = 'within one band';
-      within += 1;
-    } else verdict = 'DIFFERENT';
-    const note = t.rows > 1 ? `   (${t.rows} rows -- ${t.how}${t.uncertain ? '; LOOK' : ''})` : '';
-    console.log(`  ${d.indicatorId.padEnd(6)} ${String(ours ?? '-').padEnd(6)} ${String(t.score).padEnd(8)} ${verdict}${note}`);
-  }
-  console.log(`\n  ${agree}/${all.length} exact, ${within}/${all.length} within one band.`);
-  console.log('  ESCAP cites, per cell:');
-  for (const d of all) {
-    const t = theirs.get(d.indicatorId);
-    if (t) console.log(`    ${d.indicatorId}: ${[...new Set(t.instruments)].join('; ')}`);
-  }
-
-  reportNewEvidence(all, theirs);
-}
-
-/**
- * Where we scored higher than ESCAP on an instrument they did not cite.
- *
- * A disagreement is not automatically a defect on either side. Their Australian answers were
- * written before the Cyber Security Act 2024 existed; ours were not. What separates a finding
- * from a mistake is whether the extra evidence is real -- a verified quote, in an instrument they
- * never named -- and that is what is printed here, so it can be checked rather than believed.
- *
- * The standing rule this serves: never fit the output to the answer key. Where we genuinely find
- * evidence that overrides theirs, it ships and we say so.
- */
-function reportNewEvidence(
-  all: Decision[],
-  theirs: Map<string, { score: number; instruments: string[] }>,
-): void {
-  // A framework cell keeps its evidence in frameworkBasis and its basis is empty, and 7.2 is
-  // exactly such a cell -- so reading only one of the two would miss the case this exists for.
-  const shown = (d: Decision): { title: string; where: string; quote: string; citation: string }[] =>
-    d.basis.length > 0
-      ? d.basis.map((e) => ({
-          title: e.instrumentTitle,
-          where: e.headingPath,
-          quote: e.finding.quote,
-          citation: e.citation,
-        }))
-      : d.frameworkBasis.map((f) => ({
-          title: f.instrumentTitle,
-          where: 'the instrument itself',
-          quote: f.quote,
-          citation: f.citation,
-        }));
-
-  const notable = all.filter((d) => {
-    const t = theirs.get(d.indicatorId);
-    // Either direction. A framework indicator's better answer is the lower score -- 7.2 scores 0
-    // because a dedicated horizontal Act exists -- so a rule about higher scores would miss it.
-    return t !== undefined && d.score !== null && d.score !== t.score && shown(d).length > 0;
-  });
-  if (notable.length === 0) return;
-
-  console.log('\n=== Beyond ESCAP -- a different answer, and the evidence it rests on ===');
-  for (const d of notable) {
-    const t = theirs.get(d.indicatorId)!;
-    const extra = shown(d).filter((e) => !t.instruments.some((c) => sameInstrument(e.title, c)));
-    if (extra.length === 0) continue;
-    console.log(`\n  ${d.indicatorId}: ours ${d.score} against their ${t.score}`);
-    for (const e of extra) {
-      console.log(`    ${e.title} :: ${e.where}`);
-      console.log(`      "${e.quote}"`);
-      console.log(`      ${e.citation}`);
-    }
   }
 }
 

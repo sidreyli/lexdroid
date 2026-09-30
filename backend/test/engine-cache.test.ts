@@ -1,8 +1,8 @@
 /**
  * The development cache, and the one thing it must never be allowed to do.
  *
- * A change is validated by running two economies and seeing whether it moves both toward ESCAP's
- * answers. Replayed readings turn that from a measurement into a replay, so the cache is off unless
+ * A change is validated by running two economies and seeing whether it moves both in the right
+ * direction. Replayed readings turn that from a measurement into a replay, so the cache is off unless
  * asked for and every run that touches it is marked.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';

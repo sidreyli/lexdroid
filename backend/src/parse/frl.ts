@@ -163,8 +163,7 @@ function isoDate(text: string): string | null {
  * What the compilation says about itself, on its own first page.
  *
  * A compilation states the date its text is in force at, which is the only acceptable evidence for
- * the "last amended" a row reports: ESCAP's reviewers wrote "no evidence that the Act was last
- * amended in 2023" on somebody's submission, and this is the sentence that answers them.
+ * the "last amended" a row reports. A date the source does not state is a date nobody can check.
  */
 function readFrontMatter(text: string): Record<string, string> {
   const meta: Record<string, string> = {};

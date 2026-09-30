@@ -5,7 +5,7 @@
  * and fetches: "Fetch new documents" spawned a fleet that read whatever happened to be on disk, so
  * a cold machine answered every cell out of an empty corpus and said nothing about it.
  *
- * The second is the one ESCAP checks on the day. The second engine re-runs over documents already
+ * The second is the one checked on the day. The second engine re-runs over documents already
  * downloaded and fetches nothing new, and its document list has to be empty. A cache-only pass that
  * walked a portal "just to check" would fail that in front of the judges, so the refusal to touch
  * the network is asserted here rather than assumed from a flag being passed along.

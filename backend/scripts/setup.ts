@@ -62,7 +62,7 @@ async function main(): Promise<void> {
 
   if (haveDocs) {
     ok.push(await step("rubric derived from ESCAP's methodology sheet", () => runScript('derive-rubric')));
-    ok.push(await step('sample kit imported into the quarantined baseline', () => runScript('import-baseline')));
+    ok.push(await step('sample-kit instrument list imported for the NEW/KNOWN tag', () => runScript('import-baseline')));
   } else {
     console.log(`  rubric and baseline ... skipped`);
     console.log(`      ${rel(sampleKit)} is not present. ESCAP's documents are not redistributed`);

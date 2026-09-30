@@ -1,9 +1,8 @@
 /**
  * The gates, and the export rows they are run against.
  *
- * Each gate here answers a comment ESCAP's reviewers wrote on somebody's submission. The tests are
- * written the same way round: the case that failed in the graded set is the case asserted, so a
- * change that quietly re-admits it fails here rather than in a reviewer's hands.
+ * Each gate catches a way a legal citation goes wrong. The tests assert the failing case itself,
+ * so a change that quietly re-admits it fails here rather than in a reviewer's hands.
  */
 import { describe, expect, it } from 'vitest';
 import { openDb, type Db } from '../src/db/index.js';
@@ -150,7 +149,7 @@ describe('the export row', () => {
   });
 
   it('gives a cell that found nothing a row naming what it was read against', () => {
-    // More than half of ESCAP's own rows are this shape. A missing cell reads as an oversight
+    // A missing cell reads as an oversight
     // where a finding of absence belongs.
     const db = storeWithOneAnswer();
     db.prepare("UPDATE cell SET state = 'no-restriction' WHERE id = 1").run();
@@ -183,14 +182,14 @@ describe('the export row', () => {
     db.close();
   });
 
-  it('states a timeframe in the words the reviewers asked for', () => {
+  it('states a timeframe as month and year', () => {
     expect(timeframe('1967-12-29', '2023-07-01')).toBe('Since December 1967, last amended in July 2023');
     expect(timeframe('1967-12-29', null)).toBe('Since December 1967');
     expect(timeframe(null, null)).toBeNull();
   });
 
   it('deep-links to the provision', () => {
-    // "none of the reference links lead to the right document."
+    // A reference link that does not lead to the cited document.
     expect(citationUrl('https://sso.agc.gov.sg/Act/CoA1967', 'pr199-')).toBe(
       'https://sso.agc.gov.sg/Act/CoA1967#pr199-',
     );
@@ -198,7 +197,7 @@ describe('the export row', () => {
   });
 
   it('quotes before it interprets, and trims the interpretation rather than the quotation', () => {
-    // Repeated six times across the graded set. The quotation is the evidence; our sentence is the
+    // The quotation is the evidence; our sentence is the
     // claim, and a claim shortened past sense beats evidence shortened past checking.
     const long = 'x'.repeat(400);
     const r = mappingRationale(QUOTE, long);
@@ -414,7 +413,7 @@ describe('deriving the score again from the record', () => {
 
 /**
  * A PDF has no anchors, and 183 of Malaysia's 225 rows cited the top of an Act because of it --
- * every one held by the pinpoint gate, which exists for the reviewer comment "none of the reference
+ * every one held by the pinpoint gate, which exists for the failure "none of the reference
  * links lead to the right document".
  *
  * `#page=` is the PDF viewer's own convention and every browser that renders a PDF honours it. The

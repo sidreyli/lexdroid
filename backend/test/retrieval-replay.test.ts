@@ -1,7 +1,7 @@
 /**
  * A replayed retrieval is the one the run recorded.
  *
- * `--retrieval-from` exists so a reader change can be measured on a benchmark pack, which holds a
+ * `--retrieval-from` exists so a reader change can be measured on a snapshot that holds a
  * run's provisions and none of the indexes that found them. If the rebuilt record put different
  * provisions in front of the reader, or the same ones in an order that changes which instrument a
  * zero is cited against, the measurement would be of something other than the reader.

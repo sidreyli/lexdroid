@@ -240,7 +240,7 @@
       "sourceUrl": null
     }
   ],
-  "notes": "Researched from Russian government portals read directly with curl on 21 September 2026; the structural claims above were produced by actual requests, and the full trace with response sizes is docs/lao-mongolia-russia-recon.md. ESCAP's completed Russian Federation Round 2 answer sheet remains quarantined in the isolated baseline store per docs/architecture.md and was not opened to write this profile. Two portals are recorded as UNVERIFIED rather than blocked, because the environment that read them proxies all traffic and demonstrably refused HTTPS to hosts that answered normally over HTTP -- the distinction docs/thailand-integration-plan.md insisted on, and the reason it required an environment that could actually reach the sites. The official publication venue is reachable, permissive, server-rendered and enumerable by date, which makes Russia the most tractable of the three new economies after Mongolia; what stands between this profile and a register is that no existing adapter can recognise a Russian instrument title, since both the title classifier and the crawl adapter's path vocabulary are written in English.",
+  "notes": "Researched from Russian government portals read directly with curl on 21 September 2026; the structural claims above were produced by actual requests. Two portals are recorded as UNVERIFIED rather than blocked, because the environment that read them proxies all traffic and demonstrably refused HTTPS to hosts that answered normally over HTTP. The official publication venue is reachable, permissive, server-rendered and enumerable by date, which makes Russia the most tractable of the three new economies after Mongolia; what stands between this profile and a register is that no existing adapter can recognise a Russian instrument title, since both the title classifier and the crawl adapter's path vocabulary are written in English.",
   "authoredBy": "LexDroid team",
   "authoredOn": "2026-09-21",
   "sources": [
@@ -250,6 +250,6 @@
     "http://pravo.gov.ru/ and /robots.txt -- read directly, 21 Sep 2026; 200 in 1.5s over http, real homepage, fully permissive robots",
     "https://www.cbr.ru/robots.txt -- read directly, 21 Sep 2026",
     "https://rkn.gov.ru and https://customs.gov.ru -- attempted on both ports, 21 Sep 2026, no connection from a proxied environment; recorded as unverified rather than blocked",
-    "NOT ESCAP's Round 2 database or legal inventory for the Russian Federation: those remain evaluation-only, per the isolation this profile is required to respect"
+    "NOT the sample kit: discovery finds portals the way a researcher does"
   ]
 }

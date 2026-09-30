@@ -9,7 +9,7 @@
  * article or a point in) came out empty, so the Paris Convention -- with `ARTICLE`-matching
  * headings on 67 of its own lines -- fell to the "nothing numbered" branch and stored as one
  * 59,283-character section headed by its own first line, exactly as measured against
- * bench-pack/lexdroid.bench-mng.db's doc#988 on 30 September 2026.
+ * a Mongolian run's corpus (doc#988) on 30 September 2026.
  */
 import { describe, expect, it } from 'vitest';
 import { parseLegalinfo } from '../src/parse/legalinfo.js';

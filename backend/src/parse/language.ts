@@ -5,7 +5,7 @@
  * calling anything mostly-Latin English. Malaysia's statute book is Latin script and authoritative
  * in Malay, so every Malay provision in the corpus was recorded as English or as nothing at all:
  * 54,316 Malaysian sections carry no language, and all 225 Malaysian export rows went out with the
- * Language of Source column empty -- the one column ESCAP added for the final round.
+ * Language of Source column empty -- the one column added for the final round.
  *
  * So the question is asked in two steps, because it has two different kinds of answer.
  *

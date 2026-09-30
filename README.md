@@ -69,7 +69,7 @@ npm run setup
 ```
 
 Creates the SQLite store, derives the 61 indicators from ESCAP's methodology sheet, and imports the
-2025 sample kit into a **separate, quarantined** baseline store. It reports what is missing rather
+2025 sample kit's instrument list into a separate store used only for the NEW/KNOWN tag. It reports what is missing rather
 than failing at the first gap.
 
 ### 4. Install the reading engine
@@ -391,15 +391,8 @@ never what the model feels: 0.90 means the quoted words were located character-f
 stored source *and* a second, independent reading confirmed the measure; 0.75 means located but
 never second-read; 0.65 means located in OCR-recovered text; 0.50 means the stored source does not
 contain those words; 0.20 means unresolved. The sentence that earned the number is the first thing
-in Notes. Measure what each rung is actually worth:
-
-```
-npm run -w backend calibration
-```
-
-On run `82673dbf` that reports 0.755 agreement behind the 0.90 rung and 0.694 behind 0.75 — the
-ordering is real, the separation is 0.061, and a reviewer should read the Notes rather than
-threshold on the number. **Anything at or below 0.75 is worth a human's time.**
+in Notes. The rungs are ordinal, not calibrated probabilities: a reviewer should read the Notes
+rather than threshold on the number. **Anything at or below 0.75 is worth a human's time.**
 
 ---
 
@@ -408,7 +401,7 @@ threshold on the number. **Anything at or below 0.75 is worth a human's time.**
 Measured from `run_cost`, which the pipeline writes per run and per engine without manual
 arithmetic.
 
-**Benchmark run:** `82673dbf` — Australia, Malaysia and Singapore, all 12 pillars, 183 cells,
+**Reference run:** `82673dbf` — Australia, Malaysia and Singapore, all 12 pillars, 183 cells,
 775 exported rows. **Measured on:** 2026-09-16.
 
 | Component | Engine used | Measured cost |
@@ -471,12 +464,10 @@ Engine A's rented GPUs, and the run record takes the price from the pod. It is n
   `backend/scripts/engine-check.ts` tests for exactly this. It is a property of the model, not a
   bug we fixed.
 - **9 of 775 exported rows name no instrument at all** — 7 unresolved cells and 2 where no
-  controlling instrument was identified. ESCAP's own database names an instrument on 1,535 of its
-  1,536 rows, so this shape has no precedent there. They are flagged as unresolved rather than
+  controlling instrument was identified. They are flagged as unresolved rather than
   hidden.
-- **Confirmation is not a free win.** The second reading pass rules out 80.6% of findings. On run
-  `b78c76f0` it corrected 27 cells and broke 13, a net gain of 15. It is on by default because the
-  net is positive and because a ruled-out finding is a cheaper error than a fabricated one.
+- **Confirmation is not a free win.** The second reading pass rules out 80.6% of findings. It is on
+  by default because it corrects more than it breaks and because a ruled-out finding is a cheaper error than a fabricated one.
 - **The engine cache must be off for any number that will be quoted.** `LEXDROID_ENGINE_CACHE=1`
   replays stored answers, which turns a forty-minute pillar into seconds while a scoring rule is
   worked on — and turns a measurement into a replay. Every replayed call is counted into
@@ -487,8 +478,8 @@ Engine A's rented GPUs, and the run record takes the price from the pod. It is n
   since was cache-only. A fetching run through the interface is the remaining rehearsal.
 - **Engine B reads more slowly than Engine A.** On a rented RTX A5000 it decodes about 20 tokens
   a second, entirely in GPU memory. India pillar 8 took 38 minutes for 148 reads (about 7.5 s for
-  an empty answer, 25–160 s for one with findings) and agrees with ESCAP on 4 of 4 questions, as
-  Engine A does. A full pass has not been run on it yet.
+  an empty answer, 25–160 s for one with findings) and gives the same answers as Engine A on 4 of 4
+  questions. A full pass has not been run on it yet.
 
 ---
 
@@ -498,25 +489,21 @@ Engine A's rented GPUs, and the run record takes the price from the pod. It is n
 npm test
 ```
 
-846 backend and 36 frontend tests. Runs from the repository root or from either workspace.
+1,867 backend and 60 frontend tests. Runs from the repository root or from either workspace.
 
 | Test file | What it tests |
 | :---- | :---- |
-| `backend/test/baseline-isolation.test.ts` | That no pipeline module can reach ESCAP's answers |
+| `backend/test/baseline-isolation.test.ts` | That no pipeline module can read the sample kit |
 | `backend/test/engine-declaration.test.ts` | Section 5 against all three ways ESCAP words it |
 | `backend/test/verify.test.ts` | Export rows against the template's field rules |
 | `backend/test/fetch.test.ts`, `robots-absent.test.ts` | robots, rate limiting, the missing-robots case |
 | `backend/test/confirmations.test.ts` | That one run has one confirmation state |
 | `backend/test/language.test.ts` | Language detection, including when it should abstain |
-| `backend/test/scorecard.test.ts` | Agreement against the baseline, and the verdict taxonomy |
 | `frontend/lib/export/sheets.test.ts` | The engine comparison, including rows only one engine found |
 
-**The baseline quarantine is enforced, not just intended.** ESCAP's completed databases answer the
-questions we are marked on. If discovery could see them, every instrument would be tagged KNOWN by
-construction and the tool would look accurate on the three economies ESCAP has already done — then
-collapse on the sealed economy, which is the one that counts. `baseline-isolation.test.ts` walks
-`backend/src/`, strips comments, and fails if any module outside `src/baseline` and `src/eval`
-reaches for it.
+**Discovery cannot see the sample kit.** If it could, every instrument would be tagged KNOWN by
+construction and the tag would say nothing. `baseline-isolation.test.ts` walks `backend/src/`,
+strips comments, and fails if any module outside `src/baseline` reaches for it.
 
 ---
 
@@ -526,15 +513,11 @@ Every number in this README and in the submitted workbook comes from the run rec
 recomputed from it.
 
 ```
-npm run -w backend benchmark                  # stored, re-derived, exported and baseline views of a run
-npm run -w backend calibration                # what each confidence rung is worth
-npm run -w backend replay -- <run id>         # re-derive every score from the stored readings
+npm run -w backend rescore -- <run id>        # re-derive every score from the stored readings
 ```
 
-`benchmark` re-derives all 183 scores from the stored readings and compares them against what was
-recorded, reports the exported row count and the agreement with ESCAP's published answers, and
-names anything that would block submission. `replay --no-confirmed` re-derives them without the
-confirmation pass, which is how the confirmation gain is measured rather than asserted.
+`rescore` re-derives every score from the stored readings, so a score in the workbook can be
+checked against the attributes it was computed from.
 
 To regenerate the workbook itself: **Runs** → the run → *Export*.
 

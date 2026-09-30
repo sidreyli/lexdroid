@@ -8,7 +8,7 @@
  * power needs. The score is then computed from those facts by a pure function in Zone 3.
  *
  * The separation is not tidiness. A model that emits "0.5" has made a judgement nobody can audit
- * and cannot reproduce, and ESCAP's criterion is framework alignment at scale: the same evidence
+ * and cannot reproduce, and the criterion is framework alignment at scale: the same evidence
  * must produce the same score every time. A model that emits "applies to the banking sector" has
  * made a claim about a document, which is checkable against the document.
  *
@@ -101,8 +101,8 @@ export interface Finding {
   /**
    * The words that let the thing happen anyway, quoted, or null when the provision allows nothing.
    *
-   * This is the distinction between the two halves of pillar 6, and ESCAP's own internal guide
-   * devotes a question to it: 6.1 is a ban on sending data out, 6.4 is sending it out once
+   * This is the distinction between the two halves of pillar 6, and the RDTII guide devotes a
+   * question to it: 6.1 is a ban on sending data out, 6.4 is sending it out once
    * conditions are met. Section 26 of the PDPA reads "must not transfer any personal data to a
    * country or territory outside Singapore *except in accordance with requirements prescribed
    * under this Act*", and the reader filed it as a ban -- the prohibition is the loud half of the
@@ -761,8 +761,8 @@ export const schemaFor = (indicators: readonly Indicator[]) => ({
  *
  * Compared with whitespace collapsed and the typographic quotation marks legislation uses folded
  * to their plain equivalents, because a quote that differs from the source only in how an
- * apostrophe was encoded is a true quote. Anything further apart than that is not, and ESCAP's
- * reviewers wrote "section 125 did not mention the minimum 7 years period" about exactly this.
+ * apostrophe was encoded is a true quote. Anything further apart than that is not: a cited
+ * section that does not contain the quoted words is the first thing a reviewer checks.
  */
 function normaliseForQuoteCheck(s: string): string {
   return rejoinThaiMarks(s)
@@ -832,7 +832,7 @@ const LIST_REACH = 600;
 
 /**
  * A quote that skips over text is still a quote, provided every part of it is really there and in
- * the order given. Half the quote failures on Australia's first graded run were of this shape: the
+ * the order given. Half the quote failures on Australia's first full run were of this shape: the
  * reader lifted the operative words out of a lettered list -- "any infrastructure ... that: ... is
  * located in Australia" -- and the whole finding was thrown away for the gap. Each fragment is
  * matched exactly and each must carry its own weight, so an ellipsis buys no licence to guess.
@@ -1488,7 +1488,7 @@ function coerce(raw: unknown): Finding | null {
 /*  Framework indicators are read differently, because they are a different question.
  *
  *  7.1 and 7.2 ask whether an economy has a comprehensive data protection framework and a
- *  dedicated cybersecurity one. ESCAP is explicit that per-provision citations here "are not
+ *  dedicated cybersecurity one. The methodology is explicit that per-provision citations here "are not
  *  discoveries and score zero" -- the unit is the instrument, not the section. So the reading asks
  *  about an instrument as a whole: is this a framework for that subject, does it reach every
  *  sector or one, and is the subject what the instrument is for rather than something it touches.
@@ -1555,7 +1555,7 @@ export interface FrameworkReading {
  * What each framework indicator is a question about.
  *
  * 8.1 and 8.2 were both asked about intermediary liability at large, and so were handed the same
- * five instruments and gave the same answer in all three economies. ESCAP's own category text
+ * five instruments and gave the same answer in all three economies. The indicators' own category text
  * separates them: 8.1 is "Lack of safe harbour for copyright infringements" and 8.2 is "...for
  * other illegal activities". The separation is the whole of the difference between Australia's two
  * answers -- 0 for 8.1, where the Copyright Act 1968 has a safe harbour, and 1 for 8.2, where
@@ -1570,7 +1570,7 @@ const FRAMEWORK_SUBJECTS = {
   // Both of these ask for the shield, not for liability at large, because that is what the band
   // asks for: "framework in place that limits liability for intermediaries". Asked the wider
   // question the reader called Australia's Online Safety Act 2021 an intermediary liability
-  // framework and scored the cell 0, where ESCAP scores 1 -- and it was not wrong about the Act,
+  // framework and scored the cell 0, where the answer is 1 -- and it was not wrong about the Act,
   // which is full of duties owed by service providers. An Act that imposes liability on
   // intermediaries is the opposite of the one this indicator is looking for.
   'intermediary-liability':
@@ -2071,7 +2071,7 @@ export { READING_MODEL };
  * Six sections is not enough to say what it *does*, and that has a visible cost: every positive
  * framework reading in Singapore's pillar 8 is reasoned "the title indicates it is dedicated to
  * this purpose", because the title is the only evidence in the prompt. Singapore's 8.2 cites the
- * Online Safety Act where ESCAP cites the Electronic Transactions Act, whose Part 6 is headed
+ * Online Safety Act where the answer is the Electronic Transactions Act, whose Part 6 is headed
  * "Liability of network service providers" and is unreachable from here. The Copyright Act 2021
  * was asked about copyright safe harbour and answered, correctly for the Part 1 it was shown, that
  * the text "does not contain any provisions regarding the liability of online intermediaries".
@@ -2086,8 +2086,7 @@ export { READING_MODEL };
  *
  * So the defect is real and this is not the fix for it. Supplying the provisions is not enough;
  * the reader has to be made to answer question 1 *from* them, which is prompt design with its own
- * validation, not a wider window. A change that moves nothing is not free -- see scripts/grade.ts,
- * which records the same verdict for the rule changes that measured +0.
+ * validation, not a wider window. A change that moves nothing is not free.
  */
 export function openingOf(db: Db, instrumentId: number, sections = 6): string {
   const rows = db

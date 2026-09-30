@@ -197,7 +197,7 @@
       "sourceUrl": "https://www.tfadatabase.org/en/members/india"
     }
   ],
-  "notes": "This profile was researched from current official Union portals. ESCAP's completed India rows remain quarantined and are used only after LexDroid has produced a result, for discovery and score evaluation.",
+  "notes": "This profile was researched from current official Union portals.",
   "authoredBy": "LexDroid team",
   "authoredOn": "2026-09-12",
   "sources": [
@@ -207,6 +207,6 @@
     "https://www.meity.gov.in/documents/act-and-policies -- MeitY Acts, policies, rules and notifications",
     "https://www.rbi.org.in/Scripts/NotificationUser.aspx -- RBI notification and direction archive",
     "Constitution of India, Articles 343 and 348, and Official Languages Act 1963 -- Union-language context",
-    "NOT ESCAP's legal inventory or completed India database: those remain evaluation-only"
+    "NOT the sample kit: discovery finds portals the way a researcher does"
   ]
 }

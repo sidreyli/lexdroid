@@ -1,13 +1,12 @@
 /**
  * Zone 3 -- the score, computed.
  *
- * ESCAP's scoring criteria are written as a small decision procedure over facts about a measure:
+ * The RDTII scoring criteria are written as a small decision procedure over facts about a measure:
  * does it apply to all sectors or one, to personal data or non-personal, is there more than one of
  * them. This module is those procedures in TypeScript, one function per indicator, written from
- * the band text and quoting it. No model runs here, and nothing in this file has ever seen ESCAP's
- * completed answers.
+ * the band text and quoting it. No model runs here.
  *
- * Two consequences, and both are criteria we are graded on. The same evidence produces the same
+ * Two consequences. The same evidence produces the same
  * score every time, which is what framework alignment at scale means. And when a score is
  * challenged the answer is a rule and the facts it consumed, rather than a sentence a model wrote
  * about its own reasoning.
@@ -181,11 +180,9 @@ export type CellState = 'restricted' | 'no-restriction' | 'unresolved';
 /**
  * The instrument a zero is reported against.
  *
- * More than half of every economy's rows in ESCAP's own database score zero, and none of their
- * zeros is a silence: Australia 2.2 scores 0 citing the Commonwealth Procurement Rules 2024 and
- * states that no source-code or encryption condition is found in them. A zero of that shape is a
- * finding. A zero that says only "nothing was found" is an assertion, and their reviewers rejected
- * assertions across the graded submissions.
+ * A zero should never be a silence: Australia 2.2 scores 0 against the Commonwealth Procurement
+ * Rules and states that no source-code or encryption condition is found in them. A zero of that
+ * shape is a finding. A zero that says only "nothing was found" is an assertion nobody can check.
  *
  * Two strengths, kept apart, because claiming the stronger one when only the weaker is true is
  * exactly the failure this is meant to prevent:
@@ -261,7 +258,7 @@ export interface Decision {
  *
  * Read from the band text alone, "all sectors" looked like a sufficient condition on its own, and
  * the Companies Act's duty to keep accounting records in Singapore -- every company, so every
- * sector -- scored the top band. ESCAP's guide is explicit that it does not, and says why for each
+ * sector -- scored the top band. The RDTII guide is explicit that it does not, and says why for each
  * of the three indicators separately:
  *
  *   6.1 and 6.2: "a horizontal requirement that applies across sectors will get a higher score
@@ -356,8 +353,8 @@ const band = (indicator: Indicator, ordinal: number): ScoreBand => {
 /**
  * How many measures this evidence is, which is not how many provisions it is.
  *
- * ESCAP's row is one measure carrying one official link, and their reviewers told teams both to
- * split a row holding several measures and to stop compiling several links into one. So a measure
+ * A template row is one measure carrying one official link: a row holding several measures should
+ * be split, and several links should not be compiled into one. So a measure
  * is a requirement of an instrument: sections 191, 199 and 397 of the Companies Act each say where
  * a company keeps its own records, and they are one local storage measure written three times.
  * Different Acts are different measures -- Malaysia's customs, excise and income tax record duties
@@ -452,7 +449,7 @@ function present(what: string): Rule {
 /**
  * The rule for a band written "for any measure of category (1), OR more than one of category (2)".
  *
- * ESCAP repeats that sentence across four pillars. The severe measure reaches the top band alone;
+ * The rubric repeats that sentence across four pillars. The severe measure reaches the top band alone;
  * the lesser one reaches it only in company, and on its own takes the middle.
  */
 function escalating(severe: { measure: string; what: string }, lesser: { measure: string; what: string }): Rule {
@@ -793,8 +790,7 @@ const RULES: Record<string, Rule> = {
    * PDPA requires an organisation to cease retaining personal data once its purpose has ended,
    * while the Companies Act requires accounting records kept for five years.
    *
-   * The period has to be stated. Counting "for the period prescribed" was once measured as closer
-   * to ESCAP's cells, but ESCAP's own guide scores an unspecified period 0.00 and the finals
+   * The period has to be stated. The RDTII guide scores an unspecified period 0.00 and the finals
    * template names it a mapping trap, so `hold` rules those floors out before they get here. What
    * is left states a period in the words it cites.
    */
@@ -1355,13 +1351,13 @@ export const NOT_IN_LAW: Readonly<Record<string, string>> = {
     "This indicator scores the shares a government holds in telecommunications companies. That is a " +
     "fact about a share register and an annual report, not about any provision: an Act that " +
     "establishes or privatises an operator does not state what proportion the State holds today, and " +
-    "an Act that says nothing is not evidence that it holds none. ESCAP's own rows for it cite " +
+    "an Act that says nothing is not evidence that it holds none. It is answered from " +
     "ownership disclosures rather than legislation, so a reader of law cannot answer it and this " +
     "says so instead of guessing.",
 };
 
 /**
- * Bands ESCAP draws that no reading of law can reach, declared so a sweep of the ladders reports
+ * Bands the rubric draws that no reading of law can reach, declared so a sweep of the ladders reports
  * a stated ceiling rather than a defect.
  */
 export const UNREACHABLE_BANDS: Readonly<Record<string, Readonly<Record<number, string>>>> = {
@@ -1377,8 +1373,8 @@ export const UNREACHABLE_BANDS: Readonly<Record<string, Readonly<Record<number, 
  * Evidence from something other than law in force.
  *
  * The store has said this from the beginning -- "'in-force' is the only status a row may cite. A
- * draft, a repealed provision, or an amending act cited in place of its principal act each score
- * zero in ESCAP's marking" -- and nothing enforced it, because `Evidence` carried the instrument's
+ * draft, a repealed provision, or an amending act cited in place of its principal act" is not the
+ * law in force -- and nothing enforced it, because `Evidence` carried the instrument's
  * title and id but never its status. Across the store 78 applying readings were reached through a
  * status the schema names as worth zero: 57 from amending acts, 21 from repealed ones.
  *
@@ -1599,7 +1595,7 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     // Except the measures that name no act. A ceiling, a quota, a de minimis and an equity cap are
     // made out by a stated quantity, not by a commanded one, and the rubric already says so on the
     // measure. Malaysia's e-money exemption states its limit as a criterion -- "a wallet limit not
-    // exceeding RM500 per user" -- which is the answer ESCAP gives for that cell and is a
+    // exceeding RM500 per user" -- which is a real limit on the payment and is a
     // declaration by grammar. The reader was right about the verb; the gate was asking the wrong
     // measures for one.
     //
@@ -1630,7 +1626,7 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     // obligation to cover, roll out or perform, or a worse term for foreign operators. Lao PDR's
     // telecommunications licence scored strict on "having enterprise registration", "having stable
     // financial standing" and on needing the licence at all -- conditions of every licence, which
-    // ESCAP scores 0 there.
+    // the band text does not count as strict.
     if (STRICT_LICENCE_MEASURES.has(e.finding.measure ?? '') && !STRICT_CONDITION.test(`${e.finding.quote ?? ''} ${e.finding.definingWords ?? ''}`)) {
       ruledOut.push({
         evidence: e,
@@ -1702,7 +1698,7 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
       });
       continue;
     }
-    // A minimum retention period is a period. ESCAP's guide to 7.3: "If the duration (e.g., day,
+    // A minimum retention period is a period. The RDTII guide to 7.3: "If the duration (e.g., day,
     // month, year) is clearly specified, the measure is the minimum period of data retention.
     // However, if the retention period is not specified, you can mark a measure in the database
     // and score it as 0.00" -- and the finals template lists "a 'prescribed period' with no number"
@@ -1979,8 +1975,7 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     // ordinary run of eligibility grounds every procurement law states for every tender regardless
     // of nationality: a registration or certificate requirement, a document- or bid-format
     // conformity check, a supplier-blacklist check, or a bid-security deposit. Nothing enforced that
-    // distinction, and checked directly against the benchmark's own basis (not Russia alone, per
-    // this fix's own risk note): Malaysia's registration clause ("no supplier ... unless he is
+    // distinction, and it was checked across economies rather than on Russia alone: Malaysia's registration clause ("no supplier ... unless he is
     // registered under this Act") and Mongolia's certificate clause ("must have a legal-entity
     // certificate") name only who may bid, not a condition on how the contract is performed; four
     // near-identical clauses in Russia's Постановление № 1215 disqualify a bid for a document or
@@ -2508,7 +2503,7 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     // that instruction enacts. The instruction imposes nothing and is ruled out here as before. The
     // text it sets out is the duty, in the words the legislature passed, and until the next
     // consolidation is printed it exists nowhere else -- so a finding built on those words is a
-    // finding about law in force. ESCAP's own extraction method allows both places an amendment can
+    // finding about law in force. The RDTII extraction method allows both places an amendment can
     // be read, "insert in main law, or a single file", and its guide scores a safe-harbour provision
     // straight out of an Amendment Act. What such a finding must not do is cite the vehicle as
     // though it were the statute; the words belong to the principal Act and the citation says so.
@@ -2601,8 +2596,8 @@ const PROCESSING = /\b(process\w*|handl\w*|analys\w*|comput\w*)\b|ประม�
  * data to a country or territory outside Singapore except in accordance with requirements
  * prescribed under this Act" is a prohibition in its first half and a permission in its second,
  * and the reader files it under the half it read first -- which was 6.1, the ban, because the
- * prohibition is the loud part. ESCAP scores that provision 0 for 6.1 and 1 for 6.4, and they are
- * right: nothing is forbidden outright.
+ * prohibition is the loud part. Read whole, that provision is 0 for 6.1 and 1 for 6.4: nothing is
+ * forbidden outright.
  *
  * So the reader is asked whether the provision carries a way through, and the rubric's own
  * distinction is applied here rather than hoped for there. This is not a correction of a bad
@@ -2813,7 +2808,7 @@ const CHILD_OR_AGE_RESTRICTED = /\b(child\w*|minor\w*|juvenile\w*)\b|18\+|хүү
  * An ordinary bidder-eligibility ground, not a substantive condition on how the contract is
  * performed -- see the `bidding-condition` block above for what this excludes and why.
  *
- * Four shapes, each confirmed against a real citation in the benchmark: a registration or
+ * Four shapes, each confirmed against a real provision: a registration or
  * certificate requirement (Malaysia's "registered under this Act", Mongolia's "гэрчилгээтэй байх",
  * a legal-entity certificate); a document- or bid-format conformity check (Russia's Постановление
  * № 1215, four near-identical clauses -- "несоответствие документов ... требованиям", "несоответствие
@@ -3514,7 +3509,7 @@ function decideOn(input: DecideInput): Decision {
   excluded.push(...notCurrent, ...ruledOut);
 
   // Nothing was read, so nothing can be concluded. This is the difference between a finding of
-  // absence and a failure to look, and ESCAP's reviewers can tell them apart.
+  // absence and a failure to look, and a reviewer has to be able to tell them apart.
   if (coverage.sectionsRead === 0) {
     return {
       indicatorId: indicator.id,
@@ -3682,7 +3677,7 @@ function decideOn(input: DecideInput): Decision {
 /**
  * 7.1 and 7.2, decided over instruments rather than provisions.
  *
- * ESCAP is explicit that a per-provision citation here is not a discovery. The question is whether
+ * The methodology is explicit that a per-provision citation here is not a discovery. The question is whether
  * the economy has the framework at all, so the evidence is what its instruments are, and the score
  * runs the other way: a comprehensive framework scores zero and its absence scores one.
  */
@@ -3881,10 +3876,9 @@ function capitalise(s: string): string {
 /**
  * The rationale, assembled rather than written.
  *
- * ESCAP's reviewers asked six separate teams to quote before interpreting, so the quote comes
- * first and the reading of it second. A zero says what was searched and what the most relevant
- * instrument does not require -- the shape of ESCAP's own zero rows, which cite an instrument and
- * state what it does not do.
+ * Quote before interpreting: the quote comes first and the reading of it second. A zero says what
+ * was searched and what the most relevant instrument does not require, citing an instrument and
+ * stating what it does not do.
  */
 function rationaleFor(
   indicator: Indicator,
@@ -3937,7 +3931,7 @@ export { RULES as __rules };
  * Does this indicator's top band score the absence of something?
  *
  * The same empirical question `scoresOnAbsence` asks, put to the indicator rather than to one
- * decision, so anything reading a score -- ours or ESCAP's -- can tell which direction it runs in.
+ * decision, so anything reading a score can tell which direction it runs in.
  */
 export function topBandScoresAbsence(indicator: Indicator): boolean {
   const top = indicator.bands[0];

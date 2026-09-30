@@ -1,8 +1,8 @@
 /**
- * Subjects that an agreement with ESCAP had been resting on the wrong side of.
+ * Subjects a right score had been resting on the wrong law for.
  *
- * An audit of every cell where our score matched ESCAP's found fifteen where the law we cited did
- * not answer the question: an identity verification scheme's rules as the data protection
+ * An audit of the law each score cited found fifteen cells where the law did not answer the
+ * question: an identity verification scheme's rules as the data protection
  * framework, a commercial courts Act as the consumer protection one, a copyright Act as the safe
  * harbour for everything but copyright, a bank's Shariah window as telecom accounting separation,
  * medical-device declarations as radio equipment SDoC, a cyber security licence as an online

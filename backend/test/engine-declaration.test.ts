@@ -1,12 +1,12 @@
 /**
- * The two engines we are promising ESCAP, checked against what ESCAP asked for.
+ * The two engines we declare, checked against what the finals brief asks for.
  *
  * Section 5 is frozen on 30 September and says so in the template: "An incomplete Section 5 cannot
  * be corrected after the deadline." Until this existed, Engine B had an empty provider, an empty
  * model and an empty checkpoint, declared: false -- every run in the store was answered by Engine
  * A, the interface refused to start a run on B, and no engine comparison had ever been produced.
  *
- * The requirement is stated three different ways across ESCAP's own documents, so all three are
+ * The requirement is stated three different ways across the finals documents, so all three are
  * asserted rather than the most convenient one:
  *
  *   orientation slide   "At least one must be open weights"

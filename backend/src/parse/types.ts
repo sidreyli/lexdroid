@@ -5,9 +5,8 @@
  *
  *     text.slice(section.charStart, section.charEnd) === section.text
  *
- * That is what makes a citation checkable. ESCAP's reviewers wrote "section 125 did not mention
- * the minimum 7 years period" on somebody's submission; the only defence against that comment is
- * an offset into stored text that can be re-read.
+ * That is what makes a citation checkable. The only defence against "the cited section does not
+ * say that" is an offset into stored text that can be re-read.
  */
 
 export type Extraction = 'html' | 'pdf-text' | 'ocr' | 'plain' | 'none';

@@ -154,7 +154,7 @@
       "sourceUrl": null
     }
   ],
-  "notes": "Researched from Lao government portals read directly with curl on 21 September 2026; the structural claims above were produced by actual requests, and the full trace with response sizes is docs/lao-mongolia-russia-recon.md. ESCAP's completed Lao PDR Round 2 answer sheet remains quarantined in the isolated baseline store per docs/architecture.md and was not opened to write this profile. Lao is the hardest of the three new economies and the honest position is that it cannot produce a cell today: its primary source is reachable, paginated and genuinely Lao-language, but publishes image-only PDFs, and neither the OCR stage nor the lexical index is currently equipped for Lao. Two specific, small changes unblock it -- \\p{Script=Lao} in the index's spaceless-script patterns, and a Lao Tesseract language pack with a matching confidence heuristic in the OCR stage. Until those land, any Lao row would rest on text nothing could read, and the pipeline's own rule is to flag what could not be read rather than guess at it. Note also that when OCR does run, Lao rows land on the 0.65 confidence rung -- 'quoted words located in text recovered by OCR' -- which is a real ceiling on Lao and belongs in the README's Known Limitations rather than passing unexplained.",
+  "notes": "Researched from Lao government portals read directly with curl on 21 September 2026; the structural claims above were produced by actual requests. Lao is the hardest of the three new economies and the honest position is that it cannot produce a cell today: its primary source is reachable, paginated and genuinely Lao-language, but publishes image-only PDFs, and neither the OCR stage nor the lexical index is currently equipped for Lao. Two specific, small changes unblock it -- \\p{Script=Lao} in the index's spaceless-script patterns, and a Lao Tesseract language pack with a matching confidence heuristic in the OCR stage. Until those land, any Lao row would rest on text nothing could read, and the pipeline's own rule is to flag what could not be read rather than guess at it. Note also that when OCR does run, Lao rows land on the 0.65 confidence rung -- 'quoted words located in text recovered by OCR' -- which is a real ceiling on Lao and belongs in the README's Known Limitations rather than passing unexplained.",
   "authoredBy": "LexDroid team",
   "authoredOn": "2026-09-21",
   "sources": [
@@ -163,6 +163,6 @@
     "https://moj.gov.la/robots.txt -- read directly, 21 Sep 2026; 'User-agent: * / Disallow: /', 26 bytes",
     "https://laotradeportal.gov.la/robots.txt -- read directly, 21 Sep 2026; Googlebot-only, empty disallow, 32 bytes",
     "https://www.na.gov.la/robots.txt and https://www.bol.gov.la/robots.txt -- read directly, 21 Sep 2026",
-    "NOT ESCAP's Round 2 database or legal inventory for Lao PDR: those remain evaluation-only, per the isolation this profile is required to respect"
+    "NOT the sample kit: discovery finds portals the way a researcher does"
   ]
 }

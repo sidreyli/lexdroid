@@ -228,7 +228,7 @@ function isOrContains(node: AnyNode, target: AnyNode | undefined): boolean {
  * A page that wraps each heading in its own block leaves `h.next()` empty and the body in the
  * *wrapper's* next sibling, so every heading parsed with no text at all: the .au Domain
  * Administration Rules came out 84 headings and 2,134 characters, and rule 2.4.1 -- the Australian
- * presence requirement ESCAP cites for 12.7 -- was among the half megabyte dropped.
+ * presence requirement 12.7 asks about -- was among the half megabyte dropped.
  *
  * A page that nests the *next* heading inside a sibling block never matches the stop by identity,
  * so the walk ran to the end of the container: APRA's prudential handbook gave "Chapter 2 -

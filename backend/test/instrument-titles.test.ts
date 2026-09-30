@@ -2,7 +2,7 @@
  * Telling an instrument from a headline on a regulator's own website.
  *
  * The defect: 24 of 30 declared sources had never produced an instrument, and the missing
- * documents are the ones ESCAP cites for pillars 7, 8, 9, 11 and 12. Reading those sites means
+ * documents are the ones pillars 7, 8, 9, 11 and 12 turn on. Reading those sites means
  * separating a code of practice from a press release, and the words do not do it -- "Act now,
  * defend against vicious cybercriminals" carries the noun and is not an Act.
  */

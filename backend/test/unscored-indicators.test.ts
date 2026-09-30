@@ -360,7 +360,7 @@ describe('blocking and filtering', () => {
 // 2.3's own gloss: a substantive bidding condition is "a local content share, a local employment
 // target or another performance undertaking", not the ordinary eligibility grounds every
 // procurement law states for every tender regardless of nationality. Four shapes confirmed against
-// the benchmark's own basis, none of them India's genuine local-content clause.
+// real cited provisions, none of them India's genuine local-content clause.
 describe('2.3, a bidding condition that is a substantive one', () => {
   const bc = (n: number, instrumentTitle: string, defining: string, quote: string): Evidence => ({
     ...ev('2.3', 'bidding-condition', { definingWords: defining, quote, subjectWords: 'the tender' }, n),

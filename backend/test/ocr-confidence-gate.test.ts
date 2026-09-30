@@ -4,7 +4,7 @@
  * `ocrReplacesThePage` compared only lengths, so a page OCR read at 22% confidence was accepted
  * exactly as one read at 85% would be, provided it yielded more legible characters than the
  * unreadable original -- measured against three Mongolian licensing orders in
- * bench-pack/lexdroid.bench-mng.db (doc#4957, #10186, #10990; confidence 22, 34, 26) that went
+ * a Mongolian run's corpus (doc#4957, #10186, #10990; confidence 22, 34, 26) that went
  * through this path rather than `legalinfo.ts`'s own gated one, on 30 September 2026. The floor
  * is shared with `legalinfo.ts`'s `SCAN_MIN_CONFIDENCE` via `OCR_MIN_CONFIDENCE`, so a scan is
  * held to the same bar whichever parser reads it.

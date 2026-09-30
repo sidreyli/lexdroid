@@ -63,10 +63,9 @@ export function availableProfiles(): string[] {
 /**
  * Every profiled economy's code against its name.
  *
- * ESCAP's sheets are keyed by name and ours by code, so something has to translate. Listing the
- * pairs by hand is how an economy goes quietly ungraded: it falls through to its own code, matches
- * no baseline row, and the result reads as "nothing to compare" rather than "never compared". The
- * profile already states the name, so adding a profile is all adding an economy takes.
+ * The template is keyed by name and our store by code, so something has to translate. Listing the
+ * pairs by hand is how an economy quietly goes wrong: it falls through to its own code and matches
+ * nothing. The profile already states the name, so adding a profile is all adding an economy takes.
  */
 export function economyNames(): Map<string, string> {
   const names = new Map<string, string>();
