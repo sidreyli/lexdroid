@@ -5,9 +5,12 @@ import { isReadOnlyDeployment, READ_ONLY_DEPLOYMENT_MESSAGE } from "@/lib/deploy
 
 export const dynamic = "force-dynamic";
 
-const ACTIONS = ["load", "unload", "start", "stop"] as const;
+const ACTIONS = ["load", "unload", "start", "stop", "cap"] as const;
 /** Mirrors MAX_PODS in backend/src/gpu/runpod.ts, which refuses more whatever this says. */
 const MAX_PODS = 4;
+/** Mirrors CAP_LIMITS there, which refuses outside them whatever this says. */
+const CAP_MIN = 0.1;
+const CAP_MAX = 2;
 type Action = (typeof ACTIONS)[number];
 
 /**
@@ -49,9 +52,9 @@ export async function POST(request: Request) {
   if (isReadOnlyDeployment()) {
     return NextResponse.json({ error: READ_ONLY_DEPLOYMENT_MESSAGE }, { status: 503 });
   }
-  let body: { action?: string; engine?: string; pods?: number; pod?: string };
+  let body: { action?: string; engine?: string; pods?: number; pod?: string; usd?: number | "declared" };
   try {
-    body = (await request.json()) as { action?: string; engine?: string; pods?: number; pod?: string };
+    body = (await request.json()) as typeof body;
   } catch {
     return NextResponse.json({ error: "Send a JSON body with an action and an engine" }, { status: 400 });
   }
@@ -84,6 +87,18 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: `Between 1 and ${MAX_PODS} GPUs` }, { status: 400 });
     }
     args.push("--pods", String(body.pods));
+  }
+  if (action === "cap") {
+    // What one pod may cost an hour, or "declared" to go back to the engine's own figure.
+    if (body.usd === "declared") args.push("--usd", "declared");
+    else if (typeof body.usd === "number" && body.usd >= CAP_MIN && body.usd <= CAP_MAX) {
+      args.push("--usd", body.usd.toFixed(2));
+    } else {
+      return NextResponse.json(
+        { error: `A cap is between $${CAP_MIN.toFixed(2)} and $${CAP_MAX.toFixed(2)} an hour` },
+        { status: 400 },
+      );
+    }
   }
   if (action === "stop" && body.pod !== undefined) {
     if (!/^[a-z0-9]{6,40}$/.test(body.pod)) {

@@ -8,6 +8,8 @@
  *   gpu start  --engine ID [--pods N]   rent GPUs for it, up to N in all (default 1, at most 4);
  *                                       each pod then loads the engine itself
  *   gpu stop   --engine ID [--pod POD]  give its GPUs back, or only the one named
+ *   gpu cap    --engine ID --usd N|declared   the most one of its pods may cost an hour, on this
+ *                                       machine; "declared" goes back to engines.json's
  *
  * No token and no key is ever printed. The pod's token stays in RunPod's record of the pod, and the
  * fleet reads it from there when a run is started on it.
@@ -19,7 +21,19 @@ import { fileURLToPath } from 'node:url';
 import { loadEnv } from '../src/env.js';
 import { findEngine, loadEngines, type Engine } from '../src/engines/registry.js';
 import { LOCAL_HOST, loadLocal, localStatus, unloadLocal } from '../src/gpu/local.js';
-import { MAX_PODS, offers, podStatus, podsFor, spentUsd, startPods, stopPods, type Pod } from '../src/gpu/runpod.js';
+import {
+  DEFAULT_MAX_USD_PER_HOUR,
+  MAX_PODS,
+  effectiveRental,
+  offers,
+  podStatus,
+  podsFor,
+  setPriceCap,
+  spentUsd,
+  startPods,
+  stopPods,
+  type Pod,
+} from '../src/gpu/runpod.js';
 
 loadEnv();
 
@@ -90,11 +104,13 @@ async function status(withOffers: boolean) {
       } catch (err) {
         error = err instanceof Error ? err.message : String(err);
       }
+      const rental = effectiveRental(e.id, e.rented);
       rented = {
-        ...e.rented,
+        ...rental,
+        declaredUsdPerHour: e.rented.maxUsdPerHour ?? DEFAULT_MAX_USD_PER_HOUR,
         maxPods: MAX_PODS,
         pods: await Promise.all(pods.map(withStatus)),
-        offers: withOffers && pods.length < MAX_PODS ? await offers(e.rented).catch(() => []) : undefined,
+        offers: withOffers && pods.length < MAX_PODS ? await offers(rental).catch(() => []) : undefined,
         error,
       };
     }
@@ -151,8 +167,18 @@ async function main(): Promise<void> {
     case 'start': {
       const e = engineArg(rest);
       if (!e.rented) throw new Error(`${e.label} is not declared as rentable`);
-      const { pods, shortfall } = await startPods(e, e.rented, Number(flag(rest, '--pods') ?? 1));
+      const { pods, shortfall } = await startPods(e, effectiveRental(e.id, e.rented), Number(flag(rest, '--pods') ?? 1));
       console.log(JSON.stringify({ ok: true, pods: pods.map(publicPod), shortfall }));
+      return;
+    }
+    case 'cap': {
+      // --usd <n> sets what one pod may cost an hour; --usd declared goes back to engines.json's.
+      const e = engineArg(rest);
+      if (!e.rented) throw new Error(`${e.label} is not declared as rentable`);
+      const usd = flag(rest, '--usd');
+      if (usd === undefined || usd === null) throw new Error('Say the cap: --usd <dollars an hour> or --usd declared');
+      setPriceCap(e.id, usd === 'declared' ? null : Number(usd));
+      console.log(JSON.stringify({ ok: true, maxUsdPerHour: effectiveRental(e.id, e.rented).maxUsdPerHour }));
       return;
     }
     case 'stop': {

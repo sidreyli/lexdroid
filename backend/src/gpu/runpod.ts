@@ -11,7 +11,7 @@
  * bound to localhost on the pod.
  */
 import { randomBytes } from 'node:crypto';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { request } from 'undici';
@@ -32,6 +32,46 @@ export const DEFAULT_MAX_USD_PER_HOUR = 0.34;
  * LEXDROID_MAX_PODS raises it for a command that runs several economies side by side, each on
  * pods of its own.
  */
+/**
+ * The most a pod may cost, set from the interface, per engine.
+ *
+ * Kept beside the declaration rather than in it: engines.json is the Section 5 declaration, frozen
+ * on 30 September, and what a GPU may cost to rent is not part of what the engine is. Stored on
+ * this machine only, like the rest of data/gpu/. An engine with no setting here uses its declared
+ * maxUsdPerHour.
+ */
+export const CAP_LIMITS = { min: 0.1, max: 2 } as const;
+const CAPS_PATH = join(REPO_ROOT, 'backend', 'data', 'gpu', 'caps.json');
+
+function readCaps(): Record<string, number> {
+  if (!existsSync(CAPS_PATH)) return {};
+  try {
+    return JSON.parse(readFileSync(CAPS_PATH, 'utf8')) as Record<string, number>;
+  } catch {
+    return {};
+  }
+}
+
+/** The rental as it applies now: the declared one, with the price cap set here if there is one. */
+export function effectiveRental(engineId: string, rental: Rental): Rental {
+  const cap = readCaps()[engineId];
+  return typeof cap === 'number' && cap >= CAP_LIMITS.min && cap <= CAP_LIMITS.max
+    ? { ...rental, maxUsdPerHour: cap }
+    : rental;
+}
+
+/** Sets an engine's cap, or with null goes back to the declared one. */
+export function setPriceCap(engineId: string, usdPerHour: number | null): void {
+  if (usdPerHour !== null && !(usdPerHour >= CAP_LIMITS.min && usdPerHour <= CAP_LIMITS.max)) {
+    throw new Error(`A cap is between $${CAP_LIMITS.min.toFixed(2)} and $${CAP_LIMITS.max.toFixed(2)} an hour`);
+  }
+  const caps = readCaps();
+  if (usdPerHour === null) delete caps[engineId];
+  else caps[engineId] = Math.round(usdPerHour * 100) / 100;
+  mkdirSync(dirname(CAPS_PATH), { recursive: true });
+  writeFileSync(CAPS_PATH, JSON.stringify(caps, null, 2) + '\n', 'utf8');
+}
+
 export const MAX_PODS = Math.max(1, Number(process.env['LEXDROID_MAX_PODS']) || 4);
 
 export interface Rental {

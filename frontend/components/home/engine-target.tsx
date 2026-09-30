@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Cloud, Cpu, Loader2, Power, Square, Upload, X } from "lucide-react";
+import { Check, Cloud, Cpu, Loader2, Power, Square, Upload, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { humanize } from "@/lib/format";
@@ -41,6 +41,8 @@ interface EngineState {
   rented: {
     minGpuMemoryGb: number;
     maxUsdPerHour?: number;
+    /** What engines.json declares; maxUsdPerHour differs when a cap is set on this machine. */
+    declaredUsdPerHour: number;
     maxPods: number;
     pods: PodState[];
     offers?: Offer[];
@@ -55,6 +57,8 @@ interface GpuStatus {
 export type Target = "local" | "runpod";
 
 const POLL_MS = 5_000;
+/** The caps offered, in dollars an hour for one pod. The backend refuses outside $0.10 to $2.00. */
+const CAP_STEPS = [0.34, 0.45, 0.55, 0.75, 1.0, 1.5, 2.0];
 const LOADING = new Set(["starting", "pulling", "building", "loading"]);
 
 function gpuName(id: string): string {
@@ -145,7 +149,10 @@ export function EngineTarget({
     return onReady(true, "");
   }, [engine, local, pods.length, ready.length, failed.length, count, target, onReady]);
 
-  const act = async (action: "load" | "unload" | "start" | "stop", extra: { pods?: number; pod?: string } = {}) => {
+  const act = async (
+    action: "load" | "unload" | "start" | "stop" | "cap",
+    extra: { pods?: number; pod?: string; usd?: number | "declared" } = {},
+  ) => {
     setBusy(extra.pod ? `stop:${extra.pod}` : action);
     setError(null);
     try {
@@ -158,7 +165,7 @@ export function EngineTarget({
       if (!res.ok || body.ok === false) throw new Error(body.error ?? `Could not ${action}`);
       if (body.shortfall) setError(body.shortfall);
       if (action === "stop" && !extra.pod) setWant(null);
-      await refresh(action === "stop");
+      await refresh(action === "stop" || action === "cap");
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -289,6 +296,14 @@ export function EngineTarget({
             </div>
           </div>
 
+          <PriceCap
+            cap={rented.maxUsdPerHour ?? rented.declaredUsdPerHour}
+            declared={rented.declaredUsdPerHour}
+            busy={busy === "cap"}
+            disabled={!!busy}
+            onCap={(usd) => act("cap", { usd })}
+          />
+
           {pods.length > 0 ? (
             <ul className="flex flex-col gap-1.5">
               {pods.map((pod) => (
@@ -362,6 +377,64 @@ export function EngineTarget({
           {error}
         </p>
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * The most one rented GPU may cost an hour. It decides which cards are asked for when renting, so
+ * a pod already running keeps the price it was rented at.
+ */
+function PriceCap({
+  cap,
+  declared,
+  busy,
+  disabled,
+  onCap,
+}: {
+  cap: number;
+  declared: number;
+  busy: boolean;
+  disabled: boolean;
+  onCap: (usd: number | "declared") => void;
+}) {
+  const steps = [...new Set([...CAP_STEPS, declared, cap])].sort((a, b) => a - b);
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-[13px] font-medium text-navy-deep">Most per GPU</p>
+          <p className="text-[12px] leading-snug text-muted-foreground">
+            {cap === declared
+              ? "The declared cap. Cards above it are never rented."
+              : `Declared $${declared.toFixed(2)}/hr; set on this machine. Cards above it are never rented.`}
+          </p>
+        </div>
+        {busy ? <Loader2 className="size-3.5 shrink-0 animate-spin text-muted-foreground" /> : null}
+      </div>
+      <div className="flex flex-wrap gap-1" role="radiogroup" aria-label="Most one GPU may cost an hour">
+        {steps.map((usd) => {
+          const on = Math.abs(usd - cap) < 0.001;
+          return (
+            <button
+              key={usd}
+              type="button"
+              role="radio"
+              aria-checked={on}
+              disabled={disabled}
+              onClick={() => (on ? undefined : onCap(Math.abs(usd - declared) < 0.001 ? "declared" : usd))}
+              className={cn(
+                "flex h-8 items-center gap-1 rounded-lg px-2.5 text-[12.5px] font-medium tabular-nums transition-colors duration-150",
+                "focus-visible:ring-2 focus-visible:ring-navy/40 focus-visible:outline-none",
+                "disabled:cursor-not-allowed disabled:opacity-45",
+                on ? "bg-navy text-paper" : "bg-paper text-navy-deep hover:bg-edge",
+              )}
+            >
+              {on ? <Check className="size-3" /> : null}${usd.toFixed(2)}
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }
