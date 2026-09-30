@@ -1,10 +1,6 @@
 # LexDroid v2 — architecture
 
-*Written 6 September 2026, after the close reading. Our own document, not ESCAP's. Where this
-disagrees with anything in `framework/`, `finals/` or `feedback/`, those win.*
-
-Companion documents: `INDEX.md` (where the ESCAP answers live), `lessons-from-lexdroid-v1.md`
-(the method, and the ten root causes this design exists to avoid).
+The design of the pipeline: what each stage does, what it stores, and why.
 
 ---
 
