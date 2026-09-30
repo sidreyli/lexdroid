@@ -1,5 +1,7 @@
 import Link from "next/link";
 import type { CorpusEconomy } from "@/lib/data/corpus";
+import { humanize } from "@/lib/format";
+import { cn } from "@/lib/utils";
 
 /**
  * Registering an instrument is cheap; reading one is not. The bar is the register, and the
@@ -21,7 +23,8 @@ export function Reach({
   names: Map<string, string>;
 }) {
   return (
-    <div className="flex flex-col gap-5">
+    // Now that the bars run the card's full width, several economies share it two to a row.
+    <div className={cn("grid gap-x-10 gap-y-5", economies.length > 1 && "lg:grid-cols-2")}>
       {economies.map((e) => {
         const width = e.registered ? Math.max(0.4, (e.fetched / e.registered) * 100) : 0;
         return (
@@ -94,7 +97,7 @@ export function Composition({
                 key={k.kind}
                 className={tint(k.kind)}
                 style={{ width: `${(k.count / e.registered) * 100}%` }}
-                title={`${k.kind}: ${num(k.count)}`}
+                title={`${humanize(k.kind)}: ${num(k.count)}`}
               />
             ))}
           </div>
@@ -106,7 +109,7 @@ export function Composition({
               >
                 <span className={`size-2 rounded-[3px] ${tint(k.kind)}`} aria-hidden />
                 <span className="tnum">
-                  {k.kind} {num(k.count)}
+                  {humanize(k.kind)} {num(k.count)}
                 </span>
               </li>
             ))}

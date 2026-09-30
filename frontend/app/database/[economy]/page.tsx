@@ -1,10 +1,10 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { SidebarTrigger } from "@/components/ui/sidebar";
+import { PageSidebarTrigger } from "@/components/shell/page-sidebar-trigger";
 import { BarRows, type BarRow } from "@/components/database/ladder";
 import { IndicatorRow } from "@/components/database/indicator-row";
 import { getEconomies, getEconomyScores } from "@/lib/data";
-import { languageName } from "@/lib/format";
+import { humanize, languageName } from "@/lib/format";
 
 const RULER = [0, 0.25, 0.5, 0.75, 1];
 
@@ -28,7 +28,7 @@ export default async function EconomyPage({ params }: PageProps<"/database/[econ
   return (
     <div className="mx-auto w-full max-w-[1400px] px-5 pb-16 sm:px-8">
       <header className="flex items-center gap-3 py-6 sm:py-8">
-        <SidebarTrigger className="-ml-1 size-8 rounded-lg text-muted-foreground" />
+        <PageSidebarTrigger />
         <div className="min-w-0">
           <Link
             href="/database"
@@ -40,7 +40,7 @@ export default async function EconomyPage({ params }: PageProps<"/database/[econ
             {scores.economy.name}
           </h1>
           <p className="mt-0.5 text-[13.5px] text-muted-foreground">
-            {scores.economy.legalSystem.family.replace("-", " ")}, published in{" "}
+            {humanize(scores.economy.legalSystem.family)}, published in{" "}
             {scores.economy.officialLanguages.map(languageName).join(", ")}. {scores.answered} of{" "}
             {scores.indicatorsTotal} indicators answered.
           </p>
@@ -48,8 +48,8 @@ export default async function EconomyPage({ params }: PageProps<"/database/[econ
       </header>
 
       <div className="flex flex-col gap-5">
-        <section className="bg-card lift grid gap-x-12 gap-y-7 rounded-3xl p-6 sm:p-8 lg:grid-cols-[minmax(0,1fr)_minmax(24rem,34rem)]">
-          <div className="max-w-[46ch]">
+        <section className="bg-card lift grid gap-x-12 gap-y-7 rounded-3xl p-6 sm:p-8 lg:grid-cols-[minmax(18rem,26rem)_minmax(0,1fr)]">
+          <div>
             <h2 className="flex items-baseline gap-3">
               <span className="tnum text-[34px] leading-none font-semibold tracking-tight text-navy-deep">
                 {scores.overall === null ? "--" : scores.overall.toFixed(2)}
@@ -89,7 +89,7 @@ export default async function EconomyPage({ params }: PageProps<"/database/[econ
                 <p className="text-[12.5px] text-muted-foreground">
                   {p.mean === null
                     ? `${p.answered} of ${p.total} answered, no mean yet`
-                    : `Pillar mean ${p.mean.toFixed(2)} over ${p.total} indicators`}
+                    : `Pillar mean ${p.mean.toFixed(2)} over ${p.total} ${p.total === 1 ? "indicator" : "indicators"}`}
                 </p>
               </div>
               <div className="mt-4">
@@ -105,8 +105,8 @@ export default async function EconomyPage({ params }: PageProps<"/database/[econ
             >
               <span className="tnum text-[12px] font-semibold text-muted-foreground/80">{p.id}</span>
               <span className="text-[13px] leading-tight text-muted-foreground">{p.name}</span>
-              <span className="ml-auto text-[11.5px] text-muted-foreground/70">
-                {p.total} indicators, not attempted
+              <span className="text-[11.5px] text-muted-foreground/70">
+                {p.total} {p.total === 1 ? "indicator" : "indicators"}, not attempted
               </span>
             </div>
           ),

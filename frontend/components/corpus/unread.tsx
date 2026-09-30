@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { CorpusEconomy } from "@/lib/data/corpus";
+import { humanize } from "@/lib/format";
 
 /** What each recorded reason means for a reader, since the stored reason is a code. */
 const MEANING: Record<string, string> = {
@@ -39,7 +40,7 @@ export function UnreadLedger({
             className="rounded-2xl border border-edge px-4 py-3.5"
           >
             <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-              <span className="text-[14px] font-medium text-navy-deep">{row.reason}</span>
+              <span className="text-[14px] font-medium text-navy-deep">{humanize(row.reason)}</span>
               <Link
                 href={`/corpus?economy=${row.code}&read=unread`}
                 className="text-[12.5px] text-muted-foreground underline-offset-[3px] hover:underline"

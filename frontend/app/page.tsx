@@ -1,4 +1,4 @@
-import { SidebarTrigger } from "@/components/ui/sidebar";
+import { PageSidebarTrigger } from "@/components/shell/page-sidebar-trigger";
 import { Attention, type AttentionItem } from "@/components/home/attention";
 import { Coverage, type CoverageSquare } from "@/components/home/coverage";
 import { RecentRuns } from "@/components/home/recent-runs";
@@ -68,7 +68,7 @@ export default function Home() {
   return (
     <div className="mx-auto w-full max-w-[1400px] px-5 pb-16 sm:px-8">
       <header className="flex items-center gap-3 py-6 sm:py-8">
-        <SidebarTrigger className="-ml-1 size-8 rounded-lg text-muted-foreground" />
+        <PageSidebarTrigger />
         <div>
           <h1 className="text-[24px] leading-tight font-semibold tracking-tight text-navy-deep">
             Overview

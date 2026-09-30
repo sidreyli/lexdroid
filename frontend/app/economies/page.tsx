@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { SidebarTrigger } from "@/components/ui/sidebar";
+import { PageSidebarTrigger } from "@/components/shell/page-sidebar-trigger";
 import { Comparison, type Column } from "@/components/economies/comparison";
 import { getEconomies } from "@/lib/data";
 import { corpusOverview } from "@/lib/data/corpus";
@@ -30,7 +30,7 @@ export default function EconomiesPage() {
   return (
     <div className="mx-auto w-full max-w-[1400px] px-5 pb-16 sm:px-8">
       <header className="flex items-center gap-3 py-6 sm:py-8">
-        <SidebarTrigger className="-ml-1 size-8 rounded-lg text-muted-foreground" />
+        <PageSidebarTrigger />
         <div className="min-w-0">
           <h1 className="text-[24px] leading-tight font-semibold tracking-tight text-navy-deep">
             Economies

@@ -1,4 +1,4 @@
-import { SidebarTrigger } from "@/components/ui/sidebar";
+import { PageSidebarTrigger } from "@/components/shell/page-sidebar-trigger";
 import { EconomyLinks, Scoreboard } from "@/components/database/scoreboard";
 import { getRubric, getScoreboard } from "@/lib/data";
 
@@ -11,7 +11,7 @@ export default function DatabasePage() {
   return (
     <div className="mx-auto w-full max-w-[1400px] px-5 pb-16 sm:px-8">
       <header className="flex flex-wrap items-center gap-x-3 gap-y-4 py-6 sm:py-8">
-        <SidebarTrigger className="-ml-1 size-8 rounded-lg text-muted-foreground" />
+        <PageSidebarTrigger />
         <div className="min-w-0">
           <h1 className="text-[24px] leading-tight font-semibold tracking-tight text-navy-deep">
             Database

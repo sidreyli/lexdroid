@@ -1,5 +1,6 @@
 import { ExternalLink } from "lucide-react";
 import type { Portal } from "@/lib/data/types";
+import { humanize } from "@/lib/format";
 
 /** Reads a pillar list the way a person would say it. */
 function servesPillars(pillars: number[] | undefined): string {
@@ -36,7 +37,7 @@ export function PortalList({ portals }: { portals: Portal[] }) {
               {portal.name}
               <ExternalLink className="size-3.5 text-muted-foreground" aria-hidden />
             </a>
-            <span className="text-[12.5px] text-muted-foreground">{portal.kind}</span>
+            <span className="text-[12.5px] text-muted-foreground">{humanize(portal.kind)}</span>
             <span className="ml-auto text-[12.5px] text-muted-foreground">
               {servesPillars(portal.pillars)}
             </span>
@@ -83,7 +84,7 @@ export function Commitments({
             <span className="text-navy-deep">{c.name}</span>
           )}
           {c.status ? (
-            <span className="text-[12px] text-muted-foreground">{c.status}</span>
+            <span className="text-[12px] text-muted-foreground">{humanize(c.status)}</span>
           ) : null}
         </li>
       ))}

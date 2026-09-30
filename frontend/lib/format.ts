@@ -58,3 +58,26 @@ const languages: Record<string, string> = {
 export function languageName(tag: string): string {
   return languages[tag] ?? tag.toUpperCase();
 }
+
+/** Capitalises the first letter, for a stored value that opens a label or a sentence. */
+export function sentence(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+/** The store keeps hyphenated codes ("common-law", "in-force"). A reader wants words. */
+export function humanize(code: string): string {
+  return sentence(code.replace(/[-_]/g, " "));
+}
+
+/** How a document's text was recovered, named the way a reader would name it. */
+const extractions: Record<string, string> = {
+  html: "HTML",
+  "pdf-text": "PDF text layer",
+  ocr: "OCR",
+  plain: "Plain text",
+  none: "Nothing",
+};
+
+export function extractionName(code: string): string {
+  return extractions[code] ?? humanize(code);
+}

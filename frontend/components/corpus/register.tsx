@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { ExternalLink, Search } from "lucide-react";
+import { humanize } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { RegisterFilters, RegisterPage } from "@/lib/data/corpus";
 
@@ -53,8 +54,8 @@ function state(row: RegisterPage["rows"][number]): { label: string; tone: string
   if (row.sections > 0)
     return { label: `${row.sections.toLocaleString("en-GB")} sections`, tone: "text-navy-deep" };
   if (row.documents > 0)
-    return { label: row.unreadReason ?? "unreadable", tone: "text-ochre" };
-  return { label: "not fetched", tone: "text-muted-foreground" };
+    return { label: row.unreadReason ? humanize(row.unreadReason) : "Unreadable", tone: "text-ochre" };
+  return { label: "Not fetched", tone: "text-muted-foreground" };
 }
 
 export function Register({
@@ -143,7 +144,7 @@ export function Register({
               active={filters.kind === kind}
               to={href(filters, { kind: filters.kind === kind ? undefined : kind, page: 1 })}
             >
-              {kind}
+              {humanize(kind)}
             </Chip>
           ))}
         </div>
@@ -168,7 +169,7 @@ export function Register({
                 page: 1,
               })}
             >
-              {status}
+              {humanize(status)}
             </Chip>
           ))}
         </div>
@@ -218,13 +219,13 @@ export function Register({
                       </span>
                     </td>
                     <td className="py-2.5 pr-4 text-[12.5px] text-muted-foreground">
-                      {row.kind ?? "unclassified"}
+                      {row.kind ? humanize(row.kind) : "Unclassified"}
                     </td>
                     <td className="py-2.5 pr-4 text-[12.5px] text-muted-foreground">
-                      {row.status}
+                      {humanize(row.status)}
                     </td>
                     <td className="tnum py-2.5 pr-4 text-[12.5px] text-muted-foreground">
-                      {row.lastAmendedOn?.slice(0, 10) ?? "not recorded"}
+                      {row.lastAmendedOn?.slice(0, 10) ?? "Not recorded"}
                     </td>
                     <td className={cn("tnum py-2.5 text-[12.5px]", read.tone)}>{read.label}</td>
                   </tr>

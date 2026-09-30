@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { languageName } from "@/lib/format";
+import { extractionName, humanize, languageName } from "@/lib/format";
 import type { CorpusEconomy } from "@/lib/data/corpus";
 import type { Economy } from "@/lib/data/types";
 
@@ -18,7 +18,7 @@ function rows(columns: Column[]): { label: string; values: string[] }[] {
   return [
     {
       label: "Legal tradition",
-      values: columns.map((c) => c.economy.legalSystem.family.replace(/-/g, " ")),
+      values: columns.map((c) => humanize(c.economy.legalSystem.family)),
     },
     {
       label: "Official languages",
@@ -50,7 +50,7 @@ function rows(columns: Column[]): { label: string; values: string[] }[] {
       label: "Text recovered from",
       values: columns.map((c) => {
         const main = (c.corpus?.extractions ?? []).filter((e) => e.extraction !== "none");
-        return main.length ? main.map((e) => e.extraction).join(", ") : "Nothing fetched yet";
+        return main.length ? main.map((e) => extractionName(e.extraction)).join(", ") : "Nothing fetched yet";
       }),
     },
   ];

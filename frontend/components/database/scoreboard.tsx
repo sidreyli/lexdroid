@@ -25,8 +25,8 @@ export function Scoreboard({ board }: { board: Board }) {
 
   return (
     <div className="flex flex-col gap-5">
-      <section className="bg-card lift grid gap-x-12 gap-y-7 rounded-3xl p-6 sm:p-8 lg:grid-cols-[minmax(0,1fr)_minmax(22rem,30rem)]">
-        <div className="max-w-[46ch]">
+      <section className="bg-card lift grid gap-x-12 gap-y-7 rounded-3xl p-6 sm:p-8 lg:grid-cols-[minmax(18rem,26rem)_minmax(0,1fr)]">
+        <div>
           <h2 className="text-[18px] leading-tight font-semibold tracking-tight text-navy-deep">
             Where the economies stand
           </h2>
@@ -183,8 +183,8 @@ function PillarStub({ pillar }: { pillar: PillarScores }) {
     <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 px-5 py-1.5 sm:px-8">
       <span className="tnum text-[12px] font-semibold text-muted-foreground/80">{pillar.id}</span>
       <span className="text-[13px] leading-tight text-muted-foreground">{pillar.name}</span>
-      <span className="ml-auto text-[11.5px] text-muted-foreground/70">
-        {pillar.total} indicators, not attempted
+      <span className="text-[11.5px] text-muted-foreground/70">
+        {pillar.total} {pillar.total === 1 ? "indicator" : "indicators"}, not attempted
       </span>
     </div>
   );

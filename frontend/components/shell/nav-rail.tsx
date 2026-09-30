@@ -20,6 +20,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarRail,
+  SidebarTrigger,
 } from "@/components/ui/sidebar";
 import { useReview } from "@/components/workbench/review-store";
 
@@ -44,11 +45,12 @@ export function NavRail({ reviewCount = 0 }: { reviewCount?: number }) {
     href === "/" ? pathname === "/" : pathname.startsWith(href);
 
   return (
-    <Sidebar collapsible="icon" className="border-r-0">
-      <SidebarHeader className="px-3 pt-4 pb-2">
+    <Sidebar collapsible="offcanvas" className="border-r-0">
+      {/* The toggle sits in the rail's own corner; once the rail is put away, each page shows one. */}
+      <SidebarHeader className="flex-row items-center gap-1 px-3 pt-4 pb-2">
         <Link
           href="/"
-          className="flex items-center gap-2.5 rounded-xl px-1.5 py-1.5 transition-colors hover:bg-sidebar-accent"
+          className="flex min-w-0 flex-1 items-center gap-2.5 rounded-xl px-1.5 py-1.5 transition-colors hover:bg-sidebar-accent"
         >
           <span className="grid size-8 shrink-0 place-items-center rounded-[11px] bg-navy text-paper shadow-[0_2px_6px_-1px_rgb(23_50_78/0.45)]">
             <svg viewBox="0 0 24 24" className="size-4" aria-hidden>
@@ -62,7 +64,7 @@ export function NavRail({ reviewCount = 0 }: { reviewCount?: number }) {
               <path d="M9 12.5h6M9 15.5h4" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
             </svg>
           </span>
-          <span className="grid group-data-[collapsible=icon]:hidden">
+          <span className="grid">
             <span className="text-[15px] leading-tight font-semibold tracking-tight text-navy-deep">
               LexDroid
             </span>
@@ -71,6 +73,7 @@ export function NavRail({ reviewCount = 0 }: { reviewCount?: number }) {
             </span>
           </span>
         </Link>
+        <SidebarTrigger className="size-8 shrink-0 rounded-lg text-muted-foreground hover:bg-sidebar-accent hover:text-navy-deep" />
       </SidebarHeader>
 
       <SidebarContent className="px-3">
@@ -97,7 +100,7 @@ export function NavRail({ reviewCount = 0 }: { reviewCount?: number }) {
           ))}
         </SidebarMenu>
 
-        <div className="my-3 h-px bg-sidebar-border group-data-[collapsible=icon]:mx-2" />
+        <div className="my-3 h-px bg-sidebar-border" />
 
         <SidebarMenu className="gap-0.5">
           {reference.map((item) => (

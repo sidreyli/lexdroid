@@ -1,11 +1,11 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { SidebarTrigger } from "@/components/ui/sidebar";
+import { PageSidebarTrigger } from "@/components/shell/page-sidebar-trigger";
 import { InstrumentLadder } from "@/components/economies/ladder";
 import { Commitments, PortalList } from "@/components/economies/portals";
 import { getEconomy } from "@/lib/data";
 import { corpusOverview } from "@/lib/data/corpus";
-import { languageName } from "@/lib/format";
+import { humanize, languageName } from "@/lib/format";
 
 // Read at request time: the counts beside each rung come from the working register.
 export const dynamic = "force-dynamic";
@@ -28,7 +28,7 @@ export default async function EconomyProfilePage({ params }: PageProps<"/economi
   return (
     <div className="mx-auto w-full max-w-[1400px] px-5 pb-16 sm:px-8">
       <header className="flex items-center gap-3 py-6 sm:py-8">
-        <SidebarTrigger className="-ml-1 size-8 rounded-lg text-muted-foreground" />
+        <PageSidebarTrigger />
         <div className="min-w-0">
           <Link
             href="/economies"
@@ -40,7 +40,7 @@ export default async function EconomyProfilePage({ params }: PageProps<"/economi
             {economy.name}
           </h1>
           <p className="mt-0.5 text-[13.5px] leading-snug text-muted-foreground">
-            {economy.legalSystem.family.replace(/-/g, " ")}, published in{" "}
+            {humanize(economy.legalSystem.family)}, published in{" "}
             {economy.officialLanguages.map(languageName).join(", ")}.{" "}
             <Link
               href={`/database/${economy.code.toLowerCase()}`}
@@ -59,7 +59,7 @@ export default async function EconomyProfilePage({ params }: PageProps<"/economi
             <h2 className="text-[17px] font-semibold tracking-tight text-navy-deep">
               How the law is published
             </h2>
-            <p className="mt-2 max-w-[68ch] text-[13.5px] leading-relaxed text-muted-foreground">
+            <p className="mt-2 text-[13.5px] leading-relaxed text-muted-foreground">
               {economy.legalSystem.note}
             </p>
           </div>
@@ -67,7 +67,7 @@ export default async function EconomyProfilePage({ params }: PageProps<"/economi
             <h2 className="text-[17px] font-semibold tracking-tight text-navy-deep">
               Which language governs
             </h2>
-            <p className="mt-2 max-w-[68ch] text-[13.5px] leading-relaxed text-muted-foreground">
+            <p className="mt-2 text-[13.5px] leading-relaxed text-muted-foreground">
               {economy.languageNote ??
                 `Official languages: ${economy.officialLanguages.map(languageName).join(", ")}.`}
             </p>

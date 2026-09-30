@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { SidebarTrigger } from "@/components/ui/sidebar";
+import { PageSidebarTrigger } from "@/components/shell/page-sidebar-trigger";
 import { RunMonitor } from "@/components/runs/run-monitor";
 import { RescoreButton } from "@/components/runs/rescore-button";
 import { getEconomies, getExportRows, getRubric, getRun, getRunEvents, getRuns } from "@/lib/data";
@@ -24,7 +24,7 @@ export default async function RunPage({ params }: PageProps<"/runs/[id]">) {
   return (
     <div className="mx-auto w-full max-w-[1400px] px-5 pb-16 sm:px-8">
       <header className="flex items-center gap-3 py-6 sm:py-8">
-        <SidebarTrigger className="-ml-1 size-8 rounded-lg text-muted-foreground" />
+        <PageSidebarTrigger />
         <div className="min-w-0 flex-1">
           <Link
             href="/runs"

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { SidebarTrigger } from "@/components/ui/sidebar";
+import { PageSidebarTrigger } from "@/components/shell/page-sidebar-trigger";
 import { LiveRuns, type RunCard } from "@/components/runs/live-runs";
 import { readProgress } from "@/lib/runs/progress";
 import { getEconomies, getRubric, getRunEvents, getRuns } from "@/lib/data";
@@ -64,7 +64,7 @@ export default function RunsPage() {
   return (
     <div className="mx-auto w-full max-w-[1400px] px-5 pb-16 sm:px-8">
       <header className="flex items-center gap-3 py-6 sm:py-8">
-        <SidebarTrigger className="-ml-1 size-8 rounded-lg text-muted-foreground" />
+        <PageSidebarTrigger />
         <div>
           <h1 className="text-[24px] leading-tight font-semibold tracking-tight text-navy-deep">
             Runs

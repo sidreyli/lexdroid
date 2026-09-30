@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { extractionName, languageName } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { ExportRow, Indicator, ReadingAttribute } from "@/lib/data/types";
 import type { FindingEdit } from "@/lib/review";
@@ -212,8 +213,8 @@ export function FindingPanel({
         <dl className="grid gap-x-6 gap-y-1.5 text-[12.5px] @xl:grid-cols-2">
           <Fact label="Read by" value={row.model ? `${row.engine}, ${row.model}` : "Not read"} />
           <Fact label="Run" value={row.runId.slice(0, 8)} />
-          <Fact label="Extracted from" value={row.extraction ?? "no document"} />
-          <Fact label="Language" value={row.languageOfSource ?? "unknown"} />
+          <Fact label="Extracted from" value={row.extraction ? extractionName(row.extraction) : "No document"} />
+          <Fact label="Language" value={row.languageOfSource ? languageName(row.languageOfSource) : "Unknown"} />
         </dl>
       </Section>
     </div>

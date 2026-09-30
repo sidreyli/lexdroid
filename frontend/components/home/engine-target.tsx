@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Cloud, Cpu, Loader2, Power, Square, Upload, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
+import { humanize } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 /** What `backend/scripts/gpu.ts status` prints, as far as this panel reads it. */
@@ -196,10 +197,10 @@ export function EngineTarget({
             pods.length > 0
               ? `${pods.length} × ${gpuName(pods[0]!.gpu)}, $${hourly.toFixed(2)}/hr`
               : cheapest
-                ? `from $${cheapest.usdPerHour.toFixed(2)}/hr`
+                ? `From $${cheapest.usdPerHour.toFixed(2)}/hr`
                 : rented
                   ? `${rented.minGpuMemoryGb} GB or more`
-                  : "not declared"
+                  : "Not declared"
           }
         />
       </div>
@@ -296,7 +297,7 @@ export function EngineTarget({
                     <p className="min-w-0 truncate text-[12.5px] text-muted-foreground">
                       <span className="font-medium text-navy-deep">{gpuName(pod.gpu) || "GPU"}</span>{" "}
                       <span className={cn(pod.status.stage === "ready" && "font-medium text-navy-deep")}>
-                        {pod.status.stage === "ready" ? "Ready" : pod.status.stage}
+                        {humanize(pod.status.stage)}
                       </span>
                       {pod.status.stage !== "ready" && pod.status.detail ? `: ${pod.status.detail}` : ""}
                       <span className="text-muted-foreground/70">{` · ${pod.id}`}</span>

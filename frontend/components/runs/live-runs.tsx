@@ -101,7 +101,7 @@ export function LiveRuns({ cards }: { cards: RunCard[] }) {
           <h2 className="text-[17px] font-semibold tracking-tight text-navy-deep">
             Nothing is running
           </h2>
-          <p className="mt-1.5 max-w-[62ch] text-[13.5px] leading-relaxed text-muted-foreground">
+          <p className="mt-1.5 text-[13.5px] leading-relaxed text-muted-foreground">
             Start a run from the overview and it will appear here while it works, provision by
             provision.
           </p>

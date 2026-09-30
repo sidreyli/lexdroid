@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowUpRight, ChevronRight } from "lucide-react";
-import { SidebarTrigger } from "@/components/ui/sidebar";
+import { PageSidebarTrigger } from "@/components/shell/page-sidebar-trigger";
 import { BandLadder } from "@/components/database/band-ladder";
 import { HistoryChart } from "@/components/database/history-chart";
 import { getCellDetail } from "@/lib/data";
@@ -33,7 +33,7 @@ export default async function CellPage({ params }: PageProps<"/database/[economy
   return (
     <div className="mx-auto w-full max-w-[1400px] px-5 pb-16 sm:px-8">
       <header className="flex items-start gap-3 py-6 sm:py-8">
-        <SidebarTrigger className="-mt-1 -ml-1 size-8 rounded-lg text-muted-foreground" />
+        <PageSidebarTrigger className="-mt-1" />
         <div className="min-w-0">
           <nav className="flex items-center gap-1 text-[12.5px] text-muted-foreground">
             <Link href="/database" className="underline-offset-[3px] hover:underline">
@@ -67,15 +67,17 @@ export default async function CellPage({ params }: PageProps<"/database/[economy
       </header>
 
       {current === null ? (
-        <section className="bg-card lift rounded-3xl p-6 sm:p-8">
-          <h2 className="text-[17px] font-semibold tracking-tight text-navy-deep">
-            Nothing has attempted this yet
-          </h2>
-          <p className="mt-2 max-w-[60ch] text-[13.5px] leading-relaxed text-muted-foreground">
-            No completed run has answered {detail.indicator.id} for {detail.economy.name}. The bands
-            below are what an answer would have to meet.
-          </p>
-          <div className="mt-6 max-w-[52rem]">
+        <section className="bg-card lift grid gap-x-12 gap-y-6 rounded-3xl p-6 sm:p-8 lg:grid-cols-[minmax(16rem,24rem)_minmax(0,1fr)]">
+          <div>
+            <h2 className="text-[17px] font-semibold tracking-tight text-navy-deep">
+              Nothing has attempted this yet
+            </h2>
+            <p className="mt-2 text-[13.5px] leading-relaxed text-muted-foreground">
+              No completed run has answered {detail.indicator.id} for {detail.economy.name}. The
+              bands are what an answer would have to meet.
+            </p>
+          </div>
+          <div className="min-w-0 rounded-2xl bg-inset p-4 sm:p-5">
             <BandLadder bands={detail.indicator.bands} met={null} />
           </div>
         </section>
@@ -100,7 +102,7 @@ export default async function CellPage({ params }: PageProps<"/database/[economy
 
               <div className="mt-5 flex flex-wrap items-baseline gap-x-4 gap-y-1">
                 <span className="tnum text-[44px] leading-none font-semibold tracking-tight text-navy-deep">
-                  {current.score === null ? "not scored" : current.score.toFixed(2)}
+                  {current.score === null ? "Not scored" : current.score.toFixed(2)}
                 </span>
                 <span className="max-w-[52ch] text-[14px] leading-snug text-ink">
                   {current.bandCriterion ?? "No band recorded"}

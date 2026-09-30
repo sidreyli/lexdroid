@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
-import { SidebarTrigger } from "@/components/ui/sidebar";
+import { PageSidebarTrigger } from "@/components/shell/page-sidebar-trigger";
 import type { QueueItem } from "@/lib/data/types";
 import { QueueRail } from "./queue-rail";
 import { useReview } from "./review-store";
@@ -24,7 +24,7 @@ export function WorkbenchFrame({
   return (
     <div className="flex h-svh flex-col overflow-hidden">
       <header className="flex shrink-0 items-center gap-3 border-b border-edge px-4 py-3 sm:px-5">
-        <SidebarTrigger className="-ml-1 size-8 shrink-0 rounded-lg text-muted-foreground" />
+        <PageSidebarTrigger />
 
         <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
           <SheetTrigger asChild>

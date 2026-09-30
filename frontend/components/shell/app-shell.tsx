@@ -1,16 +1,20 @@
+import { cookies } from "next/headers";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { getReviewQueue } from "@/lib/data";
 import { isReadOnlyDeployment } from "@/lib/deployment";
 import { NavRail } from "./nav-rail";
 
-export function AppShell({ children }: { children: React.ReactNode }) {
+export async function AppShell({ children }: { children: React.ReactNode }) {
   const awaitingReview = getReviewQueue().length;
   const readOnly = isReadOnlyDeployment();
+  // The sidebar records whether it was put away; read it here so a reload does not reopen it.
+  const sidebarOpen = (await cookies()).get("sidebar_state")?.value !== "false";
 
   return (
     <SidebarProvider
+      defaultOpen={sidebarOpen}
       style={
-        { "--sidebar-width": "15rem", "--sidebar-width-icon": "4rem" } as React.CSSProperties
+        { "--sidebar-width": "15rem" } as React.CSSProperties
       }
     >
       <NavRail reviewCount={awaitingReview} />
