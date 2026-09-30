@@ -104,7 +104,7 @@ Ollama is not running: start it with `ollama serve`.
 | Switch the AI engine | **Home** → *Start a run* → **Engine** |
 | Export to the RDTII schema | **Runs** → a run → *Export* |
 
-**Walkthrough recording:** to follow with the Word submission.
+**Walkthrough recording:** https://drive.google.com/file/d/1DD-ed-N8Obutebw33AkO8iStoZb2-xRD/view?usp=drive_link
 
 ---
 
