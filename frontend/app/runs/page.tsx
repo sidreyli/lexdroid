@@ -3,7 +3,7 @@ import { PageSidebarTrigger } from "@/components/shell/page-sidebar-trigger";
 import { LiveRuns, type RunCard } from "@/components/runs/live-runs";
 import { readProgress } from "@/lib/runs/progress";
 import { getEconomies, getRubric, getRunEvents, getRuns } from "@/lib/data";
-import { duration } from "@/lib/format";
+import { duration, pillarsAsked } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { Run } from "@/lib/data/types";
 
@@ -13,13 +13,6 @@ const statusWord: Record<string, string> = {
   cancelled: "Stopped",
   running: "Running",
 };
-
-function pillarsAsked(run: Run): string {
-  if (run.pillars === "all") return "all pillars";
-  return run.pillars.length === 1
-    ? `pillar ${run.pillars[0]}`
-    : `pillars ${run.pillars.slice(0, -1).join(", ")} and ${run.pillars.at(-1)}`;
-}
 
 function day(iso: string): string {
   const then = new Date(iso);
@@ -44,7 +37,7 @@ export default function RunsPage() {
       return {
         id: run.id,
         where: where(run),
-        pillarsAsked: pillarsAsked(run),
+        pillarsAsked: pillarsAsked(run.pillars),
         startedAt: run.startedAt,
         lastSpokeAt: progress.lastSpokeAt,
         legs: progress.legs,
@@ -100,7 +93,7 @@ export default function RunsPage() {
                         {where(run)}
                       </span>
                       <span className="hidden truncate text-[12.5px] leading-tight text-muted-foreground sm:block">
-                        {pillarsAsked(run)}
+                        {pillarsAsked(run.pillars)}
                       </span>
                       <span
                         className={cn(

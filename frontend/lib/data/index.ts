@@ -19,6 +19,7 @@ import {
   liveVerdicts,
 } from "./store";
 import type { ReviewDecision } from "@/lib/review";
+import { clip, pillarsAsked } from "@/lib/format";
 import type {
   Cell,
   CoverageCell,
@@ -26,6 +27,7 @@ import type {
   ExportRow,
   Indicator,
   QueueItem,
+  QueueRun,
   PillarMean,
   PillarScores,
   IndicatorScores,
@@ -147,10 +149,24 @@ export function getExportRow(id: number): ExportRow | undefined {
 }
 
 /** Rows a reviewer still has to look at, failed gates first. */
+/**
+ * Every row, a run at a time and the newest run first, so the queue can fold each run into a
+ * block and j and k walk the blocks in the order they are shown. Inside a run, rows a check
+ * failed come first. Several runs over the same economy produce much the same rows; kept in
+ * one flat list they read as duplicates.
+ */
 export function getReviewQueue(): ExportRow[] {
   const failed = (r: ExportRow) => r.gates.filter((g) => !g.passed).length;
+  const started = new Map(runs().map((r) => [r.id, r.startedAt]));
+  const when = (r: ExportRow) => started.get(r.runId) ?? "";
   return [...exportRows()].sort(
-    (a, b) => failed(b) - failed(a) || a.economy.localeCompare(b.economy) || a.id - b.id,
+    (a, b) =>
+      when(b).localeCompare(when(a)) ||
+      b.runId.localeCompare(a.runId) ||
+      failed(b) - failed(a) ||
+      a.economy.localeCompare(b.economy) ||
+      compareIndicatorIds(a.indicatorId, b.indicatorId) ||
+      a.id - b.id,
   );
 }
 
@@ -166,6 +182,25 @@ export function getQueueItems(): QueueItem[] {
   const names = new Map(economies().map((e) => [e.code, e.name]));
   const categories = new Map(rubric().indicators.map((i) => [i.id, i.category]));
   const latest = new Map(getVerdicts().map((v) => [v.rowId, v]));
+  const byRun = new Map(runs().map((r) => [r.id, r]));
+  const runOf = (id: string): QueueRun => {
+    const run = byRun.get(id);
+    return {
+      id,
+      startedAt: run?.startedAt ?? null,
+      when: run
+        ? new Date(run.startedAt).toLocaleString("en-GB", {
+            day: "numeric",
+            month: "short",
+            hour: "2-digit",
+            minute: "2-digit",
+          })
+        : `Run ${id.slice(0, 8)}`,
+      economies: run ? run.economies.map((c) => names.get(c) ?? c).join(", ") : "",
+      pillars: run ? pillarsAsked(run.pillars) : "",
+      model: run?.model ?? null,
+    };
+  };
   return getReviewQueue().map((r) => ({
     id: r.id,
     economy: r.economy,
@@ -179,6 +214,8 @@ export function getQueueItems(): QueueItem[] {
     hasQuote: r.quoteCharStart !== null,
     failedGates: r.gates.filter((g) => !g.passed).length,
     verdict: latest.get(r.id)?.action ?? null,
+    quote: r.verbatimSnippet?.trim() ? clip(r.verbatimSnippet.trim(), 80) : null,
+    run: runOf(r.runId),
   }));
 }
 

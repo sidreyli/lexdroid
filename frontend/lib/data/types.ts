@@ -267,6 +267,21 @@ export interface QueueItem {
   failedGates: number;
   /** The verdict a reviewer has already recorded on this row, if any. */
   verdict: "accept" | "edit" | "reject" | null;
+  /** The opening of the quoted words, which tells apart rows citing the same section. */
+  quote: string | null;
+  /** The run that produced the row, which the queue groups by. */
+  run: QueueRun;
+}
+
+/** Enough of a run to head its block in the queue. */
+export interface QueueRun {
+  id: string;
+  startedAt: string | null;
+  /** When it started, written out on the server so the browser renders the same words. */
+  when: string;
+  economies: string;
+  pillars: string;
+  model: string | null;
 }
 
 /** One economy against one indicator, as the coverage grid sees it. */

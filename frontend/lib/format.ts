@@ -81,3 +81,10 @@ const extractions: Record<string, string> = {
 export function extractionName(code: string): string {
   return extractions[code] ?? humanize(code);
 }
+
+/** The pillars a run was asked for, as a phrase: "all pillars", "pillar 6", "pillars 6 and 7". */
+export function pillarsAsked(pillars: number[] | "all"): string {
+  if (pillars === "all") return "all pillars";
+  if (pillars.length === 1) return `pillar ${pillars[0]}`;
+  return `pillars ${listOf(pillars.map(String))}`;
+}
