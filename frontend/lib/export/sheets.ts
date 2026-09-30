@@ -614,7 +614,7 @@ export function addInstructions(book: ExcelJS.Workbook): void {
     ["Discovery Tag", "NEW or KNOWN against ESCAP's published sample kit. Applied after the rows exist, by the one module allowed to read the kit — nothing in discovery or extraction can see it, or every instrument would be KNOWN by construction."],
     ["Pillar", "Derived from the Indicator ID."],
     ["Confidence", "Whether the quoted words were located in the stored source, and where they were not, why."],
-    ["Rejected rows", "Rows a reviewer rejected are not in this file. Rows a reviewer corrected are here as corrected."],
+    ["Rejected", "Rows a reviewer rejected are not in Output Data. They are listed on the Rejected sheet with who rejected each one, when, and the reason they gave. Rows a reviewer corrected are in Output Data as corrected."],
     ["Indicator Reference", "Every indicator in the framework with its pillar, category and the criterion text it is scored against."],
     ["Coverage Matrix", "How many rows each economy produced for each indicator. A zero is a cell that produced no evidence row, which is different from a cell nobody asked."],
     ["Run Record", "The live hour's two passes, every document downloaded during it, and the short note's headings, as the template lays them out."],

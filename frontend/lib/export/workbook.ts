@@ -153,6 +153,15 @@ export function heldRows(selection: Selection): { row: ExportRow; reasons: strin
     .filter((h) => h.reasons.length > 0);
 }
 
+/** What a reviewer rejected, with the rejection that stands on it -- kept out of Output Data. */
+export function rejectedRows(selection: Selection): { row: ExportRow; decision: ReviewDecision }[] {
+  const decisions = getVerdicts();
+  return selected(selection).flatMap((row) => {
+    const last = decisions.filter((d) => d.rowId === row.id).at(-1);
+    return last?.action === "reject" ? [{ row, decision: last }] : [];
+  });
+}
+
 function outputValues(rows: ExportRow[]): (string | number | null)[][] {
   const names = new Map(getEconomies().map((e) => [e.code, e.name]));
   return rows.map((r) => [
@@ -248,6 +257,40 @@ export async function buildWorkbook(selection: Selection): Promise<Buffer> {
     }
     sheet.columns.forEach((c, i) => (c.width = [10, 40, 18, 12, 60, 60][i] ?? 16));
     styleTable(sheet, { columns: 6, centred: [1, 4] });
+  }
+
+  // Rows a reviewer rejected, with who, when and what they checked. Left out of Output Data, and
+  // listed here so a rejection is on the record rather than a row that silently went missing.
+  const rejected = rejectedRows(selection);
+  if (rejected.length > 0) {
+    const sheet = book.addWorksheet("Rejected");
+    sheet.addRow([
+      "Economy",
+      "Law Name",
+      "Article / Section",
+      "Indicator ID",
+      "Verbatim Snippet",
+      "Source URL",
+      "Rejected By",
+      "Rejected On",
+      "Reviewer's Reason",
+    ]);
+    for (const { row, decision } of rejected) {
+      const added = sheet.addRow([
+        row.economy,
+        row.lawName,
+        row.article,
+        row.indicatorId,
+        row.verbatimSnippet,
+        row.sourceUrl,
+        decision.reviewer || "Unsigned",
+        decision.actedAt.slice(0, 10),
+        decision.attestation,
+      ]);
+      added.getCell(4).numFmt = "@";
+    }
+    sheet.columns.forEach((c, i) => (c.width = [10, 40, 18, 12, 60, 40, 18, 14, 60][i] ?? 16));
+    styleTable(sheet, { columns: 9, centred: [1, 4, 8] });
   }
 
   // The run table this file always carried. "Run Record" is the template's own sheet, below.
