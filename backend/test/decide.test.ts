@@ -2098,6 +2098,46 @@ describe('a requirement to be present in the economy, named by the economy’s o
   });
 });
 
+// Thailand's own word for "a foreign country" -- "ต่างประเทศ" -- is not a substring of "ต่างด้าว"
+// (alien) or "ต่างชาติ" (foreign nationality), the two Thai nationality words already in NATIONALITY.
+// A BOT payment notice's card-network licence, "นิติบุคคลต่างประเทศ ต้องมีสํานักงานสาขาหรือสํานักงาน
+// ผู้แทนในประเทศไทย" (a foreign legal entity must have a branch or representative office in
+// Thailand), named its dutyBearer that way and was excluded as naming no foreign party at all.
+describe('commercial-presence named by Thailand’s own word for "a foreign country"', () => {
+  const indicator35: Indicator = {
+    id: '3.5',
+    pillarId: 3,
+    pillarName: 'Foreign Investment Policies',
+    category: 'test',
+    exception: null,
+    criteriaText: '...',
+    bands: [
+      { score: 1, criterion: 'Requirement to establish a commercial presence before supplying a service', ordinal: 1 },
+      { score: 0, criterion: 'No requirement', ordinal: 2 },
+    ],
+    shape: 'provision',
+    shapeBasis: 'test',
+    provenance: { document: 'test', locator: 'test' },
+  };
+  const tha = evidence(1, 'Re: Regulations, Procedures and Conditions on Application for License to Undertake', {
+    indicatorId: '3.5',
+    measure: 'commercial-presence',
+    dutyBearer: 'นิติบุคคลต่างประเทศ',
+    dutyBearerKind: 'organisation',
+    quote: 'นิติบุคคลต่างประเทศ ต้องมีสํานักงานสาขาหรือสํานักงานผู้แทนในประเทศไทย',
+    definingWords: 'สํานักงานสาขาหรือสํานักงานผู้แทน',
+    subjectWords: 'ธุรกิจระบบเครือข่ายบัตร',
+    placeWords: 'ในประเทศไทย',
+  });
+
+  it('is not excluded as naming no foreign party', () => {
+    const d = decide({ indicator: indicator35, economy: 'THA', evidence: [tha], surfaced, coverage });
+    expect(d.excluded.map((x) => x.reason).join(' ')).not.toContain('names no foreign party');
+    expect(d.basis).toHaveLength(1);
+    expect(d.score).toBe(1);
+  });
+});
+
 // A local-bank-account requirement that never says the word bank, in any language, is not
 // credible evidence of one -- confirmation or not. Mongolia's e-invoicing rule ("цахим төлбөрийн
 // баримт", an electronic tax receipt) was confirmed as naming this measure and scored it.

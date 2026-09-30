@@ -2744,8 +2744,13 @@ const BIDDER_ELIGIBILITY_ONLY =
  * carry a foreign equity limit, which is a finding about it. Read across every word the reader
  * copied out, because the nationality can sit in the party bound, the limit, or the sector.
  */
+// "ต่างประเทศ" ("foreign/another country") is its own word, not a substring of "ต่างด้าว" (alien) or
+// "ต่างชาติ" (foreign nationality): a card-network licensee that "is a foreign legal entity"
+// (นิติบุคคลต่างประเทศ) named its dutyBearer that way, and without this word the finding read as
+// naming no foreign party at all, taking the rule-out path this indicator's Thai findings already
+// take (see excludeOnWords above).
 const NATIONALITY =
-  /\b(foreign(er|ers|ly)?|non-?residents?|non-?citizens?|non-?nationals?|overseas|aliens?|citizens?|nationals?|nationality|residents?|residency|domestic|local(ly)?|indigenous|bumiputera|malaysian|singaporean|australian|incorporated in)\b|คนต่างด้าว|ต่างด้าว|ต่างชาติ|สัญชาติ/i;
+  /\b(foreign(er|ers|ly)?|non-?residents?|non-?citizens?|non-?nationals?|overseas|aliens?|citizens?|nationals?|nationality|residents?|residency|domestic|local(ly)?|indigenous|bumiputera|malaysian|singaporean|australian|incorporated in)\b|คนต่างด้าว|ต่างด้าว|ต่างชาติ|ต่างประเทศ|สัญชาติ/i;
 
 /**
  * The same categories in Russian, Mongolian and Lao. Stems, matched as substrings: `\b` is ASCII-only
