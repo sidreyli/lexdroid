@@ -357,6 +357,57 @@ describe('blocking and filtering', () => {
   });
 });
 
+// 2.3's own gloss: a substantive bidding condition is "a local content share, a local employment
+// target or another performance undertaking", not the ordinary eligibility grounds every
+// procurement law states for every tender regardless of nationality. Four shapes confirmed against
+// the benchmark's own basis, none of them India's genuine local-content clause.
+describe('2.3, a bidding condition that is a substantive one', () => {
+  const bc = (n: number, instrumentTitle: string, defining: string, quote: string): Evidence => ({
+    ...ev('2.3', 'bidding-condition', { definingWords: defining, quote, subjectWords: 'the tender' }, n),
+    instrumentTitle,
+  });
+  const registration = (n: number) =>
+    bc(n, 'Government Procurement Act', 'unless he is registered under this Act', 'No supplier or contractor shall participate in a Government procurement unless he is registered under this Act.');
+  const mongolianCertificate = (n: number) =>
+    bc(n, 'ЖУРАМ БАТЛАХ ТУХАЙ', 'хуулийн этгээдийн гэрчилгээтэй байх', 'аж ахуйн нэгж, төрийн бус байгууллага бол хуулийн этгээдийн гэрчилгээтэй байх');
+  const documentConformity = (n: number) =>
+    bc(n, 'Постановление № 1215', 'несоответствие документов и информации требованиям', 'несоответствие документов и информации требованиям, установленным документацией о закупке');
+  const blacklist = (n: number) =>
+    bc(n, 'Постановление № 2571', 'отсутствии ... в реестре недобросовестных поставщиков', 'заказчик обязан установить требование об отсутствии в реестре недобросовестных поставщиков (подрядчиков, исполнителей)');
+  const bidSecurity = (n: number) =>
+    bc(n, '223-ФЗ', 'в качестве обеспечения заявки', 'непоступление денежных средств в качестве обеспечения заявки');
+  const localContent = (n: number, instrumentTitle = 'Public Procurement (Preference to Make in India) Order') =>
+    bc(n, instrumentTitle, 'local content', 'procuring entities to obtain from bidders the cost of such locally-sourced imported items');
+
+  it('does not count a registration or certificate requirement, in English or Mongolian', () => {
+    expect(score('2.3', [registration(1)])).toBe(0);
+    expect(score('2.3', [mongolianCertificate(1)])).toBe(0);
+  });
+
+  it('does not count a document- or bid-format conformity check', () => {
+    expect(score('2.3', [documentConformity(1)])).toBe(0);
+  });
+
+  it('does not count a supplier-blacklist check or a bid-security deposit', () => {
+    expect(score('2.3', [blacklist(1)])).toBe(0);
+    expect(score('2.3', [bidSecurity(1)])).toBe(0);
+  });
+
+  it('still counts a genuine local-content condition', () => {
+    expect(score('2.3', [localContent(1)])).toBe(0.5);
+  });
+
+  it('does not let near-duplicate eligibility clauses inflate one genuine condition into two', () => {
+    const evidence = [documentConformity(1), documentConformity(2), documentConformity(3), blacklist(4), bidSecurity(5), localContent(6)];
+    expect(score('2.3', evidence)).toBe(0.5);
+  });
+
+  it('still reaches the top band on two genuinely distinct substantive conditions', () => {
+    const secondMechanism = bc(2, 'Local Industry Participation Act', 'local employment', 'a tenderer must employ a target share of local staff');
+    expect(score('2.3', [localContent(1), secondMechanism])).toBe(1);
+  });
+});
+
 describe('the indicator that law cannot answer', () => {
   it('declares 5.3 rather than leaving it looking unfinished', () => {
     const d = decide({

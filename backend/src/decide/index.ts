@@ -1914,6 +1914,28 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
       });
       continue;
     }
+    // 2.3's bidding-condition measure is defined by its own gloss as a substantive one -- "a local
+    // content share, a local employment target or another performance undertaking" -- not the
+    // ordinary run of eligibility grounds every procurement law states for every tender regardless
+    // of nationality: a registration or certificate requirement, a document- or bid-format
+    // conformity check, a supplier-blacklist check, or a bid-security deposit. Nothing enforced that
+    // distinction, and checked directly against the benchmark's own basis (not Russia alone, per
+    // this fix's own risk note): Malaysia's registration clause ("no supplier ... unless he is
+    // registered under this Act") and Mongolia's certificate clause ("must have a legal-entity
+    // certificate") name only who may bid, not a condition on how the contract is performed; four
+    // near-identical clauses in Russia's Постановление № 1215 disqualify a bid for a document or
+    // format non-conformity, one in Постановление № 2571 checks the supplier blacklist, and one in
+    // 223-ФЗ is a bid-security deposit -- none of them India's genuine local-content clause ("local
+    // content", the cost of locally-sourced items) or the rubric's own Australian-industry-
+    // participation example. Excluded on the finding's own words, not the instrument's title,
+    // because an eligibility clause and a substantive one commonly share the same procurement Act.
+    if (e.finding.measure === 'bidding-condition' && BIDDER_ELIGIBILITY_ONLY.test(e.finding.quote ?? e.finding.definingWords ?? '')) {
+      ruledOut.push({
+        evidence: e,
+        reason: `"${e.finding.definingWords ?? e.finding.quote}" is an ordinary eligibility, conformity or bid-security ground, not a substantive condition on how the contract is performed`,
+      });
+      continue;
+    }
     // A requirement to be present in the economy says where. Lao PDR's rule that an internet café
     // "must have suitable premises" was confirmed in Lao as a local presence requirement and
     // scored 12.8's top band: a shop needs a room, which is not the same as a provider having to
@@ -2695,6 +2717,25 @@ const CRIMINAL_PROCEDURE_TITLE = /\bcriminal (?:procedure|code)\b|penal code|э�
  * confirmed against all four.
  */
 const CHILD_OR_AGE_RESTRICTED = /\b(child\w*|minor\w*|juvenile\w*)\b|18\+|хүүх/i;
+
+/**
+ * An ordinary bidder-eligibility ground, not a substantive condition on how the contract is
+ * performed -- see the `bidding-condition` block above for what this excludes and why.
+ *
+ * Four shapes, each confirmed against a real citation in the benchmark: a registration or
+ * certificate requirement (Malaysia's "registered under this Act", Mongolia's "гэрчилгээтэй байх",
+ * a legal-entity certificate); a document- or bid-format conformity check (Russia's Постановление
+ * № 1215, four near-identical clauses -- "несоответствие документов ... требованиям", "несоответствие
+ * заявки ... к содержанию, оформлению и составу", "непредставление документов и информации"); a
+ * supplier-blacklist check (Постановление № 2571's "реестре недобросовестных поставщиков"); and a
+ * bid-security deposit (223-ФЗ's "в качестве обеспечения заявки"). The conformity shape is asked
+ * with a gap rather than a bare stem, because "несоответствие" alone is ordinary Russian for any
+ * non-conformity, including a substantive one -- a local-content shortfall would say so too -- and
+ * what makes these four eligibility rather than substance is that the non-conformity is with the
+ * tender's own documents, format or requirements, stated within the same clause.
+ */
+const BIDDER_ELIGIBILITY_ONLY =
+  /\bregistered under (?:this|the) act\b|\bbid (?:security|bond)\b|\bearnest money\b|гэрчилгээтэй|бүртгэлтэй\s*байх|недобросовестн\w*|обеспечени\w*[\s\S]{0,15}заявк\w*|(?:несоответств\w*|непредставлени\w*)[\s\S]{0,60}(?:докумен\w*|заявк\w*|требован\w*)/i;
 
 /**
  * Does this finding restrict holders by nationality or residence, either way round?
