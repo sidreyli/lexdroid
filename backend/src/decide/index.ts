@@ -1883,6 +1883,37 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
       });
       continue;
     }
+    // 9.1's own gloss excludes political and election content, criminal content such as child abuse
+    // material, and age-restricted content -- and says so only in the measure vocabulary the reader
+    // is asked, with nothing enforcing it here. Mongolia's entire basis for this cell was almost
+    // exactly what the gloss excludes and nothing it scores: a Criminal Procedure Code network-
+    // restriction order ("ЭРҮҮГИЙН ХЭРЭГ ХЯНАН ШИЙДВЭРЛЭХ ТУХАЙ"), two Child Protection Act blocks plus
+    // a child-inspector rule, an 18+ content filter, and five election-campaign blocks across three
+    // election laws ("...СОНГУУЛИЙН ТУХАЙ" x2, "ЦАХИМ ОРЧИН АШИГЛАН СОНГУУЛИЙН СУРТАЛЧИЛГАА..." x3) --
+    // none an ordinary commercial website, marketplace, streaming or gambling-service duty, confirmed
+    // by reading the cell's full basis directly against the pack. Election/political and criminal-
+    // procedure instruments are asked of the instrument's title alone, the same way COMPETITION_LAW
+    // is above: an election law or a criminal code is named as such by its own title far more
+    // reliably than by any one operative sentence, and asking the quote for a bare "criminal" or
+    // "political" would as readily catch a penalty clause's criminal liability, or a "political
+    // subdivision" naming which government body holds a power, as it would the content this
+    // indicator excludes. A child or age-restriction measure is asked of the quote and defining
+    // words too, since a child-protection duty states its own subject there as plainly as its
+    // instrument's title does, and "child" carries none of "criminal"'s or "political"'s ambiguity.
+    if (
+      NINE_ONE_EXCLUDED_MEASURES.has(e.finding.measure ?? '') &&
+      (ELECTION_OR_POLITICAL_TITLE.test(e.instrumentTitle) ||
+        CRIMINAL_PROCEDURE_TITLE.test(e.instrumentTitle) ||
+        CHILD_OR_AGE_RESTRICTED.test(e.instrumentTitle) ||
+        CHILD_OR_AGE_RESTRICTED.test(e.finding.quote ?? '') ||
+        CHILD_OR_AGE_RESTRICTED.test(e.finding.definingWords ?? ''))
+    ) {
+      ruledOut.push({
+        evidence: e,
+        reason: `"${e.instrumentTitle}" is political or election content, criminal-procedure content, or child or age-restricted content, none of which this indicator scores`,
+      });
+      continue;
+    }
     // A requirement to be present in the economy says where. Lao PDR's rule that an internet café
     // "must have suitable premises" was confirmed in Lao as a local presence requirement and
     // scored 12.8's top band: a shop needs a room, which is not the same as a provider having to
@@ -2620,6 +2651,50 @@ const BANK_STEM = /\bbank\w*\b|банк|ທະນາຄານ/i;
 /** The three measures whose only term of art is RESTRICTION_ANY (in measures.ts): no amount, no
  * licence, no named instrument, just a word that restricts, prohibits or requires something. */
 const RESTRICTION_MEASURES = new Set(['other-payment-restriction', 'online-purchase-limit', 'online-delivery-limit']);
+
+/** 9.1's two measures, whose own gloss excludes political, election, criminal-procedure and
+ * child/age-restricted content -- see the block below that enforces it. */
+const NINE_ONE_EXCLUDED_MEASURES = new Set(['content-blocking', 'content-filtering']);
+
+/**
+ * An instrument named for the election or political process, English or Mongolian.
+ *
+ * Title-only, not the quote: "election\w*"/"campaign\w*"/"candidate\w*" asked of an operative
+ * sentence would be safe enough, but a bare "political\w*" is not -- "political subdivision" is
+ * ordinary drafting for which government body holds a power, naming nothing about content. An
+ * instrument's own title carries none of that risk. "сонгуул" (election) is confirmed against
+ * Mongolia's three election-law citations for content-blocking's 9.1 basis: two Election Acts
+ * ("...СОНГУУЛИЙН ТУХАЙ") and the electronic-campaign procedure
+ * ("ЦАХИМ ОРЧИН АШИГЛАН СОНГУУЛИЙН СУРТАЛЧИЛГАА...").
+ */
+const ELECTION_OR_POLITICAL_TITLE = /\b(election\w*|campaign\w*|candidate\w*|referendum\w*|political part(?:y|ies))\b|сонгуул/i;
+
+/**
+ * An instrument that is a criminal code or criminal procedure code by its own title, English or
+ * Mongolian. Title-only for the same reason as above: a bare "criminal\w*" asked of the quote would
+ * as readily catch a penalty clause's criminal liability attached to an ordinary commercial duty as
+ * it would content genuinely restricted under criminal procedure. "эрүү" (crime/criminal) is
+ * confirmed against Mongolia's "ЭРҮҮГИЙН ХЭРЭГ ХЯНАН ШИЙДВЭРЛЭХ ТУХАЙ" (its Criminal Procedure Code),
+ * whose own network-restriction order sat in 9.1's basis as an ordinary content-blocking measure.
+ */
+const CRIMINAL_PROCEDURE_TITLE = /\bcriminal (?:procedure|code)\b|penal code|эрүү/i;
+
+/**
+ * Content restricted for a child's or a minor's protection, or by an age restriction -- English or
+ * Mongolian, and asked of the title, the quote and the defining words alike, unlike the two above:
+ * "child" and "хүүх" carry none of "criminal"'s or "political"'s ambiguity, so the wider net costs
+ * nothing. "хүүх" (child) is confirmed against Mongolia's Child Protection Act (two citations), its
+ * child state inspector's rule, and the instrument requiring an "18+" content filter, all four
+ * counted in 9.1's basis as ordinary content-blocking or -filtering measures; "18+" is asked directly
+ * for the same instrument, whose own quote states only the figure and not the word "child".
+ *
+ * "хүүх", not the fuller "хүүхэд": Mongolian's own word for child is "хүүхэд" in the nominative but
+ * drops that vowel in every case-marked form the corpus actually uses -- "хүүхдийн" (genitive, the
+ * inspector's rule), "хүүхдэд" (dative, the harmful-content clause) -- so no five-letter stem is
+ * common to both the Act's own title and its own inflections; the four-letter "хүүх" is, and is
+ * confirmed against all four.
+ */
+const CHILD_OR_AGE_RESTRICTED = /\b(child\w*|minor\w*|juvenile\w*)\b|18\+|хүүх/i;
 
 /**
  * Does this finding restrict holders by nationality or residence, either way round?

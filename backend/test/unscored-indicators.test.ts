@@ -306,6 +306,55 @@ describe('blocking and filtering', () => {
     expect(score('9.1', [measure('content-filtering')])).toBe(0.5);
     expect(score('9.1', [])).toBe(0);
   });
+
+  // 9.1's own gloss excludes political and election content, criminal content such as child abuse
+  // material, and age-restricted content -- and until now nothing enforced it. Mongolia's own basis
+  // named the exception in its own language: a Criminal Procedure Code network-restriction order, an
+  // election-campaign block and a Child Protection Act block, none an ordinary commercial-content
+  // measure.
+  const titled = (title: string, over: Partial<Finding> = {}): Evidence => ({
+    ...ev('9.1', 'content-blocking', { definingWords: 'access', dutyForce: 'permits', imposingWords: null, ...over }),
+    instrumentTitle: title,
+  });
+
+  it('does not count a block ordered under a criminal procedure code', () => {
+    expect(score('9.1', [titled('Criminal Procedure Code')])).toBe(0);
+  });
+
+  it('does not count a block ordered under Mongolia\'s own criminal procedure law', () => {
+    expect(score('9.1', [titled('ЭРҮҮГИЙН ХЭРЭГ ХЯНАН ШИЙДВЭРЛЭХ ТУХАЙ /Шинэчилсэн найруулга/')])).toBe(0);
+  });
+
+  it('does not count a block ordered under an election law', () => {
+    expect(score('9.1', [titled('Elections Act')])).toBe(0);
+  });
+
+  it('does not count a block ordered under Mongolia\'s own election-campaign procedure', () => {
+    expect(score('9.1', [titled('МОНГОЛ УЛСЫН ИХ ХУРЛЫН СОНГУУЛИЙН ТУХАЙ')])).toBe(0);
+  });
+
+  it('does not count a block or filter naming a child, in English or Mongolian', () => {
+    expect(score('9.1', [titled('Child Protection Act')])).toBe(0);
+    expect(score('9.1', [titled('ХҮҮХЭД ХАМГААЛЛЫН ТУХАЙ /Шинэчилсэн найруулга/')])).toBe(0);
+  });
+
+  it('does not count a block or filter whose own quote names a child, an age restriction or "18+"', () => {
+    expect(score('9.1', [titled('Act 1', { quote: 'must filter content harmful to children' })])).toBe(0);
+    expect(score('9.1', [titled('Act 1', { quote: '18+ контентын шүүлтүүртэй байхаар' })])).toBe(0);
+  });
+
+  it('still counts an ordinary block that names none of the three exclusions', () => {
+    expect(score('9.1', [titled('Electronic Commerce Act', { quote: 'the Authority may direct a licensee to disable access to a website' })])).toBe(1);
+  });
+
+  // The reason political/criminal are title-only rather than quote-tested: neither word is safe to
+  // ask of an ordinary sentence. "Political subdivision" names which government body holds a power,
+  // and a criminal penalty is how an ordinary blocking duty is enforced -- neither is the content
+  // this indicator excludes.
+  it('still counts a block whose quote names a political subdivision or a criminal penalty', () => {
+    expect(score('9.1', [titled('Act 1', { quote: 'the political subdivision responsible for internet services may direct a site to be blocked' })])).toBe(1);
+    expect(score('9.1', [titled('Act 1', { quote: 'a provider that fails to block the site commits a criminal offence' })])).toBe(1);
+  });
 });
 
 describe('the indicator that law cannot answer', () => {
