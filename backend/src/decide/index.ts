@@ -2413,6 +2413,29 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
       });
       continue;
     }
+    // And the mirror of that, for government-access alone: the power 7.5 asks about is the State's
+    // own, exercised by the State, so a private party's own entitlement does not make it out.
+    // Mongolia's Civil Code gives a contracting party "мэдээлэл авах эрхтэй" -- a right to receive
+    // information from the other side -- and it led 7.5's citation as government access to data
+    // without a court order, which is not what a private right to information under a contract is.
+    //
+    // Scoped to this one measure by name, not by `actorKindOf(...) === 'state'` generally: 11.1's
+    // own two measures also carry that tag, for the different reason their `actor` field names the
+    // standard-setting body -- but the duty foreign-exclusion-from-standards actually reports is
+    // borne by the excluded party, which is exactly the private or foreign entity a nationality bar
+    // names, not the State. Reusing the tag there would rule out every genuine finding it has.
+    if (
+      e.finding.measure === 'government-access' &&
+      e.finding.dutyBearerKind !== undefined &&
+      e.finding.dutyBearerKind !== null &&
+      e.finding.dutyBearerKind !== 'government'
+    ) {
+      ruledOut.push({
+        evidence: e,
+        reason: `the party exercising it is ${e.finding.dutyBearer}, which is not the State, and this measure is a power exercised by a public authority`,
+      });
+      continue;
+    }
     // An amending section holds an instruction and, where it inserts rather than deletes, the text
     // that instruction enacts. The instruction imposes nothing and is ruled out here as before. The
     // text it sets out is the duty, in the words the legislature passed, and until the next

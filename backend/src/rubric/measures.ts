@@ -253,6 +253,11 @@ export const MEASURES: Record<string, Measure[]> = {
       gloss:
         'a power for a public authority to obtain, access, or require the disclosure of personal data held by someone else',
       actor: 'a public authority, officer or other government body exercising the power',
+      // Mongolia's Civil Code gives a contracting party a right to receive information from the
+      // other -- "мэдээлэл авах эрхтэй" -- a private entitlement, and it led the cell's citation as
+      // "government access". The mirror of the private-actor gate the decider already runs (see
+      // decide/index.ts, "a role created by the State is not a duty on the regulated") catches it.
+      actorKind: 'state',
     },
   ],
 

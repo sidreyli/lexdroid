@@ -430,6 +430,7 @@ describe('what a government access power needs first', () => {
           quote: 'a police officer may at any time require any person to produce any document or other thing',
           dutyBearer: 'a police officer',
           dutyAct: 'may at any time require',
+          dutyBearerKind: 'government',
           locatedData: null,
           informationWords: null,
           ...over,
@@ -466,6 +467,21 @@ describe('what a government access power needs first', () => {
       authorisation: 'internal',
     });
     expect(d.score).toBe(1);
+  });
+
+  // Mongolia's Civil Code gives a contracting party "мэдээлэл авах эрхтэй" -- a right to receive
+  // information from the other side -- and it led the cell's basis as a government power. The
+  // measure's actor is the State; a private party's own entitlement is not it.
+  it('is not made out by a private party’s own right to receive information', () => {
+    const d = power({
+      quote: 'мэдээлэл авах эрхтэй',
+      dutyBearer: 'нөгөө тал',
+      dutyAct: 'мэдээлэл авах эрхтэй',
+      dutyForce: 'permits',
+      dutyBearerKind: 'individual',
+    });
+    expect(d.score).toBe(0);
+    expect(d.excluded[0]?.reason).toContain('is not the State');
   });
 });
 
