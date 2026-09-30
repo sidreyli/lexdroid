@@ -2780,3 +2780,71 @@ describe('a joint-venture duty scoped to the tender, not to entering the market'
     expect(d.basis).toHaveLength(1);
   });
 });
+
+describe('an official-secrecy clause is not a trade-secret regime', () => {
+  const indicator41: Indicator = {
+    id: '4.1',
+    pillarId: 4,
+    pillarName: 'Intellectual Property Rights',
+    category: 'test',
+    exception: null,
+    criteriaText: '...',
+    bands: [
+      { score: 1, criterion: 'Effective protection of trade secrets in any form', ordinal: 3 },
+      { score: 0.5, criterion: 'Limited scope, or clauses in a wider law', ordinal: 2 },
+      { score: 0, criterion: 'Lack of framework', ordinal: 1 },
+    ],
+    shape: 'provision',
+    shapeBasis: 'test',
+    provenance: { document: 'test', locator: 'test' },
+  };
+
+  // The clause that recurs, word for word, across five unrelated Malaysian Acts (Trademarks 2019,
+  // GI 2022, Price Control 2011, Competition 2010, Consumer Protection 1999): a regulator's own
+  // secrecy duty over what it collected under the Act, not a remedy for the trade-secret holder.
+  const officialSecrecy = evidence(1, 'Competition Act 2010', {
+    indicatorId: '4.1',
+    measure: 'trade-secret-protection',
+    dutyBearer: 'Any person',
+    dutyAct: 'discloses or makes use',
+    dutyForce: 'forbids',
+    definingWords: 'confidential information',
+    subjectWords: 'trade, business or industrial information',
+    targetWords: 'information or document with respect to a particular enterprise or the affairs of an individual',
+    exceptionWords:
+      'the disclosure is made to facilitate the performance of the functions or powers of the Commission, or in connection with the investigation of an offence under this Act',
+    imposingWords: 'commits an offence',
+    quote: 'Any person who discloses or makes use of any confidential information or document',
+  });
+
+  it('is excluded, leaving a clean absence rather than an unresolved cell', () => {
+    const d = decide({ indicator: indicator41, economy: 'MYS', evidence: [officialSecrecy], surfaced, coverage });
+    expect(d.excluded.map((x) => x.reason).join(' ')).toContain('official-secrecy clause');
+    expect(d.basis).toHaveLength(0);
+    expect(d.score).toBe(0);
+  });
+
+  it('still counts a genuine remedy for misuse of a trade secret', () => {
+    const d = decide({
+      indicator: indicator41,
+      economy: 'SGP',
+      evidence: [
+        evidence(2, 'Confidentiality of Information Act', {
+          indicatorId: '4.1',
+          measure: 'trade-secret-protection',
+          dutyBearer: 'a person who misappropriates a trade secret',
+          dutyAct: 'may be restrained by injunction',
+          dutyForce: 'requires',
+          definingWords: 'restrained by injunction for misuse of a trade secret',
+          subjectWords: 'trade secret',
+          quote: 'the holder of a trade secret may restrain its misuse by injunction',
+        }),
+      ],
+      surfaced,
+      coverage,
+    });
+    expect(d.excluded.map((x) => x.reason).join(' ')).not.toContain('official-secrecy clause');
+    expect(d.basis).toHaveLength(1);
+    expect(d.score).toBe(1);
+  });
+});

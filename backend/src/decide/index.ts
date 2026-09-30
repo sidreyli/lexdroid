@@ -1618,6 +1618,22 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
       });
       continue;
     }
+    // An official-secrecy-of-investigatory-information clause is a duty of confidence over
+    // whatever an official learned in administering the Act -- not 4.1's remedy for the holder of
+    // a trade secret. See OFFICIAL_SECRECY_SCOPE.
+    if (
+      indicatorId === '4.1' &&
+      (e.finding.measure === 'trade-secret-protection' || e.finding.measure === 'trade-secret-clause') &&
+      OFFICIAL_SECRECY_SCOPE.test(
+        [e.finding.quote, e.finding.targetWords, e.finding.exceptionWords, e.finding.dutyBearer].filter(Boolean).join(' '),
+      )
+    ) {
+      ruledOut.push({
+        evidence: e,
+        reason: 'the duty of confidence is scoped to information obtained by virtue of or under this Act, or to the exercise of an officer’s functions or duties -- an official-secrecy clause, not a trade-secret regime',
+      });
+      continue;
+    }
     // A duty not to do the act is not the duty to do it. Secrecy provisions -- "shall not
     // disclose", "nothing requires the giving of information" -- were making out 4.9 in all three.
     if (commanded(indicatorId, e.finding.measure) && e.finding.dutyForce === 'forbids') {
@@ -3242,6 +3258,26 @@ const STRICT_CONDITION = new RegExp(
     'ทุน|ต่างด้าว|สัญชาติ|ครอบคลุม',
     'ທຶນ|ຕ່າງປະເທດ|ຕາງປະເທດ|ຕ້າງປະເທດ|ສັນຊາດ|ຄອບຄຸມ',
     'капитал|иностран|покрыти|гражданств',
+  ].join('|'),
+  'i',
+);
+
+/**
+ * An official-secrecy-of-investigatory-information clause: a duty of confidence over whatever a
+ * person learned by virtue of, or in administering, the Act itself -- not a trade-secret regime.
+ * The identical clause ("any person who discloses or makes use of any confidential information
+ * ... obtained by virtue of any provision of this Act commits an offence") recurs word for word
+ * across five unrelated Malaysian Acts (Trademarks 2019, GI 2022, Price Control 2011, Competition
+ * 2010, Consumer Protection 1999), each scoped to "a particular enterprise or the affairs of an
+ * individual" and excepted for "the performance of the functions ... of the Controller" and "the
+ * investigation of an offence under this Act" -- the tell that this is a regulator's own secrecy
+ * duty about what its Act let it collect, not a remedy the trade-secret holder can invoke.
+ */
+const OFFICIAL_SECRECY_SCOPE = new RegExp(
+  [
+    /\b(?:obtained|received)\b[^.]{0,60}\b(?:by virtue of|pursuant to|under|in connection with the administration or execution of)\b[^.]{0,15}\bthis Act\b/.source,
+    /\bwith respect to a particular (?:enterprise|undertaking)\b/.source,
+    /\b(?:performance|exercise) of (?:his|her|its|their|the)?\s*(?:duty|duties|functions?|powers?)\b/.source,
   ].join('|'),
   'i',
 );
