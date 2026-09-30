@@ -1,8 +1,9 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useCallback, useState } from "react";
-import { Loader2, Play } from "lucide-react";
+import Link from "next/link";
+import { useCallback, useEffect, useState } from "react";
+import { Loader2, Play, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import {
@@ -15,6 +16,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { listOf } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import type { RunningRun } from "@/lib/data/ledger";
 import { ClearSlate } from "./clear-slate";
 import { EngineTarget, type Target } from "./engine-target";
 
@@ -32,6 +34,8 @@ export interface RunFormEngine {
 }
 
 const ALL = "all";
+/** How often the page asks whether a run is under way, including one started from a terminal. */
+const POLL_MS = 5000;
 
 export function StartRun({
   economies,
@@ -59,6 +63,47 @@ export function StartRun({
   const [target, setTarget] = useState<Target>("local");
   const [targetReady, setTargetReady] = useState<{ ready: boolean; why: string }>({ ready: false, why: "" });
   const onReady = useCallback((ready: boolean, why: string) => setTargetReady({ ready, why }), []);
+  // The run a fleet is working on now. Only one runs at a time, so while there is one the button
+  // waits for it, and offers to stop it instead.
+  const [active, setActive] = useState<RunningRun | null>(null);
+  const [confirmStop, setConfirmStop] = useState(false);
+  const [stopping, setStopping] = useState(false);
+
+  const check = useCallback(async () => {
+    try {
+      const res = await fetch("/api/runs/active", { cache: "no-store" });
+      const body = (await res.json()) as { run: RunningRun | null };
+      setActive(body.run);
+      if (!body.run) setConfirmStop(false);
+    } catch {
+      // The server is restarting; the next poll will say.
+    }
+  }, []);
+
+  useEffect(() => {
+    if (readOnly) return;
+    void check();
+    const timer = setInterval(() => void check(), POLL_MS);
+    return () => clearInterval(timer);
+  }, [check, readOnly]);
+
+  const stop = async () => {
+    if (!active) return;
+    setStopping(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/runs/${active.id}/stop`, { method: "POST" });
+      const body = (await res.json()) as { error?: string };
+      if (!res.ok) throw new Error(body.error ?? "The run could not be stopped");
+      setConfirmStop(false);
+      await check();
+      router.refresh();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setStopping(false);
+    }
+  };
 
   const toggle = (code: string) => {
     setError(null);
@@ -68,7 +113,7 @@ export function StartRun({
   };
 
   const chosen = engines.find((e) => e.id === engine);
-  const ready = !readOnly && picked.length > 0 && !!chosen?.declared && targetReady.ready && !starting;
+  const ready = !readOnly && picked.length > 0 && !!chosen?.declared && targetReady.ready && !starting && !active;
 
   const start = async () => {
     setStarting(true);
@@ -93,6 +138,7 @@ export function StartRun({
         }),
       });
       const body = (await response.json()) as { runId?: string; error?: string };
+      if (response.status === 409) await check();
       if (!response.ok || !body.runId) throw new Error(body.error ?? "The run did not start");
       router.push(`/runs/${body.runId}`);
     } catch (err) {
@@ -277,14 +323,81 @@ export function StartRun({
         </p>
       ) : null}
 
+      {active ? (
+        <div className="mt-6 flex flex-col gap-3 rounded-xl bg-inset px-3.5 py-3">
+          <div className="flex items-start justify-between gap-3">
+            <div className="text-[12.5px] leading-snug">
+              <p className="font-medium text-navy-deep">
+                A run is under way: {listOf(active.economies)},{" "}
+                {active.indicators.length
+                  ? active.indicators.join(", ")
+                  : active.pillars.length === 12
+                    ? "all pillars"
+                    : `pillar${active.pillars.length > 1 ? "s" : ""} ${active.pillars.join(", ")}`}
+              </p>
+              <p className="mt-0.5 text-muted-foreground">
+                Started{" "}
+                {new Date(active.startedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}.
+                Another can start when it finishes or is stopped.
+              </p>
+            </div>
+            <Link
+              href={`/runs/${active.id}`}
+              className="shrink-0 text-[12.5px] font-medium text-navy underline-offset-2 hover:underline"
+            >
+              Watch it
+            </Link>
+          </div>
+          {confirmStop ? (
+            <div className="flex flex-col gap-2">
+              <p className="text-[12.5px] leading-snug text-muted-foreground">
+                Stop it? What it has answered stays recorded, and the run is marked cancelled. A
+                rented GPU keeps running until you stop it under Runs on.
+              </p>
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  variant="destructive"
+                  disabled={stopping}
+                  onClick={stop}
+                  className="h-9 rounded-lg text-[13px]"
+                >
+                  {stopping ? <Loader2 className="size-4 animate-spin" /> : <Square className="size-3.5" />}
+                  {stopping ? "Stopping" : "Stop run"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  disabled={stopping}
+                  onClick={() => setConfirmStop(false)}
+                  className="h-9 rounded-lg text-[13px]"
+                >
+                  Keep it going
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setConfirmStop(true)}
+              className="h-9 self-start rounded-lg text-[13px] text-destructive hover:text-destructive"
+            >
+              <Square className="size-3.5" />
+              Stop run
+            </Button>
+          )}
+        </div>
+      ) : null}
+
       <Button
         type="button"
         disabled={!ready}
         onClick={start}
         className="mt-6 h-11 rounded-xl bg-navy text-[14px] font-medium text-paper shadow-[0_3px_12px_-4px_rgb(23_50_78/0.55)] hover:bg-navy-deep"
       >
-        {starting ? <Loader2 className="size-4 animate-spin" /> : <Play className="size-4" />}
-        {readOnly ? "Available locally" : starting ? "Starting" : "Start run"}
+        {starting || active ? <Loader2 className="size-4 animate-spin" /> : <Play className="size-4" />}
+        {readOnly ? "Available locally" : active ? "Run in progress" : starting ? "Starting" : "Start run"}
       </Button>
     </section>
   );

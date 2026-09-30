@@ -43,3 +43,32 @@ export function liveRunLedger(runId: string, after: number): RunEvent[] {
     )
     .all(runId, after) as RunEvent[];
 }
+
+export interface RunningRun {
+  id: string;
+  startedAt: string;
+  economies: string[];
+  pillars: number[];
+  indicators: string[];
+  engine: string;
+}
+
+/** What a run was started on, for saying which run is holding the Start button. */
+export function runningRun(runId: string): RunningRun | null {
+  const row = db()
+    ?.prepare(
+      "SELECT id, started_at, economies, pillars, indicators, engine FROM run WHERE id = ? AND status = 'running'",
+    )
+    .get(runId) as
+    | { id: string; started_at: string; economies: string; pillars: string; indicators: string | null; engine: string }
+    | undefined;
+  if (!row) return null;
+  return {
+    id: row.id,
+    startedAt: row.started_at,
+    economies: JSON.parse(row.economies) as string[],
+    pillars: JSON.parse(row.pillars) as number[],
+    indicators: row.indicators ? (JSON.parse(row.indicators) as string[]) : [],
+    engine: row.engine,
+  };
+}

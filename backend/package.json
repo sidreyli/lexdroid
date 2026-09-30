@@ -23,6 +23,7 @@
     "concurrency": "tsx scripts/concurrency.ts",
     "runs": "tsx scripts/runs.ts",
     "close-run": "tsx scripts/close-run.ts",
+    "stop-run": "tsx scripts/stop-run.ts",
     "watch": "tsx scripts/watch.ts",
     "contents": "tsx scripts/contents.ts",
     "verify": "tsx scripts/verify.ts",

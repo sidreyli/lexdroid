@@ -11,7 +11,7 @@
  * provisions read differently. Parallelism across engines is safe; parallelism inside one is not.
  */
 import { spawn } from 'node:child_process';
-import { createWriteStream, mkdirSync } from 'node:fs';
+import { createWriteStream, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadEnv } from '../src/env.js';
@@ -182,13 +182,38 @@ function runUnit(unit: Unit, hosts: string[], runId: string, logDir: string, arg
         ),
       },
     });
+    workers.add(child);
     child.stdout.pipe(out);
     child.stderr.pipe(out);
     child.on('close', (code) => {
+      workers.delete(child);
       out.end();
       resolve(code ?? 1);
     });
   });
+}
+
+/** The gate processes working right now, so a stopped fleet takes its workers down with it. */
+const workers = new Set<ReturnType<typeof spawn>>();
+
+/**
+ * Says this fleet is alive, for the interface to lock its Start button on and to stop.
+ *
+ * A run's status alone cannot say it: a fleet killed outright leaves its run 'running' forever. A
+ * file naming this process, checked against the processes that exist, can. One file per fleet,
+ * because several fleets may share a run. A fleet killed outright leaves its file behind, and the
+ * dead pid in it is what tells the reader so.
+ */
+function markAlive(logDir: string): void {
+  const file = join(logDir, `fleet-${process.pid}.pid`);
+  writeFileSync(file, String(process.pid));
+  process.on('exit', () => rmSync(file, { force: true }));
+  const stop = (): void => {
+    for (const w of workers) w.kill();
+    process.exit(130);
+  };
+  process.on('SIGTERM', stop);
+  process.on('SIGINT', stop);
 }
 
 /**
@@ -391,6 +416,7 @@ async function main(): Promise<void> {
 
   const logDir = join('data', 'fleet', run.id);
   mkdirSync(logDir, { recursive: true });
+  markAlive(logDir);
 
   console.log(`run ${run.id}`);
   const pinned = args.perEconomy ? pinByEconomy(todo, args.hosts) : null;

@@ -5,6 +5,7 @@ import { NextResponse } from "next/server";
 import { BACKEND, ENGINES_PATH, TSX_CLI } from "@/lib/data/paths";
 import { readFileSync } from "node:fs";
 import { isReadOnlyDeployment, READ_ONLY_DEPLOYMENT_MESSAGE } from "@/lib/deployment";
+import { activeRun } from "@/lib/data/active-run";
 
 export const dynamic = "force-dynamic";
 
@@ -53,6 +54,16 @@ function firstRunId(stdout: NodeJS.ReadableStream): Promise<string> {
 export async function POST(request: Request) {
   if (isReadOnlyDeployment()) {
     return NextResponse.json({ error: READ_ONLY_DEPLOYMENT_MESSAGE }, { status: 503 });
+  }
+
+  // One run at a time. Two fleets on one engine have their reads batched together, which changes
+  // what is read, and two on one store queue behind each other's writes.
+  const running = activeRun();
+  if (running) {
+    return NextResponse.json(
+      { error: `Run ${running.id.slice(0, 8)} is still going; stop it or wait for it to finish`, runId: running.id },
+      { status: 409 },
+    );
   }
 
   let body: StartRun;
