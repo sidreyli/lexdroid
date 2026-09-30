@@ -1637,6 +1637,43 @@ describe('12.2, whose band requires two things at once', () => {
   });
 });
 
+describe('10.4, where a mistagged non-ICT export control must not count', () => {
+  const indicator104 = indicator12('10.4', [
+    { score: 1, criterion: 'Export restriction' },
+    { score: 0, criterion: 'No restriction' },
+  ]);
+
+  it('does not score a hazardous-waste export permit tagged as ict-export-restriction', () => {
+    const d = decide({
+      indicator: indicator104,
+      economy: 'SGP',
+      evidence: [
+        p12('10.4', 'ict-export-restriction', {
+          quote: 'no person shall export hazardous or other waste except under a permit',
+        }),
+      ],
+      surfaced,
+      coverage,
+    });
+    expect(d.score).toBe(0);
+  });
+
+  it('still scores a genuine ICT export control', () => {
+    const d = decide({
+      indicator: indicator104,
+      economy: 'AUS',
+      evidence: [
+        p12('10.4', 'ict-export-restriction', {
+          quote: 'a permit is required to export cryptographic equipment or telecommunications apparatus',
+        }),
+      ],
+      surfaced,
+      coverage,
+    });
+    expect(d.score).toBe(1);
+  });
+});
+
 describe('12.6, where a power and a duty are different bands', () => {
   it('scores a duty actually imposed at the top band', () => {
     const d = decide({

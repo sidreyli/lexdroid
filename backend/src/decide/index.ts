@@ -688,6 +688,24 @@ function definedOnlyInAPointer(quote: string, definingWords: string | null): boo
 /** Goods named by a schedule or a list rather than one by one. */
 const BANS_A_LIST =
   /\b(?:set\s+out|specified|listed|described|mentioned|enumerated)\s+in\s+(?:the\s+)?(?:\w+\s+)?(?:Schedule|list|table)\b|\bany\s+of\s+the\s+following\b/i;
+/**
+ * The goods `10.4`'s own `other-export-restriction` measure exists to hold: waste, wildlife,
+ * food, medicines, chemicals, weapons, cultural property -- none of them computing,
+ * telecommunications or online goods. Singapore's reader mistagged four such findings as
+ * `ict-export-restriction` directly (hazardous waste, endangered species, food safety, and a
+ * blanket export-permit clause), so the bucket built to hold them never engaged. Applied as a
+ * negative exclusion to whichever bucket the reader chose, not a positive ICT-goods requirement:
+ * an earlier positive-domain fix was reverted because it also excluded the genuine Strategic
+ * Goods (Control) Act schedule-based controls, which don't name ICT goods textually either.
+ */
+const NON_ICT_EXPORT_GOODS = /\b(?:hazardous\s+waste|other\s+waste|endangered\s+species|scheduled\s+species|food\s+safety|food\s+security|medicines?|chemicals?|weapons?|cultural\s+property)\b/i;
+/** A generic anti-evasion or blanket export-permit clause that names no goods at all. */
+const GENERIC_EXPORT_CLAUSE = /\b(?:avoid|evade|defeat|reduce)\b[^.]{0,60}\bprohibition\b|\bevery\s+exporter\s+of\s+goods\b/i;
+/** Whether an `ict-export-restriction` finding is actually about goods the measure excludes. */
+function namesNonIctExportGoods(e: Evidence): boolean {
+  const text = `${e.instrumentTitle} ${e.finding.quote ?? ''} ${e.finding.definingWords ?? ''}`;
+  return NON_ICT_EXPORT_GOODS.test(text) || GENERIC_EXPORT_CLAUSE.test(text);
+}
 /** Words that put a duty on someone, in the languages of the law read here. Thai is written without spaces between words, so its words stand outside the word boundaries. */
 const MANDATES = /\b(?:shall|must|is required to|are required to|hendaklah|mesti)\b|ต้อง|ห้าม|ຕ້ອງ|ຫ້າມ/i;
 /** A mandate word turned into its absence: "need not", "shall not be required to", "ไม่ต้อง". */
@@ -929,7 +947,9 @@ const RULES: Record<string, Rule> = {
 
   /** 10.4 "Export restriction" / "No restriction", on ICT goods and digital services only. */
   '10.4': (indicator, qualifying) => {
-    const ict = qualifying.filter((e) => e.finding.measure === 'ict-export-restriction');
+    const ict = qualifying.filter(
+      (e) => e.finding.measure === 'ict-export-restriction' && !namesNonIctExportGoods(e),
+    );
     return ict.length > 0
       ? { ordinal: 1, reason: `${ict.length} export restriction(s) on ICT goods or online services`, counted: ict }
       : { ordinal: 2, reason: 'no export restriction on ICT goods or online services found' };
