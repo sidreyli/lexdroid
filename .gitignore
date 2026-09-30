@@ -34,11 +34,12 @@ lexdroid-bench*.zip
 backend/scripts/zz-*.ts
 backend/scripts/*.tmp.*
 
-# docs/ is local except the architecture document. It holds ESCAP source material
+# docs/ is local except the architecture document and the operating notes. It holds ESCAP source material
 # (docs/database and docs/framework, read by npm run setup), other teams' graded submissions and
 # our drafts.
 /docs/*
 !/docs/architecture.md
+!/docs/operating.md
 
 # Editor, agent and OS files
 .claude/

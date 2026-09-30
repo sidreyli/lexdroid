@@ -2,145 +2,94 @@
 
 UN Global Hackathon on AI for Digital Trade Regulatory Analysis
 Team: LexDroid | Round: **Final**
-Last updated: 2026-09-16
+Last updated: 2026-09-30
 
 ---
 
 ## What This Tool Does
 
-LexDroid automates the two tasks ESCAP sets for the Regional Digital Trade Integration Index
+LexDroid automates the two tasks behind the ESCAP Regional Digital Trade Integration Index
 (RDTII 2.1).
 
-**Task 1 — Automated Evidence Discovery.** Given an economy and a pillar, it walks the official
-government legal portals, builds a register of every instrument they publish, ranks that register
-against the question being asked, fetches only what it chose, and extracts structured text —
-including from scanned PDFs, through a local OCR engine. No manual steps.
+**Task 1 — Automated Evidence Discovery.** Given an economy and a pillar, LexDroid walks the
+official legal portals, registers every instrument they publish, ranks the register against the
+indicator's questions, downloads only the documents it picked, and extracts structured text. Scanned
+PDFs are read with local OCR. There are no manual steps.
 
-**Task 2 — Intelligent Mapping and Categorisation.** The extracted text is mapped to RDTII
-indicator IDs. Every provision is recorded with an article-level citation, a verbatim snippet
-located character-for-character in the stored source, and a Discovery Tag saying whether we found
-it independently (NEW) or matched it to the 2025 sample kit (KNOWN).
+**Task 2 — Intelligent Mapping and Categorisation.** The extracted text is mapped to RDTII indicator
+IDs. Each provision is recorded with an article-level citation, a verbatim snippet that is located
+character for character in the stored source, and a Discovery Tag: NEW if we found it ourselves,
+KNOWN if it matches an example in the sample kit.
 
-The unit of work is a **cell**: one economy, one indicator. 61 regulatory indicators across 12
-pillars. Every cell ends with an answer — a restriction found, no restriction found, or unresolved
-— and every answer names the instrument it is a claim about.
-
-We automate ESCAP's Zone 1 (evidence discovery) and Zone 2 (mapping and citation). Scoring is
-Zone 3, and ESCAP is explicit that it stays with a human researcher; what we compute is a
-suggestion with its working shown, not a verdict.
+The unit of work is a **cell**: one economy and one indicator, 61 indicators across 12 pillars. Each
+cell ends with a score, or is marked unresolved, and names the instruments the score rests on.
 
 **Mandatory pillars:** 6 (Cross-border data policies) and 7 (Domestic data protection and privacy).
-**Also in scope:** all twelve RDTII 2.1 pillars — the sealed live test may fall in any of them.
-**Economies run end to end:** Australia, Malaysia, Singapore — all 61 indicators, all 12 pillars.
-**Economies profiled:** those three plus India, Thailand, Mongolia, the Russian Federation and Lao
-PDR — eight, five of them non-English. Zone 0 only for the last five; see below for what that means
-and what it does not.
-**Ready for the live test:** see [Supported Economies and Portals](#supported-economies-and-portals)
-for an honest statement of what has and has not been run.
+**Also in scope:** all twelve RDTII 2.1 pillars.
+**Economies covered:** Australia, Malaysia, Singapore, India, Thailand, Lao PDR, Mongolia and the
+Russian Federation, each on all 61 indicators.
+**Ready for the live test:** of the nine economies in the 2025 database, we have run Thailand,
+India, Lao PDR, Mongolia and the Russian Federation. We have not run Viet Nam, Indonesia, China or
+Kazakhstan.
 
 ---
 
 ## Quick Start
 
-A competent programmer should reach a working system from this section alone, on a clean machine,
-in under 30 minutes.
+⚠ **A competent programmer must reach a working system from this section alone, on a clean machine,
+in under 30 minutes, with no help from the team.**
 
 ### 1. Clone the repository
 
 ```
-git clone https://github.com/lexdroid/lexdroid.git
+git clone https://github.com/sidreyli/lexdroid.git
 cd lexdroid
 ```
 
-### 2. Install
+### 2. Set up the environment
+
+You need Node.js 22 and [Ollama](https://ollama.com). Python and Docker are not needed.
 
 ```
 npm install
-```
-
-Node 20.11 or newer. No Python. `better-sqlite3` and `@napi-rs/canvas` ship prebuilt binaries for
-Windows, macOS and Linux on current Node; if npm falls back to building from source you need a C++
-toolchain, which is the one step that can push past 30 minutes.
-
-### 3. Set up the working store
-
-```
 npm run setup
 ```
 
-Creates the SQLite store, derives the 61 indicators from ESCAP's methodology sheet, and imports the
-2025 sample kit's instrument list into a separate store used only for the NEW/KNOWN tag. It reports what is missing rather
-than failing at the first gap.
+`npm install` installs both workspaces, `backend` and `frontend`. The native modules
+(`better-sqlite3`, `@napi-rs/canvas`) ship prebuilt binaries for Windows, macOS and Linux.
+`npm run setup` creates the SQLite store, builds the 61 indicators from ESCAP's methodology sheet,
+and imports the 2025 sample kit into a separate baseline store that the pipeline uses only for
+NEW/KNOWN tagging.
 
-### 4. Install the reading engine
-
-Engine A runs locally through [Ollama](https://ollama.com):
-
-```
-ollama pull bge-m3          # multilingual embeddings for the semantic index
-ollama pull gemma4:12b      # the base the reading engine is built from
-ollama create gemma4-lex-16k -f ollama/gemma4-lex-16k.Modelfile
-```
-
-The reading engine is stock `gemma4:12b` at a wider context and nothing else; the Modelfile in
-`ollama/` is the whole of it.
-
-### 5. Configure
+### 3. Configure
 
 ```
 cp .env.example .env
+ollama pull bge-m3
+ollama pull gemma4:12b
+ollama create gemma4-lex-16k -f ollama/gemma4-lex-16k.Modelfile
 ```
 
-Engine A needs nothing in it. Engine B runs on a GPU rented from RunPod and needs a RunPod API
-key, as `api=...` in the root `.env` or `RUNPOD_API_KEY` in the environment — see
-[Your Two Declared Engines](#your-two-declared-engines). The core pipeline runs end to end with
-`.env` untouched, which is the Section 3 claim.
+`bge-m3` is the embedding model. `gemma4-lex-16k` is Engine A: stock `gemma4:12b` with a 16k
+context, as set in `ollama/gemma4-lex-16k.Modelfile`. Engine A needs nothing in `.env`. Engine B
+runs on a GPU that the interface rents from RunPod and needs a RunPod API key, set as `api=...` in
+`.env` or as `RUNPOD_API_KEY` in the environment.
 
-### 6. Start the interface
+### 4. Start the interface
 
 ```
 npm run dev
 ```
 
-Then open <http://localhost:3000>. **Everything else happens in the interface** — starting a run,
-watching it, reviewing, correcting, switching engines, exporting.
+Then open <http://localhost:3000>. Everything else happens in the interface: starting a run,
+reviewing, correcting, switching engines and exporting.
 
-### 7. Verify
+### 5. Verify
 
-From **Home**, pick Singapore, pillar 6, Engine A, and leave Sources on *Read only what is already
-on disk* for a first pass that touches no government server. Expect a handful of cells in a few
-minutes and rows you can open in **Workbench**.
-
-If the run stops immediately saying the engine is unreachable, Ollama is not running: `ollama serve`.
-
----
-
-## Deploy to Vercel
-
-From the repository root:
-
-```bash
-npm run deploy
-```
-
-The first deployment asks you to sign in and choose or create a Vercel project. After that, the
-same command deploys straight to production. No environment variables or dashboard build overrides
-are required. Use `npm run deploy:preview` when you want a preview URL instead.
-
-The Vercel site is deliberately a **read-only snapshot**. It includes the recorded analysis,
-workbench, run history, and CSV/XLSX exports, but it does not pretend that Vercel can run the local
-pipeline: LexDroid's worker is long-lived and its SQLite store must persist between requests.
-Starting runs and recording reviews remain available through `npm run dev` on a machine with the
-working store. Set `LEXDROID_READ_ONLY=1` to use the same snapshot mode on another host.
-
-Before deploying, the complete web verification is one command:
-
-```bash
-npm run check:deploy
-```
-
-For Git-based Vercel deployments, choose `frontend` as the project's Root Directory. Its checked-in
-`vercel.json` supplies the remaining settings.
+On **Home**, choose Singapore, pillar 6 and Engine A, and leave **Sources** on *Read only what is
+already on disk*. The run page reports each stage as it goes. Within a few minutes the cells appear,
+and each row opens in **Workbench**. If the run stops at once saying the engine is unreachable,
+Ollama is not running: start it with `ollama serve`.
 
 ---
 
@@ -148,170 +97,102 @@ For Git-based Vercel deployments, choose `frontend` as the project's Root Direct
 
 | What a reviewer needs to do | Where it is |
 | :---- | :---- |
-| Start a run and watch progress in plain words | **Home** → *Start a run* → the run's page opens itself and streams stages |
-| Open the audit view: a result beside the source text it came from | **Workbench** → pick a run → any row; the provision is on the right with the quote highlighted in it |
-| Follow a row to its official source at the cited article | **Workbench** → row → *Source* → the citation link, which carries the anchor for the section |
-| Accept, reject or correct a row | **Workbench** → row → *Accept* / *Reject*, or edit any field in the finding panel |
-| Switch the AI engine | **Home** → *Start a run* → the **Engine** control |
-| Load an engine into this machine's GPU, or rent one to four GPUs for it | **Home** → *Start a run* → **Runs on** → *Load*, or **GPUs** 1–4 → *Rent GPU*, with each pod's progress and the rent so far |
-| Re-score a finished run under the current rules | **Runs** → a run → *Rescore* (previews the changes before applying them) |
-| Export to the RDTII schema | **Runs** → a run → *Export N rows* |
+| Start a run and watch progress in plain words | **Home** → *Start a run*. The run's page opens and reports each stage. |
+| Open the audit view: a result beside the source text it came from | **Workbench** → pick a run → any row. The provision is shown on the right with the quote highlighted. |
+| Follow a row to its official source at the cited article | **Workbench** → row → *Source* → the citation link, which carries the section anchor |
+| Accept, reject or correct a row | **Workbench** → row → *Approve*, *Reject* or *Correct*, in the bar under the finding |
+| Switch the AI engine | **Home** → *Start a run* → **Engine** |
+| Export to the RDTII schema | **Runs** → a run → *Export* |
 
-**Walkthrough recording:** _to be recorded before 30 September._
+**Walkthrough recording:** to follow with the Word submission.
 
 ---
 
 ## Your Two Declared Engines
 
-Declared in `backend/data/engines.json` and frozen at submission.
+Declared in `backend/data/engines.json`.
 
 | | Engine A | Engine B |
 | :---- | :---- | :---- |
-| Provider and model | Ollama, `gemma4-lex-16k` | Ollama on a rented RunPod GPU, `qwen3.8-lex-16k` |
+| Provider and model | Ollama, `gemma4-lex-16k` (Gemma 4 12B) | Ollama on a rented RunPod GPU, `qwen3.8-lex-16k` (Qwen 3.8 27B) |
 | Version / checkpoint | `gemma4:12b-it-q4_K_M` | `qwen3.8:27b-q4_K_M` |
-| Where it runs | This machine (16 GB of GPU memory or more), or a rented GPU | A rented GPU with 24 GB or more, at most $0.34/hr |
-| Kind | Open weights | Open weights, on commercial hardware |
-| Config value | nothing — it is the default | a RunPod API key (`api=` in `.env`, or `RUNPOD_API_KEY`) |
+| Local or hosted API | Local. The interface can also rent a GPU for it. | A GPU the interface rents from RunPod. No hosted model API. |
+| Config value | None; it is the default | A RunPod API key (`api=` in `.env`, or `RUNPOD_API_KEY`) |
 
-They differ in kind on every axis ESCAP names: different model family (Gemma against Qwen),
-different size (12B against 27B) and someone else's hardware. Both are open weights, so every
-reading can be reproduced from a pinned checkpoint and a Modelfile in `ollama/`.
-
-**Engine B is shown the answer schema instead of being held to it.** Engine A answers under
-Ollama's schema-constrained decoding. Qwen 3.8 under the same constraint returned
-`{"findings": []}` for every provision, including Rule 4 of India's Intermediary Rules ("identify
-such user and verify his identity"), which it reads correctly when left unconstrained. So an
-engine declared `"schema": "described"` in `engines.json` gets the JSON Schema in its system
-prompt, and the JSON object is taken from its answer. An answer with no JSON in it is asked once
-more under the constraint. Every finding still has to pass the same quote check against the
-provision text (`backend/src/engines/ollama.ts`, `schemaDecoding`).
-
-**Renting the GPU happens in the interface.** *Start a run* → **Runs on** → *Rented GPU* →
-*Rent GPU* rents the cheapest card that fits under the cap, community tier first. The pod installs
-Ollama, builds the engine from the same Modelfile this repository declares, loads it, and refuses
-to report ready unless the whole model is in GPU memory. That takes about six minutes. The panel
-shows each stage and the rent so far, and *Stop GPU* deletes the pod. The pod answers only through
-RunPod's HTTPS proxy, behind a random token (`infra/runpod/pod.py`), and Ollama itself is bound to
-the pod's localhost. From the command line, `npm run -w backend gpu -- start --engine engine-b`
-does the same, and a run with `--on runpod` finds the pods by name.
-
-**More GPUs, less waiting.** **GPUs** picks one to four pods for the engine, each at most the same
-$0.34/hr. A run on them divides the pillar's reads across them, one read per pod at a time, which
-is how every multi-engine run here has been kept from batching reads together. The live test is
-one pillar, so this is the one stage it can shorten: Engine B read Thailand's 11.3 and 11.4 at about
-24 s per provision on one pod. The pods of an engine share one token. A pod that is still loading
-or has failed when the run starts is left out, and the run log says so. `--pods N` on `gpu start`,
-and `--pod ID` on `gpu stop` to give back just one.
-
-**The RunPod key is never sent to the pod or written anywhere else.** `backend/test/gpu-rental.test.ts`
-asserts that the body that creates a pod carries no key.
-
-Verify an engine actually works as declared, through the pipeline's own call path:
-
-```
-npm run -w backend engine-check -- --engine engine-b
-```
-
-Four checks: reachable, returns structured output, quotes before it interprets, and reads a legal
-provision correctly — asked twice, once of an English provision and once of a Russian one whose
-period is written as a word (`пяти`) rather than a digit. The second case is there because five of
-the eight profiled economies do not publish in English, and an engine that reads English perfectly
-but paraphrases Russian produces unlocatable findings at 0.50 rather than citations. Measured
-21 September 2026: Engine B passes both, quoting Cyrillic back character-for-character without
-translating it.
+Both are open weights. They differ in model family (Gemma and Qwen), in size (12B and 27B), and in
+where they run.
 
 ### Switching between them
 
-In the interface: **Home** → *Start a run* → **Engine**. No file is edited and no command is typed.
-The choice is remembered, so a run started from the command line afterwards uses the same engine.
+In the interface: **Home** → *Start a run* → **Engine** → select the engine. No file is edited and
+no command is typed.
 
-The abstraction is `backend/src/engines/ollama.ts`, whose `generate()` branches on whether a hosted
-engine is configured and otherwise behaves identically. Adding a provider means adding a row to
-`engines.json`: anything that speaks the OpenAI chat-completions shape — Groq, Together,
-Fireworks, DeepInfra, Ollama's own `/v1` — already works, with its key read from
-`LEXDROID_HOSTED_API_KEY` and never written to a file.
+The abstraction lives in `backend/src/engines/`. The rest of the pipeline makes one `generate()`
+call and does not know which engine answers it. Adding a provider means adding an entry to
+`engines.json`: any server that speaks the OpenAI chat-completions format works, with its key read
+from `LEXDROID_HOSTED_API_KEY` and never written to a file.
 
 ### Re-running without fetching
 
-In the interface: **Home** → *Start a run* → **Sources** → *Read only what is already on disk*.
+In the interface: **Home** → *Start a run* → **Sources** → *Read only what is already on disk*. In
+this mode the portal walk does not run, and a document missing from the cache is an error rather
+than a download, so the run's document list is empty. Run `545aed1e` was made this way and recorded
+no fetches.
 
-In that mode a missing document is an error rather than a fetch, the portal walk does not happen at
-all, and the run's document list is empty. Downloaded documents live in `backend/data/cache/url/`
-and the parsed text in the store at `backend/data/lexdroid.db`.
-
-Demonstrated: run `545aed1e` completed cache-only with zero successful fetches recorded against it.
+Downloaded documents are cached in `backend/data/cache/url/`. Parsed text is in
+`backend/data/lexdroid.db`.
 
 ---
 
 ## Crawling Politely
 
-On by default. A ministry running this tool should not have to configure it to avoid being blocked,
-and on 15 October five tools will be reading the same government sites in the same hour.
+On by default, with nothing to configure.
 
 | Setting | Value | Where it is set |
 | :---- | :---- | :---- |
-| Max requests per second per host | 1, or slower if the site asks | `backend/src/fetch/index.ts:95` |
-| Parallel requests per host | 1, serialised through a per-host chain | `backend/src/fetch/index.ts:472` |
-| robots.txt respected | yes, including `Crawl-delay` | `backend/src/fetch/index.ts:673` |
-| Every request logged | `fetch_log` | `backend/src/fetch/index.ts:438` |
+| Max requests per second per host | 1, or slower if the site asks | `backend/src/fetch/index.ts:256` |
+| Parallel requests per host | 1; requests to a host run one after another | `backend/src/fetch/index.ts:817` |
+| robots.txt respected | Yes, including `Crawl-delay` | `backend/src/fetch/index.ts:649`, `:687` |
+| Every request logged | `fetch_log` table | `backend/src/fetch/index.ts:780` |
 
-The site's own `robots.txt` wins wherever it asks for longer than our one-second floor. Singapore
-Statutes Online asks for six seconds and disallows `/search`; both are respected, and discovery
-uses the site's browse listings instead. The delay is jittered, because a request exactly every six
-seconds for three hours is itself a pattern a rate rule notices.
-
-The user agent identifies us. It is also browser-shaped, because the CDN in front of Singapore
-Statutes Online answers 403 to anything that is not — including a plainly labelled research
-crawler. We append our name rather than hide behind theirs.
-
-Two further settings exist for measured reasons rather than taste, and both are commented where
-they are set:
-
-- Requests ask for compressed responses and unwrap them. One Singapore Act measured 404,381 bytes
-  uncompressed and 31,406 compressed; not asking meant taking thirteen times the bandwidth off a
-  government server for identical text.
-- The HTTPS client offers cipher suites in a browser's order. Node's default order is read as a
-  client fingerprint by that same CDN, which answers a challenge page instead of the document —
-  measured on the same machine in the same minute as `curl` receiving it normally. No challenge is
-  solved and no credential is presented; the crawl stays within `robots.txt` either way.
+Where a site's `robots.txt` asks for a longer delay than one second, the longer delay applies.
 
 ---
 
 ## Architecture Overview
 
 ```
-Zone 0   profile          portals, languages, instrument kinds for an economy
+Zone 0   profile          portals, languages and instrument kinds for an economy
    |
 Zone 1   discover ──► fetch ──► parse ──► index
-         register      cache     OCR      lexical (FTS) + dense (bge-m3)
+         register      cache     OCR      lexical (FTS5) + dense (bge-m3)
    |                     ^
    |                     └── cache-only mode stops here: nothing leaves the machine
 Zone 2   retrieve ──► read ──► confirm
-         shortlist     quote    second, independent reading: "does this provision
+         shortlist     quote    a second, independent reading: "does this provision
                        + map    state this measure?"
    |
 Zone 3   decide ──► record ──► export ──► verify
-         bands        cell     RDTII      quotes relocated in the stored source
+         bands        cell     RDTII      quotes located again in the stored source
 ```
 
-The boundary that matters is between **fetch** and everything after it. Fetching is a distinct
-stage with its own cache and its own log, so a second pass can be run with that stage disabled and
-the emptiness of its document list is a fact about the run record rather than a claim.
+Fetching is its own stage, with its own cache and log. Everything after it reads from the store, so
+a second pass can run with fetching switched off, and its empty document list is a fact in the run
+record.
 
 ### Key modules
 
 | Module | File | Description |
 | :---- | :---- | :---- |
-| Portal Crawler | `backend/src/discover/` | Walks portals, builds the instrument register |
-| Fetcher | `backend/src/fetch/index.ts` | robots, rate limiting, cache, `fetch_log` |
-| Document Processor | `backend/src/parse/` | PDF, HTML, EPUB, OCR, sectioning, language detection |
-| Retrieval | `backend/src/retrieve/`, `backend/src/shortlist/` | FTS + dense embeddings, fusion, shortlisting |
-| Mapper | `backend/src/read/` | Reads a provision, quotes it, maps it to an indicator |
-| Decision | `backend/src/decide/` | Bands, gates, the confirmation state a score stands on |
+| Portal Crawler | `backend/src/discover/` | Walks portals and builds the instrument register |
+| Document Processor | `backend/src/fetch/`, `backend/src/parse/` | Download, robots and rate limits; PDF, HTML, EPUB, OCR and sectioning |
+| Retrieval | `backend/src/index/`, `backend/src/retrieve/`, `backend/src/shortlist/` | Lexical and dense indexes, fused search, shortlisting |
+| Mapper | `backend/src/read/`, `backend/src/decide/` | Reads and quotes a provision, maps it to an indicator, scores the cell |
 | Interface | `frontend/` | Run control, audit view, review, export |
-| Output Writer | `backend/src/export/`, `frontend/lib/export/` | The RDTII schema and the seven sheets |
+| Output Writer | `backend/src/export/`, `frontend/lib/export/` | The RDTII schema and the template's sheets |
 
-`docs/architecture.md` is the full design.
+The full design is in `docs/architecture.md`. Running the pipeline from the command line, and
+hosting a read-only copy, are covered in `docs/operating.md`.
 
 ---
 
@@ -319,12 +200,10 @@ the emptiness of its document list is a fact about the run record rather than a 
 
 | Engine | Config value | Notes |
 | :---- | :---- | :---- |
-| Tesseract (default) | none | `tesseract.js` with local language packs in `backend/data/ocr/tessdata`. Runs offline. |
+| Tesseract (`tesseract.js`) | None; it is the only engine | Local, offline. Language data for English, Hindi, Lao, Mongolian, Russian and Thai is installed with the package. |
 
-**No proprietary service is called for OCR, and none for translation** — we do not translate at
-all; provisions are quoted in their original language and `language_of_source` records it. Section
-3's claim that the core pipeline runs with no proprietary API holds for OCR and translation as well
-as for the language model.
+No proprietary service is used for OCR or for translation. Provisions are quoted in their original
+language and the row records that language.
 
 ---
 
@@ -332,154 +211,97 @@ as for the language model.
 
 | Economy | Official portal | Language | Run end to end? | Notes |
 | :---- | :---- | :---- | :---- | :---- |
-| Australia | `legislation.gov.au` (+ 9 regulators) | en | **Yes** — 61/61 indicators | 28,408 instruments registered |
-| Malaysia | `lom.agc.gov.my` (+ 10) | en, ms | **Yes** — 61/61 indicators | 16,822 registered. See the limitation on Malay below. |
-| Singapore | `sso.agc.gov.sg` (+ 8) | en | **Yes** — 61/61 indicators | 6,857 registered |
-| India | `indiacode.gov.in` (+ 10) | en, hi | **No** — profile and adapter only | Portal adapter written and tested; no cells produced |
-| Thailand | `searchlaw.ocs.go.th` (+ 7) | th | **No** — profile only | Six of eight portals confirmed blocked or client-rendered; `docs/thailand-integration-plan.md` |
-| Mongolia | `legalinfo.mn` (+ 4) | mn | **No** — corpus parsed, no cells | 11,962 registered; parser and annex fetching proven by 45 gold tests on 11 real pages |
-| Russian Federation | `pravo.gov.ru/proxy/ips` (+ 4) | ru | **No** — corpus parsed, no cells | 421 federal instruments from the State legal information system (windows-1251); whole Codes read; 36 gold tests on 5 documents |
-| Lao PDR | `laoofficialgazette.gov.la` (+ 4) | lo | **No** — corpus parsed, no cells | 1,115 registered from the gazette grid; scans read by local OCR (59–89 confidence) and sectioned by article; 21 gold tests on 4 scans |
-
-**Stated honestly:** eight economies are profiled; **three have been run end to end**, and they are
-the three mandatory ones. Of the nine sealed live-test economies, LexDroid has produced cells for
-**none**. India has a written and tested portal adapter; Thailand, Mongolia, Russia and Lao PDR have
-Zone 0 profiles built from portals read live, with every unread portal recorded with the reason it
-is unread rather than quietly dropped. ESCAP's own guidance is that depth beats a thin pass, and
-that is the trade we made — but the finals brief also sets a floor of six economies processed
-autonomously, at least three of them non-English, and that floor is not yet met.
-
-For the three new non-English economies, registration, fetching and parsing now run end to end
-and are proven against real sources (`docs/handoff-three-economies.md`). What still stands between
-them and their first cells:
-- a table of the rubric's queries in each language, since 5 of 300 English queries find anything
-  in these corpora (`npm run -w backend translate-queries`);
-- embeddings on a GPU host;
-- a run.
-
-The portal trace behind each is `docs/lao-mongolia-russia-recon.md`.
+| Australia | `legislation.gov.au` and 9 regulator sites | English | Yes, 61 indicators | |
+| Malaysia | `lom.agc.gov.my` and 10 others | English, Malay | Yes, 61 indicators | Portals mostly surface the English versions |
+| Singapore | `sso.agc.gov.sg` and 8 others | English | Yes, 61 indicators | |
+| India | `indiacode.gov.in` and 10 others | English, Hindi | Yes, 61 indicators | Central legislation only |
+| Thailand | `searchlaw.ocs.go.th` and 7 others | Thai | Yes, 61 indicators | |
+| Lao PDR | `laoofficialgazette.gov.la` and 4 others | Lao | Yes, 61 indicators | Image-only scans, read by OCR |
+| Mongolia | `legalinfo.mn` and 4 others | Mongolian | Yes, 61 indicators | |
+| Russian Federation | `pravo.gov.ru` and 4 others | Russian | Yes, 61 indicators | |
 
 ---
 
 ## Output Format
 
-Columns in this exact order, matching the template. The exporter writes them from the run record;
-nothing is typed by hand.
+Columns in the template's order. The exporter fills them from the run record.
 
 | # | Column | Required | Where it comes from |
 | :---- | :---- | :---- | :---- |
-| 1 | economy | Required | The cell's economy |
-| 2 | law_name | Required | Instrument title as the portal publishes it |
-| 3 | law_number_ref | Optional | Official act or law number |
-| 4 | last_amended | Optional | From the instrument record |
-| 5 | indicator_id | Required | RDTII 2.1 code **as text** — `6.1`, `12.4.1`, `4.01` |
+| 1 | economy | Required | Official UN name of the cell's economy |
+| 2 | law_name | Required | The instrument's title as the portal publishes it |
+| 3 | law_number_ref | Optional | The official act or law number |
+| 4 | last_amended | Optional | Year of the latest amendment, from the instrument record |
+| 5 | indicator_id | Required | RDTII 2.1 code, written as text (`6.1`, `12.4.1`, `4.01`) |
 | 6 | article | Required | The section label, from the document's own structure |
-| 7 | discovery_tag | Required | NEW / KNOWN, resolved against the quarantined sample kit |
-| 8 | location_reference | Optional | Heading path or HTML anchor |
-| 9 | verbatim_snippet | Required | The model's quote, **relocated in the stored source** |
-| 10 | mapping_rationale | Optional | Quote first, then our reading. Capped at 300 characters. |
-| 11 | source_url | Required | Official portal URL, with the section anchor where there is one |
-| 12 | confidence | Optional | 0.00–1.00 — see below |
-| 13 | notes | Optional | What the row stands on, the measure, OCR warnings |
-| 14 | language_of_source | Required | Detected from the provision's own text, not assumed |
+| 7 | discovery_tag | Required | NEW or KNOWN, checked against the sample kit |
+| 8 | location_reference | Optional | Page number, heading path or HTML anchor |
+| 9 | verbatim_snippet | Required | The quoted words, located in the stored source |
+| 10 | mapping_rationale | Optional | The quote first, then our reading, within 300 characters |
+| 11 | source_url | Required | The official portal URL, with the section anchor where there is one |
+| 12 | confidence | Optional | 0.00–1.00; see below |
+| 13 | notes | Optional | What the row rests on, and any OCR warning |
+| 14 | language_of_source | Required | Detected from the provision's text |
 
-Indicator IDs are written as text. `12.10` entered as a number collapses to `12.1` and `4.01` to
-`4.1`, and those are different indicators.
+Indicator IDs are stored as text, because `12.10` typed as a number becomes `12.1` and `4.01`
+becomes `4.1`.
 
-**Confidence is ordinal, not a calibrated probability.** The number states what the evidence is,
-never what the model feels: 0.90 means the quoted words were located character-for-character in the
-stored source *and* a second, independent reading confirmed the measure; 0.75 means located but
-never second-read; 0.65 means located in OCR-recovered text; 0.50 means the stored source does not
-contain those words; 0.20 means unresolved. The sentence that earned the number is the first thing
-in Notes. The rungs are ordinal, not calibrated probabilities: a reviewer should read the Notes
-rather than threshold on the number. **Anything at or below 0.75 is worth a human's time.**
+**Confidence is an ordering, not a calibrated probability.** 0.90: the quote was found in the
+stored source and a second reading confirmed the measure. 0.75: found, but not second-read. 0.65:
+found in OCR text. 0.50: not found in the stored source. 0.20: unresolved. A reviewer should check
+anything at 0.75 or below first.
 
 ---
 
 ## Measured Cost
 
-Measured from `run_cost`, which the pipeline writes per run and per engine without manual
-arithmetic.
+Every figure below is read from `run_cost`, which the pipeline writes for each run and engine:
+calls, tokens, wall-clock time and dollars. Nothing is estimated after the fact.
 
-**Reference run:** `82673dbf` — Australia, Malaysia and Singapore, all 12 pillars, 183 cells,
-775 exported rows. **Measured on:** 2026-09-16.
+On the machine it was built on, both engines run locally through Ollama and a run costs nothing
+beyond electricity. The only thing that is ever billed is a GPU rented from RunPod, charged by the
+hour it is held, and capped per engine (US$0.34 an hour for Engine A, US$0.55 for Engine B). The
+benchmark below was run on rented GPUs, so that it shows a real price.
 
 | Component | Engine used | Measured cost |
 | :---- | :---- | :---- |
 | OCR | Tesseract, local | $0.00 |
 | Embedding | bge-m3, local | $0.00 |
-| Mapping — Engine A | `gemma4-lex-16k` on 8 rented GPUs | **$19.32** |
-| Mapping — Engine B | `qwen3.8-lex-16k` on a rented RTX A5000 | $0.18 for India pillar 8 (148 reads, 38 min); a full pass not yet measured |
-| Crawling | — | $0.00 |
-| **Total, Engine A** | | **$19.32 for 183 cells — $0.106 per cell** |
+| Mapping — Engine A | `gemma4-lex-16k` on a rented GPU | $0.48 for the run |
+| Mapping — Engine B | `qwen3.8-lex-16k` on a rented GPU | $2.12 for the run |
+| Crawling | None | $0.00 |
+| **Total, Engine A** | | **$0.0011 per document** ($0.00 on a local GPU) |
+| **Total, Engine B** | | **$0.0058 per document** ($0.00 on a local GPU) |
 
-12,250 engine calls (5,275 of them fresh; the rest carried from an earlier run, which the run record
-says on its own face), 21,919,343 prompt tokens, 1,356,587 output tokens, 28.8 hours of wall clock
-across 8 workers.
+**Measured on:** 27 September 2026.
+**Benchmark:** Thailand, the same ten indicators on both engines (3.4, 3.5, 4.01, 5.2, 6.1, 8.2,
+8.3, 11.2, 12.4.3, 12.5). Engine A read 455 documents in 1,666 calls; Engine B read 367 in 1,369.
+**Wall-clock:** 7.0 seconds per document on Engine A (53 minutes in all); 30.1 seconds per document
+on Engine B (184 minutes).
 
-Rented hardware bills for the hour it is held rather than the seconds it decodes, so the charge is
-hosts times wall time. `--usd-per-hour` records it into the run record.
-
-The corpus behind those cells — 4,045 documents, 162,901 sections — was built by 8,546 successful
-fetches over several days, at $0.00: bandwidth off government portals is the only resource spent,
-which is exactly why the crawler is careful with it.
-
-**Engine B has not been billed for a full pass yet.** It bills by the hour the pod is held, like
-Engine A's rented GPUs, and the run record takes the price from the pod. It is not estimated here.
+The cost of a rented run is the hourly rate times the time the GPU was held. The Run Record sheet of
+every export carries the cost the pipeline recorded for that run.
 
 ---
 
 ## Known Limitations
 
-- **Malaysia is not currently evidencing non-English coverage.** Across a random sample of 1,500
-  sections spanning all 1,562 Malaysian instruments, the language detector found 1,473 English, 20
-  Malay and 7 unclassifiable. `lom.agc.gov.my` publishes English versions and our discovery reaches
-  those first. C1c is scored on the language of the source, so this is a real gap, not a
-  presentational one.
-- **Every Lao row is OCR-recovered, and capped at 0.65 confidence because of it.**
-  `laoofficialgazette.gov.la` publishes image-only scans — one sampled at 1.09 MB carried zero
-  `/Font` and zero `/ToUnicode`. The Lao language pack reads them: 1,761 Lao characters off one
-  page at 77.0 confidence in 10.2 seconds, retaining article numbers and the made-under citation
-  chain. But "located in text recovered by OCR" is what the 0.65 rung means, and it is a real
-  ceiling on Lao rather than a number to explain away.
-- **Lao ligature orthography can still cost recall.** Lao writes some clusters either as one
-  ligature codepoint or as `ຫ` plus the base consonant (`ໝ` against `ຫ`+`ມ`), Unicode defines no
-  canonical decomposition, and `normalize('NFC')` is a no-op on them — the same situation
-  `backend/src/util/thai.ts` handles for Thai. Two spellings of one word are two trigram sets, so
-  a query and a document that disagree do not match. Sized and written up in
-  `docs/lao-mongolia-russia-recon.md`; not fixed, because the one sample also shows OCR confusing
-  `ມ` with `ນ` and normalising alone would not have recovered it.
-- **Cyrillic tells Mongolian from Russian in one direction only.** Mongolian Cyrillic carries Ө and
-  Ү, which Russian does not, so a Mongolian provision is recognised on its own evidence. Russian
-  has no letter of its own against Mongolian, so Russian text inside an economy declared Mongolian
-  falls through to what the profile says and is recorded as Mongolian. It is the same trade this
-  codebase already makes for Malay against Indonesian, and `backend/test/language.test.ts` asserts
-  the asymmetry rather than leaving it to be discovered.
-- **Confidence does not discriminate strongly.** See above: the rungs order rows correctly but the
-  spread is 0.061. Do not treat the number as a probability.
-- **The reading engine can misread a number if it is not made to quote first.** Asked for a
-  retention period as a bare number, Engine A answered "10" for text reading "not less than 5
-  years" — reproducibly, at temperature zero. Asked to copy the words first and then read the
-  number out of them, it answered 5. The pipeline always quotes first, and
-  `backend/scripts/engine-check.ts` tests for exactly this. It is a property of the model, not a
-  bug we fixed.
-- **9 of 775 exported rows name no instrument at all** — 7 unresolved cells and 2 where no
-  controlling instrument was identified. They are flagged as unresolved rather than
-  hidden.
-- **Confirmation is not a free win.** The second reading pass rules out 80.6% of findings. It is on
-  by default because it corrects more than it breaks and because a ruled-out finding is a cheaper error than a fabricated one.
-- **The engine cache must be off for any number that will be quoted.** `LEXDROID_ENGINE_CACHE=1`
-  replays stored answers, which turns a forty-minute pillar into seconds while a scoring rule is
-  worked on — and turns a measurement into a replay. Every replayed call is counted into
-  `run_cost.cached_calls` and a run that used one carries a note saying it is not quotable.
-- **No document has been fetched under a run since fetch attribution was wired.** Fetches are
-  attributed to `fetch_log.run_id`, which is what the Run Record reports and what C5a is scored on.
-  The corpus was built by command-line passes that correctly belong to no run, and the only run
-  since was cache-only. A fetching run through the interface is the remaining rehearsal.
-- **Engine B reads more slowly than Engine A.** On a rented RTX A5000 it decodes about 20 tokens
-  a second, entirely in GPU memory. India pillar 8 took 38 minutes for 148 reads (about 7.5 s for
-  an empty answer, 25–160 s for one with findings) and gives the same answers as Engine A on 4 of 4
-  questions. A full pass has not been run on it yet.
+- **Lao sources are scans.** `laoofficialgazette.gov.la` publishes image-only PDFs. Every Lao row
+  comes from OCR text and is capped at a lower confidence.
+- **Lao spelling variants.** Some Lao consonant clusters have two valid spellings that Unicode does
+  not treat as equivalent, so a query and a document that spell a word differently do not match.
+- **Malay coverage is thin.** The Malaysian portals serve English versions first, so few Malay
+  sources are read.
+- **Mongolian and Russian are told apart in one direction only.** Mongolian Cyrillic uses Ө and Ү,
+  which Russian does not. Russian text in a Mongolian source is labelled Mongolian.
+- **Questions are written in English.** For Lao, Mongolian and Russian, retrieval uses a translated
+  question table (`backend/data/query-translations/`), generated by
+  `npm run -w backend translate-queries`.
+- **India covers central legislation only.** State and Union Territory law is out of scope.
+- **Engine B is slower.** It decodes about 20 tokens a second on a rented GPU and depends on RunPod
+  having a suitable GPU free.
+- **Confidence calibration:** the confidence levels are relative, not probabilities. Check rows at
+  0.75 or below first.
 
 ---
 
@@ -489,37 +311,26 @@ Engine A's rented GPUs, and the run record takes the price from the pod. It is n
 npm test
 ```
 
-1,867 backend and 60 frontend tests. Runs from the repository root or from either workspace.
-
 | Test file | What it tests |
 | :---- | :---- |
-| `backend/test/baseline-isolation.test.ts` | That no pipeline module can read the sample kit |
-| `backend/test/engine-declaration.test.ts` | Section 5 against all three ways ESCAP words it |
+| `backend/test/baseline-isolation.test.ts` | No pipeline module can read ESCAP's answers |
+| `backend/test/engine-declaration.test.ts` | The engine declaration matches Section 5 |
 | `backend/test/verify.test.ts` | Export rows against the template's field rules |
-| `backend/test/fetch.test.ts`, `robots-absent.test.ts` | robots, rate limiting, the missing-robots case |
-| `backend/test/confirmations.test.ts` | That one run has one confirmation state |
-| `backend/test/language.test.ts` | Language detection, including when it should abstain |
+| `backend/test/fetch.test.ts`, `robots-absent.test.ts` | robots.txt, rate limits, and sites with no robots.txt |
+| `backend/test/confirmations.test.ts` | Each run has one consistent set of confirmations |
+| `backend/test/language.test.ts` | Language detection, including when it should not guess |
+| `backend/test/gpu-rental.test.ts` | The RunPod key is never sent to the pod |
 | `frontend/lib/export/sheets.test.ts` | The engine comparison, including rows only one engine found |
-
-**Discovery cannot see the sample kit.** If it could, every instrument would be tagged KNOWN by
-construction and the tag would say nothing. `baseline-isolation.test.ts` walks `backend/src/`,
-strips comments, and fails if any module outside `src/baseline` reaches for it.
 
 ---
 
 ## Reproducing Your Submitted Evidence
 
-Every number in this README and in the submitted workbook comes from the run record and can be
-recomputed from it.
-
-```
-npm run -w backend rescore -- <run id>        # re-derive every score from the stored readings
-```
-
-`rescore` re-derives every score from the stored readings, so a score in the workbook can be
-checked against the attributes it was computed from.
-
-To regenerate the workbook itself: **Runs** → the run → *Export*.
+The submitted workbook was built from the runs listed in its Run Record sheet: each run was
+rescored under the current rules, its export rows rebuilt and verified, and the rows written into
+ESCAP's template. The run databases are large and are not in the repository; we can provide them
+on request. A run in your own store is exported from the interface (**Runs** → run → *Export*), and
+`npm run -w backend rescore -- --run <run id>` recomputes every score in it from the stored readings.
 
 ---
 
@@ -527,119 +338,16 @@ To regenerate the workbook itself: **Runs** → the run → *Export*.
 
 | Role | Name | Responsibility |
 | :---- | :---- | :---- |
-| Technical Lead | Sidharth Rajesh | AI architecture, OCR, pipeline |
-| Substantive Lead | _to be filled in_ | Legal and policy analysis, output QA |
-
----
-
-## Operating It
-
-Everything below is for running the tool outside the interface. A reviewer does not need it.
-
-### Building a corpus
-
-```
-npm run -w backend zone1 -- --economy SGP --register     # walk the portals
-npm run -w backend zone1 -- --economy SGP --about "restrictions on transferring personal data abroad" --kind act
-npm run -w backend zone1 -- --economy SGP --embed        # build the semantic index
-npm run -w backend zone1 -- --economy SGP --status
-```
-
-`--register` builds the register — title, kind, official number and URL for every instrument the
-portals publish — without fetching any of them. Singapore's is 6,365 instruments from fourteen
-requests.
-
-`--about` is the ordinary way to read. It ranks that register against a question — semantically and
-lexically, over titles — prints what it chose and why, and fetches only that. `--top N` sets how
-many. This is not only cheaper: reading a statute book front to back is not something these portals
-will let you do, and it is not something the live test leaves time for.
-
-Each stage is resumable: an instrument already read is skipped, and an embedding already computed is
-not recomputed. `--cache-only` runs without touching the network at all.
-
-Ask the corpus a question:
-
-```
-npm run -w backend search -- --economy SGP "requirement to store personal data locally"
-```
-
-### Speed
-
-`docs/architecture.md` §8 sets the budget and says which stage each second belongs to. The short
-version: politeness is a per-host constraint, so hosts are crawled in parallel and never hurried;
-the corpus is built once and queried by all 61 indicators; the model stage is bounded by the number
-of calls it makes, not by shortening its prompts. Nothing is ever made faster by looking at less
-evidence — a cheap filter may reorder candidates, never remove them.
-
-### Running one run on several engines
-
-Reading is the slow stage and it is decode-bound, so the way to make it finish sooner is more
-engines, not a busier one. `fleet` splits the work by economy and pillar, hands each unit to a
-worker that joins the same run, and shows one progress stream for all of them:
-
-```
-npm run -w backend fleet -- --economies SGP,MYS --pillars 6,7 --hosts http://127.0.0.1:11434,http://192.168.1.20:11434
-```
-
-One worker per engine endpoint, and the fleet refuses a host listed twice. This is not fussiness:
-two workers sharing one Ollama server have their reads batched together by that server, and
-`scripts/concurrency.ts` measures what that costs — 18 of 40 provisions read differently, findings
-appearing and vanishing, while a second pass at one-at-a-time agreed with the first on all 40.
-Parallelism across engines is safe; parallelism inside one is not.
-
-Every host is checked before the run opens, and what blocks a run is that the hosts disagree about
-what they are serving. Spreading a run over rented machines makes one tag mean two different builds
-— a different quantisation, a different parameter count — and then half the answers come from one
-model and half from the other, with nothing in the output saying so. So the family, size and
-quantisation are read from each host and compared, which is exact.
-
-```
-npm run -w backend engines -- --hosts http://127.0.0.1:11434,http://127.0.0.1:11502
-```
-
-runs those checks on their own, which is the thing to do the moment a rented GPU boots.
-
-### Renting the engines
-
-`infra/runpod/bootstrap.sh` prepares a rented GPU: it installs Ollama, builds the reading engine
-from the same Modelfile this repo uses, and pins the server to one request at a time.
-
-```
-BASE=gemma4:12b TAG=gemma4-lex-16k bash bootstrap.sh
-```
-
-It binds to localhost and nothing else, because Ollama has no authentication of its own and a pod
-port open to the internet is a GPU anyone can spend. `infra/runpod/tunnel.sh` carries each pod to a
-local port over SSH and prints the `--hosts` line to paste:
-
-```
-./infra/runpod/tunnel.sh 'root@1.2.3.4 -p 40022' 'root@5.6.7.8 -p 40022'
-```
-
-To reach a host over a public URL instead, put a token-checking proxy in front of it and set
-`LEXDROID_ENGINE_TOKEN` in the shell that launches the run. It is sent as a bearer token and is
-never written to a file.
-
-### The engine cache, and when not to use it
-
-`LEXDROID_ENGINE_CACHE=1` replays stored engine answers instead of asking for them. It is off
-unless set, and **must never be on for a run whose numbers will be quoted** — see Known
-Limitations. Delete `backend/data/engine-cache.db` to clear it; nothing else is affected.
-
-### HTTP API
-
-| | |
-|---|---|
-| `GET /health` | store and rubric status |
-| `GET /api/rubric`, `/api/rubric/:id` | the 61 indicators, their bands and provenance |
-| `GET /api/economies`, `/api/economies/:code` | Zone 0 profile and the state of the corpus |
-| `GET /api/search?economy=SGP&q=...` | both search channels and their fusion |
+| Team Lead and Technical Lead | Sidharth Rajesh | AI architecture, OCR, pipeline |
+| Substantive Lead | [TO FILL] | Legal and policy analysis, output QA |
 
 ---
 
 ## Licence
 
-Released under the **Apache License 2.0**, as required. See [LICENSE](LICENSE).
+Released under the Apache License 2.0. See [LICENSE](LICENSE).
+
+The release tag in our Stage 3 submission is the version that runs on 15 October.
 
 ---
 
