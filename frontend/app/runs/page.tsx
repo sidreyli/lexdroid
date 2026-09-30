@@ -87,9 +87,14 @@ export default function RunsPage() {
               <ul className="mt-1 flex flex-col">
                 {group.runs.map((run) => (
                   <li key={run.id} className="border-b border-edge/70 last:border-0">
+                    {/*
+                      Each row is its own grid, so no column may size to its text: an "auto" status
+                      column was narrower on a stopped run than on a finished one, and every column
+                      before it shifted. Fixed tracks keep all rows, across days, on one set of lines.
+                    */}
                     <Link
                       href={`/runs/${run.id}`}
-                      className="-mx-2 grid grid-cols-[1fr_auto] items-baseline gap-x-6 gap-y-1 rounded-xl px-2 py-2.5 transition-colors hover:bg-inset sm:grid-cols-[1.4fr_1fr_auto_auto]"
+                      className="-mx-2 grid grid-cols-[minmax(0,1fr)_7.5rem_3rem] items-baseline gap-x-4 gap-y-1 rounded-xl px-2 py-2.5 transition-colors hover:bg-inset sm:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_10rem_3.5rem] sm:gap-x-6"
                     >
                       <span className="truncate text-[13.5px] leading-tight text-navy-deep">
                         {where(run)}
@@ -99,7 +104,7 @@ export default function RunsPage() {
                       </span>
                       <span
                         className={cn(
-                          "tnum text-[12.5px] leading-tight",
+                          "tnum truncate text-right text-[12.5px] leading-tight",
                           run.status === "failed" ? "text-brick" : "text-muted-foreground",
                         )}
                       >
