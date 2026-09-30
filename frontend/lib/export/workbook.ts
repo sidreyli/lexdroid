@@ -22,6 +22,7 @@ import {
   checklist,
   type EnginePass,
 } from "./sheets";
+import { styleDocument, styleTable } from "./style";
 import { getEngines, documentsFetchedBy, documentsFetchedIn, zeroFetchDemonstrated } from "@/lib/data/submission";
 
 export const OUTPUT_COLUMNS = [
@@ -197,16 +198,13 @@ export async function buildWorkbook(selection: Selection): Promise<Buffer> {
     added.getCell(5).numFmt = "@";
     added.getCell(5).value = String(values[4] ?? "");
   }
-  output.getRow(1).font = { bold: true };
   output.columns.forEach((c, i) => {
-    c.width = [22, 40, 16, 13, 12, 18, 14, 20, 60, 50, 40, 11, 30, 18, 8][i] ?? 16;
+    c.width = [18, 30, 16, 11, 10, 14, 11, 34, 64, 52, 40, 11, 48, 12, 8][i] ?? 16;
   });
-  output.getColumn(9).alignment = { wrapText: true, vertical: "top" };
-  output.getColumn(10).alignment = { wrapText: true, vertical: "top" };
+  styleTable(output, { columns: OUTPUT_COLUMNS.length, centred: [4, 5, 6, 7, 12, 14, 15] });
 
   const reference = book.addWorksheet("Indicator Reference");
   reference.addRow(["Indicator ID", "Pillar", "Pillar Name", "Category", "Criterion"]);
-  reference.getRow(1).font = { bold: true };
   for (const pillar of rubric.pillars) {
     for (const indicator of rubric.indicators.filter((i) => pillarOf(i.id) === pillar.id)) {
       const added = reference.addRow([
@@ -219,13 +217,12 @@ export async function buildWorkbook(selection: Selection): Promise<Buffer> {
       added.getCell(1).numFmt = "@";
     }
   }
-  reference.columns.forEach((c, i) => (c.width = [14, 8, 34, 26, 80][i] ?? 16));
-  reference.getColumn(5).alignment = { wrapText: true, vertical: "top" };
+  reference.columns.forEach((c, i) => (c.width = [12, 8, 34, 26, 80][i] ?? 16));
+  styleTable(reference, { columns: 5, centred: [1, 2] });
 
   const economies = [...new Set(rows.map((r) => r.economy))].sort();
   const coverage = book.addWorksheet("Coverage Matrix");
   coverage.addRow(["Indicator ID", "Pillar", ...economies]);
-  coverage.getRow(1).font = { bold: true };
   for (const indicator of [...rubric.indicators].sort((a, b) => compareIndicatorIds(a.id, b.id))) {
     const counts = economies.map(
       (code) => rows.filter((r) => r.economy === code && r.indicatorId === indicator.id).length,
@@ -234,6 +231,10 @@ export async function buildWorkbook(selection: Selection): Promise<Buffer> {
     added.getCell(1).numFmt = "@";
   }
   coverage.columns.forEach((c, i) => (c.width = i < 2 ? [14, 8][i]! : 14));
+  styleTable(coverage, {
+    columns: 2 + economies.length,
+    centred: Array.from({ length: 2 + economies.length }, (_, i) => i + 1),
+  });
 
   // Rows a gate kept out of Output Data, with the gate. Not part of the template's four sheets; it
   // is here so that a row missing from the submission is a row someone can see and act on.
@@ -241,12 +242,12 @@ export async function buildWorkbook(selection: Selection): Promise<Buffer> {
   if (held.length > 0) {
     const sheet = book.addWorksheet("Held");
     sheet.addRow(["Economy", "Law Name", "Article / Section", "Indicator ID", "Verbatim Snippet", "Held because"]);
-    sheet.getRow(1).font = { bold: true };
     for (const { row, reasons } of held) {
       const added = sheet.addRow([row.economy, row.lawName, row.article, row.indicatorId, row.verbatimSnippet, reasons.join("; ")]);
       added.getCell(4).numFmt = "@";
     }
     sheet.columns.forEach((c, i) => (c.width = [10, 40, 18, 12, 60, 60][i] ?? 16));
+    styleTable(sheet, { columns: 6, centred: [1, 4] });
   }
 
   // The run table this file always carried. "Run Record" is the template's own sheet, below.
@@ -267,7 +268,6 @@ export async function buildWorkbook(selection: Selection): Promise<Buffer> {
     "Wall Seconds",
     "USD",
   ]);
-  record.getRow(1).font = { bold: true };
   const runs = selection.runId
     ? getRuns().filter((r) => r.id === selection.runId)
     : getRuns().slice(0, 20);
@@ -290,6 +290,7 @@ export async function buildWorkbook(selection: Selection): Promise<Buffer> {
     ]);
   }
   record.columns.forEach((c, i) => (c.width = i === 0 ? 38 : 16));
+  styleTable(record, { columns: 14 });
 
   // The three sheets the template has and this file did not. Engine Comparison is filled during
   // the live hour; it is built here so the hour is not spent diffing rows by hand.
@@ -339,6 +340,12 @@ export async function buildWorkbook(selection: Selection): Promise<Buffer> {
   );
 
   addInstructions(book);
+
+  // The sheets above that are documents rather than tables: one typeface, rows tall enough to read.
+  for (const name of ["Engine Comparison", "Run Record", "Submission Checklist", "Instructions"]) {
+    const sheet = book.getWorksheet(name);
+    if (sheet) styleDocument(sheet);
+  }
 
   return Buffer.from(await book.xlsx.writeBuffer());
 }
