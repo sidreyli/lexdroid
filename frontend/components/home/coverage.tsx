@@ -34,6 +34,32 @@ const label: Record<CoverageState, string> = {
   "not-attempted": "Not attempted",
 };
 
+/** What one square says: whose it is, how it stands, and the indicator it answers in full. */
+function Readout({
+  square,
+  pillar,
+}: {
+  square: CoverageSquare;
+  pillar: CoveragePillar | undefined;
+}) {
+  return (
+    <div className="flex flex-col gap-1">
+      <p className="flex flex-wrap items-baseline gap-x-2.5 text-[13.5px] leading-tight">
+        <span className="font-medium text-navy-deep">{square.economyName}</span>
+        <span className="tnum font-medium text-navy">{square.indicatorId}</span>
+        <span className="text-muted-foreground">
+          {label[square.state]}
+          {square.score !== null ? `, scored ${square.score.toFixed(2)}` : ""}
+        </span>
+      </p>
+      <p className="max-w-[110ch] text-[12.5px] leading-snug text-muted-foreground">
+        {pillar ? <span className="text-navy-deep/80">{pillar.name}: </span> : null}
+        {square.indicatorLabel}
+      </p>
+    </div>
+  );
+}
+
 /** Width of the gutter between pillar groups, on top of the 2px gap every column has. */
 const PILLAR_GUTTER = "8px";
 
@@ -51,6 +77,15 @@ export function Coverage({
   const answered = squares.filter((s) => s.state !== "not-attempted").length;
   const pillarOf = new Map(pillars.flatMap((p) => p.indicatorIds.map((id) => [id, p] as const)));
   const hoverPillar = hover ? pillarOf.get(hover.indicatorId) : undefined;
+  // The square whose readout runs longest, which sets the readout's height.
+  const size = (sq: CoverageSquare) =>
+    sq.economyName.length +
+    sq.indicatorLabel.length +
+    (pillarOf.get(sq.indicatorId)?.name.length ?? 0);
+  const longest = squares.reduce<CoverageSquare | undefined>(
+    (a, b) => (a && size(a) >= size(b) ? a : b),
+    undefined,
+  );
 
   /*
     One matrix rather than a small grid per pillar: economies are named rows, indicators are
@@ -74,49 +109,48 @@ export function Coverage({
 
   return (
     <section className="bg-card lift rounded-3xl p-6 sm:p-8">
-      <div className="flex flex-wrap items-end justify-between gap-x-10 gap-y-4">
-        <div className="min-w-0">
-          <h2 className="flex items-baseline gap-2.5">
-            <span className="tnum text-[30px] leading-none font-semibold tracking-tight text-navy-deep">
-              {answered}
-            </span>
-            <span className="text-[15px] text-muted-foreground">
-              of {squares.length} cells answered
-            </span>
-          </h2>
-          <div className="mt-2.5 min-h-[34px]">
-            {hover ? (
-              <div className="flex flex-col gap-0.5">
-                <p className="flex flex-wrap items-baseline gap-x-2.5 text-[13.5px] leading-tight">
-                  <span className="font-medium text-navy-deep">{hover.economyName}</span>
-                  <span className="tnum font-medium text-navy">{hover.indicatorId}</span>
-                  <span className="text-muted-foreground">
-                    {label[hover.state]}
-                    {hover.score !== null ? `, scored ${hover.score.toFixed(2)}` : ""}
-                  </span>
-                </p>
-                <p className="max-w-[80ch] truncate text-[12.5px] leading-tight text-muted-foreground">
-                  {hoverPillar ? `${hoverPillar.name}: ` : ""}
-                  {hover.indicatorLabel}
-                </p>
-              </div>
-            ) : (
-              <p className="text-[13px] leading-snug text-muted-foreground">
-                Every economy against every indicator, grouped by pillar. Point at a square to read
-                it, open it for the answer.
-              </p>
-            )}
-          </div>
-        </div>
-
-        <ul className="flex flex-wrap items-center gap-x-4 gap-y-1.5 pb-1">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-10 gap-y-3">
+        <h2 className="flex items-baseline gap-2.5">
+          <span className="tnum text-[30px] leading-none font-semibold tracking-tight text-navy-deep">
+            {answered}
+          </span>
+          <span className="text-[15px] text-muted-foreground">
+            of {squares.length} cells answered
+          </span>
+        </h2>
+        <ul className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
           {(Object.keys(tone) as CoverageState[]).map((s) => (
             <li key={s} className="flex items-center gap-1.5">
               <span className={cn("size-[10px] shrink-0 rounded-[3px]", tone[s])} />
-              <span className="text-[12px] leading-none text-muted-foreground">{label[s]}</span>
+              <span className="text-[12px] leading-none whitespace-nowrap text-muted-foreground">
+                {label[s]}
+              </span>
             </li>
           ))}
         </ul>
+      </div>
+
+      {/*
+        The readout and an invisible copy of the longest one share a single grid cell, so the cell
+        is always as tall as the longest description at whatever width the card is. Pointing at a
+        square then shows its whole description without moving the grid or the key.
+      */}
+      <div className="mt-3 grid">
+        {longest ? (
+          <div aria-hidden className="invisible [grid-area:1/1]">
+            <Readout square={longest} pillar={pillarOf.get(longest.indicatorId)} />
+          </div>
+        ) : null}
+        <div className="[grid-area:1/1]">
+          {hover ? (
+            <Readout square={hover} pillar={hoverPillar} />
+          ) : (
+            <p className="text-[13px] leading-snug text-muted-foreground">
+              Every economy against every indicator, grouped by pillar. Point at a square to read
+              it, open it for the answer.
+            </p>
+          )}
+        </div>
       </div>
 
       <div className="mt-7 overflow-x-auto pb-1">

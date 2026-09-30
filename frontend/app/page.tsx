@@ -11,7 +11,6 @@ import {
   getRubric,
   getRuns,
 } from "@/lib/data";
-import { clip } from "@/lib/format";
 import { isReadOnlyDeployment } from "@/lib/deployment";
 
 export default function Home() {
@@ -24,7 +23,8 @@ export default function Home() {
   const readOnly = isReadOnlyDeployment();
 
   const names = new Map(economies.map((e) => [e.code, e.name]));
-  const labels = new Map(rubric.indicators.map((i) => [i.id, clip(i.category, 150)]));
+  // Whole, not shortened: the Overview readout has room for the longest category.
+  const labels = new Map(rubric.indicators.map((i) => [i.id, i.category]));
 
   const squares: CoverageSquare[] = coverage.map((c) => ({
     economy: c.economy,
