@@ -58,8 +58,15 @@ function writeProgress(engineId: string, value: object): void {
   writeFileSync(progressPath(engineId), JSON.stringify({ ...value, at: new Date().toISOString() }));
 }
 
-/** This machine's GPU memory, in GB, where nvidia-smi can say. */
-function localGpu(): { name: string; memoryGb: number } | null {
+/** A GPU this machine has, and the memory it can use. On Apple silicon that memory is shared. */
+type LocalGpu = { name: string; memoryGb: number; shared?: boolean };
+
+/** This machine's GPU: an NVIDIA card where nvidia-smi can say, otherwise an Apple silicon chip. */
+function localGpu(): LocalGpu | null {
+  return nvidiaGpu() ?? appleGpu();
+}
+
+function nvidiaGpu(): LocalGpu | null {
   try {
     const line = execFileSync('nvidia-smi', ['--query-gpu=name,memory.total', '--format=csv,noheader,nounits'], {
       encoding: 'utf8',
@@ -69,6 +76,26 @@ function localGpu(): { name: string; memoryGb: number } | null {
       .trim();
     const [name, mib] = line.split(',').map((x) => x.trim());
     return { name: name ?? '', memoryGb: Math.round(Number(mib) / 1024) };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * An M-series Mac has no nvidia-smi, yet Ollama runs on its GPU through Metal. The GPU draws on
+ * the machine's unified memory, so the whole of it is what a model competes for. Read from sysctl,
+ * which reports the chip even when Node itself runs under Rosetta; an Intel Mac names an Intel CPU
+ * and is left as having no GPU this can use.
+ */
+function appleGpu(): LocalGpu | null {
+  if (process.platform !== 'darwin') return null;
+  try {
+    const read = (key: string) => execFileSync('sysctl', ['-n', key], { encoding: 'utf8', timeout: 5_000 }).trim();
+    const name = read('machdep.cpu.brand_string');
+    if (!/^Apple M\d/.test(name)) return null;
+    const bytes = Number(read('hw.memsize'));
+    if (!Number.isFinite(bytes) || bytes <= 0) return null;
+    return { name, memoryGb: Math.round(bytes / 1024 ** 3), shared: true };
   } catch {
     return null;
   }
@@ -94,7 +121,9 @@ async function status(withOffers: boolean) {
     // Declared with a host of its own means this machine already serves it; the rental minimum
     // carries headroom a laptop that runs the engine every day does not need.
     const fitsHere = e.hosts.length > 0 || (gpu ? gpu.memoryGb >= needs : true);
-    const local = e.hosts.length > 0 || fitsHere ? await localStatus(e, e.hosts[0] ?? LOCAL_HOST).catch(() => null) : null;
+    // Reported even when the engine does not fit, marked so, which lets the panel say why this
+    // machine is out rather than only greying it. Asking Ollama for its state is a local call.
+    const local = await localStatus(e, e.hosts[0] ?? LOCAL_HOST).catch(() => null);
     let rented: object | null = null;
     if (e.rented) {
       let pods: Pod[] = [];

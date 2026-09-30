@@ -50,7 +50,8 @@ interface EngineState {
   } | null;
 }
 interface GpuStatus {
-  gpu: { name: string; memoryGb: number } | null;
+  /** `shared` is Apple silicon, whose GPU draws on the machine's unified memory. */
+  gpu: { name: string; memoryGb: number; shared?: boolean } | null;
   engines: EngineState[];
 }
 
@@ -192,7 +193,13 @@ export function EngineTarget({
           onClick={() => onTarget("local")}
           icon={<Cpu className="size-3.5" />}
           title="This machine"
-          note={status.gpu ? `${gpuName(status.gpu.name)}, ${status.gpu.memoryGb} GB` : "No GPU found"}
+          note={
+            status.gpu
+              ? `${gpuName(status.gpu.name)}, ${status.gpu.memoryGb} GB${status.gpu.shared ? " shared" : ""}${
+                  local && !local.fits ? `; needs ${local.needsGb} GB` : ""
+                }`
+              : "No GPU found"
+          }
         />
         <Choice
           on={target === "runpod"}
@@ -217,7 +224,8 @@ export function EngineTarget({
           {!local.fits ? (
             <p className="text-[12.5px] text-muted-foreground">
               {engine.label} needs {local.needsGb} GB of GPU memory; this machine has{" "}
-              {status.gpu?.memoryGb ?? "no"} GB. Rent a GPU for it instead.
+              {status.gpu?.memoryGb ?? "no"} GB{status.gpu?.shared ? " of shared memory" : ""}. Rent
+              a GPU for it instead.
             </p>
           ) : !local.up ? (
             <p className="text-[12.5px] text-muted-foreground">
