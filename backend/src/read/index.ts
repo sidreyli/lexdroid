@@ -21,6 +21,7 @@ import type { Indicator } from '../rubric/types.js';
 import { generate, EngineAborted, EngineFailure, EngineOverran, READING_MODEL } from '../engines/ollama.js';
 import { MEASURES, INDICATOR_OF_MEASURE, MEASURE_NAMES, SUBJECTS } from '../rubric/measures.js';
 import { findFragment, locateNearQuote } from '../util/locate.js';
+import { rejoinThaiMarks } from '../util/thai.js';
 
 /**
  * One requirement a provision imposes, described in the terms the score bands use.
@@ -764,7 +765,7 @@ export const schemaFor = (indicators: readonly Indicator[]) => ({
  * reviewers wrote "section 125 did not mention the minimum 7 years period" about exactly this.
  */
 function normaliseForQuoteCheck(s: string): string {
-  return s
+  return rejoinThaiMarks(s)
     .replace(/[‘’‛′]/g, "'")
     // The star on a defined term and the marks round a definition's subject are how the page is
     // set, not words. A reader quoting faithfully drops them, and failing it for that is wrong.

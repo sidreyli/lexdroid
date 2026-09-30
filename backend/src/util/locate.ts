@@ -31,6 +31,16 @@ function fold(ch: string): string {
 /** A Lao letter: Lao writes no space between words. */
 const NO_WORD_SPACES = /[຀-໿]/;
 
+/** Any Thai character, base or mark. */
+const THAI = /[฀-๿]/;
+/**
+ * A Thai combining tone or vowel mark, which never stands apart from the base character before it
+ * -- see `rejoinThaiMarks` in `util/thai.ts`, which this mirrors for the offset-preserving fold.
+ * Narrower than `NO_WORD_SPACES`' Lao case on purpose: Thai's own inter-word space is real and
+ * dropping it would shorten a fragment, so only a base-character-then-mark split is ever collapsed.
+ */
+const THAI_COMBINING_MARK = /[ัิ-ฺ็-๎]/;
+
 interface Folded {
   text: string;
   /** For each character of `text`, the offset just past the source character it came from. */
@@ -49,6 +59,9 @@ function foldWithOffsets(s: string): Folded {
     // Lao writes no space between words, so a space between two Lao letters may be a line the page
     // wrapped inside a word -- see normaliseForQuoteCheck in ../read.
     if (f === ' ' && NO_WORD_SPACES.test(text.slice(-1)) && NO_WORD_SPACES.test(s.slice(i).trimStart().charAt(0))) continue;
+    // pdf.js and Tesseract both sometimes land a space between a Thai base character and the
+    // combining mark stacked on it, never a real word break -- see rejoinThaiMarks in ../thai.
+    if (f === ' ' && THAI.test(text.slice(-1)) && THAI_COMBINING_MARK.test(s.slice(i).trimStart().charAt(0))) continue;
     for (const c of f) {
       text += c;
       starts.push(i);

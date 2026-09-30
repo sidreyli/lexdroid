@@ -14,6 +14,7 @@ import { readsAsAClause } from './identity.js';
 import { ocrPdfPages, ocrScriptOf, OCR_MIN_CONFIDENCE, type OcrEngine } from './ocr.js';
 import { amendmentHistory } from './lom.js';
 import { isMostlyLao, sectioniseLao } from './lao.js';
+import { rejoinThaiMarks } from '../util/thai.js';
 
 /** Below this many characters per page, the page is an image of text rather than text. */
 const MIN_CHARS_PER_PAGE = 80;
@@ -255,6 +256,19 @@ function languageOfPages(pages: PageText[], candidates?: readonly string[]): Pag
   });
 }
 
+/**
+ * A line of a text-layer page, its whitespace collapsed.
+ *
+ * pdf.js reports a Thai glyph run in the order its content stream draws it, which can land a
+ * synthetic space between a base character and the combining mark stacked on it -- the Bank of
+ * Thailand's "ซ้ำซ้อน" reads "ซ ้าซ้อน" straight out of a text-layer PDF, never having gone near
+ * OCR. Rejoined here so a new parse stores clean text rather than needing the same fix again at
+ * every quote check downstream.
+ */
+function cleanLine(raw: string): string {
+  return rejoinThaiMarks(raw.replace(/\s+/g, ' ').trim());
+}
+
 export async function extractPages(bytes: Buffer): Promise<PageText[]> {
   // The legacy build is the one that runs under plain Node without a DOM.
   const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
@@ -278,17 +292,17 @@ export async function extractPages(bytes: Buffer): Promise<PageText[]> {
       if (!('str' in item)) continue;
       const y = Math.round((item.transform as number[])[5] ?? 0);
       if (lastY !== null && Math.abs(y - lastY) > 2) {
-        if (current.trim()) lines.push(current.replace(/\s+/g, ' ').trim());
+        if (current.trim()) lines.push(cleanLine(current));
         current = '';
       }
       current += item.str;
       if (item.hasEOL) {
-        if (current.trim()) lines.push(current.replace(/\s+/g, ' ').trim());
+        if (current.trim()) lines.push(cleanLine(current));
         current = '';
       }
       lastY = y;
     }
-    if (current.trim()) lines.push(current.replace(/\s+/g, ' ').trim());
+    if (current.trim()) lines.push(cleanLine(current));
     pages.push({ page: p, lines, language: null });
     page.cleanup();
   }
