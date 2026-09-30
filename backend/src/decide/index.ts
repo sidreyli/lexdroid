@@ -2673,8 +2673,18 @@ function namesNationality(f: Finding): boolean {
  * as the corpus's own term of art, title-only and correct on two other instruments as well as this
  * one (a cartel/price-fixing procedure, a tender's "competitive" selection procedure), and nothing
  * else in a title-only regex.
+ *
+ * Russia had none either: three of its investment-screening findings sit on Федеральный закон
+ * № 135-ФЗ "О защите конкуренции" ("On the protection of competition") -- the antimonopoly
+ * authority's own pre-approval of "transactions with shares, assets of a financial organisation",
+ * the notification duty and invalidity consequence Article 31 attaches to it, and the authority's
+ * duty to consider such a request -- an ordinary merger-clearance regime for financial-sector deals,
+ * applying alike to any acquirer, beside the genuine screening in 620-FZ and 57-FZ that carries the
+ * cell either way. "конкуренци" (competition/competitor) is confirmed as this title's own term of
+ * art and matches nothing else in RUS 3.4's basis.
  */
-const COMPETITION_LAW = /\bcompetition\b.{0,25}\bact\b|anti-?trust|trade competition|merger control|monopol(?:y|ies)(?:\s+commission)?|การแข่งขันทางการค้า|ແຂ່ງຂັນທາງທຸລະກິດ|өрсөлд/i;
+const COMPETITION_LAW =
+  /\bcompetition\b.{0,25}\bact\b|anti-?trust|trade competition|merger control|monopol(?:y|ies)(?:\s+commission)?|การแข่งขันทางการค้า|ແຂ່ງຂັນທາງທຸລະກິດ|өрсөлд|конкуренци/i;
 
 /** Words that make a party foreign to the economy, as opposed to merely naming a nationality. */
 const FOREIGN_PARTY = /\b(foreign(er|ers|ly|-owned|-ownership)?|non-?residents?|non-?citizens?|non-?nationals?|overseas|aliens?)\b|คนต่างด้าว|ต่างด้าว|ต่างชาติ/i;

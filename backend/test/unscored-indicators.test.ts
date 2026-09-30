@@ -273,6 +273,28 @@ describe('investment screening, as far as law shows it', () => {
   it('does not count an ordinary merger-clearance duty under a Mongolian competition procedure', () => {
     expect(score('3.4', [mongolianCompetitionAct(1)])).toBe(0);
   });
+
+  // Russia's own antimonopoly law names the same exception in its own language: Федеральный закон
+  // № 135-ФЗ "О защите конкуренции" ("On the protection of competition") requires the antimonopoly
+  // authority's pre-approval of transactions with shares or assets of a financial organisation --
+  // the identical shape as Thailand's, Singapore's and Mongolia's ordinary merger-clearance regimes,
+  // applying alike to any acquirer.
+  const russianCompetitionAct = (n: number): Evidence => ({
+    ...ev(
+      '3.4',
+      'investment-screening',
+      {
+        dutyBearer: 'финансовая организация',
+        quote: 'с предварительного согласия антимонопольного органа осуществляются следующие сделки с акциями (долями), активами финансовой организации',
+      },
+      n,
+    ),
+    instrumentTitle: 'Федеральный закон от 26.07.2006 № 135-ФЗ "О защите конкуренции"',
+  });
+
+  it('does not count an ordinary merger-clearance duty under Russia\'s own competition law', () => {
+    expect(score('3.4', [russianCompetitionAct(1)])).toBe(0);
+  });
 });
 
 describe('blocking and filtering', () => {
