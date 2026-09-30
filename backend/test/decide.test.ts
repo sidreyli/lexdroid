@@ -20,7 +20,7 @@ import {
   type SurfacedInstrument,
   __rules,
 } from '../src/decide/index.js';
-import { MEASURES } from '../src/rubric/measures.js';
+import { MEASURES, SUBJECT_DOMAIN } from '../src/rubric/measures.js';
 import type { Finding } from '../src/read/index.js';
 import type { Indicator } from '../src/rubric/types.js';
 
@@ -2072,6 +2072,15 @@ describe('a measure only a command can make out', () => {
     // 6.1 is a ban, so forbidding is how it is made out; this hold must not reach it.
     const forbids = MEASURES['6.1']?.find((m) => m.token === 'transfer-ban');
     expect(forbids?.commands).toBeUndefined();
+  });
+
+  it('names a Lao currency-mandate clause as the payment domain (12.4.2)', () => {
+    // The Law on Management of Foreign Currency: "...ລາຄາສິນຄ້າ, ຄ່າບໍລິການ...ຕ້ອງເປັນເງິນກີບ"
+    // ("the price of goods, services... must be in Kip"). PAYMENT_LOCAL's Lao line previously had
+    // only payment-service/instrument words, so a genuine currency-mandate provision that names
+    // neither missed the domain and was held as English-only.
+    const domain = SUBJECT_DOMAIN['12.4.2'];
+    expect(domain?.test('ລາຄາສິນຄ້າ, ຄ່າບໍລິການ ຕ້ອງເປັນເງິນກີບ')).toBe(true);
   });
 });
 
