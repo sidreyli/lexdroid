@@ -1897,6 +1897,27 @@ const ADVERTISING = new RegExp([/\b(advertis\w*|promotion\w*|marketing|sponsor\w
 const PRODUCT_CERT = /\b(product\w*|goods|equipment|device\w*|apparatus|appliance\w*|radiocommunication\w*|emission\w*|electromagnetic|safety|conformity|standard\w*)\b/i;
 const TECHNICAL_STANDARD = new RegExp([/\b(standard\w*|specification\w*|technical regulation\w*|code of practice|conformity)\b/.source, 'มาตรฐาน|ข้อกำหนดทางเทคนิค', TECHNICAL_STANDARD_LOCAL].join('|'), 'i');
 const CUSTOMS = /\b(import\w*|consign\w*|customs|duty|duties|goods|parcel\w*|shipment\w*|value of the goods|declaration\w*)\b/i;
+/**
+ * The body 11.1's own measure names: "the standard-setting body or the regulator" -- narrower than
+ * TECHNICAL_STANDARD, which is what this measure answered to before it had a domain of its own (see
+ * MEASURE_DOMAIN's note below). A bare "standard" reaches every provision about adopting, importing
+ * or applying one; what this measure asks about is who may run the body that sets, accredits or
+ * certifies conformity to one, and a statute names that body as such -- an accreditation body, a
+ * certification body, a conformity-assessment or inspection body, a standards regulator -- and does
+ * not always say "standard" doing it. Russia's "экспертной организации по аккредитации" and
+ * Thailand's "ผู้ขอรับใบอนุญาตตรวจสอบหรือรับรอง" ("applicant for a licence to inspect or certify")
+ * each name that body; neither contains the word "standard" in any language.
+ */
+const ACCREDITATION_BODY = new RegExp(
+  [
+    /\b(accredit\w*|certif\w*|conformity assessment\w*|inspection bod\w*|inspecting bod\w*|standard[- ]sett\w*|standards? bod\w*|regulat\w*)\b/.source,
+    'аккредитаци|сертификаци',
+    'итгэмжл|гэрчлэ|гэрчилгээ',
+    'ตรวจสอบ|รับรอง',
+    laoSpellings('ຢັ້ງຢືນ|ຮັບຮອງ|ກວດສອບ'),
+  ].join('|'),
+  'i',
+);
 
 /**
  * What a provision has to be *about* to be a given measure, where the indicator's own subject is
@@ -2035,6 +2056,11 @@ export const MEASURE_DOMAIN: Readonly<Record<string, RegExp>> = {
   'import-quota': ICT_GOODS,
   // Not import-compliance. A ban or a quota on "the goods" is a power, and says nothing about
   // which goods it is used on; a duty on every importer to comply is a cost every ICT import bears.
+  // 11.1's own subject is narrower than its indicator's blanket TECHNICAL_STANDARD (see
+  // SUBJECT_DOMAIN['11.1'] below): the measure is about the standard-setting or accrediting body,
+  // not about standards generally, and a provision naming that body does not always say "standard"
+  // -- see ACCREDITATION_BODY's own note.
+  'foreign-exclusion-from-standards': ACCREDITATION_BODY,
 };
 
 /**

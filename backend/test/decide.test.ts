@@ -2583,3 +2583,83 @@ describe('Lao PDR read in its own words', () => {
     expect(d.basis).toHaveLength(0);
   });
 });
+
+// 11.1's own subject -- the body that sets, accredits or certifies conformity -- is narrower than
+// its indicator's blanket "technical standard" domain, which reaches every provision about
+// adopting or importing one. Without a MEASURE_DOMAIN entry of its own, a genuine nationality bar
+// on who may run that body, stated in Russian or Thai, was held rather than counted: the subject
+// named the body, not the English word "standard".
+describe('foreign-exclusion-from-standards, named by the accrediting or certifying body', () => {
+  const indicator111: Indicator = {
+    id: '11.1',
+    pillarId: 11,
+    pillarName: 'Standards and Procedures',
+    category: 'Lack of transparent technical standards',
+    exception: null,
+    criteriaText: '...',
+    bands: [
+      { score: 1, criterion: 'Not allowed foreigners to participate in the standard-setting bodies, OR non transparent standard-setting', ordinal: 1 },
+      { score: 0, criterion: 'No restriction', ordinal: 2 },
+    ],
+    shape: 'provision',
+    shapeBasis: 'test',
+    provenance: { document: 'test', locator: 'test' },
+  };
+  const found = (over: Partial<Finding>) =>
+    evidence(1, 'test instrument', { indicatorId: '11.1', measure: 'foreign-exclusion-from-standards', dutyForce: 'forbids', ...over });
+  const reasons = (d: ReturnType<typeof decide>) => [...d.excluded, ...d.held].map((x) => x.reason).join(' | ');
+
+  it('is not held for Russia, whose accreditation body is named in Russian', () => {
+    const ru = {
+      ...found({
+        dutyBearer: 'иностранные юридические лица',
+        dutyAct: 'не могут выступать',
+        definingWords: 'иностранные юридические лица',
+        subjectWords: 'органа по аккредитации',
+        quote: 'В качестве органа по аккредитации не могут выступать иностранные юридические лица',
+      }),
+      sectionLanguage: 'ru',
+      confirmed: true,
+    };
+    const d = decide({ indicator: indicator111, economy: 'RUS', evidence: [ru], surfaced, coverage });
+    expect(reasons(d)).not.toContain("this indicator's subject is stated only in English");
+    expect(d.basis).toHaveLength(1);
+    expect(d.score).toBe(1);
+  });
+
+  it('is not held for Thailand, whose inspection/certification licensee is named in Thai', () => {
+    const th = {
+      ...found({
+        dutyBearer: 'ผู้ขอรับใบอนุญาตตรวจสอบหรือรับรองซึ่งเป็นบุคคลธรรมดา',
+        dutyAct: 'ต้องมี',
+        definingWords: 'มีสัญชาติไทย',
+        subjectWords: 'ผู้ขอรับใบอนุญาตตรวจสอบหรือรับรอง',
+        quote: 'มีสัญชาติไทย',
+      }),
+      sectionLanguage: 'th',
+      confirmed: true,
+    };
+    const d = decide({ indicator: indicator111, economy: 'THA', evidence: [th], surfaced, coverage });
+    expect(reasons(d)).not.toContain("this indicator's subject is stated only in English");
+    expect(d.basis).toHaveLength(1);
+    expect(d.score).toBe(1);
+  });
+
+  it('still does not count a provision about importing or adopting a foreign standard, not about the body', () => {
+    const d = decide({
+      indicator: indicator111,
+      economy: 'MNG',
+      evidence: [
+        found({
+          dutyBearer: 'стандартчилалын алба',
+          definingWords: 'олон улсын стандартыг',
+          subjectWords: 'олон улсын стандартыг нэвтрүүлэх',
+          quote: 'олон улсын стандартыг үндэсний стандарт болгон нэвтрүүлж болно',
+        }),
+      ],
+      surfaced,
+      coverage,
+    });
+    expect(d.basis).toHaveLength(0);
+  });
+});
