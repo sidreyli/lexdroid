@@ -340,6 +340,9 @@ on request. A run in your own store is exported from the interface (**Runs** →
 | :---- | :---- | :---- |
 | Team Lead and Technical Lead | Sidharth Rajesh | AI architecture, OCR, pipeline |
 | Substantive Lead | Gwyneth Voon | Legal and policy analysis, output QA |
+| AI Engineer | Subramanian Makendra Prasad | Engine setup, model evaluation |
+| Frontend Engineer | Clarence Lim | Interface, review and export |
+| Data Specialist | Jessica Yanelle San Pedro Choa | Source collection, data QA |
 
 ---
 
