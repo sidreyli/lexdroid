@@ -20,7 +20,7 @@ import {
   type SurfacedInstrument,
   __rules,
 } from '../src/decide/index.js';
-import { MEASURES } from '../src/rubric/measures.js';
+import { MEASURES, SUBJECT_DOMAIN } from '../src/rubric/measures.js';
 import type { Finding } from '../src/read/index.js';
 import type { Indicator } from '../src/rubric/types.js';
 
@@ -430,6 +430,7 @@ describe('what a government access power needs first', () => {
           quote: 'a police officer may at any time require any person to produce any document or other thing',
           dutyBearer: 'a police officer',
           dutyAct: 'may at any time require',
+          dutyBearerKind: 'government',
           locatedData: null,
           informationWords: null,
           ...over,
@@ -466,6 +467,21 @@ describe('what a government access power needs first', () => {
       authorisation: 'internal',
     });
     expect(d.score).toBe(1);
+  });
+
+  // Mongolia's Civil Code gives a contracting party "мэдээлэл авах эрхтэй" -- a right to receive
+  // information from the other side -- and it led the cell's basis as a government power. The
+  // measure's actor is the State; a private party's own entitlement is not it.
+  it('is not made out by a private party’s own right to receive information', () => {
+    const d = power({
+      quote: 'мэдээлэл авах эрхтэй',
+      dutyBearer: 'нөгөө тал',
+      dutyAct: 'мэдээлэл авах эрхтэй',
+      dutyForce: 'permits',
+      dutyBearerKind: 'individual',
+    });
+    expect(d.score).toBe(0);
+    expect(d.excluded[0]?.reason).toContain('is not the State');
   });
 });
 
@@ -1288,6 +1304,59 @@ describe('which sentence the row leads with', () => {
     expect(d.basis).toHaveLength(0);
     expect(d.excluded[0]!.reason).toContain('which is the State');
   });
+
+  it('will not count an officer whose role names nothing about data', () => {
+    // Mongolia's Insurance Act art. 55: a generic compliance officer for insurance supervision,
+    // not a data protection officer. Nothing in the quote or the role mentions data or information.
+    const d = decide({
+      indicator: i74,
+      economy: 'MNG',
+      evidence: [
+        evidence(1, 'Insurance Act', {
+          indicatorId: '7.4',
+          measure: 'data-protection-officer',
+          placeWords: null,
+          locatedData: null,
+          informationWords: null,
+          dataScope: 'all',
+          quote: 'the insurer shall appoint an authorised official responsible for compliance',
+          dutyBearer: 'the insurer', dutyAct: 'shall appoint', dutyForce: 'requires',
+          roleWords: 'an authorised official responsible for compliance',
+        }),
+      ],
+      surfaced,
+      coverage,
+    });
+    expect(d.score).toBe(0);
+    expect(d.basis).toHaveLength(0);
+    expect(d.excluded[0]!.reason).toContain('not one named for data or information');
+  });
+
+  it('still counts a designated individual where the Act itself is the data protection one', () => {
+    // Singapore's own s.11(3): "must designate one or more individuals" never repeats "data" in
+    // the sentence; the Act it sits in is the Personal Data Protection Act.
+    const d = decide({
+      indicator: i74,
+      economy: 'SGP',
+      evidence: [
+        evidence(1, 'Personal Data Protection Act 2012', {
+          indicatorId: '7.4',
+          measure: 'data-protection-officer',
+          placeWords: null,
+          locatedData: null,
+          informationWords: null,
+          dataScope: 'all',
+          quote: 'An organisation must designate one or more individuals',
+          dutyBearer: 'An organisation', dutyAct: 'must designate', dutyForce: 'requires',
+          roleWords: 'one or more individuals',
+        }),
+      ],
+      surfaced,
+      coverage,
+    });
+    expect(d.score).toBe(1);
+    expect(d.basis).toHaveLength(1);
+  });
 });
 
 describe('a framework indicator, which asks about instruments rather than provisions', () => {
@@ -1511,8 +1580,8 @@ const indicator127 = indicator12('12.7', [
 /** A pillar-12 finding: none of these measures is locational or appointing unless it says so. */
 /** Words that make each measure out, as the provision would put them. The catalogue checks these. */
 const DEFINING: Record<string, string> = {
-  'transmission-duty': 'a duty of customs on the transmission',
-  'transmission-duty-power': 'may impose a duty of customs',
+  'transmission-duty': 'a duty of customs on goods delivered electronically',
+  'transmission-duty-power': 'may impose a duty of customs on goods transmitted electronically',
   'local-representative': 'a representative resident in Singapore',
   'local-domain-or-presence': 'a registered office in Singapore',
   'local-presence': 'a place of business in Singapore',
@@ -1568,6 +1637,43 @@ describe('12.2, whose band requires two things at once', () => {
   });
 });
 
+describe('10.4, where a mistagged non-ICT export control must not count', () => {
+  const indicator104 = indicator12('10.4', [
+    { score: 1, criterion: 'Export restriction' },
+    { score: 0, criterion: 'No restriction' },
+  ]);
+
+  it('does not score a hazardous-waste export permit tagged as ict-export-restriction', () => {
+    const d = decide({
+      indicator: indicator104,
+      economy: 'SGP',
+      evidence: [
+        p12('10.4', 'ict-export-restriction', {
+          quote: 'no person shall export hazardous or other waste except under a permit',
+        }),
+      ],
+      surfaced,
+      coverage,
+    });
+    expect(d.score).toBe(0);
+  });
+
+  it('still scores a genuine ICT export control', () => {
+    const d = decide({
+      indicator: indicator104,
+      economy: 'AUS',
+      evidence: [
+        p12('10.4', 'ict-export-restriction', {
+          quote: 'a permit is required to export cryptographic equipment or telecommunications apparatus',
+        }),
+      ],
+      surfaced,
+      coverage,
+    });
+    expect(d.score).toBe(1);
+  });
+});
+
 describe('12.6, where a power and a duty are different bands', () => {
   it('scores a duty actually imposed at the top band', () => {
     const d = decide({
@@ -1592,6 +1698,46 @@ describe('12.6, where a power and a duty are different bands', () => {
     });
     expect(d.score).toBe(0.5);
     expect(d.decidingFact).toContain('not exercised');
+  });
+
+  it('does not score an ordinary customs duty with no electronic or digital word anywhere in it', () => {
+    const d = decide({
+      indicator: indicator126,
+      economy: 'RUS',
+      evidence: [
+        p12('12.6', 'transmission-duty', {
+          definingWords: 'interest on the amount of the duty overpaid',
+          subjectWords: 'a refund of customs duty already paid',
+          quote: 'interest is payable on the amount of customs duty refunded to the declarant',
+        }),
+      ],
+      surfaced,
+      coverage,
+    });
+    expect(d.score).toBe(0);
+    expect(d.decidingFact).toContain('no customs duty on electronic transmissions found');
+  });
+
+  it('does not score a duty on electronic-commerce goods, which is traded online but not delivered electronically', () => {
+    // The actual shape of Russia's false agreement: a federal budget law refunding interest on a
+    // late customs-duty refund for "goods of electronic commerce" -- a cross-border online order
+    // that still arrives by post, not something transmitted electronically. The bare word
+    // "electronic" is there; the word for a transmission or delivery is not.
+    const d = decide({
+      indicator: indicator126,
+      economy: 'RUS',
+      evidence: [
+        p12('12.6', 'transmission-duty', {
+          definingWords: 'interest accrued on a late refund of customs duty on goods of electronic commerce',
+          subjectWords: 'goods of electronic commerce',
+          quote: 'interest accrued on a late refund of customs duty on goods of electronic commerce',
+        }),
+      ],
+      surfaced,
+      coverage,
+    });
+    expect(d.score).toBe(0);
+    expect(d.decidingFact).toContain('no customs duty on electronic transmissions found');
   });
 });
 
@@ -1927,6 +2073,15 @@ describe('a measure only a command can make out', () => {
     const forbids = MEASURES['6.1']?.find((m) => m.token === 'transfer-ban');
     expect(forbids?.commands).toBeUndefined();
   });
+
+  it('names a Lao currency-mandate clause as the payment domain (12.4.2)', () => {
+    // The Law on Management of Foreign Currency: "...ລາຄາສິນຄ້າ, ຄ່າບໍລິການ...ຕ້ອງເປັນເງິນກີບ"
+    // ("the price of goods, services... must be in Kip"). PAYMENT_LOCAL's Lao line previously had
+    // only payment-service/instrument words, so a genuine currency-mandate provision that names
+    // neither missed the domain and was held as English-only.
+    const domain = SUBJECT_DOMAIN['12.4.2'];
+    expect(domain?.test('ລາຄາສິນຄ້າ, ຄ່າບໍລິການ ຕ້ອງເປັນເງິນກີບ')).toBe(true);
+  });
 });
 
 /**
@@ -1966,5 +2121,776 @@ describe('a finding the rubric moves into 6.4', () => {
     });
     expect(d.score).toBe(1);
     expect(d.excluded).toHaveLength(0);
+  });
+});
+
+// 29 September: Lao PDR's rule that an internet café "must have suitable premises" was confirmed in
+// Lao as a local presence requirement and scored 12.8's top band.
+describe('a requirement to be present in the economy', () => {
+  const indicator128 = indicator12('12.8', [
+    { score: 1, criterion: 'Local presence requirement for at least one sector' },
+    { score: 0, criterion: 'No requirement' },
+  ]);
+  const lao = (words: string) => ({
+    ...p12('12.8', 'local-presence', {
+      quote: `ຜູ້ໃຫ້ບໍລິການອອນລາຍ ຕ້ອງມີ${words}`,
+      definingWords: words,
+      subjectWords: 'ຜູ້ໃຫ້ບໍລິການອອນລາຍ',
+      dutyBearer: 'ຜູ້ໃຫ້ບໍລິການອອນລາຍ',
+    }),
+    sectionLanguage: 'lo',
+    confirmed: true,
+  });
+
+  it('is not made out by premises that are nowhere in particular', () => {
+    const d = decide({ indicator: indicator128, economy: 'LAO', evidence: [lao('ສະຖານທີ່ເໝາະສົມ')], surfaced, coverage });
+    expect(d.basis).toHaveLength(0);
+    expect(d.excluded.map((x) => x.reason).join(' ')).toContain('names no place');
+  });
+
+  it('is made out where the provision puts the provider in the country', () => {
+    const d = decide({ indicator: indicator128, economy: 'LAO', evidence: [lao('ທີ່ຕັ້ງສໍານັກງານ ຢູ່ ສປປ ລາວ')], surfaced, coverage });
+    expect(d.excluded.map((x) => x.reason).join(' ')).not.toContain('names no place');
+  });
+});
+
+// 30 September: 236-ФЗ art.5 requires a foreign online seller to "создать филиал, или открыть
+// представительство, или учредить российское юридическое лицо" (open a branch, a representative
+// office, or establish a Russian legal entity). The last option names no place by the shared word
+// lists -- "российское" (Russian) is not "территории" or "иностранн" -- even though it plainly
+// puts the seller in the country by naming the country's own adjective. The place test now also
+// asks the economy's own profile, via `demonym`.
+describe('a requirement to be present in the economy, named by the economy’s own demonym', () => {
+  const indicator128 = indicator12('12.8', [
+    { score: 1, criterion: 'Local presence requirement for at least one sector' },
+    { score: 0, criterion: 'No requirement' },
+  ]);
+
+  it('names no place by a Russian legal-entity requirement before the demonym is checked, in an unprofiled economy', () => {
+    const d = decide({
+      indicator: indicator128,
+      economy: 'XXX',
+      evidence: [p12('12.8', 'commercial-presence', { definingWords: 'учредить российское юридическое лицо', quote: 'учредить российское юридическое лицо' })],
+      surfaced,
+      coverage,
+    });
+    expect(d.excluded.map((x) => x.reason).join(' ')).toContain('names no place');
+  });
+
+  it('is made out for Russia by "российское юридическое лицо", the country’s own adjective', () => {
+    const d = decide({
+      indicator: indicator128,
+      economy: 'RUS',
+      evidence: [p12('12.8', 'commercial-presence', { definingWords: 'учредить российское юридическое лицо', quote: 'учредить российское юридическое лицо' })],
+      surfaced,
+      coverage,
+    });
+    expect(d.excluded.map((x) => x.reason).join(' ')).not.toContain('names no place');
+  });
+
+  it('is made out for Mongolia by "Монгол Улсын", the country’s own name', () => {
+    const d = decide({
+      indicator: indicator128,
+      economy: 'MNG',
+      evidence: [p12('12.8', 'commercial-presence', { definingWords: 'Монгол Улсын хуулийн этгээд байгуулах', quote: 'Монгол Улсын хуулийн этгээд байгуулах' })],
+      surfaced,
+      coverage,
+    });
+    expect(d.excluded.map((x) => x.reason).join(' ')).not.toContain('names no place');
+  });
+});
+
+// Thailand's own word for "a foreign country" -- "ต่างประเทศ" -- is not a substring of "ต่างด้าว"
+// (alien) or "ต่างชาติ" (foreign nationality), the two Thai nationality words already in NATIONALITY.
+// A BOT payment notice's card-network licence, "นิติบุคคลต่างประเทศ ต้องมีสํานักงานสาขาหรือสํานักงาน
+// ผู้แทนในประเทศไทย" (a foreign legal entity must have a branch or representative office in
+// Thailand), named its dutyBearer that way and was excluded as naming no foreign party at all.
+describe('commercial-presence named by Thailand’s own word for "a foreign country"', () => {
+  const indicator35: Indicator = {
+    id: '3.5',
+    pillarId: 3,
+    pillarName: 'Foreign Investment Policies',
+    category: 'test',
+    exception: null,
+    criteriaText: '...',
+    bands: [
+      { score: 1, criterion: 'Requirement to establish a commercial presence before supplying a service', ordinal: 1 },
+      { score: 0, criterion: 'No requirement', ordinal: 2 },
+    ],
+    shape: 'provision',
+    shapeBasis: 'test',
+    provenance: { document: 'test', locator: 'test' },
+  };
+  const tha = evidence(1, 'Re: Regulations, Procedures and Conditions on Application for License to Undertake', {
+    indicatorId: '3.5',
+    measure: 'commercial-presence',
+    dutyBearer: 'นิติบุคคลต่างประเทศ',
+    dutyBearerKind: 'organisation',
+    quote: 'นิติบุคคลต่างประเทศ ต้องมีสํานักงานสาขาหรือสํานักงานผู้แทนในประเทศไทย',
+    definingWords: 'สํานักงานสาขาหรือสํานักงานผู้แทน',
+    subjectWords: 'ธุรกิจระบบเครือข่ายบัตร',
+    placeWords: 'ในประเทศไทย',
+  });
+
+  it('is not excluded as naming no foreign party', () => {
+    const d = decide({ indicator: indicator35, economy: 'THA', evidence: [tha], surfaced, coverage });
+    expect(d.excluded.map((x) => x.reason).join(' ')).not.toContain('names no foreign party');
+    expect(d.basis).toHaveLength(1);
+    expect(d.score).toBe(1);
+  });
+});
+
+// A local-bank-account requirement that never says the word bank, in any language, is not
+// credible evidence of one -- confirmation or not. Mongolia's e-invoicing rule ("цахим төлбөрийн
+// баримт", an electronic tax receipt) was confirmed as naming this measure and scored it.
+describe('a local-bank-account requirement that never says bank', () => {
+  const indicator1241 = indicator12('12.4.1', [
+    { score: 1, criterion: 'Requirement to use a local bank account' },
+    { score: 0, criterion: 'No requirement' },
+  ]);
+  const mng = (definingWords: string, quote: string, subjectWords: string) => ({
+    ...p12('12.4.1', 'local-bank-account', {
+      quote,
+      definingWords,
+      subjectWords,
+      dutyBearer: 'татвар төлөгч',
+    }),
+    sectionLanguage: 'mn',
+    confirmed: true,
+  });
+
+  it('is not made out by an e-invoice receipt confirmed in Mongolian as this measure', () => {
+    const d = decide({
+      indicator: indicator1241,
+      economy: 'MNG',
+      evidence: [
+        mng(
+          'цахим төлбөрийн баримт',
+          'татвар төлөгч нь цахим төлбөрийн баримт үйлдэнэ',
+          'цахим төлбөрийн баримт',
+        ),
+      ],
+      surfaced,
+      coverage,
+    });
+    expect(d.score).toBe(0);
+    expect(d.excluded.map((x) => x.reason).join(' ')).toContain('names no bank');
+  });
+
+  it('is made out where the account is at a named bank', () => {
+    const d = decide({
+      indicator: indicator1241,
+      economy: 'MNG',
+      evidence: [
+        mng(
+          'дансаараа Монголбанкинд тооцоо хийнэ',
+          'шууд бус оролцогч Монголбанкинд байгаа дансаараа тооцоо хийнэ',
+          'төлбөр тооцоо',
+        ),
+      ],
+      surfaced,
+      coverage,
+    });
+    expect(d.score).toBe(1);
+    expect(d.excluded.map((x) => x.reason).join(' ')).not.toContain('names no bank');
+  });
+});
+
+describe('a residual payment restriction that names no restricting word', () => {
+  const indicator1247 = indicator12('12.4.7', [
+    { score: 1, criterion: 'Any other restriction on making or receiving payment online' },
+    { score: 0, criterion: 'No restriction' },
+  ]);
+  const other = (economy: string, language: string, definingWords: string, quote: string, subjectWords: string = quote) => ({
+    ...p12('12.4.7', 'other-payment-restriction', { quote, definingWords, subjectWords }),
+    sectionLanguage: language,
+    confirmed: true,
+  });
+
+  it('is not made out by a bare noun phrase confirmed in Russian as this measure', () => {
+    const d = decide({
+      indicator: indicator1247,
+      economy: 'RUS',
+      evidence: [other('RUS', 'ru', 'Количество товара', 'Количество товара, подлежащего передаче покупателю, предусматривается договором')],
+      surfaced,
+      coverage,
+    });
+    expect(d.score).toBe(0);
+    expect(d.excluded.map((x) => x.reason).join(' ')).toContain('names nothing that prohibits');
+  });
+
+  it('is made out where the same Act name is quoted alongside its own prohibition word', () => {
+    const d = decide({
+      indicator: indicator1247,
+      economy: 'MNG',
+      evidence: [
+        other(
+          'MNG',
+          'mn',
+          'Үндэсний төлбөрийн системийн тухай хууль',
+          'Үндэсний төлбөрийн системийн тухай хуулиар хориглосон үйл ажиллагааг эрхэлсэн бол',
+        ),
+      ],
+      surfaced,
+      coverage,
+    });
+    expect(d.score).toBe(1);
+  });
+
+  it('is not made out where the Act name is the whole of the quote, with no restricting word at all', () => {
+    const d = decide({
+      indicator: indicator1247,
+      economy: 'MNG',
+      evidence: [other('MNG', 'mn', 'Үндэсний төлбөрийн системийн тухай хууль', 'Үндэсний төлбөрийн системийн тухай хууль')],
+      surfaced,
+      coverage,
+    });
+    expect(d.score).toBe(0);
+  });
+
+  it('is not made out where Mongolian negates the requirement word with -гүй', () => {
+    const d = decide({
+      indicator: indicator1247,
+      economy: 'MNG',
+      evidence: [
+        other(
+          'MNG',
+          'mn',
+          'Цахим худалдааны токенжуулсан гүйлгээнд',
+          'Цахим худалдааны токенжуулсан гүйлгээнд энэ журмын 5.36.2-т заасан баталгаажуулалтыг шаардахгүй',
+        ),
+      ],
+      surfaced,
+      coverage,
+    });
+    expect(d.score).toBe(0);
+  });
+
+  it('is made out by a genuine prohibition confirmed in Russian', () => {
+    const d = decide({
+      indicator: indicator1247,
+      economy: 'RUS',
+      evidence: [
+        other(
+          'RUS',
+          'ru',
+          'запрет приема',
+          'запрет приема на территории Российской Федерации электронных средств платежа, предоставленных иностранным поставщиком',
+          'электронных средств платежа, предоставленных иностранным поставщиком платежных услуг',
+        ),
+      ],
+      surfaced,
+      coverage,
+    });
+    expect(d.score).toBe(1);
+  });
+
+  it('is made out by a genuine prohibition confirmed in Mongolian', () => {
+    const d = decide({
+      indicator: indicator1247,
+      economy: 'MNG',
+      evidence: [
+        other(
+          'MNG',
+          'mn',
+          'нэвтрүүлэхийг хориглоно',
+          'амьтан, ургамал, түүхий эд, бүтээгдэхүүнийг улсын хилээр нэвтрүүлэхийг хориглоно',
+          'цахим мөнгө',
+        ),
+      ],
+      surfaced,
+      coverage,
+    });
+    expect(d.score).toBe(1);
+  });
+
+  it('is made out by a genuine prohibition confirmed in Lao', () => {
+    const d = decide({
+      indicator: indicator1247,
+      economy: 'LAO',
+      evidence: [other('LAO', 'lo', 'ຫ້າມທະນາຄານທຸລະກິດ', 'ຫ້າມທະນາຄານທຸລະກິດ', 'ການຊຳລະເງິນ')],
+      surfaced,
+      coverage,
+    });
+    expect(d.score).toBe(1);
+  });
+});
+
+// national-payment-standard's only term of art (STANDARD, in measures.ts) is English, the same gap
+// RESTRICTION_ANY closes above -- Mongolia's Customs Act named "цахим мөнгө" as the whole of its
+// defining words for this measure too, and Russia's genuine Bank-of-Russia citation is drafted as
+// "требования к защите информации" ("information-security requirements"), never "стандарт".
+describe('a national-payment-standard measure that names no standard or requirement', () => {
+  const indicator1243 = indicator12('12.4.3', [
+    { score: 1, criterion: 'Requirement on the standard used for domestic payments' },
+    { score: 0, criterion: 'No requirement' },
+  ]);
+  const other = (economy: string, language: string, definingWords: string, quote: string, subjectWords: string) => ({
+    ...p12('12.4.3', 'national-payment-standard', { quote, definingWords, subjectWords }),
+    sectionLanguage: language,
+    confirmed: true,
+  });
+
+  it('is not made out by a bare "цахим мөнгө" confirmed in Mongolian as this measure', () => {
+    const d = decide({
+      indicator: indicator1243,
+      economy: 'MNG',
+      evidence: [other('MNG', 'mn', 'цахим мөнгө', 'олон улсын шуудангаар цахим мөнгө хүлээн авахыг хориглоно', 'цахим мөнгө')],
+      surfaced,
+      coverage,
+    });
+    expect(d.score).toBe(0);
+    expect(d.excluded.map((x) => x.reason).join(' ')).toContain('names no standard');
+  });
+
+  it('is made out by a genuine information-security requirement confirmed in Russian', () => {
+    const d = decide({
+      indicator: indicator1243,
+      economy: 'RUS',
+      evidence: [
+        other(
+          'RUS',
+          'ru',
+          'требований к защите информации',
+          'обязаны обеспечивать соблюдение установленных Банком России требований к защите информации при осуществлении переводов денежных средств',
+          'переводов денежных средств',
+        ),
+      ],
+      surfaced,
+      coverage,
+    });
+    expect(d.score).toBe(1);
+  });
+
+  it('is not made out by an unrelated Russian "требование" that names no protection or security', () => {
+    const d = decide({
+      indicator: indicator1243,
+      economy: 'RUS',
+      evidence: [
+        other(
+          'RUS',
+          'ru',
+          'требования к оформлению документов',
+          'Центральный банк устанавливает требования к оформлению документов при переводе денежных средств',
+          'переводе денежных средств',
+        ),
+      ],
+      surfaced,
+      coverage,
+    });
+    expect(d.score).toBe(0);
+    expect(d.excluded.map((x) => x.reason).join(' ')).toContain('names no standard');
+  });
+});
+
+describe('Lao PDR read in its own words', () => {
+  const indicatorAt = (id: string, bands: { score: number; criterion: string }[], exception: string | null = null): Indicator => ({
+    ...indicator12(id, bands),
+    pillarId: Number(id.split('.')[0]),
+    exception,
+  });
+  const lao = (indicatorId: string, measure: string, over: Partial<Finding>): Evidence => ({
+    ...p12(indicatorId, measure, over),
+    sectionLanguage: 'lo',
+    confirmed: true,
+  });
+  const reasons = (d: ReturnType<typeof decide>) => [...d.excluded, ...d.held].map((x) => x.reason).join(' | ');
+
+  const indicator64 = indicatorAt('6.4', [
+    { score: 1, criterion: 'Conditions for all sectors or personal data' },
+    { score: 0.5, criterion: 'Conditions for specific data or non-personal data' },
+    { score: 0, criterion: 'No condition' },
+  ]);
+  const transfer = (borderWords: string) =>
+    lao('6.4', 'transfer-condition', {
+      quote: `ບໍ່ສາມາດສົ່ງ ຫຼື ໂອນ ຂໍ້ມູນສ່ວນບຸກຄົນ ${borderWords} ຖ້າຫາກບໍ່ໄດ້ຮັບຄໍາເຫັນດີຂອງເຈົ້າຂອງຂໍ້ມູນນັ້ນ`,
+      borderWords,
+      definingWords: 'ຖ້າຫາກບໍ່ໄດ້ຮັບຄໍາເຫັນດີຂອງເຈົ້າຂອງຂໍ້ມູນນັ້ນ',
+      subjectWords: 'ຂໍ້ມູນສ່ວນບຸກຄົນ',
+      dutyBearer: 'ບຸກຄົນ, ນິຕິບຸກຄົນ ແລະ ການຈັດຕັ້ງ',
+      dutyForce: 'forbids',
+    });
+
+  it('finds the border in "out of the Lao PDR", with or without the marks the text layer drops', () => {
+    for (const words of ['ການອອກນອກ ສປປ ລາວ', 'ໄປຕາງປະເທດ', 'ການນາໍເຂົາ']) {
+      const d = decide({ indicator: indicator64, economy: 'LAO', evidence: [transfer(words)], surfaced, coverage });
+      expect(reasons(d)).not.toContain('enters or leaves the economy');
+    }
+  });
+
+  it('finds none where nothing leaves the country', () => {
+    const d = decide({ indicator: indicator64, economy: 'LAO', evidence: [transfer('ຈາກໂຮງງານ')], surfaced, coverage });
+    expect(reasons(d)).toContain('enters or leaves the economy');
+  });
+
+  const indicator94 = indicatorAt(
+    '9.4',
+    [
+      { score: 1, criterion: 'Any strict licence requirement' },
+      { score: 0.5, criterion: 'Any licensing scheme' },
+      { score: 0, criterion: 'No restriction' },
+    ],
+    'Not cover license for telecommunication facilities and service providers (captured under Pillar 5), License for e-commerce platform (captured under Pillar 12)',
+  );
+  const licence = (subjectWords: string) =>
+    lao('9.4', 'content-licence', {
+      quote: `ຜູ້ທີ່ມີຈຸດປະສົງດໍາເນີນທຸລະກິດ${subjectWords} ຕ້ອງຂໍອະນຸຍາດ`,
+      definingWords: 'ຕ້ອງຂໍອະນຸຍາດ',
+      subjectWords,
+      dutyBearer: `ຜູ້ດໍາເນີນທຸລະກິດ${subjectWords}`,
+    });
+
+  it("leaves an internet service provider's licence to pillar 5, as the rubric's exception says", () => {
+    const d = decide({ indicator: indicator94, economy: 'LAO', evidence: [licence('ບໍລິການອິນເຕີເນັດ')], surfaced, coverage });
+    expect(d.basis).toHaveLength(0);
+    expect(reasons(d)).toContain('captured under Pillar 5');
+  });
+
+  it('keeps a licence to publish news online', () => {
+    const d = decide({ indicator: indicator94, economy: 'LAO', evidence: [licence('ຂ່າວສານຜ່ານເວັບໄຊ')], surfaced, coverage });
+    expect(reasons(d)).not.toContain('captured under Pillar 5');
+  });
+
+  it('reads "must comply with the relevant laws and regulations" as a pointer to them, not a licence condition', () => {
+    const d = decide({
+      indicator: indicator94,
+      economy: 'LAO',
+      evidence: [
+        lao('9.4', 'strict-content-licence', {
+          quote: 'ຕ້ອງປະຕິບັດຕາມກົດຫມາຍ ແລະ ລະບຽບການທີ່ກ່ຽວຂ້ອງ',
+          definingWords: 'ກົດຫມາຍ ແລະ ລະບຽບການ',
+          subjectWords: 'ສູນຂໍ້ມູນຂ່າວສານຜ່ານອິນເຕີເນັດ',
+          dutyBearer: 'ບຸກຄົນ, ນິຕິບຸກຄົນ ຫຼື ການຈັດຕັ້ງ',
+        }),
+      ],
+      surfaced,
+      coverage,
+    });
+    expect(d.basis).toHaveLength(0);
+    expect(reasons(d)).toContain('rules made elsewhere');
+  });
+
+  const indicator55 = indicatorAt('5.5', [
+    { score: 1, criterion: 'For any strict licensing scheme (e.g., discrimination for foreign providers, minimum capital requirements, and mandatory performances requirements)' },
+    { score: 0, criterion: 'No strict licensing scheme' },
+  ]);
+  const telecom = (definingWords: string): Evidence =>
+    lao('5.5', 'strict-telecom-licence', {
+      quote: `ຜູ້ຂໍອະນຸຍາດດໍາເນີນທຸລະກິດໂທລະຄົມມະນາຄົມ ຕ້ອງ${definingWords}`,
+      definingWords,
+      subjectWords: 'ທຸລະກິດໂທລະຄົມມະນາຄົມ',
+      dutyBearer: 'ຜູ້ຂໍອະນຸຍາດ',
+      sector: 'telecommunications',
+    });
+  const notStrict = 'which is what makes a licence strict';
+
+  it('does not call a licence strict for conditions every licence has', () => {
+    for (const words of ['ມີທະບຽນວິສາຫະກິດ', 'ມີຖານະທາງດ້ານການເງິນທີ່ຫມັ້ນຄົງ']) {
+      const d = decide({ indicator: indicator55, economy: 'LAO', evidence: [telecom(words)], surfaced, coverage });
+      expect(d.basis).toHaveLength(0);
+      expect(reasons(d)).toContain(notStrict);
+    }
+  });
+
+  it('calls it strict for a minimum of capital, or for what the regulator writes into the licence', () => {
+    const capital = decide({ indicator: indicator55, economy: 'LAO', evidence: [telecom('ມີທຶນຈົດທະບຽນ ບໍ່ໜ້ອຍກວ່າ 10 ຕື້ກີບ')], surfaced, coverage });
+    expect(reasons(capital)).not.toContain(notStrict);
+    const singapore = decide({
+      indicator: indicator55,
+      economy: 'SGP',
+      evidence: [
+        p12('5.5', 'strict-telecom-licence', {
+          quote: 'A licence may include conditions requiring the licensee to do, or not to do, such things as are specified in the licence',
+          definingWords: 'such things as are specified in the licence',
+          subjectWords: 'telecommunication licence',
+          dutyBearer: 'the licensee',
+          sector: 'telecommunications',
+        }),
+      ],
+      surfaced,
+      coverage,
+    });
+    expect(reasons(singapore)).not.toContain(notStrict);
+  });
+
+  const indicator1242 = indicatorAt('12.4.2', [
+    { score: 1, criterion: 'Requirements on the currency used for international payments' },
+    { score: 0, criterion: 'No restriction' },
+  ]);
+
+  it('reads Lao "must" as a duty, whatever the reader called it', () => {
+    const d = decide({
+      indicator: indicator1242,
+      economy: 'LAO',
+      evidence: [
+        lao('12.4.2', 'payment-currency', {
+          quote: 'ເງິນເອເລັກໂຕຣນິກ ຕ້ອງເປັນສະກຸນເງິນກີບ ເທົ່ານັ້ນ',
+          definingWords: 'ສະກຸນເງິນກີບ',
+          subjectWords: 'ເງິນເອເລັກໂຕຣນິກ',
+          dutyBearer: 'ຜູ້ໃຫ້ບໍລິການຊໍາລະເງິນ',
+          dutyAct: 'ຕ້ອງເປັນ',
+          dutyForce: 'declares',
+        }),
+      ],
+      surfaced,
+      coverage,
+    });
+    expect(reasons(d)).not.toContain('declares what is the case');
+  });
+
+  it('does not take the words naming what a duty binds for words leaving it to another instrument', () => {
+    const d = decide({
+      indicator: indicator1242,
+      economy: 'LAO',
+      evidence: [
+        p12('12.4.2', 'payment-currency', {
+          quote: 'Electronic money issued by Payment Service Providers in the Lao PDR shall be in KIP only.',
+          definingWords: 'in KIP only',
+          subjectWords: 'Electronic money',
+          dutyBearer: 'Payment Service Providers',
+          dutyAct: 'shall be in KIP only',
+          imposingWords: null,
+          prescribingWords: null,
+        }),
+      ],
+      surfaced,
+      coverage,
+    });
+    expect(reasons(d)).not.toContain('empowers another instrument');
+  });
+
+  const indicator45 = indicatorAt('4.5', [
+    { score: 1, criterion: 'Lack of copyright legal framework OR lack of copyright exceptions' },
+    { score: 0.5, criterion: 'Unclear copyright exceptions, such as three-step test and other types of copyright exceptions' },
+    { score: 0, criterion: 'Clear copyright exceptions following fair use or fair dealing model' },
+  ]);
+  const fairUse = (instrumentTitle: string): Evidence => ({
+    ...lao('4.5', 'fair-use-exception', {
+      quote: 'ການນໍາໃຊ້ທີ່ເຫນາະສົມ',
+      definingWords: 'ການນໍາໃຊ້ທີ່ເຫນາະສົມ',
+      subjectWords: 'ການນໍາໃຊ້ທີ່ເຫນາະສົມ',
+      dutyForce: 'permits',
+    }),
+    instrumentTitle,
+  });
+
+  it("takes a copyright exception's domain from the title of the copyright decree it is in", () => {
+    const d = decide({ indicator: indicator45, economy: 'LAO', evidence: [fairUse('ຂໍ້ຕົກລົງວ່າດ້ວຍ ລິຂະສິດ ແລະ ສິດກ່ຽວຂ້ອງກັບລິຂະສິດ')], surfaced, coverage });
+    expect(reasons(d)).not.toContain("this indicator's subject is stated only in English");
+    expect(d.score).toBe(0);
+  });
+
+  it('does not take it from a law about something else', () => {
+    const d = decide({ indicator: indicator45, economy: 'LAO', evidence: [fairUse('ກົດໝາຍວ່າດ້ວຍ ທີ່ດິນ')], surfaced, coverage });
+    expect(d.basis).toHaveLength(0);
+  });
+});
+
+// 11.1's own subject -- the body that sets, accredits or certifies conformity -- is narrower than
+// its indicator's blanket "technical standard" domain, which reaches every provision about
+// adopting or importing one. Without a MEASURE_DOMAIN entry of its own, a genuine nationality bar
+// on who may run that body, stated in Russian or Thai, was held rather than counted: the subject
+// named the body, not the English word "standard".
+describe('foreign-exclusion-from-standards, named by the accrediting or certifying body', () => {
+  const indicator111: Indicator = {
+    id: '11.1',
+    pillarId: 11,
+    pillarName: 'Standards and Procedures',
+    category: 'Lack of transparent technical standards',
+    exception: null,
+    criteriaText: '...',
+    bands: [
+      { score: 1, criterion: 'Not allowed foreigners to participate in the standard-setting bodies, OR non transparent standard-setting', ordinal: 1 },
+      { score: 0, criterion: 'No restriction', ordinal: 2 },
+    ],
+    shape: 'provision',
+    shapeBasis: 'test',
+    provenance: { document: 'test', locator: 'test' },
+  };
+  const found = (over: Partial<Finding>) =>
+    evidence(1, 'test instrument', { indicatorId: '11.1', measure: 'foreign-exclusion-from-standards', dutyForce: 'forbids', ...over });
+  const reasons = (d: ReturnType<typeof decide>) => [...d.excluded, ...d.held].map((x) => x.reason).join(' | ');
+
+  it('is not held for Russia, whose accreditation body is named in Russian', () => {
+    const ru = {
+      ...found({
+        dutyBearer: 'иностранные юридические лица',
+        dutyAct: 'не могут выступать',
+        definingWords: 'иностранные юридические лица',
+        subjectWords: 'органа по аккредитации',
+        quote: 'В качестве органа по аккредитации не могут выступать иностранные юридические лица',
+      }),
+      sectionLanguage: 'ru',
+      confirmed: true,
+    };
+    const d = decide({ indicator: indicator111, economy: 'RUS', evidence: [ru], surfaced, coverage });
+    expect(reasons(d)).not.toContain("this indicator's subject is stated only in English");
+    expect(d.basis).toHaveLength(1);
+    expect(d.score).toBe(1);
+  });
+
+  it('is not held for Thailand, whose inspection/certification licensee is named in Thai', () => {
+    const th = {
+      ...found({
+        dutyBearer: 'ผู้ขอรับใบอนุญาตตรวจสอบหรือรับรองซึ่งเป็นบุคคลธรรมดา',
+        dutyAct: 'ต้องมี',
+        definingWords: 'มีสัญชาติไทย',
+        subjectWords: 'ผู้ขอรับใบอนุญาตตรวจสอบหรือรับรอง',
+        quote: 'มีสัญชาติไทย',
+      }),
+      sectionLanguage: 'th',
+      confirmed: true,
+    };
+    const d = decide({ indicator: indicator111, economy: 'THA', evidence: [th], surfaced, coverage });
+    expect(reasons(d)).not.toContain("this indicator's subject is stated only in English");
+    expect(d.basis).toHaveLength(1);
+    expect(d.score).toBe(1);
+  });
+
+  it('still does not count a provision about importing or adopting a foreign standard, not about the body', () => {
+    const d = decide({
+      indicator: indicator111,
+      economy: 'MNG',
+      evidence: [
+        found({
+          dutyBearer: 'стандартчилалын алба',
+          definingWords: 'олон улсын стандартыг',
+          subjectWords: 'олон улсын стандартыг нэвтрүүлэх',
+          quote: 'олон улсын стандартыг үндэсний стандарт болгон нэвтрүүлж болно',
+        }),
+      ],
+      surfaced,
+      coverage,
+    });
+    expect(d.basis).toHaveLength(0);
+  });
+});
+
+// India's Public Procurement (Preference to Make in India) Order 2017 cl.13A requires a joint
+// venture with an Indian company only "to participate in the tender" -- a bidder's condition on
+// one public contract, which is pillar 2's subject, not a standing market-entry requirement.
+describe('a joint-venture duty scoped to the tender, not to entering the market', () => {
+  const indicator32: Indicator = {
+    id: '3.2',
+    pillarId: 3,
+    pillarName: 'Foreign Investment Policies',
+    category: 'test',
+    exception: null,
+    criteriaText: '...',
+    bands: [
+      { score: 1, criterion: 'Requirement to form a joint venture with a local company', ordinal: 1 },
+      { score: 0, criterion: 'No requirement', ordinal: 2 },
+    ],
+    shape: 'provision',
+    shapeBasis: 'test',
+    provenance: { document: 'test', locator: 'test' },
+  };
+  // Real cl.13A shape: subjectWords names the goods, not the tender -- the tender scoping sits in
+  // the quote and conditionWords instead, so the carve-out has to look at those too.
+  const ind = evidence(1, 'Public Procurement (Preference to Make in India) Order 2017', {
+    indicatorId: '3.2',
+    measure: 'joint-venture',
+    dutyBearer: 'foreign companies',
+    subjectWords: 'all goods, services or works',
+    definingWords: 'joint venture',
+    targetWords: 'tender',
+    conditionWords: 'beyond which foreign companies shall enter into a joint venture with an Indian company to participate in the tender',
+    quote: 'foreign companies shall enter into a joint venture with an Indian company to participate in the tender',
+  });
+
+  it('is excluded as scoped to the tender, not to market entry', () => {
+    const d = decide({ indicator: indicator32, economy: 'IND', evidence: [ind], surfaced, coverage });
+    expect(d.excluded.map((x) => x.reason).join(' ')).toContain('scoped to the tender');
+    expect(d.basis).toHaveLength(0);
+    expect(d.score).toBe(0);
+  });
+
+  it('still counts an ordinary joint-venture requirement naming no tender or procurement', () => {
+    const d = decide({
+      indicator: indicator32,
+      economy: 'IND',
+      evidence: [
+        evidence(2, 'Foreign Exchange Management Act', {
+          indicatorId: '3.2',
+          measure: 'joint-venture',
+          dutyBearer: 'a foreign investor',
+          subjectWords: 'a joint venture with a local company',
+          definingWords: 'joint venture',
+          quote: 'a foreign investor may only invest through a joint venture with a local company',
+        }),
+      ],
+      surfaced,
+      coverage,
+    });
+    expect(d.excluded.map((x) => x.reason).join(' ')).not.toContain('scoped to the tender');
+    expect(d.basis).toHaveLength(1);
+  });
+});
+
+describe('an official-secrecy clause is not a trade-secret regime', () => {
+  const indicator41: Indicator = {
+    id: '4.1',
+    pillarId: 4,
+    pillarName: 'Intellectual Property Rights',
+    category: 'test',
+    exception: null,
+    criteriaText: '...',
+    bands: [
+      { score: 1, criterion: 'Effective protection of trade secrets in any form', ordinal: 3 },
+      { score: 0.5, criterion: 'Limited scope, or clauses in a wider law', ordinal: 2 },
+      { score: 0, criterion: 'Lack of framework', ordinal: 1 },
+    ],
+    shape: 'provision',
+    shapeBasis: 'test',
+    provenance: { document: 'test', locator: 'test' },
+  };
+
+  // The clause that recurs, word for word, across five unrelated Malaysian Acts (Trademarks 2019,
+  // GI 2022, Price Control 2011, Competition 2010, Consumer Protection 1999): a regulator's own
+  // secrecy duty over what it collected under the Act, not a remedy for the trade-secret holder.
+  const officialSecrecy = evidence(1, 'Competition Act 2010', {
+    indicatorId: '4.1',
+    measure: 'trade-secret-protection',
+    dutyBearer: 'Any person',
+    dutyAct: 'discloses or makes use',
+    dutyForce: 'forbids',
+    definingWords: 'confidential information',
+    subjectWords: 'trade, business or industrial information',
+    targetWords: 'information or document with respect to a particular enterprise or the affairs of an individual',
+    exceptionWords:
+      'the disclosure is made to facilitate the performance of the functions or powers of the Commission, or in connection with the investigation of an offence under this Act',
+    imposingWords: 'commits an offence',
+    quote: 'Any person who discloses or makes use of any confidential information or document',
+  });
+
+  it('is excluded, leaving a clean absence rather than an unresolved cell', () => {
+    const d = decide({ indicator: indicator41, economy: 'MYS', evidence: [officialSecrecy], surfaced, coverage });
+    expect(d.excluded.map((x) => x.reason).join(' ')).toContain('official-secrecy clause');
+    expect(d.basis).toHaveLength(0);
+    expect(d.score).toBe(0);
+  });
+
+  it('still counts a genuine remedy for misuse of a trade secret', () => {
+    const d = decide({
+      indicator: indicator41,
+      economy: 'SGP',
+      evidence: [
+        evidence(2, 'Confidentiality of Information Act', {
+          indicatorId: '4.1',
+          measure: 'trade-secret-protection',
+          dutyBearer: 'a person who misappropriates a trade secret',
+          dutyAct: 'may be restrained by injunction',
+          dutyForce: 'requires',
+          definingWords: 'restrained by injunction for misuse of a trade secret',
+          subjectWords: 'trade secret',
+          quote: 'the holder of a trade secret may restrain its misuse by injunction',
+        }),
+      ],
+      surfaced,
+      coverage,
+    });
+    expect(d.excluded.map((x) => x.reason).join(' ')).not.toContain('official-secrecy clause');
+    expect(d.basis).toHaveLength(1);
+    expect(d.score).toBe(1);
   });
 });

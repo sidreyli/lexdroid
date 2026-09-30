@@ -11,8 +11,10 @@
 import { detectLanguage } from './language.js';
 import { SectionBuilder, type ParsedDocument } from './types.js';
 import { readsAsAClause } from './identity.js';
-import { ocrPdfPages, type OcrEngine } from './ocr.js';
+import { ocrPdfPages, ocrScriptOf, OCR_MIN_CONFIDENCE, type OcrEngine } from './ocr.js';
 import { amendmentHistory } from './lom.js';
+import { isMostlyLao, sectioniseLao } from './lao.js';
+import { rejoinThaiMarks } from '../util/thai.js';
 
 /** Below this many characters per page, the page is an image of text rather than text. */
 const MIN_CHARS_PER_PAGE = 80;
@@ -46,7 +48,32 @@ export function hasCorruptTextLayer(lines: readonly string[]): boolean {
 }
 
 /**
- * Whether what OCR read replaces what the text layer gave, for the two reasons a page is re-read.
+ * Whether a page's text layer is Latin letters where the page is printed in another script.
+ *
+ * Lao typeset before Unicode used fonts that draw Lao glyphs at ASCII code points, and the text layer
+ * reports the code points: the Decree on Electronic Commerce reads "c~i2sj c5u ,~ @'l:1JscmsJJm1J"
+ * where the page prints Lao. Each such font assigns its own code points, so there is no map back,
+ * but the glyphs are drawn correctly -- so the page is rendered and read, as a damaged page is. 17 of
+ * the 59 Lao documents that arrived with a text layer were stored this way, 99 sections of that
+ * decree among them, all unreadable by the reader and unmatchable by retrieval.
+ *
+ * Asked only where every language the economy publishes law in has a script OCR can read, and only
+ * of a page carrying almost none of that script and whose Latin letters make no language: an English
+ * translation in a Lao corpus is English, and is kept.
+ */
+export function isInAnotherScript(lines: readonly string[], languages?: readonly string[]): boolean {
+  const scripts = (languages ?? []).map(ocrScriptOf);
+  if (scripts.length === 0 || scripts.some((s) => s === null)) return false;
+  const text = lines.join(' ');
+  const latin = (text.match(/\p{Script=Latin}/gu) ?? []).length;
+  if (latin < MIN_CHARS_PER_PAGE) return false;
+  const own = scripts.reduce((n, s) => n + (text.match(s!) ?? []).length, 0);
+  if (own * 10 > latin) return false;
+  return detectLanguage(text) === null;
+}
+
+/**
+ * Whether what OCR read replaces what the text layer gave, for the reasons a page is re-read.
  *
  * A sparse page had almost nothing, so OCR has to beat it and be a page at all. The length test
  * alone would let OCR overwrite a short but accurate page with a longer misreading.
@@ -59,7 +86,31 @@ export function hasCorruptTextLayer(lines: readonly string[]): boolean {
  * that takes 363 and holds 40, and the 40 are cover pages whose OCR is the logo: the Commission
  * Act's front page reads "LEE) B / £1:1 0.4%".
  */
-export function ocrReplacesThePage(why: 'sparse' | 'damaged', before: string, after: string): boolean {
+/**
+ * `confidence` defaults high enough to pass unconditionally, for the callers -- tests among them --
+ * that judge a reading with no Tesseract confidence to hand at all and mean the character-count
+ * tests alone to decide it, exactly as this function did before OCR carried a confidence gate.
+ */
+export function ocrReplacesThePage(
+  why: 'sparse' | 'damaged' | 'unscripted',
+  before: string,
+  after: string,
+  confidence = 100,
+): boolean {
+  // A confident misreading is still a misreading, but an *unconfident* one is worse than the page
+  // it would replace: MNG's licensing orders were kept at 22-34% confidence purely because OCR
+  // returned more characters than the scan's own (near-empty) text layer had, which is the length
+  // test alone rewarding whatever Tesseract guessed. Below the shared floor `legalinfo.ts` already
+  // holds a scan to, none of the three readings below is accepted, however long it runs.
+  if (confidence < OCR_MIN_CONFIDENCE) return false;
+  // A page read for being in the wrong script is recovered when OCR finds a script there other than
+  // Latin, and not otherwise: an English page it was wrong to doubt comes back English, and stays
+  // as the text layer gave it.
+  if (why === 'unscripted') {
+    const latin = (after.match(/\p{Script=Latin}/gu) ?? []).length;
+    const letters = (after.match(/\p{L}/gu) ?? []).length;
+    return letters - latin > latin && legibleChars(after) >= MIN_CHARS_PER_PAGE;
+  }
   if (why === 'damaged') {
     return !CORRUPT_TEXT_LAYER.test(after) && legibleChars(after) >= legibleChars(before) && legibleChars(after) > 0;
   }
@@ -67,7 +118,14 @@ export function ocrReplacesThePage(why: 'sparse' | 'damaged', before: string, af
 }
 
 
-const PROVISION_LINE = /^\s*(\d+[A-Z]{0,2})\.\s*(?:—|-|–)?\s*(?:\(1\))?\s*(?=\S)/;
+/**
+ * A number with a digit straight after its dot is a decimal, not a provision. The duty column of
+ * an Indian anti-dumping notification wraps onto lines of their own, and "75.72% including China
+ * PR" opened provision 75 in the middle of the table; so did "8.23%" and "14.06%". Every real
+ * shape with a digit there -- "12.5 Definitions", "8.2.1.1 A company" -- is taken by the two
+ * patterns tried before this one.
+ */
+const PROVISION_LINE = /^\s*(\d+[A-Z]{0,2})\.(?!\d)\s*(?:—|-|–)?\s*(?:\(1\))?\s*(?=\S)/;
 /** India notifications sometimes number a paragraph "12.5 Definitions" without a second dot. */
 const DECIMAL_PROVISION_LINE = /^\s*[‘'"]?(\d+\.\d+[A-Z]{0,2})(?:\s+(?=\S)|\s*$)/;
 /**
@@ -198,6 +256,19 @@ function languageOfPages(pages: PageText[], candidates?: readonly string[]): Pag
   });
 }
 
+/**
+ * A line of a text-layer page, its whitespace collapsed.
+ *
+ * pdf.js reports a Thai glyph run in the order its content stream draws it, which can land a
+ * synthetic space between a base character and the combining mark stacked on it -- the Bank of
+ * Thailand's "ซ้ำซ้อน" reads "ซ ้าซ้อน" straight out of a text-layer PDF, never having gone near
+ * OCR. Rejoined here so a new parse stores clean text rather than needing the same fix again at
+ * every quote check downstream.
+ */
+function cleanLine(raw: string): string {
+  return rejoinThaiMarks(raw.replace(/\s+/g, ' ').trim());
+}
+
 export async function extractPages(bytes: Buffer): Promise<PageText[]> {
   // The legacy build is the one that runs under plain Node without a DOM.
   const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
@@ -221,17 +292,17 @@ export async function extractPages(bytes: Buffer): Promise<PageText[]> {
       if (!('str' in item)) continue;
       const y = Math.round((item.transform as number[])[5] ?? 0);
       if (lastY !== null && Math.abs(y - lastY) > 2) {
-        if (current.trim()) lines.push(current.replace(/\s+/g, ' ').trim());
+        if (current.trim()) lines.push(cleanLine(current));
         current = '';
       }
       current += item.str;
       if (item.hasEOL) {
-        if (current.trim()) lines.push(current.replace(/\s+/g, ' ').trim());
+        if (current.trim()) lines.push(cleanLine(current));
         current = '';
       }
       lastY = y;
     }
-    if (current.trim()) lines.push(current.replace(/\s+/g, ' ').trim());
+    if (current.trim()) lines.push(cleanLine(current));
     pages.push({ page: p, lines, language: null });
     page.cleanup();
   }
@@ -589,6 +660,17 @@ export function sectionise(pages: PageText[]): SectionBuilder {
     (it, n) => 'lines' in it && it.label !== null && it.lines.length > 1 && lastAt.get(key(it)) === n && !listed(it, n),
   );
   const builder = new SectionBuilder();
+  // A document whose numbering starts at 2 left its first paragraph unnumbered. That is how an
+  // Indian notification is drafted: the paragraph naming the goods, the finding and the words
+  // "hereby imposes" carries no number, and "2." is its duration clause. Filed as front matter it
+  // reached no search, so CBIC's anti-dumping notifications were found only by their tariff rows
+  // and never by what they impose. Everything before "2." is that paragraph and its table.
+  const opening = items.findIndex((it) => 'lines' in it && it.label !== null);
+  const unnumberedFirst =
+    opening > 0 &&
+    (items[opening] as Candidate).label === '2' &&
+    !items.some((it) => 'lines' in it && it.label === '1');
+  const firstParagraph: string[] = [];
   /**
    * What accumulated under an entry that is about to be dropped.
    *
@@ -613,6 +695,23 @@ export function sectionise(pages: PageText[]): SectionBuilder {
     });
   };
   for (const [n, it] of items.entries()) {
+    if (unnumberedFirst && n < opening) {
+      if (!('lines' in it)) firstParagraph.push(it.prose);
+      else firstParagraph.push(...it.lines);
+      continue;
+    }
+    if (unnumberedFirst && n === opening && firstParagraph.join('').trim()) {
+      const first = items.slice(0, opening).find((x) => 'lines' in x) as Candidate | undefined;
+      builder.add({
+        headingPath: '',
+        label: null,
+        text: firstParagraph.join('\n').trim(),
+        page: first?.page ?? (it as Candidate).page,
+        language: (it as Candidate).language ?? null,
+        repealed: false,
+        anchor: null,
+      });
+    }
     if (!('lines' in it)) {
       builder.addProse(it.prose);
       continue;
@@ -697,7 +796,11 @@ export async function parsePdf(bytes: Buffer, url: string, opts: ParsePdfOptions
   const damaged = pages
     .filter((page) => hasCorruptTextLayer(page.lines))
     .map((page) => page.page);
-  const reread = [...new Set([...sparse, ...damaged])].sort((a, b) => a - b);
+  // And a page whose text layer is in no script the page could be printed in -- see isInAnotherScript.
+  const unscripted = pages
+    .filter((page) => !sparse.includes(page.page) && !damaged.includes(page.page) && isInAnotherScript(page.lines, opts.languages))
+    .map((page) => page.page);
+  const reread = [...new Set([...sparse, ...damaged, ...unscripted])].sort((a, b) => a - b);
   const ocrUsed: number[] = [];
   const ocrFailed: number[] = [];
   const confidences: number[] = [];
@@ -710,19 +813,23 @@ export async function parsePdf(bytes: Buffer, url: string, opts: ParsePdfOptions
         if (!reread.includes(page.page)) return page;
         const ocr = byPage.get(page.page);
         const text = ocr?.lines.join(' ') ?? '';
+        // Recorded whether or not the reading is accepted below: a page OCR could not clear the
+        // confidence floor for is still a page whose best achieved confidence a human auditing the
+        // document -- or the rest of it, if other pages did clear the floor -- should be able to see.
+        if (ocr) confidences.push(ocr.confidence);
         const accepted =
           !!ocr &&
           ocrReplacesThePage(
-            damaged.includes(page.page) ? 'damaged' : 'sparse',
+            damaged.includes(page.page) ? 'damaged' : unscripted.includes(page.page) ? 'unscripted' : 'sparse',
             page.lines.join(' '),
             text,
+            ocr.confidence,
           );
         if (!ocr || !accepted) {
           ocrFailed.push(page.page);
           return page;
         }
         ocrUsed.push(page.page);
-        confidences.push(ocr.confidence);
         return {
           page: page.page,
           lines: ocr.lines,
@@ -745,6 +852,11 @@ export async function parsePdf(bytes: Buffer, url: string, opts: ParsePdfOptions
         charsPerPage: String(Math.round(chars / Math.max(1, pages.length))),
         ...(ocrFailed.length ? { ocrFailedPages: ocrFailed.join(',') } : {}),
         ...(ocrError ? { ocrError } : {}),
+        // Kept even for a document this unread: the best OCR could do is still worth a human
+        // being able to see, rather than the column reading NULL as though OCR were never tried.
+        ...(confidences.length
+          ? { ocrConfidence: String(Math.round(confidences.reduce((sum, n) => sum + n, 0) / confidences.length)) }
+          : {}),
       },
       unread: {
         reason: 'ocr-below-threshold',
@@ -757,7 +869,10 @@ export async function parsePdf(bytes: Buffer, url: string, opts: ParsePdfOptions
 
   // `runningHeader` below still reads the pages as printed: the header is what it is looking for.
   const clean = stripPageFurniture(languageOfPages(pages, opts.languages));
-  const builder = sectionise(clean);
+  // A Lao instrument is sectioned by its own drafting -- ມາດຕາ, ໝວດທີ, ພາກທີ -- as OCR delivers it.
+  // Only where the economy publishes in Lao and the pages are Lao, so no other document's path moves.
+  const lao = opts.languages?.includes('lo') && isMostlyLao(clean) ? sectioniseLao(clean) : null;
+  const builder = lao?.builder ?? sectionise(clean);
 
   if (builder.sections.length === 0) {
     // Text came out but no provision structure did. Keep it as one section rather than discard it:
@@ -785,6 +900,7 @@ export async function parsePdf(bytes: Buffer, url: string, opts: ParsePdfOptions
       ...(amended ? { lastAmendedOn: amended.on, lastAmendedBasis: amended.basis } : {}),
       ...(ocrUsed.length ? { ocrPages: ocrUsed.join(',') } : {}),
       ...(damaged.length ? { corruptTextLayerPages: damaged.join(',') } : {}),
+      ...(unscripted.length ? { unscriptedTextLayerPages: unscripted.join(',') } : {}),
       ...(confidences.length
         ? { ocrConfidence: String(Math.round(confidences.reduce((sum, n) => sum + n, 0) / confidences.length)) }
         : {}),
@@ -795,7 +911,10 @@ export async function parsePdf(bytes: Buffer, url: string, opts: ParsePdfOptions
           }
         : {}),
       ...(ocrError ? { ocrError } : {}),
+      // What the Lao sectioner inferred rather than read, so no label passes for OCR's own reading.
+      ...(lao?.inferred.length ? { labelsInferred: lao.inferred.join('; ') } : {}),
+      ...(lao?.dropped.length ? { debrisDropped: String(lao.dropped.length) } : {}),
     },
-    parser: 'pdf',
+    parser: lao ? 'pdf-lao' : 'pdf',
   };
 }

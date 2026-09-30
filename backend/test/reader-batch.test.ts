@@ -131,11 +131,12 @@ describe('a Thai provision, read in its own language', () => {
     indicatorId: '5.5',
     measure: 'strict-telecom-licence',
     dutyBearer: 'ผู้ใดประสงค์จะประกอบกิจการโทรคมนาคม',
-    dutyAct: 'ต้องได้รับใบอนุญาต',
+    dutyAct: 'ต้องมี',
     dutyForce: 'requires' as const,
-    definingWords: 'ต้องได้รับใบอนุญาตจากคณะกรรมการ',
+    // A strict condition, as 5.5 asks: the Type-3 licence's investment plan.
+    definingWords: 'แผนการลงทุน',
     subjectWords: 'กิจการโทรคมนาคม',
-    quote: 'ต้องได้รับใบอนุญาตจากคณะกรรมการ',
+    quote: 'ผู้ขอรับใบอนุญาตแบบที่สามต้องมีแผนการลงทุนและแผนการให้บริการกิจการโทรคมนาคม',
   };
   const telecomAct = { sectionLanguage: 'th', instrumentTitle: 'พระราชบัญญัติการประกอบกิจการโทรคมนาคม พ.ศ. 2544' };
 

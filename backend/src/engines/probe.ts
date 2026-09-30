@@ -71,6 +71,7 @@ async function tags(host: string, timeoutMs: number): Promise<string[]> {
     headers: authHeaders(),
     headersTimeout: timeoutMs,
     bodyTimeout: timeoutMs,
+    signal: AbortSignal.timeout(timeoutMs),
   });
   if (res.statusCode >= 400) {
     const body = await res.body.text();
@@ -93,6 +94,7 @@ async function fingerprint(
       body: JSON.stringify({ model }),
       headersTimeout: timeoutMs,
       bodyTimeout: timeoutMs,
+      signal: AbortSignal.timeout(timeoutMs),
     });
     if (res.statusCode >= 400) return null;
     const body = (await res.body.json()) as {
@@ -109,7 +111,14 @@ async function fingerprint(
   }
 }
 
-/** One short deterministic generation, timed. The content is irrelevant; the clock is the point. */
+/**
+ * One short deterministic generation, timed. The content is irrelevant; the clock is the point.
+ *
+ * Every probe request carries a deadline of its own as well as undici's two timeouts. A rented
+ * engine's proxy answers the headers at once and then keeps the line alive with spaces while the
+ * engine behind it sits on the request, so neither timeout fires: on 29 September Mongolia's fleet
+ * waited forty minutes at "Checking 4 engine(s)..." with every pod up and nothing read.
+ */
 async function timedCall(host: string, model: string, timeoutMs: number): Promise<number> {
   const started = Date.now();
   const res = await request(`${host}/api/chat`, {
@@ -124,6 +133,7 @@ async function timedCall(host: string, model: string, timeoutMs: number): Promis
     }),
     headersTimeout: timeoutMs,
     bodyTimeout: timeoutMs,
+    signal: AbortSignal.timeout(timeoutMs),
   });
   const text = await res.body.text();
   if (res.statusCode >= 400) throw new Error(`HTTP ${res.statusCode}: ${text.slice(0, 200)}`);

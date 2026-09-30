@@ -123,6 +123,18 @@ export const EconomyProfile = z.object({
    */
   authoritativeLanguage: LanguageTag.nullable().default(null),
   languageNote: z.string().nullable().default(null),
+  /**
+   * The economy's own name or nationality adjective, as a statute actually writes it, in each
+   * language law is published in -- stems, matched the way PLACE_LOCAL's own words are: substrings,
+   * not `\b`-bounded, because Cyrillic, Mongolian and Thai script inflect and this file has no word
+   * boundary for them. A provision requiring a party to "учредить российское юридическое лицо"
+   * (establish a Russian legal entity) or naming "Монгол Улсын иргэн" (a citizen of Mongolia) names
+   * a place by naming the economy itself, which a place test built only from "territory of" or
+   * "abroad" cannot see. Empty where nobody has checked the economy's own corpus for the form its
+   * own name actually takes -- decide/index.ts falls back to the shared word lists in that case,
+   * exactly as it did before this field existed.
+   */
+  demonym: z.array(Pattern).default([]),
   /** Null where nobody has declared it, which the audit reports rather than assumes. */
   jurisdictionScope: JurisdictionScope.nullable().default(null),
   instrumentTypes: z.array(InstrumentType).min(1),

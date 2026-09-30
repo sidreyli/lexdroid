@@ -405,6 +405,46 @@ export function citesADefinition(text: string, words: string | null): boolean {
 }
 
 /**
+ * What this text defines a term as: the words of its entry, or null where it does not define it.
+ *
+ * A provision names its parties by the terms its instrument defines -- "the service provider",
+ * "ผู้ให้บริการ" -- and the definition is where the instrument says who they are. Thailand's
+ * Computer-Related Crime Act and the Ministry's traffic-data notification both lay their duties on
+ * "ผู้ให้บริการ" and never say "internet" in the sentence that does; each defines the term, once, as
+ * whoever gives others access to the Internet or keeps computer data for them.
+ *
+ * Thai definitions read "“term” หมายความว่า", with no line breaks between entries, so an entry
+ * runs to the next one or to the drafting break, whichever comes first.
+ */
+const DEFINED_AS = /["“]([^"”]{1,90})["”]\s{0,4}(?:means|includes|has the (?:same )?meaning|หมายความว่า|หมายความรวมถึง)/gi;
+
+export function definitionIn(text: string, term: string | null | undefined): string | null {
+  const wanted = definedTermKey(term);
+  if (!wanted) return null;
+  const entries = [...text.matchAll(DEFINED_AS)];
+  for (const [n, m] of entries.entries()) {
+    if (m.index === undefined || definedTermKey(m[1]) !== wanted) continue;
+    const from = m.index + m[0].length;
+    let stop = entries[n + 1]?.index ?? text.length;
+    const brk = ENTRY_END.exec(text.slice(from));
+    if (brk) stop = Math.min(stop, from + brk.index);
+    const words = text.slice(from, stop).trim();
+    if (words) return words;
+  }
+  return null;
+}
+
+/** A term as a definition names it: without an article, case or spacing of its own. */
+function definedTermKey(term: string | null | undefined): string {
+  return (term ?? '')
+    .normalize('NFC')
+    .toLowerCase()
+    .replace(/^\s*(?:the|a|an|any|every|each)\s+/, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
  * Does the quoted paragraph take its force from a stem that only confers a power?
  *
  * A lettered paragraph is not a sentence. It borrows its verb from the words before the colon, and

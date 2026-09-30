@@ -15,16 +15,31 @@
  * marks, so a reader quoting the words faithfully still drops them. Comparing them is comparing
  * how the page was set, not what it says.
  */
-const UNSPOKEN = '*"“”„‟″';
+const UNSPOKEN = '*"“”„‟″«»';
 
 /** One source character, folded. Empty when it collapses into the character before it. */
 function fold(ch: string): string {
   if (UNSPOKEN.includes(ch)) return '';
+  // Lao OCR writes ຳ as ໍ + າ as often as not; both sides are decomposed, each half keeping the offset.
+  if (ch === 'ຳ') return 'ໍາ';
   if ('‘’‚‛′'.includes(ch)) return "'";
   if ('‐‑‒–—―−'.includes(ch)) return '-';
   if (/\s/.test(ch)) return ' ';
   return ch.toLowerCase();
 }
+
+/** A Lao letter: Lao writes no space between words. */
+const NO_WORD_SPACES = /[຀-໿]/;
+
+/** Any Thai character, base or mark. */
+const THAI = /[฀-๿]/;
+/**
+ * A Thai combining tone or vowel mark, which never stands apart from the base character before it
+ * -- see `rejoinThaiMarks` in `util/thai.ts`, which this mirrors for the offset-preserving fold.
+ * Narrower than `NO_WORD_SPACES`' Lao case on purpose: Thai's own inter-word space is real and
+ * dropping it would shorten a fragment, so only a base-character-then-mark split is ever collapsed.
+ */
+const THAI_COMBINING_MARK = /[ัิ-ฺ็-๎]/;
 
 interface Folded {
   text: string;
@@ -41,6 +56,12 @@ function foldWithOffsets(s: string): Folded {
   for (let i = 0; i < s.length; i += 1) {
     const f = fold(s[i]!);
     if (f === ' ' && text.endsWith(' ')) continue;
+    // Lao writes no space between words, so a space between two Lao letters may be a line the page
+    // wrapped inside a word -- see normaliseForQuoteCheck in ../read.
+    if (f === ' ' && NO_WORD_SPACES.test(text.slice(-1)) && NO_WORD_SPACES.test(s.slice(i).trimStart().charAt(0))) continue;
+    // pdf.js and Tesseract both sometimes land a space between a Thai base character and the
+    // combining mark stacked on it, never a real word break -- see rejoinThaiMarks in ../thai.
+    if (f === ' ' && THAI.test(text.slice(-1)) && THAI_COMBINING_MARK.test(s.slice(i).trimStart().charAt(0))) continue;
     for (const c of f) {
       text += c;
       starts.push(i);
@@ -67,7 +88,11 @@ export const MIN_ELIDED_TOTAL = 40;
 export function wholeWordAt(text: string, at: number, length: number): boolean {
   const before = at === 0 ? ' ' : text[at - 1]!;
   const after = at + length >= text.length ? ' ' : text[at + length]!;
-  return !/[a-z0-9]/.test(before) && !/[a-z0-9]/.test(after);
+  // Cyrillic letters too: "мэдээлэл" must not be found inside "мэдээллийн" either. Nothing else is
+  // added, so English is bounded exactly as it was; Lao writes no space between words, so a Lao
+  // letter beside a fragment is no sign it is cut.
+  const inWord = (c: string) => /[a-z0-9Ѐ-ӿ]/.test(c);
+  return !inWord(before) && !inWord(after);
 }
 
 /** The first place `fragment` sits in `text` at or after `from`, on word boundaries if asked. */
@@ -130,4 +155,106 @@ export function locateQuote(haystack: string, needle: string): { start: number; 
   const at = h.text.indexOf(n);
   if (at < 0) return null;
   return { start: h.starts[at]!, end: h.ends[at + n.length - 1]! };
+}
+
+/** Letters of the scripts the near match is for: Cyrillic and Lao. */
+const OTHER_SCRIPT = /[Ѐ-ӿ຀-໿]/g;
+
+/** Whether text is written mostly in Cyrillic or Lao rather than Latin. */
+export function mostlyOtherScript(text: string): boolean {
+  const other = (text.match(OTHER_SCRIPT) ?? []).length;
+  return other > 0 && other > (text.match(/[A-Za-z]/g) ?? []).length;
+}
+
+/**
+ * The share of a quote's characters that must be found, in order, in the passage it came from.
+ * Not lower: a Lao reading that condensed an OCR-broken sentence came to 66% and is a paraphrase,
+ * not a copy, so it stays unverified; the Mongolian near miss is 99%.
+ */
+export const NEAR_COVERAGE = 0.92;
+/** How much longer than the quote the passage may be: room for page debris the quote skipped. */
+const NEAR_STRETCH = 1.35;
+
+/**
+ * Where a Cyrillic or Lao quotation sits in its source when it is not character-for-character.
+ *
+ * Two kinds of near miss were measured on the paid run, and neither is a paraphrase. The reader
+ * copied Mongolia's Personal Data Protection Law with two Latin letters inside a Cyrillic word
+ * ("боловсруlsх" for "боловсруулах") and every other of 250 characters exact. And a Lao law's OCR
+ * text carries page furniture inside a sentence -- "ການຕິດ\nຕະ ຈ ນ, ຈ 13 ນ ແ ະ. , ນ\nຕາມ" -- which
+ * the reader, rightly, did not copy. Both failed the exact check, and both laws are the framework
+ * the cell is about.
+ *
+ * So: the passage whose characters cover at least 92% of the quote's, in order, spanning at most
+ * 35% more than the quote. What is returned is the source's own span, so the caller quotes the law
+ * and not the reader's copy of it. English text is never matched this way, and returns null.
+ */
+export function locateNearQuote(haystack: string, needle: string): { start: number; end: number } | null {
+  const n = foldWithOffsets(needle).text.trim();
+  if (n.length < 20 || !mostlyOtherScript(n)) return null;
+  const h = foldWithOffsets(haystack);
+  const m = n.length;
+  const pad = Math.ceil(m * (NEAR_STRETCH - 1)) + 8;
+
+  // Candidate windows around short shingles of the quote that do occur in the source.
+  const K = 8;
+  const starts = new Set<number>();
+  for (const o of [0, Math.floor(m / 4), Math.floor(m / 2), Math.floor((3 * m) / 4), Math.max(0, m - K)]) {
+    const shingle = n.slice(o, o + K);
+    if (shingle.trim().length < K - 1) continue;
+    let at = h.text.indexOf(shingle);
+    for (let seen = 0; at >= 0 && seen < 20; seen += 1) {
+      starts.add(Math.max(0, at - o));
+      at = h.text.indexOf(shingle, at + 1);
+    }
+  }
+
+  let best: { start: number; end: number; matched: number } | null = null;
+  for (const s0 of starts) {
+    const lo = Math.max(0, s0 - pad);
+    const hi = Math.min(h.text.length, s0 + m + pad);
+    const hit = align(n, h.text.slice(lo, hi));
+    if (!hit) continue;
+    const span = hit.end - hit.start;
+    if (hit.matched < NEAR_COVERAGE * m || span > NEAR_STRETCH * m) continue;
+    if (!best || hit.matched > best.matched) best = { start: lo + hit.start, end: lo + hit.end, matched: hit.matched };
+  }
+  if (!best || best.end <= best.start) return null;
+  return { start: h.starts[best.start]!, end: h.ends[best.end - 1]! };
+}
+
+/**
+ * The span of `text` that best matches all of `q`, free to start and end anywhere in `text`: the
+ * semi-global edit alignment, with the matched characters counted on the way back.
+ */
+function align(q: string, text: string): { start: number; end: number; matched: number } | null {
+  const m = q.length;
+  const w = text.length;
+  if (w === 0) return null;
+  const cols = w + 1;
+  const d = new Uint16Array((m + 1) * cols);
+  for (let i = 1; i <= m; i += 1) d[i * cols] = i;
+  for (let i = 1; i <= m; i += 1) {
+    for (let j = 1; j <= w; j += 1) {
+      const sub = d[(i - 1) * cols + j - 1]! + (q[i - 1] === text[j - 1] ? 0 : 1);
+      const del = d[(i - 1) * cols + j]! + 1;
+      const ins = d[i * cols + j - 1]! + 1;
+      d[i * cols + j] = Math.min(sub, del, ins);
+    }
+  }
+  let end = 1;
+  for (let j = 1; j <= w; j += 1) if (d[m * cols + j]! < d[m * cols + end]!) end = j;
+  let i = m;
+  let j = end;
+  let matched = 0;
+  while (i > 0 && j > 0) {
+    const here = d[i * cols + j]!;
+    if (here === d[(i - 1) * cols + j - 1]! + (q[i - 1] === text[j - 1] ? 0 : 1)) {
+      if (q[i - 1] === text[j - 1]) matched += 1;
+      i -= 1;
+      j -= 1;
+    } else if (here === d[(i - 1) * cols + j]! + 1) i -= 1;
+    else j -= 1;
+  }
+  return { start: j, end, matched };
 }

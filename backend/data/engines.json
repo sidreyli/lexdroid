@@ -19,7 +19,8 @@
       "rented": {
         "provider": "RunPod",
         "minGpuMemoryGb": 16,
-        "maxUsdPerHour": 0.34
+        "maxUsdPerHour": 0.34,
+        "avoidGpus": ["RTX 3090"]
       }
     },
     {
@@ -35,7 +36,8 @@
       "rented": {
         "provider": "RunPod",
         "minGpuMemoryGb": 24,
-        "maxUsdPerHour": 0.34
+        "maxUsdPerHour": 0.55,
+        "avoidGpus": ["RTX 4090", "RTX 5090", "RTX 3090"]
       },
       "declared": true,
       "weaknesses": "Quantised to 4 bits, like Engine A, and read at the same 16k context, so a long section is split the same way. Served from a GPU rented by the hour: a run depends on RunPod placing a pod, and on that pod's download speed the first time it pulls the weights.",

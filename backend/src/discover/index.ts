@@ -14,19 +14,25 @@
  * says it publishes, and where that disagrees with ESCAP's sheet, the disagreement is a finding.
  */
 import type { Db } from '../db/index.js';
-import type { Fetcher } from '../fetch/index.js';
+import type { Fetcher, FetchResult } from '../fetch/index.js';
 import { RobotsDisallowed, CacheMiss, HostSuspended } from '../fetch/index.js';
-import { parseDocument, storeDocument, verifyOffsets } from '../parse/index.js';
+import { decodeBody } from '../fetch/decode.js';
+import { parseDocument, parseScans, scannedPages, storeDocument, verifyOffsets } from '../parse/index.js';
 import { namedDocumentLink, pointedDocumentLink, soleDocumentLink } from '../parse/html.js';
 import { namesAnInstrument, ownName, statedKind } from '../parse/identity.js';
 import { registeredKind } from './titles.js';
 import type { EconomyProfile } from '../profile/types.js';
 import { portalId } from '../profile/index.js';
+import { cbicDownloadUrl, resolveCbicDocument } from './cbic.js';
 import { crawlAdapter } from './crawl.js';
 import { drupalAdapter } from './drupal.js';
+import { eaeuAdapter } from './eaeu.js';
 import { flkAdapter } from './flk.js';
 import { frlAdapter } from './frl.js';
 import { indiaCodeAdapter } from './indiacode.js';
+import { legalinfoAdapter } from './legalinfo.js';
+import { ipsAdapter } from './ips.js';
+import { laoGazetteAdapter } from './laogazette.js';
 import { ocsAdapter } from './ocs.js';
 import { fipcsAdapter } from './fipcs.js';
 import { lomAdapter } from './lom.js';
@@ -34,6 +40,7 @@ import { lomSubsidAdapter } from './lom-subsid.js';
 import { sitemapAdapter } from './sitemap.js';
 import { ssoAdapter } from './sso.js';
 import { wpAdapter } from './wp.js';
+import { instrumentWords } from './titles.js';
 import type { Adapter, DiscoveredInstrument } from './types.js';
 
 export * from './types.js';
@@ -41,10 +48,14 @@ export * from './types.js';
 const ADAPTERS: Record<string, Adapter> = {
   crawl: crawlAdapter,
   drupal: drupalAdapter,
+  eaeu: eaeuAdapter,
   fipcs: fipcsAdapter,
   flk: flkAdapter,
   frl: frlAdapter,
   indiacode: indiaCodeAdapter,
+  legalinfo: legalinfoAdapter,
+  ips: ipsAdapter,
+  laogazette: laoGazetteAdapter,
   lom: lomAdapter,
   'lom-subsid': lomSubsidAdapter,
   ocs: ocsAdapter,
@@ -80,6 +91,14 @@ export async function register(
 ): Promise<RegisterResult[]> {
   const results: RegisterResult[] = [];
   const now = new Date().toISOString();
+
+  // What this economy calls its own instruments, read off its Zone 0 profile once for the whole
+  // walk. Empty for an economy that publishes in English, which is what leaves those registers
+  // exactly as they were.
+  const vocabulary = instrumentWords(profile.instrumentTypes);
+  if (vocabulary.length > 0) {
+    log(`reading titles in ${profile.name}'s own words: ${vocabulary.length} terms`);
+  }
 
   const insert = db.prepare(
     `INSERT INTO instrument (economy_code, title, official_number, kind, status, status_basis,
@@ -137,7 +156,7 @@ export async function register(
 
     let found: DiscoveredInstrument[] = [];
     try {
-      found = await adapter.discover({ portal, fetcher, log, setAside });
+      found = await adapter.discover({ portal, fetcher, log, setAside, vocabulary });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       results.push({ portal: portal.name, found: 0, added: 0, error: message });
@@ -304,7 +323,7 @@ async function readEdition(
     return null;
   };
   try {
-    const fetched = await fetcher.fetch(url);
+    const fetched = await fetchDocument(url, fetcher);
     if (fetched.status !== 200) return discard('non-200-response', `HTTP ${fetched.status}`);
 
     const parsed = await parseDocument(fetched, { languages });
@@ -389,6 +408,15 @@ export interface MaterialiseOptions {
  * corpus has to resolve a document the way the read path resolves it, and for a long Act that means
  * the adapter joining the EPUB volumes rather than the title page sitting at the document's URL.
  */
+/**
+ * An instrument's document, for the URLs whose address is a viewer rather than the document. Most
+ * are fetched as they stand; a host that serves an app at the public address and the document from
+ * an API behind it is asked the way its own page asks, whichever adapter registered the URL.
+ */
+export async function fetchDocument(url: string, fetcher: Fetcher): Promise<FetchResult> {
+  return cbicDownloadUrl(url) ? resolveCbicDocument(url, fetcher) : fetcher.fetch(url);
+}
+
 export function adapterFor(db: Db, profile: EconomyProfile, via: string): Adapter | null {
   const id = Number(via.replace('portal:', ''));
   const row = db.prepare('SELECT url FROM portal WHERE id = ?').get(id) as { url: string } | undefined;
@@ -414,6 +442,43 @@ export const MAX_ATTEMPTS = 3;
  * length, and an announcement of a document always is.
  */
 const WRAPPER_GAIN = 3;
+
+/**
+ * A file a page links, or null where another host would not give it to us. Mongolia's legalinfo.mn
+ * links amendments at old.legalinfo.mn, a name that no longer resolves; three of those in a row
+ * suspended that host and the suspension stopped the read of every law still queued on
+ * legalinfo.mn itself. The page is still the page: where the file it links is out of reach, the
+ * page is what is read. A failure on the page's own host is the page's host failing, and is
+ * thrown as it always was.
+ */
+async function linkedFile(fetcher: Fetcher, url: string, pageUrl: string, log: (line: string) => void): Promise<FetchResult | null> {
+  try {
+    return await fetcher.fetch(url);
+  } catch (err) {
+    if (err instanceof CacheMiss || new URL(url).host === new URL(pageUrl).host) throw err;
+    log(`  linked file not read, the page is kept: ${err instanceof Error ? err.message : String(err)}`);
+    return null;
+  }
+}
+
+/**
+ * The images of a scanned page, in order: decoded where the page carries them inline, fetched where
+ * it links them. Null when any page of it cannot be had, since an instrument missing a page is
+ * not one to read as whole.
+ */
+async function scanImages(fetcher: Fetcher, scans: readonly string[], pageUrl: string, log: (line: string) => void): Promise<Buffer[] | null> {
+  const images: Buffer[] = [];
+  for (const scan of scans) {
+    if (scan.startsWith('data:')) {
+      images.push(Buffer.from(scan.slice(scan.indexOf(',') + 1), 'base64'));
+      continue;
+    }
+    const fetched = await linkedFile(fetcher, scan, pageUrl, log);
+    if (!fetched || fetched.status !== 200 || !/^image\//i.test(fetched.mediaType)) return null;
+    images.push(fetched.body);
+  }
+  return images;
+}
 
 /** What a parse actually yielded to search, which is the only comparable measure of a document. */
 function textLength(parsed: { sections: { text: string }[] }): number {
@@ -484,7 +549,7 @@ export async function materialise(
     try {
       let fetched = adapter?.resolveDocument
         ? await adapter.resolveDocument(row.source_url, fetcher)
-        : await fetcher.fetch(row.source_url);
+        : await fetchDocument(row.source_url, fetcher);
 
       if (fetched.status !== 200) {
         // Recorded, not just reported: an instrument the corpus does not contain has to be
@@ -503,9 +568,9 @@ export async function materialise(
       let adopted = false;
       const wrapper = parsed.unread?.reason === 'landing-page' || parsed.unread?.reason === 'empty';
       if (wrapper && /html/i.test(fetched.mediaType)) {
-        const only = soleDocumentLink(fetched.body.toString('utf8'), fetched.finalUrl);
-        if (only) {
-          const inner = await fetcher.fetch(only);
+        const only = soleDocumentLink(decodeBody(fetched), fetched.finalUrl);
+        const inner = only ? await linkedFile(fetcher, only, fetched.finalUrl, log) : null;
+        if (only && inner) {
           const reparsed = inner.status === 200 ? await parseDocument(inner, { languages: profile.officialLanguages }) : null;
           if (reparsed && !reparsed.unread) {
             fetched = inner;
@@ -535,10 +600,10 @@ export async function materialise(
       // which document, and is why `pointedDocumentLink` stands beside the named one rather than
       // inside it. Both answer the same question and both are weighed the same way.
       if (!adopted && /html/i.test(fetched.mediaType)) {
-        const body = fetched.body.toString('utf8');
+        const body = decodeBody(fetched);
         const named = namedDocumentLink(body, fetched.finalUrl, row.title) ?? pointedDocumentLink(body, fetched.finalUrl);
-        if (named && named !== fetched.finalUrl) {
-          const inner = await fetcher.fetch(named);
+        const inner = named && named !== fetched.finalUrl ? await linkedFile(fetcher, named, fetched.finalUrl, log) : null;
+        if (named && inner) {
           const reparsed = inner.status === 200 ? await parseDocument(inner, { languages: profile.officialLanguages }) : null;
           const held = textLength(parsed);
           const offered = reparsed ? textLength(reparsed) : 0;
@@ -549,6 +614,16 @@ export async function materialise(
               `  [${n + 1}/${rows.length}] the page announces the document (${held} -> ${offered} chars): ${named}`,
             );
           }
+        }
+      }
+
+      // A page with nothing to read may be showing the instrument as a scan: read the images.
+      if (parsed.unread?.reason === 'empty' && /html/i.test(fetched.mediaType)) {
+        const scans = scannedPages(fetched);
+        const images = scans.length ? await scanImages(fetcher, scans, fetched.finalUrl, log) : null;
+        if (images) {
+          parsed = await parseScans(fetched, images, profile.officialLanguages);
+          log(`  [${n + 1}/${rows.length}] the page is ${images.length} scanned page(s): ${parsed.unread ? parsed.unread.detail : `${parsed.sections.length} section(s) by OCR`}`);
         }
       }
 

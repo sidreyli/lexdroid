@@ -203,6 +203,10 @@ CREATE TABLE IF NOT EXISTS document (
   -- says what it could not read above one that presents everything with equal confidence.
   extraction      TEXT CHECK (extraction IN ('html', 'pdf-text', 'ocr', 'plain', 'none')),
   section_count   INTEGER NOT NULL DEFAULT 0,
+  -- The mean confidence Tesseract gave the pages it read, 0-100, where any page was OCR'd. Every
+  -- Lao document is a scan, and a claim resting on a page read at 60 is not the claim a page read
+  -- at 90 supports; the parser measured this and nothing kept it.
+  ocr_confidence  REAL,
   UNIQUE (url, content_hash)
 );
 
@@ -370,6 +374,11 @@ CREATE TABLE IF NOT EXISTS fetch_log (
   bytes           INTEGER,
   wait_ms         INTEGER NOT NULL DEFAULT 0, -- time spent held by the rate limiter
   outcome         TEXT NOT NULL,              -- ok | cached | robots-disallowed | error | skipped-cache-only
+  -- Almost always GET. A portal whose register is only reachable by POST -- legalinfo.mn answers
+  -- a GET with page one of an unfiltered listing whatever it is asked -- produces several rows
+  -- at one url that are different requests, and a log that cannot tell them apart understates
+  -- what left this machine. C5a is scored on these rows.
+  method          TEXT NOT NULL DEFAULT 'GET',
   media_type      TEXT                        -- what the server said it sent, where it answered
 );
 

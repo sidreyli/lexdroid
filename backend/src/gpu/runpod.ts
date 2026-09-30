@@ -29,14 +29,26 @@ export const DEFAULT_MAX_USD_PER_HOUR = 0.34;
 /**
  * The most pods one engine may hold. A pillar's reads divide across them, one read per pod at a
  * time, so four cut the slowest stage of the live test about fourfold for four times the rent.
+ * LEXDROID_MAX_PODS raises it for a command that runs several economies side by side, each on
+ * pods of its own.
  */
-export const MAX_PODS = 4;
+export const MAX_PODS = Math.max(1, Number(process.env['LEXDROID_MAX_PODS']) || 4);
 
 export interface Rental {
   provider: 'RunPod';
   /** The least GPU memory the engine fits in at its declared context. */
   minGpuMemoryGb: number;
   maxUsdPerHour?: number;
+  /**
+   * GPU types never rented for this engine, matched as part of RunPod's type id. Some hosts give
+   * Ollama a card it cannot use: on 27 and 29 September Engine B's Qwen loaded on the CPU of an
+   * RTX 4090 and an RTX 5090 whose nvidia-smi saw the card ("loaded with 0.0 of 17.8 GB"), while
+   * an A5000 and an A40 loaded it on the GPU. The cheapest card under the ceiling was the 4090, so
+   * the interface rented it every time.
+   */
+  avoidGpus?: string[];
+  /** The same, asked for by one rental rather than set on the engine (e.g. "3090"). */
+  avoid?: string[];
 }
 
 export type Cloud = 'COMMUNITY' | 'SECURE';
@@ -89,7 +101,7 @@ export function slotOf(name: string, engineId: string): number | null {
   const prefix = `${podName(engineId)}-`;
   if (!name.startsWith(prefix)) return null;
   const n = name.slice(prefix.length);
-  return /^[2-9]\d*$/.test(n) ? Number(n) : null;
+  return /^([2-9]|[1-9]\d+)$/.test(n) ? Number(n) : null;
 }
 
 /** The lowest free slots, as many as are asked for. */
@@ -141,7 +153,10 @@ export async function offers(rental: Rental): Promise<Offer[]> {
     };
   };
   const cap = rental.maxUsdPerHour ?? DEFAULT_MAX_USD_PER_HOUR;
-  const fits = (json.data?.gpuTypes ?? []).filter((g) => g.memoryInGb >= rental.minGpuMemoryGb);
+  const avoid = [...(rental.avoidGpus ?? []), ...(rental.avoid ?? [])].map((a) => a.toLowerCase());
+  const fits = (json.data?.gpuTypes ?? []).filter(
+    (g) => g.memoryInGb >= rental.minGpuMemoryGb && !avoid.some((a) => g.id.toLowerCase().includes(a)),
+  );
   const tier = (cloud: Cloud): Offer[] =>
     fits
       .map((g) => ({
@@ -324,16 +339,19 @@ async function rentOne(
 ): Promise<Pod> {
   let created: RawPod | undefined;
   let lastError: unknown;
-  for (const cloud of ['COMMUNITY', 'SECURE'] as const) {
-    const gpus = available.filter((o) => o.cloud === cloud).slice(0, 8).map((o) => o.gpu);
-    if (gpus.length === 0) continue;
-    try {
-      created = await call<RawPod>('POST', '/pods', createBody(engine, rental, gpus, token, REPO_ROOT, cloud, slot));
-      break;
-    } catch (err) {
-      // Out of stock on this tier is the expected failure; anything else is not.
-      lastError = err;
-      if (!/no instances currently available/i.test(String(err))) throw err;
+  // A request names at most 8 GPU types, so a tier with more under the ceiling is asked for in
+  // eights, cheapest first: when the cheap ones are out of stock a dearer one still gets asked for.
+  tiers: for (const cloud of ['COMMUNITY', 'SECURE'] as const) {
+    const all = available.filter((o) => o.cloud === cloud).map((o) => o.gpu);
+    for (let i = 0; i < all.length; i += 8) {
+      try {
+        created = await call<RawPod>('POST', '/pods', createBody(engine, rental, all.slice(i, i + 8), token, REPO_ROOT, cloud, slot));
+        break tiers;
+      } catch (err) {
+        // Out of stock on this tier is the expected failure; anything else is not.
+        lastError = err;
+        if (!/no instances currently available/i.test(String(err))) throw err;
+      }
     }
   }
   if (!created) {

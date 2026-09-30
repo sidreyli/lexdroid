@@ -138,6 +138,7 @@ function runUnit(unit: Unit, hosts: string[], runId: string, logDir: string, arg
   const suffix = attempt > 1 ? `-try${attempt}` : '';
   const logPath = join(logDir, `${unit.economy}-p${unit.pillar}${suffix}.log`);
   const out = createWriteStream(logPath);
+  const resumeStore = join(process.cwd(), logDir, `${unit.economy}-p${unit.pillar}.resume.db`);
   const argv = [
     TSX_CLI,
     'scripts/gate.ts',
@@ -168,6 +169,9 @@ function runUnit(unit: Unit, hosts: string[], runId: string, logDir: string, arg
       shell: false,
       env: {
         ...process.env,
+        // One store per unit, shared by its retries and nothing else, so a unit killed at provision
+        // six hundred replays the six hundred readings it paid for instead of asking them again.
+        LEXDROID_ENGINE_RESUME: resumeStore,
         ...childEngineEnv(
           hosts,
           args.engine?.hosted

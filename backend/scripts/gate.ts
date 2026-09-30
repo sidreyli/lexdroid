@@ -25,6 +25,11 @@ import type { RunEvent } from '../src/run/events.js';
 import { existsSync } from 'node:fs';
 import { reaches, type Decision } from '../src/decide/index.js';
 import { loadProfile } from '../src/profile/index.js';
+import { loadEnv } from '../src/env.js';
+
+// The hosted engine's key lives in .env. A gate started by the fleet is handed it (or handed a
+// blank, for a local pod, which this does not overwrite); a gate started by hand needs it read.
+loadEnv();
 
 /** A read slower than this is said out loud while it is still happening, not after the pillar. */
 const SLOW_READ_SECONDS = 30;
@@ -181,7 +186,7 @@ async function main(): Promise<void> {
       process.exit(1);
     }
   } else if (!(await haveModel(model))) {
-    console.error(`\n${model} is not installed. Run: ollama pull ${model}\n`);
+    console.error(`\n${model} is not installed. Run: ollama pull (or, for a model built from a Modelfile such as gemma4-lex-16k, ollama create) ${model}\n`);
     process.exit(1);
   }
 

@@ -38,6 +38,12 @@ LexDroid's implementation notes:
   page, and the three further defects finding it turned up: a page that offers its one file under
   the word "here", a running header that was a clause about somebody else's Act, and a crawl
   filing "Click to view the Financial Services Act 2013" as an instrument.
+- `handoff-three-economies.md` — **start here** for Lao PDR, Mongolia and the Russian Federation:
+  where each one stands, what was built, the three findings worth not rediscovering, and the
+  worklist. Written to be picked up cold.
+- `lao-mongolia-russia-recon.md` — the three new economies' portals read live, with what each one
+  actually serves, which existing adapter applies, and what blocks the ones that are blocked. The
+  full trace behind the `adapter: null` notes in `LAO.json`, `MNG.json` and `RUS.json`.
 
 Each document appears twice: the **original** (`.pdf`, `.xlsx`, `.docx`, `.csv`) and a **readable
 text extraction** (`.md`) with the same basename. Read the `.md`; open the original when the layout
@@ -45,6 +51,8 @@ matters, which for the spreadsheets it does.
 
 Two things were changed on the way across, and nothing else:
 
+-  — where Lao PDR, Mongolia and the Russian Federation stand, what was
+  built, the three findings that matter and the worklist. Start here before picking that work up.
 - **Workshop video is not here.** Four recordings totalling 1.9 GB, plus a 1.9 GB archive, were left
   behind. The slide decks that accompany them are here in full.
 - **Paths were shortened.** The source tree reached 226 characters, past what git handles on

@@ -126,3 +126,18 @@ describe('a page that announces a document is replaced by the document', () => {
     db.close();
   });
 });
+
+describe('a file the page links on a host that is gone', () => {
+  it('leaves the page read, and the host it lives on is not the page host', async () => {
+    const db = register(TITLE, PAGE);
+    const fetch = vi.fn(async (url: string) => {
+      if (url.startsWith('https://old.bnm.gov.my/')) throw new Error('getaddrinfo ENOTFOUND old.bnm.gov.my');
+      return served(url, `<html><head><title>${TITLE}</title></head><body><main>${body('An issuer shall keep the funds in trust.', 60)}
+        <a href="https://old.bnm.gov.my/files/e-money.pdf">download</a></main></body></html>`);
+    });
+    const results = await materialise(db, loadProfile('MYS'), { fetch } as never, { instrumentIds: [1] });
+    expect(results[0]!.outcome).toBe('parsed');
+    expect(storedUrl(db)).toBe(PAGE);
+    db.close();
+  });
+});

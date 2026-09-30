@@ -6,6 +6,7 @@
     "note": "A civil law system with socialist characteristics. Statute is the whole of the law: there is no binding precedent, and a court's reasoning in one case does not govern the next. The hierarchy is set out in the Legislation Law: the Constitution, then 法律 passed by the National People's Congress or its Standing Committee, then 行政法规 made by the State Council, then 部门规章 issued by ministries and 地方性法规 passed by provincial congresses. A law routinely delegates its operative detail downward, so the duty ESCAP scores is often not in the Act at all: the Cybersecurity Law's Article 33 leaves critical-information-infrastructure specifics to a State Council regulation, and reading only the law would find no requirement where one plainly exists."
   },
   "officialLanguages": ["zh"],
+  "demonym": ["中华人民共和国", "中国"],
   "languageNote": "Law is enacted and published in Simplified Chinese, and that text is the only authoritative one. No official English translation is published by the legislature; the English titles that circulate are conveniences, not law. Every citation from this economy therefore quotes Chinese, and a row that shows an English rendering is showing a translation and has to say so. Chinese is also written without spaces between words, which is a fact about search rather than about law: a query built by splitting on whitespace produces one enormous token and matches nothing.",
   "instrumentTypes": [
     {
@@ -95,7 +96,7 @@
       "pillars": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
       "adapter": null,
       "adapterConfig": {},
-      "notes": "Where 行政法规 are published — the tier the laws delegate their operative detail to, and therefore where much of what ESCAP actually scores lives. The Regulation on Protecting the Security of Critical Information Infrastructure, which Cybersecurity Law Article 33 delegates to, is here rather than on flk. PERMITTED: robots.txt read 2026-09-09 disallows only a list of specific legacy paths (/2016*/, some photo galleries and named articles) and advertises four search-engine sitemaps; /zhengce/ is not among the exclusions. Checked directly the same day, /zhengce/xxgk/ answers 200 with 226 KB of server-rendered HTML carrying real document links, so it is crawlable without a browser. No adapter written yet — this is the strongest candidate for the next one."
+      "notes": "Where 行政法规 are published, the tier the laws delegate their operative detail to. PERMITTED: robots.txt excludes only legacy paths, and /zhengce/xxgk/ serves server-rendered HTML. No adapter yet; the strongest candidate for the next one. Full trace: docs/china-portals.md."
     },
     {
       "name": "Cyberspace Administration of China",
@@ -105,7 +106,7 @@
       "pillars": [6, 7, 8, 10],
       "adapter": null,
       "adapterConfig": {},
-      "notes": "The central regulator for data and the internet, and the issuer of the measures that make the cross-border transfer regime operable — the security assessment, the standard contract and the 2024 provisions easing outbound flows. Pillar 6 cannot be answered from the laws alone, because the laws delegate the thresholds here. PERMITTED: robots.txt read 2026-09-09 disallows four specific paths (/zfz/, /wxb_zfz/, /wxzf/ and one video URL pattern) and nothing else."
+      "notes": "Issues the measures that make the cross-border data transfer regime operable, so pillar 6 needs it. PERMITTED: robots.txt excludes four specific paths only. Full trace: docs/china-portals.md."
     },
     {
       "name": "Ministry of Industry and Information Technology",
@@ -115,7 +116,7 @@
       "pillars": [5, 7, 10, 11, 12],
       "adapter": null,
       "adapterConfig": {},
-      "notes": "Telecommunications and ICT licensing, including the foreign-equity limits on value-added telecom services that pillar 5 turns on, and the ICP filing regime every site operating in China is subject to. NO STATED RESTRICTION: robots.txt returns 404 as at 2026-09-09, which expresses no exclusion — not the same as a grant of permission, so its own terms of use should be read before a crawl is pointed at it."
+      "notes": "Telecommunications and ICT licensing, including the value-added telecom equity limits pillar 5 turns on. NO STATED RESTRICTION: robots.txt is 404, which is not a grant of permission. Full trace: docs/china-portals.md."
     },
     {
       "name": "People's Bank of China",
@@ -125,7 +126,7 @@
       "pillars": [6, 7, 8],
       "adapter": null,
       "adapterConfig": {},
-      "notes": "Financial-sector data rules, including the localisation duties on personal financial information that are stricter than the general regime. A sectoral rule that is stricter than the horizontal law is exactly the distinction indicator 6.2 scores on. CLOSED: robots.txt read 2026-09-09 allows Baiduspider and disallows every other agent from the whole site, so this portal is not crawlable by us and its instruments have to be sourced another way."
+      "notes": "Financial-sector data rules stricter than the general regime, which 6.2 scores on. CLOSED: robots.txt admits only Baiduspider, so its instruments have to be sourced another way. Full trace: docs/china-portals.md."
     },
     {
       "name": "General Administration of Customs",
@@ -135,7 +136,7 @@
       "pillars": [1, 2, 3, 12],
       "adapter": null,
       "adapterConfig": {},
-      "notes": "Customs procedure and the single-window electronic declaration system the trade facilitation pillars turn on."
+      "notes": "Customs procedure and the single-window declaration system. Access not yet checked. Full trace: docs/china-portals.md."
     },
     {
       "name": "State Administration for Market Regulation",
@@ -145,7 +146,7 @@
       "pillars": [9, 11],
       "adapter": null,
       "adapterConfig": {},
-      "notes": "Competition enforcement under the Anti-Monopoly Law and the consumer protection regime, including the platform-economy rules relevant to pillar 9."
+      "notes": "Competition and consumer protection, including the platform-economy rules relevant to pillar 9. Access not yet checked. Full trace: docs/china-portals.md."
     },
     {
       "name": "China National Intellectual Property Administration",
@@ -155,7 +156,7 @@
       "pillars": [4],
       "adapter": null,
       "adapterConfig": {},
-      "notes": "Patents and trade marks. Copyright sits with the National Copyright Administration and trade secrets with the Anti-Unfair Competition Law, so pillar 4 is split across three bodies here rather than concentrated in one."
+      "notes": "Patents and trade marks; pillar 4 is split across three bodies here. Access not yet checked. Full trace: docs/china-portals.md."
     },
     {
       "name": "China Internet Network Information Center",
@@ -165,7 +166,7 @@
       "pillars": [12],
       "adapter": null,
       "adapterConfig": {},
-      "notes": "The .cn registry and its eligibility rules, which are the domain name requirements pillar 12 asks about. Operates under MIIT authority rather than independently, so its policies carry more weight than a private registry's."
+      "notes": "The .cn registry and its eligibility rules, the domain name requirements pillar 12 asks about. Access not yet checked. Full trace: docs/china-portals.md."
     }
   ],
   "commitments": [

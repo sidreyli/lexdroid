@@ -26,6 +26,19 @@ describe('the economy profile', () => {
     expect(indiaCode.adapterConfig['jurisdiction']).toBe('CENTRAL');
   });
 
+  // 30 September: decide/index.ts's PLACE_LOCAL had no stem for an economy's own name or
+  // nationality adjective ("российское", "Монгол"), so a provision naming the place only by naming
+  // the economy itself named no place by the shared word lists. The fix reads the economy's own
+  // `demonym` off its profile; every profiled economy declares one, even where its own script
+  // already carries proper-noun capitalisation and PLACE_NAME already covers it.
+  it('declares a demonym, a compilable one, for every profiled economy', () => {
+    for (const code of availableProfiles()) {
+      const p = loadProfile(code);
+      expect(p.demonym.length).toBeGreaterThan(0);
+      expect(() => new RegExp(p.demonym.join('|'), 'i')).not.toThrow();
+    }
+  });
+
   it('describes the Singapore legal system, its languages and its portals', () => {
     const p = loadProfile('SGP');
     expect(p.legalSystem.family).toBe('common-law');
@@ -80,27 +93,34 @@ describe('the economy profile', () => {
     db.close();
   });
 
-  it('keeps a null-adapter Thai portal note as a one-line summary with a doc pointer, not a re-inlined investigation', () => {
+  it('keeps every null-adapter portal note a one-line summary with a doc pointer, not a re-inlined investigation', () => {
     // The gap-documentation convention agreed for Thailand (see thailand-integration-plan.md's
     // "Conventions" note): full investigative detail -- chunk filenames, HTTP codes, confidence
     // ratings -- lives in the plan doc / adapter spec, not back in the profile JSON. This locks
     // that convention in so a future edit can't silently drift the notes field back to a wall of
     // prose the way earlier drafts of this profile did.
+    //
+    // Asked of every profile rather than of Thailand's, because a convention enforced on one
+    // economy is a convention the next economy is written without. Lao, Mongolia and Russia each
+    // declare portals no adapter reads, for reasons as specific as Thailand's, and each of those
+    // reasons belongs in a doc with the trace rather than in this file.
     const MAX_NULL_ADAPTER_NOTE_LENGTH = 600;
-    const p = loadProfile('THA');
-    const nullAdapterPortals = p.portals.filter((x) => x.adapter === null);
-    expect(nullAdapterPortals.length).toBeGreaterThan(0);
-    for (const portal of nullAdapterPortals) {
-      expect(portal.notes, `${portal.name} has no notes`).toBeTruthy();
-      expect(
-        portal.notes!.length,
-        `${portal.name}'s note is ${portal.notes!.length} chars -- investigative detail belongs in the plan doc, not here`,
-      ).toBeLessThanOrEqual(MAX_NULL_ADAPTER_NOTE_LENGTH);
-      expect(
-        /docs\/thailand-integration-plan\.md|docs\/thailand-ocs-adapter-spec\.md/.test(portal.notes!),
-        `${portal.name}'s note doesn't point to a doc with the full trace`,
-      ).toBe(true);
+    const offenders: string[] = [];
+    for (const code of availableProfiles()) {
+      for (const portal of loadProfile(code).portals.filter((x) => x.adapter === null)) {
+        const note = portal.notes ?? '';
+        if (!note) {
+          offenders.push(`${code} ${portal.name}: no notes, so nothing says why it is unread`);
+        } else if (note.length > MAX_NULL_ADAPTER_NOTE_LENGTH) {
+          offenders.push(
+            `${code} ${portal.name}: ${note.length} chars -- investigative detail belongs in the doc, not here`,
+          );
+        } else if (!/docs\/[a-z0-9-]+\.md/.test(note)) {
+          offenders.push(`${code} ${portal.name}: points at no doc holding the full trace`);
+        }
+      }
     }
+    expect(offenders).toEqual([]);
   });
 });
 
@@ -127,6 +147,24 @@ describe('building a query the index can actually match', () => {
     expect(q).toBe(
       '"ข้อ" OR "้อม" OR "อมู" OR "มูล" OR "ูลส" OR "ลส่" OR "ส่ว" OR "่วน" OR "วนบ" OR "นบุ" OR "บุค" OR "ุคค" OR "คคล"',
     );
+  });
+
+  it('expands a spaceless Lao run too, which the Thai fix omitted', () => {
+    // Lao is written without word spaces exactly as Thai is, and was left out of SPACELESS when
+    // that was written for Chinese and Thai. The omission is silent in the worst way: the whole
+    // phrase reaches FTS5 as one token, the trigram tokenizer can satisfy it only by an exact
+    // contiguous match, and Lao lexical search returns nothing -- indistinguishable from a
+    // genuine absence of results, on the one economy of the three new ones whose corpus is Lao.
+    // "ຂໍ້ມູນສ່ວນບຸກຄົນ" is personal data, the subject of both mandatory pillars.
+    const q = ftsQuery('ຂໍ້ມູນສ່ວນບຸກຄົນ');
+    expect(q).toBeTruthy();
+    expect(q!.split(' OR ').length).toBe(14);
+    expect(q!.startsWith('"ຂໍ້" OR "ໍ້ມ" OR "້ມູ" OR "ມູນ"')).toBe(true);
+    expect(q).not.toContain('"ຂໍ້ມູນສ່ວນບຸກຄົນ"');
+  });
+
+  it('leaves a spaced-script query untouched, so the Lao change costs Latin and Cyrillic nothing', () => {
+    expect(ftsQuery('personal data transfer')).toBe('"personal" OR "data" OR "transfer"');
   });
 
   it('keeps a Thai combining mark attached to the letter before it, not as a token boundary', () => {
@@ -246,6 +284,18 @@ describe('canonicalizeThai on its own (unit-level, no database involved)', () =>
     // shorten unrelated text and reintroduce the exact offset-drift bug this fix exists to prevent.
     const alreadyComposed = 'น้ำมันเชื้อเพลิง'; // "fuel oil" -- precomposed SARA AM only
     expect(canonicalizeThai(alreadyComposed)).toBe(alreadyComposed);
+  });
+
+  it('folds the Lao two-point AM the same way, so a Lao query finds OCR text written either way', () => {
+    // "ການນໍາເຂົ້າ" (import) as Lao OCR writes it, against the single-point form the query uses.
+    const ocr = 'ການນໍາເຂົ້າ ແລະ ການກໍານົດ';
+    expect(canonicalizeThai(ocr)).toBe('ການນຳເຂົ້າ ແລະ ການກຳນົດ');
+    expect(canonicalizeThai('ການນຳເຂົ້າ')).toBe('ການນຳເຂົ້າ');
+  });
+
+  it('leaves Latin and Cyrillic text untouched by the Lao fold', () => {
+    const other = 'Статья 18. Personal data -- хувийн мэдээлэл';
+    expect(canonicalizeThai(other)).toBe(other);
   });
 });
 

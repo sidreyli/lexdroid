@@ -366,6 +366,8 @@ export const THAI: Readonly<Record<string, string>> = {
     "ข้อกำหนดให้บันทึก ตรวจสอบ หรือยืนยันตัวตนของผู้ที่ได้รับซิมการ์ดหรือบริการโทรศัพท์เคลื่อนที่ ก่อนเปิดให้บริการ",
   "a service provider is required to register its end-users and shall not provide a prepaid mobile service to an end-user who fails to register":
     "ผู้ให้บริการต้องลงทะเบียนผู้ใช้บริการ และต้องไม่ให้บริการโทรศัพท์เคลื่อนที่แบบเติมเงินแก่ผู้ใช้บริการที่ไม่ลงทะเบียน",
+  "a service provider must keep the data of its users needed to identify each user":
+    "ผู้ให้บริการต้องเก็บรักษาข้อมูลของผู้ใช้บริการเพื่อให้สามารถระบุตัวผู้ใช้บริการ",
   "User identity requirement to connect to the Internet or access online services":
     "ข้อกำหนดการพิสูจน์ตัวตนของผู้ใช้บริการเพื่อเชื่อมต่ออินเทอร์เน็ตหรือเข้าถึงบริการออนไลน์",
   "Used identity requirement for SIM registration":

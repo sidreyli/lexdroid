@@ -221,6 +221,80 @@ describe('investment screening, as far as law shows it', () => {
   it('declares the top band out of reach rather than approximating it', () => {
     expect(UNREACHABLE_BANDS['3.4']?.[1]).toMatch(/decided case/i);
   });
+
+  // 3.4's own exception: "Anti-trust measures related to M&A are not considered a restriction,
+  // unless discriminatory." An ordinary merger-clearance duty under a competition act, applying
+  // alike to any acquirer, is not a screening mechanism just because it sits beside genuine ones.
+  const competitionAct = (n: number): Evidence => ({
+    ...ev(
+      '3.4',
+      'investment-screening',
+      {
+        dutyBearer: 'a business operator',
+        quote: 'a business operator that will carry out a merger that may create a monopoly must be authorised by the Committee',
+      },
+      n,
+    ),
+    instrumentTitle: 'Trade Competition Act',
+  });
+
+  it('does not count an ordinary merger-clearance duty under a competition act', () => {
+    expect(score('3.4', [competitionAct(1)])).toBe(0);
+  });
+
+  it('does not let a competition act inflate a real mechanism into two', () => {
+    expect(score('3.4', [mechanism(1), competitionAct(2)])).toBe(0.25);
+  });
+
+  it('still counts a competition act review that treats a foreign acquirer differently from a local one', () => {
+    const discriminatory: Evidence = {
+      ...ev('3.4', 'investment-screening', {
+        quote: 'a merger involving a foreign acquirer requires additional clearance not required of a local acquirer',
+      }, 1),
+      instrumentTitle: 'Trade Competition Act',
+    };
+    expect(score('3.4', [discriminatory])).toBe(0.25);
+  });
+
+  // Mongolia's own merger-clearance procedure names the same exception in its own language:
+  // "ЖУРАМ БАТЛАХ ТУХАЙ (өрсөлдөгчийн хувьцааг худалдан авахад дүгнэлт гаргах)" is "Procedure for
+  // issuing an opinion on acquiring a competitor's shares", the identical shape as Thailand's and
+  // Singapore's Competition Acts, applying alike to any acquirer.
+  const mongolianCompetitionAct = (n: number): Evidence => ({
+    ...ev(
+      '3.4',
+      'investment-screening',
+      { dutyBearer: 'Төрийн захиргааны байгууллага', quote: 'хувьцаа худалдан авахыг' },
+      n,
+    ),
+    instrumentTitle: 'ЖУРАМ БАТЛАХ ТУХАЙ (өрсөлдөгчийн хувьцааг худалдан авахад дүгнэлт гаргах)',
+  });
+
+  it('does not count an ordinary merger-clearance duty under a Mongolian competition procedure', () => {
+    expect(score('3.4', [mongolianCompetitionAct(1)])).toBe(0);
+  });
+
+  // Russia's own antimonopoly law names the same exception in its own language: Федеральный закон
+  // № 135-ФЗ "О защите конкуренции" ("On the protection of competition") requires the antimonopoly
+  // authority's pre-approval of transactions with shares or assets of a financial organisation --
+  // the identical shape as Thailand's, Singapore's and Mongolia's ordinary merger-clearance regimes,
+  // applying alike to any acquirer.
+  const russianCompetitionAct = (n: number): Evidence => ({
+    ...ev(
+      '3.4',
+      'investment-screening',
+      {
+        dutyBearer: 'финансовая организация',
+        quote: 'с предварительного согласия антимонопольного органа осуществляются следующие сделки с акциями (долями), активами финансовой организации',
+      },
+      n,
+    ),
+    instrumentTitle: 'Федеральный закон от 26.07.2006 № 135-ФЗ "О защите конкуренции"',
+  });
+
+  it('does not count an ordinary merger-clearance duty under Russia\'s own competition law', () => {
+    expect(score('3.4', [russianCompetitionAct(1)])).toBe(0);
+  });
 });
 
 describe('blocking and filtering', () => {
@@ -231,6 +305,106 @@ describe('blocking and filtering', () => {
     expect(score('9.1', [measure('content-blocking')])).toBe(1);
     expect(score('9.1', [measure('content-filtering')])).toBe(0.5);
     expect(score('9.1', [])).toBe(0);
+  });
+
+  // 9.1's own gloss excludes political and election content, criminal content such as child abuse
+  // material, and age-restricted content -- and until now nothing enforced it. Mongolia's own basis
+  // named the exception in its own language: a Criminal Procedure Code network-restriction order, an
+  // election-campaign block and a Child Protection Act block, none an ordinary commercial-content
+  // measure.
+  const titled = (title: string, over: Partial<Finding> = {}): Evidence => ({
+    ...ev('9.1', 'content-blocking', { definingWords: 'access', dutyForce: 'permits', imposingWords: null, ...over }),
+    instrumentTitle: title,
+  });
+
+  it('does not count a block ordered under a criminal procedure code', () => {
+    expect(score('9.1', [titled('Criminal Procedure Code')])).toBe(0);
+  });
+
+  it('does not count a block ordered under Mongolia\'s own criminal procedure law', () => {
+    expect(score('9.1', [titled('ЭРҮҮГИЙН ХЭРЭГ ХЯНАН ШИЙДВЭРЛЭХ ТУХАЙ /Шинэчилсэн найруулга/')])).toBe(0);
+  });
+
+  it('does not count a block ordered under an election law', () => {
+    expect(score('9.1', [titled('Elections Act')])).toBe(0);
+  });
+
+  it('does not count a block ordered under Mongolia\'s own election-campaign procedure', () => {
+    expect(score('9.1', [titled('МОНГОЛ УЛСЫН ИХ ХУРЛЫН СОНГУУЛИЙН ТУХАЙ')])).toBe(0);
+  });
+
+  it('does not count a block or filter naming a child, in English or Mongolian', () => {
+    expect(score('9.1', [titled('Child Protection Act')])).toBe(0);
+    expect(score('9.1', [titled('ХҮҮХЭД ХАМГААЛЛЫН ТУХАЙ /Шинэчилсэн найруулга/')])).toBe(0);
+  });
+
+  it('does not count a block or filter whose own quote names a child, an age restriction or "18+"', () => {
+    expect(score('9.1', [titled('Act 1', { quote: 'must filter content harmful to children' })])).toBe(0);
+    expect(score('9.1', [titled('Act 1', { quote: '18+ контентын шүүлтүүртэй байхаар' })])).toBe(0);
+  });
+
+  it('still counts an ordinary block that names none of the three exclusions', () => {
+    expect(score('9.1', [titled('Electronic Commerce Act', { quote: 'the Authority may direct a licensee to disable access to a website' })])).toBe(1);
+  });
+
+  // The reason political/criminal are title-only rather than quote-tested: neither word is safe to
+  // ask of an ordinary sentence. "Political subdivision" names which government body holds a power,
+  // and a criminal penalty is how an ordinary blocking duty is enforced -- neither is the content
+  // this indicator excludes.
+  it('still counts a block whose quote names a political subdivision or a criminal penalty', () => {
+    expect(score('9.1', [titled('Act 1', { quote: 'the political subdivision responsible for internet services may direct a site to be blocked' })])).toBe(1);
+    expect(score('9.1', [titled('Act 1', { quote: 'a provider that fails to block the site commits a criminal offence' })])).toBe(1);
+  });
+});
+
+// 2.3's own gloss: a substantive bidding condition is "a local content share, a local employment
+// target or another performance undertaking", not the ordinary eligibility grounds every
+// procurement law states for every tender regardless of nationality. Four shapes confirmed against
+// the benchmark's own basis, none of them India's genuine local-content clause.
+describe('2.3, a bidding condition that is a substantive one', () => {
+  const bc = (n: number, instrumentTitle: string, defining: string, quote: string): Evidence => ({
+    ...ev('2.3', 'bidding-condition', { definingWords: defining, quote, subjectWords: 'the tender' }, n),
+    instrumentTitle,
+  });
+  const registration = (n: number) =>
+    bc(n, 'Government Procurement Act', 'unless he is registered under this Act', 'No supplier or contractor shall participate in a Government procurement unless he is registered under this Act.');
+  const mongolianCertificate = (n: number) =>
+    bc(n, 'ЖУРАМ БАТЛАХ ТУХАЙ', 'хуулийн этгээдийн гэрчилгээтэй байх', 'аж ахуйн нэгж, төрийн бус байгууллага бол хуулийн этгээдийн гэрчилгээтэй байх');
+  const documentConformity = (n: number) =>
+    bc(n, 'Постановление № 1215', 'несоответствие документов и информации требованиям', 'несоответствие документов и информации требованиям, установленным документацией о закупке');
+  const blacklist = (n: number) =>
+    bc(n, 'Постановление № 2571', 'отсутствии ... в реестре недобросовестных поставщиков', 'заказчик обязан установить требование об отсутствии в реестре недобросовестных поставщиков (подрядчиков, исполнителей)');
+  const bidSecurity = (n: number) =>
+    bc(n, '223-ФЗ', 'в качестве обеспечения заявки', 'непоступление денежных средств в качестве обеспечения заявки');
+  const localContent = (n: number, instrumentTitle = 'Public Procurement (Preference to Make in India) Order') =>
+    bc(n, instrumentTitle, 'local content', 'procuring entities to obtain from bidders the cost of such locally-sourced imported items');
+
+  it('does not count a registration or certificate requirement, in English or Mongolian', () => {
+    expect(score('2.3', [registration(1)])).toBe(0);
+    expect(score('2.3', [mongolianCertificate(1)])).toBe(0);
+  });
+
+  it('does not count a document- or bid-format conformity check', () => {
+    expect(score('2.3', [documentConformity(1)])).toBe(0);
+  });
+
+  it('does not count a supplier-blacklist check or a bid-security deposit', () => {
+    expect(score('2.3', [blacklist(1)])).toBe(0);
+    expect(score('2.3', [bidSecurity(1)])).toBe(0);
+  });
+
+  it('still counts a genuine local-content condition', () => {
+    expect(score('2.3', [localContent(1)])).toBe(0.5);
+  });
+
+  it('does not let near-duplicate eligibility clauses inflate one genuine condition into two', () => {
+    const evidence = [documentConformity(1), documentConformity(2), documentConformity(3), blacklist(4), bidSecurity(5), localContent(6)];
+    expect(score('2.3', evidence)).toBe(0.5);
+  });
+
+  it('still reaches the top band on two genuinely distinct substantive conditions', () => {
+    const secondMechanism = bc(2, 'Local Industry Participation Act', 'local employment', 'a tenderer must employ a target share of local staff');
+    expect(score('2.3', [localContent(1), secondMechanism])).toBe(1);
   });
 });
 

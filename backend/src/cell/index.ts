@@ -11,11 +11,13 @@
  * record it returns is what a reviewer sees: which provisions were looked at, what each was found
  * to say, which of those the score rests on, and which were found and deliberately not counted.
  */
+import { tariffCodesOf } from '../rubric/ict-goods.js';
+import { TITLE_CARRIES_DOMAIN } from '../rubric/measures.js';
 import type { Db } from '../db/index.js';
 import type { Emit } from '../run/events.js';
 import { citationUrl } from '../export/index.js';
 import { enginePool } from '../engines/pool.js';
-import { amendsAnotherAct, citesADefinition, figureReplaceable, inheritsAPower, insertsTheQuotedWords } from '../parse/identity.js';
+import { amendsAnotherAct, citesADefinition, definitionIn, figureReplaceable, inheritsAPower, insertsTheQuotedWords } from '../parse/identity.js';
 import { loadProfile } from '../profile/index.js';
 import type { InstrumentType } from '../profile/types.js';
 import type { Indicator } from '../rubric/types.js';
@@ -229,6 +231,42 @@ export function prescribedFor(
   return { prescribed: { ...rest, citation: citationUrl(docUrl, anchor, { page, mediaType }) } };
 }
 
+/**
+ * What the instrument itself says the party bound or the subject is, where it defines either and
+ * the measure's domain may be carried by the document. See TITLE_CARRIES_DOMAIN: a title names the
+ * topic once and so does a definition, and the provisions in between say "the service provider".
+ * Shared with the rebuild in ../decide/record.ts, so the two cannot differ.
+ */
+export function definedFor(
+  db: Db,
+  finding: { measure?: string | null; dutyBearer?: string | null; subjectWords?: string | null },
+  instrumentId: number,
+): Pick<Evidence, 'definedAs'> {
+  if (!finding.measure || !TITLE_CARRIES_DOMAIN.has(finding.measure)) return {};
+  const terms = [finding.dutyBearer, finding.subjectWords].filter((t): t is string => !!t && t.trim().length > 1);
+  if (terms.length === 0) return {};
+  const texts = (
+    db
+      .prepare(
+        `SELECT s.text FROM section s JOIN document d ON d.id = s.document_id
+          WHERE d.instrument_id = ? AND (s.text LIKE '%หมายความ%' OR s.text LIKE '%means%' OR s.text LIKE '%includes%')
+          ORDER BY s.id`,
+      )
+      .all(instrumentId) as { text: string }[]
+  ).map((r) => r.text);
+  const found = new Set<string>();
+  for (const term of terms) {
+    for (const text of texts) {
+      const words = definitionIn(text, term);
+      if (words) {
+        found.add(words);
+        break;
+      }
+    }
+  }
+  return found.size ? { definedAs: [...found].join(' ') } : {};
+}
+
 function citationFor(row: {
   source_url: string;
   anchor: string | null;
@@ -420,6 +458,8 @@ export async function answerPillar(
         definesATerm: citesADefinition(row.text, finding.definingWords ?? finding.quote),
         inheritsAPower: inheritsAPower(row.text, finding.quote),
         sectionLanguage: row.language,
+        ...tariffCodesOf(row.text),
+        ...definedFor(db, finding, row.instrument_id),
         instrumentKind: row.instrument_kind,
         ...(row.repealed ? { sectionRepealed: true } : {}),
         ...(row.instrument_status ? { instrumentStatus: row.instrument_status } : {}),
@@ -933,3 +973,4 @@ function sectionRows(db: Db, ids: number[]): SectionRow[] {
     )
     .all(...ids) as SectionRow[];
 }
+

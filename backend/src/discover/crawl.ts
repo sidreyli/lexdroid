@@ -10,6 +10,8 @@
  * opaque path still writes its name in the anchor, and the anchor is what a citation matches.
  */
 import * as cheerio from 'cheerio';
+import type { Element } from 'domhandler';
+import { decodeBody } from '../fetch/decode.js';
 import type { Adapter, DiscoveredInstrument, DiscoverContext } from './types.js';
 import { instrumentTitle } from './titles.js';
 
@@ -37,7 +39,7 @@ const MAX_DEPTH = 3;
  * /rules, /regulations, /guidelines and /licensing on all six sites the crawl adapter reads.
  */
 const LEADS_TO_LAW =
-  /\b(?:legislat\w*|legal|regulat\w*|licen[cs]\w*|regist\w*|instruments?|gazettes?|statut\w*|codes?|guidelines?|standards?|acts?|rules?|orders?|determinations?|directions?|directives?|circulars?|notices?|polic(?:y|ies)|complian\w*|enforce\w*)\b/i;
+  /\b(?:legislat\w*|legal|regulat\w*|licen[cs]\w*|regist\w*|instruments?|documents?|gazettes?|statut\w*|codes?|guidelines?|standards?|acts?|rules?|orders?|determinations?|directions?|directives?|circulars?|notices?|polic(?:y|ies)|complian\w*|enforce\w*)\b/i;
 /** And the parts of a site that never do, however many links they carry. */
 const LEADS_AWAY =
   /\b(?:news|media|press|events?|careers?|vacanc(?:y|ies)|contact|about-us|search|login|subscribe|rss|calendar|galler(?:y|ies)|videos?|podcasts?)\b/i;
@@ -117,6 +119,50 @@ function namedByOf(portal: DiscoverContext['portal']): string[] {
   return Array.isArray(declared) ? declared.filter((n): n is string => typeof n === 'string') : [];
 }
 
+/**
+ * A URL an instrument of the tier this profile holds actually sits at.
+ *
+ * Opt-in, and absent for every portal that publishes one tier -- which is most of them, and why
+ * this is not a new rule. Refused at load rather than at the first link, so a pattern that does
+ * not compile is a profile error and not a silently empty register.
+ */
+function tierFilterOf(portal: DiscoverContext['portal']): RegExp | null {
+  const pattern = portal.adapterConfig?.['urlMustMatch'];
+  if (typeof pattern !== 'string') return null;
+  try {
+    return new RegExp(pattern);
+  } catch {
+    throw new Error(
+      `${portal.name}'s adapterConfig.urlMustMatch is not a valid regular expression: ${pattern}`,
+    );
+  }
+}
+
+/**
+ * The name a table gives a link whose own text is not one.
+ *
+ * A regulator's register is often a table: number, name, date, and a link captioned with the
+ * decision's code -- "3-201-1.2 /2015.12.30/", "2017-16 тоот", "Журам". The name is in the row, not
+ * in the anchor, and reading anchors alone the Communications Regulatory Commission of Mongolia's
+ * register of approved procedures named nothing. A cell of the row the link sits in names it, and
+ * only a cell: the row as a whole runs the name into its dates and amendment notes.
+ */
+function namedByRow(
+  $: cheerio.CheerioAPI,
+  el: Element,
+  namedBy: readonly string[],
+  vocabulary: DiscoverContext['vocabulary'],
+): ReturnType<typeof instrumentTitle> {
+  const row = $(el).closest('tr');
+  if (row.length === 0) return null;
+  for (const cell of row.children('td, th').toArray()) {
+    if ($(cell).find(el).length > 0) continue;
+    const named = instrumentTitle($(cell).text().replace(/\s+/g, ' ').trim(), namedBy, vocabulary);
+    if (named) return named;
+  }
+  return null;
+}
+
 export const crawlAdapter: Adapter = {
   name: 'crawl',
   async discover(ctx: DiscoverContext): Promise<DiscoveredInstrument[]> {
@@ -128,6 +174,7 @@ export const crawlAdapter: Adapter = {
     // source shares. A registry's binding rules are policies and a treasury's are instructions;
     // see `namedByDeclared` for why that has to be said per source and cannot be a word list.
     const namedBy = namedByOf(portal);
+    const mustMatch = tierFilterOf(portal);
     // One walk per starting point, each with the page budget to itself.
     //
     // The budget used to be the walk's, shared by every seed, and a shared budget makes a seed
@@ -151,7 +198,7 @@ export const crawlAdapter: Adapter = {
         try {
           const res = await fetcher.fetch(url);
           if (!/html/i.test(res.mediaType)) continue;
-          html = res.body.toString('utf8');
+          html = decodeBody(res);
         } catch {
           continue;
         }
@@ -186,8 +233,24 @@ export const crawlAdapter: Adapter = {
           target.hash = '';
           const at = target.toString();
 
-          const named = instrumentTitle(text, namedBy);
+          const named = instrumentTitle(text, namedBy, ctx.vocabulary) ?? namedByRow($, el, namedBy, ctx.vocabulary);
           if (named && !found.has(at)) {
+            // A portal that publishes more than one tier of law needs the tier decided here
+            // rather than downstream, because a register is what every later stage believes the
+            // corpus to be. publication.pravo.gov.ru publishes federal law beside the law of
+            // every constituent entity, and the tier is in the document's own id: 0001 federal,
+            // 0300 Buryatia, 7000 Tomsk. Without this, 27 of the 114 instruments registered for
+            // Russia were subjects' law that RUS.json declares not held -- the error India's
+            // Central-only filter exists to prevent. It also refuses the listing pages, which
+            // carry an instrument-shaped heading and are not instruments.
+            if (mustMatch && !mustMatch.test(at)) {
+              ctx.setAside({
+                subject: named.title.slice(0, 120),
+                reason: 'outside-the-tier-this-profile-holds',
+                detail: at,
+              });
+              return;
+            }
             found.set(at, {
               title: named.title,
               url: at,

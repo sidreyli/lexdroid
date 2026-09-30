@@ -138,6 +138,12 @@ differently in different economies:
 | THA 12.4.1 | 1 | 0 | The Bank of Thailand's e-money rules require customer float to be deposited in a separate account at a Thai commercial bank. ESCAP scores India's identical escrow rule 1. |
 | SGP 12.4.7 | 1 | 0 | The Payment Services Act forbids an account issuer to let users withdraw e-money and exchange it for cash, which is a restriction on paying by e-money. |
 
+One more on 28 September, after the pillar 8 re-read (run `b4a8abcc`) moved it off the PDPA:
+
+| Cell | Ours | ESCAP | Why ours stands |
+| :-- | --: | --: | :-- |
+| THA 8.4 | 1 | 0 | Computer Crime Act s.20: once a court orders computer data suppressed or removed, the official may order the service provider to do it, and s.27 fines a provider that does not comply, daily until it does. That is a duty to remove content, the same as India's IT Act s.69A, which ESCAP scores 1. The run leads with the Copyright Act s.43/5 takedown condition; s.20 is also read as a removal duty in the same cell. |
+
 ## Not answerable from legislation
 
 **5.3 in all five economies** (government shareholding in telecom operators) is left unresolved on
@@ -156,14 +162,12 @@ is the highest band legislation can reach.
 | AUS 1.4 | 0 | 0.5 | ESCAP names no anti-dumping measure on an ICT good, only the Customs Act. |
 | AUS 2.1 | 0 | 0.5 | ESCAP's exclusions (TikTok on government devices, the 5G vendor guidance) are directions and guidance, not "legislative measures" as the band requires. |
 | MYS 2.1 | 0 | 1 | ESCAP scores the Treasury Instructions. The Government Procurement Act 2026 postdates them, and we read it and found no exclusion. |
-| SGP 6.2 | 1 | 0.5 | Two Companies Act record-keeping duties (s.199, s.379) as "more than one measure". Defensible either way. |
 | IND 12.4.4 | 1 | 0 | PSS Act s.4 requires authorisation. The band asks for *restrictive conditions*, and the quote shows none. |
 | IND 2.2 | 0 | 1 | ESCAP scores the OSS adoption policy (a policy, not law) as a source-code surrender condition. Our witness (Official Secrets Act) is wrong regardless. |
 | IND 3.2 | 1 | 0 | Make in India Order cl. 13A requires foreign firms to form a JV with an Indian company to bid. It is real, but arguably pillar 2 (procurement), not 3 (investment). |
 | IND 4.1 | — | 0 | India has no trade-secrets statute; protection is contract and equity. ESCAP calls that effective (0); 0.5 is at least as arguable. |
 | IND 4.9 | 0 | 1 | IT Act s.69 is a national-security decryption power, which the band text puts at 0.5, not 1. |
 | THA 12.3 | 0 | 1 | ESCAP's only 1 row is the digital-ID licensing decree, which is not a licence to sell online. Its other four rows score 0. |
-| THA 8.4 | 1 | 0 | The Copyright Act's notice-and-takedown condition arguably is a removal duty, but our lead citation (PDPA erasure) is wrong. |
 
 ## We are wrong
 

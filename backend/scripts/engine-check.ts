@@ -25,7 +25,8 @@
 import { loadEnv } from '../src/env.js';
 import { loadEngines, type Engine } from '../src/engines/registry.js';
 import { hostedGenerate } from '../src/engines/hosted.js';
-import { generate } from '../src/engines/ollama.js';
+import { generate, MAX_OUTPUT_TOKENS } from '../src/engines/ollama.js';
+import { quoteIsInSection } from '../src/read/index.js';
 
 // Before anything reads process.env: the hosted key lives in .env, never in engines.json.
 loadEnv();
@@ -35,11 +36,96 @@ function arg(name: string): string | null {
   return i >= 0 ? (process.argv[i + 1] ?? null) : null;
 }
 
-/** A provision with one unmistakable duty in it, so a wrong answer is obviously wrong. */
-const PROVISION =
-  'No person shall carry on the business of providing a payment service in Singapore unless that ' +
-  'person holds a licence granted by the Authority under section 6, and every licensee shall ' +
-  'retain a record of each payment transaction for a period of not less than 5 years.';
+/**
+ * A provision with one unmistakable duty in it, so a wrong answer is obviously wrong -- asked
+ * once in English and once in Russian.
+ *
+ * The second case exists because the reading stage had never been shown a provision that was not
+ * in English, and every non-English economy's cells depend on it being able to. The retrieval
+ * side of that is solved separately -- the index reads Lao, the title grammar reads the economy's
+ * own words -- but none of it produces a cell if the engine will not quote Cyrillic or Lao back
+ * character-for-character. An engine that reads English perfectly and paraphrases Russian is
+ * worse than useless here: `verify` relocates every quote in the stored source, so a paraphrase
+ * becomes an unlocatable finding at 0.50 rather than a citation.
+ *
+ * The Russian provision writes its number as a word (`пяти`) rather than a digit, which is how
+ * Russian legal drafting states a period and is the harder case. Both provisions are written for
+ * this check rather than quoted from a real statute: the point is a duty whose right answer is
+ * not in doubt, and a real quotation nobody can verify offline would undercut that.
+ */
+interface ProvisionCase {
+  label: string;
+  language: string;
+  provision: string;
+  ask: string[];
+  /** The number the provision's own words state. */
+  years: number;
+  /** Who the provision binds, in that language. */
+  bearer: RegExp;
+}
+
+const CASES: ProvisionCase[] = [
+  {
+    label: 'English',
+    language: 'en',
+    provision:
+      'No person shall carry on the business of providing a payment service in Singapore unless that ' +
+      'person holds a licence granted by the Authority under section 6, and every licensee shall ' +
+      'retain a record of each payment transaction for a period of not less than 5 years.',
+    ask: [
+      'Who does this provision bind? Copy the words stating how long records must be kept, exactly as',
+      'they appear above, and give the number of years those words state.',
+    ],
+    years: 5,
+    bearer: /licensee|person|provider/i,
+  },
+  {
+    label: 'Russian',
+    language: 'ru',
+    provision:
+      'Оператор не вправе осуществлять обработку персональных данных без лицензии, выданной ' +
+      'уполномоченным органом, и обязан обеспечивать хранение записи о каждой операции с ' +
+      'персональными данными в течение срока не менее пяти лет.',
+    ask: [
+      'Who does this provision bind? Copy the words stating how long records must be kept, exactly as',
+      'they appear above and in the same language as the provision, and give the number of years those',
+      'words state. Do not translate the words you copy.',
+    ],
+    years: 5,
+    bearer: /оператор|лицензиат|лицо/i,
+  },
+  // Mongolian and Lao for the same reason as Russian, and each is harder in its own way: Mongolian
+  // Cyrillic has letters Russian lacks (ү, ө), and Lao writes no space between words, so a copied
+  // run of it has nothing to align on but the characters.
+  {
+    label: 'Mongolian',
+    language: 'mn',
+    provision:
+      'Үйлчилгээ үзүүлэгч нь тусгай зөвшөөрөлгүйгээр хувь хүний мэдээлэл боловсруулахыг хориглох ба ' +
+      'гүйлгээ бүрийн бүртгэлийг таваас доошгүй жилийн хугацаанд хадгална.',
+    ask: [
+      'Who does this provision bind? Copy the words stating how long records must be kept, exactly as',
+      'they appear above and in the same language as the provision, and give the number of years those',
+      'words state. Do not translate the words you copy.',
+    ],
+    years: 5,
+    bearer: /үйлчилгээ үзүүлэгч/i,
+  },
+  {
+    label: 'Lao',
+    language: 'lo',
+    provision:
+      'ຜູ້ໃຫ້ບໍລິການ ຕ້ອງໄດ້ຮັບອະນຸຍາດ ກ່ອນການປະມວນຜົນຂໍ້ມູນສ່ວນບຸກຄົນ ແລະ ຕ້ອງເກັບຮັກສາບັນທຶກ ' +
+      'ຂອງແຕ່ລະທຸລະກຳ ໄວ້ຢ່າງໜ້ອຍ ຫ້າ ປີ.',
+    ask: [
+      'Who does this provision bind? Copy the words stating how long records must be kept, exactly as',
+      'they appear above and in the same language as the provision, and give the number of years those',
+      'words state. Do not translate the words you copy.',
+    ],
+    years: 5,
+    bearer: /ຜູ້ໃຫ້ບໍລິການ/,
+  },
+];
 
 const SCHEMA = {
   type: 'object',
@@ -61,15 +147,8 @@ const SYSTEM =
   'You read one legal provision and report what it requires. You copy the provision\'s own words ' +
   'and never summarise. You never assign a score.';
 
-const PROMPT = [
-  'Provision text:',
-  '"""',
-  PROVISION,
-  '"""',
-  '',
-  'Who does this provision bind? Copy the words stating how long records must be kept, exactly as',
-  'they appear above, and give the number of years those words state.',
-].join('\n');
+const promptFor = (c: ProvisionCase): string =>
+  ['Provision text:', '"""', c.provision, '"""', '', ...c.ask].join('\n');
 
 async function check(engine: Engine): Promise<boolean> {
   console.log(`\n${engine.label}: ${engine.provider} / ${engine.model}`);
@@ -90,51 +169,68 @@ async function check(engine: Engine): Promise<boolean> {
     process.env['OLLAMA_HOST'] = engine.hosts[0] ?? 'http://127.0.0.1:11434';
   }
 
-  const started = Date.now();
-  let text: string;
-  try {
-    // Through the same entry point the pipeline uses, not a bespoke request: an engine that works
-    // only when checked by its own checker has not been checked.
-    const answer = engine.hosted
-      ? await hostedGenerate(PROMPT, SYSTEM, { schema: SCHEMA, maxOutputTokens: 512 })
-      : await generate(PROMPT, SYSTEM, { schema: SCHEMA, model: engine.model, maxOutputTokens: 512 });
-    text = answer.text;
-    console.log(`  reachable    yes, in ${((Date.now() - started) / 1000).toFixed(1)}s`);
-  } catch (err) {
-    console.log(`  reachable    NO -- ${err instanceof Error ? err.message : String(err)}`);
-    return false;
+  let allPassed = true;
+  for (const c of CASES) {
+    console.log(`\n  -- ${c.label} provision (${c.language})`);
+    const started = Date.now();
+    let text: string;
+    try {
+      // Through the same entry point the pipeline uses, not a bespoke request: an engine that
+      // works only when checked by its own checker has not been checked.
+      const answer = engine.hosted
+        ? await hostedGenerate(promptFor(c), SYSTEM, { schema: SCHEMA, maxOutputTokens: MAX_OUTPUT_TOKENS })
+        : await generate(promptFor(c), SYSTEM, { schema: SCHEMA, model: engine.model, maxOutputTokens: MAX_OUTPUT_TOKENS });
+      text = answer.text;
+      console.log(`  reachable    yes, in ${((Date.now() - started) / 1000).toFixed(1)}s`);
+    } catch (err) {
+      console.log(`  reachable    NO -- ${err instanceof Error ? err.message : String(err)}`);
+      return false;
+    }
+
+    let parsed: { dutyBearer?: unknown; periodWords?: unknown; retentionYears?: unknown };
+    try {
+      parsed = JSON.parse(text) as typeof parsed;
+    } catch {
+      console.log(`  structured   NO -- did not return JSON: ${text.slice(0, 120)}`);
+      allPassed = false;
+      continue;
+    }
+    const shaped =
+      typeof parsed.dutyBearer === 'string' &&
+      (typeof parsed.periodWords === 'string' || parsed.periodWords === null) &&
+      (typeof parsed.retentionYears === 'number' || parsed.retentionYears === null);
+    console.log(`  structured   ${shaped ? 'yes, matched the declared schema' : 'NO -- JSON, but not the declared shape'}`);
+    if (!shaped) {
+      allPassed = false;
+      continue;
+    }
+
+    // The substantive checks. Five years is in the provision and nowhere else, so an engine that
+    // reads the page and produces a plausible number fails here having passed everything above.
+    const quote = typeof parsed.periodWords === 'string' ? parsed.periodWords : null;
+    // The pipeline's own check, so ຳ spelt either way and guillemets count as they will in a run.
+    const quoteInSource = quote !== null && quoteIsInSection(quote, c.provision, 10);
+    const rightYears = parsed.retentionYears === c.years;
+    const rightBearer = c.bearer.test(String(parsed.dutyBearer));
+
+    console.log(`  quoted       ${quoteInSource ? 'words are in the provision' : `NOT IN SOURCE: "${quote ?? 'none given'}"`}`);
+    if (quoteInSource && c.language !== 'en') {
+      // The point of the non-English case: a quote that came back translated is not a quotation,
+      // and `verify` would fail to relocate it in the stored source.
+      console.log('               and in the provision\'s own language, not translated');
+    }
+    console.log(
+      `  legal        retention ${rightYears ? `read correctly as ${c.years} years` : `WRONG: ${String(parsed.retentionYears)}, the provision says ${c.years}`}`,
+    );
+    console.log(`               bound party: "${String(parsed.dutyBearer).slice(0, 60)}"${rightBearer ? '' : '  -- does not name who is bound'}`);
+
+    const ok = shaped && quoteInSource && rightYears && rightBearer;
+    console.log(`  ${c.label.toLowerCase().padEnd(11)} ${ok ? 'passed' : 'FAILED'}`);
+    if (!ok) allPassed = false;
   }
 
-  let parsed: { dutyBearer?: unknown; periodWords?: unknown; retentionYears?: unknown };
-  try {
-    parsed = JSON.parse(text) as typeof parsed;
-  } catch {
-    console.log(`  structured   NO -- did not return JSON: ${text.slice(0, 120)}`);
-    return false;
-  }
-  const shaped =
-    typeof parsed.dutyBearer === 'string' &&
-    (typeof parsed.periodWords === 'string' || parsed.periodWords === null) &&
-    (typeof parsed.retentionYears === 'number' || parsed.retentionYears === null);
-  console.log(`  structured   ${shaped ? 'yes, matched the declared schema' : 'NO -- JSON, but not the declared shape'}`);
-  if (!shaped) return false;
-
-  // The substantive checks. Five years is in the provision and nowhere else, so an engine that
-  // reads the page and produces a plausible number fails here having passed everything above.
-  const quote = typeof parsed.periodWords === 'string' ? parsed.periodWords : null;
-  const quoteInSource = quote !== null && PROVISION.toLowerCase().includes(quote.trim().toLowerCase());
-  const rightYears = parsed.retentionYears === 5;
-  const rightBearer = /licensee|person|provider/i.test(String(parsed.dutyBearer));
-
-  console.log(`  quoted       ${quoteInSource ? 'words are in the provision' : `NOT IN SOURCE: "${quote ?? 'none given'}"`}`);
-  console.log(
-    `  legal        retention ${rightYears ? 'read correctly as 5 years' : `WRONG: ${String(parsed.retentionYears)}, the provision says 5`}`,
-  );
-  console.log(`               bound party: "${String(parsed.dutyBearer).slice(0, 60)}"${rightBearer ? '' : '  -- does not name who is bound'}`);
-
-  const ok = shaped && quoteInSource && rightYears && rightBearer;
-  console.log(`  verdict      ${ok ? 'usable' : 'NOT usable as declared'}`);
-  return ok;
+  console.log(`\n  verdict      ${allPassed ? 'usable' : 'NOT usable as declared'}`);
+  return allPassed;
 }
 
 const registry = loadEngines();

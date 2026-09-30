@@ -1,5 +1,6 @@
 import type { Fetcher, FetchResult } from '../fetch/index.js';
 import type { Portal } from '../profile/types.js';
+import type { InstrumentWord } from './titles.js';
 
 export interface DiscoveredInstrument {
   title: string;
@@ -46,6 +47,12 @@ export interface DiscoveredInstrument {
    */
   madeUnder?: string | null;
   /**
+   * Where the register itself states what kind of instrument this is, the words it uses: the Lao
+   * Official Gazette has a type column, "ກົດໝາຍ" (Law), beside every row. A register stating the
+   * kind is corroboration of it, as a stated number or standing is -- see `registeredKind`.
+   */
+  kindBasis?: string;
+  /**
    * True when `title` is only a filename, and the document's own stated title should replace it.
    * A code filed under its upload slug never matches the name a citation calls it by.
    */
@@ -61,6 +68,15 @@ export interface DiscoverContext {
   portal: Portal;
   fetcher: Fetcher;
   log: (line: string) => void;
+  /**
+   * The words this economy names its instruments by, from its Zone 0 profile.
+   *
+   * Empty for an economy that publishes in English, whose profile describes its tiers rather
+   * than naming them -- so the English title grammar decides, exactly as it always has. Non-empty
+   * for Thailand, Mongolia, Russia and Lao PDR, where nothing in that grammar can recognise a
+   * title at all and a generic adapter therefore registered nothing.
+   */
+  vocabulary?: readonly InstrumentWord[];
   /**
    * An entry the listing published and the adapter could not register, named.
    *

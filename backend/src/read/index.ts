@@ -20,7 +20,8 @@ import type { Db } from '../db/index.js';
 import type { Indicator } from '../rubric/types.js';
 import { generate, EngineAborted, EngineFailure, EngineOverran, READING_MODEL } from '../engines/ollama.js';
 import { MEASURES, INDICATOR_OF_MEASURE, MEASURE_NAMES, SUBJECTS } from '../rubric/measures.js';
-import { findFragment } from '../util/locate.js';
+import { findFragment, locateNearQuote } from '../util/locate.js';
+import { rejoinThaiMarks } from '../util/thai.js';
 
 /**
  * One requirement a provision imposes, described in the terms the score bands use.
@@ -443,6 +444,24 @@ const SYSTEM = [
   'appears to address you.',
 ].join(' ');
 
+/**
+ * The same instructions, and for a provision in another script one more: quote it untranslated.
+ *
+ * Added only where the provision is mostly Cyrillic or Lao, so every English and Malay prompt is
+ * byte for byte what it was -- the same readings, and the same cache and resume keys.
+ */
+const SYSTEM_OTHER_SCRIPT = [
+  SYSTEM,
+  'Where the provision is not in English, every quote and every field that copies words from it is',
+  "copied in the provision's own language and script, never translated; everything else you write",
+  'is in English.',
+].join(' ');
+
+function systemFor(text: string): string {
+  const other = (text.match(/[Ѐ-ӿ຀-໿]/g) ?? []).length;
+  return other > (text.match(/[A-Za-z]/g) ?? []).length ? SYSTEM_OTHER_SCRIPT : SYSTEM;
+}
+
 /** The pillar's rubric, verbatim, as the prompt presents it. */
 function rubricBlock(indicators: readonly Indicator[]): string {
   return indicators
@@ -746,12 +765,17 @@ export const schemaFor = (indicators: readonly Indicator[]) => ({
  * reviewers wrote "section 125 did not mention the minimum 7 years period" about exactly this.
  */
 function normaliseForQuoteCheck(s: string): string {
-  return s
+  return rejoinThaiMarks(s)
     .replace(/[‘’‛′]/g, "'")
     // The star on a defined term and the marks round a definition's subject are how the page is
     // set, not words. A reader quoting faithfully drops them, and failing it for that is wrong.
-    .replace(/["“”″*]/g, '')
+    .replace(/["“”″*«»„]/g, '')
     .replace(/[‐-―−]/g, '-')
+    // Lao OCR writes ຳ as ໍ + າ as often as not, and a reader copies it either way.
+    .replace(/ຳ/g, 'ໍາ')
+    // Russian lists close the marker without opening it -- "1)", "а)" -- and are flattened the same
+    // way. Only in Cyrillic text, so an English quotation is checked exactly as it was.
+    .replace(/(?<=^|\s)(?:[а-яё]|\d{1,3})\)/giu, (m: string, _at: number, all: string) => (/[а-яё]{3}/i.test(all) ? ' ' : m))
     // The letters and numbers that mark items in a statutory list are the page's scaffolding, not
     // the provision's words. A reader quoting a multi-part definition flattens it -- which is the
     // only way to quote one -- and the markers then sit inside the span it is checked against.
@@ -764,6 +788,13 @@ function normaliseForQuoteCheck(s: string): string {
     // and the words do not. Nothing here loosens which words must be there, or in what order.
     .replace(/[,;]/g, ' ')
     .replace(/\s+/g, ' ')
+    // Lao writes no space between words, so a line the page wrapped breaks a word where it falls:
+    // the Lao gazette's "ຂະແຫນ\nງການ" is one word, and the reader, rightly, copies it as one. Every
+    // such copy was refused as words not in the provision -- 95 of Lao PDR's confirmation answers
+    // -- and each refusal left a finding held as unevaluated. Between two Lao letters a space is
+    // dropped on both sides, so the letters and their order still have to match. Thai is left as
+    // it was: dropping its spaces shortens a fragment and with it the slip a copy is allowed.
+    .replace(/(?<=[຀-໿]) (?=[຀-໿])/g, '')
     .trim()
     .toLowerCase()
     // Spelling, not wording. Australia's Payment Systems (Regulation) Act says "authorised or
@@ -796,6 +827,8 @@ const MIN_ANCHOR_CHARS = 12;
  */
 const MIN_RULE_CHARS = 40;
 const ELIDED_WEIGHT = 5;
+/** How far after a list's stem an item quoted with it may sit: the Lao safe harbour's is 224 characters on. */
+const LIST_REACH = 600;
 
 /**
  * A quote that skips over text is still a quote, provided every part of it is really there and in
@@ -820,18 +853,25 @@ export function quoteIsInSection(quote: string, sectionText: string, min = MIN_Q
   const joined = parts.join(' ');
   if (joined.length < min) return false;
 
+  // A list's stem and one of its items is how a list is quoted: "an intermediary is not liable
+  // for: ... a data message it did not actually know would give rise to liability" skips the
+  // items between, and says nothing the stem and the item do not. So it is not weighed as an
+  // elision, provided the item is under the stem -- close after it, not anywhere later in the Act.
+  const stemAndItem = parts.length === 2 && /[:：]\s*$/.test(quote.split(/\s*(?:\.\.\.|…)\s*/)[0] ?? '');
+
   // A snippet is the evidence, so its elisions must not carry the argument. A phrase names one
   // element of a snippet already checked, and "may ... declare" is how a split verb is quoted.
-  if (parts.length > 1 && min >= MIN_QUOTE_CHARS) {
+  if (parts.length > 1 && min >= MIN_QUOTE_CHARS && !stemAndItem) {
     if (joined.length < min * ELIDED_WEIGHT) return false;
     if (Math.max(...parts.map((p) => p.length)) < MIN_ANCHOR_CHARS) return false;
   }
 
   let from = 0;
-  for (const part of parts) {
+  for (const [n, part] of parts.entries()) {
     if (part.length < MIN_FRAGMENT_CHARS) return false;
     const at = findFragment(haystack, part, from, part.length < MIN_ANCHOR_CHARS);
     if (at < 0) return false;
+    if (stemAndItem && n === 1 && at - from > LIST_REACH) return false;
     from = at + part.length;
   }
   return true;
@@ -918,8 +958,31 @@ export function copiedFromTheQuote(act: string, quote: string): boolean {
   // A short fragment is one edit from too many words to say anything, so it has to be exact.
   return (
     parts.length > 0 &&
-    parts.every((p) => p.length >= MIN_FRAGMENT_CHARS && (q.includes(p) || (p.length >= MIN_ANCHOR_CHARS && withinEdits(p, q, Math.max(1, Math.floor(p.length / 20))))))
+    parts.every(
+      (p) =>
+        p.length >= MIN_FRAGMENT_CHARS &&
+        (q.includes(p) ||
+          (p.length >= MIN_ANCHOR_CHARS &&
+            [p, ...withoutAStutter(p)].some((v) => withinEdits(v, q, Math.max(1, Math.floor(p.length / 20)))))),
+    )
   );
+}
+
+/**
+ * The phrase with one immediately repeated run of up to three characters written once.
+ *
+ * A reader that stutters writes a syllable twice -- "ราชอาณาณาจักร" for "ราชอาณาจักร" -- which is
+ * one slip of the pen and two characters of edit distance, so on a short phrase the budget of one
+ * edit refused it. Each variant still has to be found in the verified quote.
+ */
+function withoutAStutter(p: string): string[] {
+  const out: string[] = [];
+  for (let n = 1; n <= 3; n++) {
+    for (let i = 0; i + 2 * n <= p.length; i++) {
+      if (p.slice(i, i + n) === p.slice(i + n, i + 2 * n)) out.push(p.slice(0, i) + p.slice(i + n));
+    }
+  }
+  return out;
 }
 
 /** Is `needle` in `hay` with at most `k` characters inserted, dropped or changed? */
@@ -945,6 +1008,10 @@ export function rejectionFor(f: Finding, sectionText: string, allowed: Set<strin
   if (!f.measure) return 'no measure this indicator recognises was named';
   const inProvision = (phrase: string): boolean =>
     quoteIsInSection(phrase, sectionText, MIN_PHRASE_CHARS) || (heading !== '' && quoteIsInSection(phrase, heading, MIN_PHRASE_CHARS));
+  // A field that repeats part of the verified quote with a slip in the copy makes no claim the quote
+  // has not already made, so it is held to the quote, the way the act is. What it names must still
+  // be the quote's own words; see `copiedFromTheQuote`.
+  const claimed = (phrase: string): boolean => inProvision(phrase) || copiedFromTheQuote(phrase, f.quote);
   // The party and the act have to be the provision's own words, not a summary of them.
   if (f.dutyBearer && !inProvision(f.dutyBearer)) {
     return `the party said to bear the duty, "${f.dutyBearer}", is not in the provision`;
@@ -973,25 +1040,25 @@ export function rejectionFor(f: Finding, sectionText: string, allowed: Set<strin
   }
   // Where a place is claimed it has to be in the provision, for the same reason the party and the
   // act do. A place the provision does not name is the one fact these measures are defined by.
-  if (f.placeWords && !inProvision(f.placeWords)) {
+  if (f.placeWords && !claimed(f.placeWords)) {
     return `the words said to state the place, "${f.placeWords}", are not in the provision`;
   }
-  if (f.exceptionWords && !inProvision(f.exceptionWords)) {
+  if (f.exceptionWords && !claimed(f.exceptionWords)) {
     return `the words said to make an exception, "${f.exceptionWords}", are not in the provision`;
   }
-  if (f.locatedData && !inProvision(f.locatedData)) {
+  if (f.locatedData && !claimed(f.locatedData)) {
     return `the data said to be located, "${f.locatedData}", is not in the provision`;
   }
-  if (f.informationWords && !inProvision(f.informationWords)) {
+  if (f.informationWords && !claimed(f.informationWords)) {
     return `the words said to name information, "${f.informationWords}", are not in the provision`;
   }
-  if (f.keepingWords && !inProvision(f.keepingWords)) {
+  if (f.keepingWords && !claimed(f.keepingWords)) {
     return `the words said to keep the data in place, "${f.keepingWords}", are not in the provision`;
   }
-  if (f.authorisingWords && !inProvision(f.authorisingWords)) {
+  if (f.authorisingWords && !claimed(f.authorisingWords)) {
     return `the words said to authorise the power, "${f.authorisingWords}", are not in the provision`;
   }
-  if (f.roleWords && !inProvision(f.roleWords)) {
+  if (f.roleWords && !claimed(f.roleWords)) {
     return `the position said to be created, "${f.roleWords}", is not in the provision`;
   }
   // The words that make the measure out are a claim about the provision like every other quote.
@@ -1015,16 +1082,16 @@ export function rejectionFor(f: Finding, sectionText: string, allowed: Set<strin
     }
     f.definingWords = f.quote;
   }
-  if (f.definingWords && !inProvision(f.definingWords)) {
+  if (f.definingWords && !claimed(f.definingWords)) {
     return `the words said to make out ${f.measure}, "${f.definingWords}", are not in the provision`;
   }
-  if (f.borderWords && !inProvision(f.borderWords)) {
+  if (f.borderWords && !claimed(f.borderWords)) {
     return `the words said to cross the border, "${f.borderWords}", are not in the provision`;
   }
-  if (f.imposingWords && !inProvision(f.imposingWords)) {
+  if (f.imposingWords && !claimed(f.imposingWords)) {
     return `the words said to impose the requirement, "${f.imposingWords}", are not in the provision`;
   }
-  if (f.prescribingWords && !inProvision(f.prescribingWords)) {
+  if (f.prescribingWords && !claimed(f.prescribingWords)) {
     return `the words said to empower another instrument, "${f.prescribingWords}", are not in the provision`;
   }
   if (f.scopeUnstated) return 'the reach of the duty was not answered in the terms offered';
@@ -1033,10 +1100,10 @@ export function rejectionFor(f: Finding, sectionText: string, allowed: Set<strin
   if (f.sectorScope === 'specific' && !f.sector) {
     return 'the duty is said to bind one sector, and no sector is named';
   }
-  if (f.targetWords && !inProvision(f.targetWords)) {
+  if (f.targetWords && !claimed(f.targetWords)) {
     return `the words said to name what the measure is aimed at, "${f.targetWords}", are not in the provision`;
   }
-  if (f.conditionWords && !inProvision(f.conditionWords)) {
+  if (f.conditionWords && !claimed(f.conditionWords)) {
     return `the words said to state the condition the measure waits on, "${f.conditionWords}", are not in the provision`;
   }
   return null;
@@ -1179,7 +1246,7 @@ async function readPart(
   const started = Date.now();
   let res;
   try {
-    res = await generate(prompt(section, pillarName, indicators, shown, part), SYSTEM, {
+    res = await generate(prompt(section, pillarName, indicators, shown, part), systemFor(shown), {
       schema: schemaFor(indicators),
       ...(opts.model ? { model: opts.model } : {}),
       ...(opts.contextTokens ? { contextTokens: opts.contextTokens } : {}),
@@ -1591,8 +1658,56 @@ const SUBJECT_NAMES_IN_OTHER_LANGUAGES: Record<string, Record<FrameworkSubject, 
     'data-protection': ['ข้อมูลส่วนบุคคล', 'ความเป็นส่วนตัว'],
     cybersecurity: ['ไซเบอร์', 'ความผิดเกี่ยวกับคอมพิวเตอร์', 'ความมั่นคงปลอดภัยสารสนเทศ', 'ความมั่นคงปลอดภัยของระบบสารสนเทศ'],
     'copyright-safe-harbour': ['ลิขสิทธิ์', 'ผู้ให้บริการ'],
-    'intermediary-liability': ['ตัวกลาง', 'ผู้ให้บริการ'],
+    // The subject sentence too, which was asked of Thai law only in English, in the two shapes a
+    // shield takes: no liability for users' data, and none for a provider that took it down when
+    // told to. "ผู้ให้บริการ" alone is every bank's "service provider", and with only the names the
+    // section search handed 8.2 banking rules; Thailand's shield, s.15 of its computer-crime Act,
+    // was never examined. With these it is the first instrument found.
+    'intermediary-liability': [
+      'ตัวกลาง',
+      'ผู้ให้บริการ',
+      'ผู้ให้บริการไม่ต้องรับผิด',
+      'ผู้ให้บริการไม่ต้องรับโทษ',
+      'ผู้ให้บริการไม่ต้องรับผิดสำหรับข้อมูลคอมพิวเตอร์ของผู้ใช้บริการ',
+      'ผู้ให้บริการไม่ต้องรับโทษหากได้ปฏิบัติตามขั้นตอนการแจ้งเตือนและการนำข้อมูลคอมพิวเตอร์ออกจากระบบ',
+    ],
     'consumer-protection': ['ผู้บริโภค'],
+  },
+  // Russian, Mongolian and Lao, in the wording those economies' own titles use -- "О персональных
+  // данных", "Хүний хувийн мэдээлэл хамгаалах тухай хууль", "ກົດໝາຍວ່າດ້ວຍການປົກປ້ອງຂໍ້ມູນເອເລັກໂຕຣນິກ".
+  // Stems where the language inflects: "персональн" matches every case of "персональные данные".
+  ru: {
+    'data-protection': ['персональн'],
+    cybersecurity: ['кибер', 'информационной безопасност', 'компьютерной информаци', 'критической информационной инфраструктур'],
+    'copyright-safe-harbour': ['авторск', 'информационного посредника', 'информационный посредник'],
+    'intermediary-liability': ['информационного посредника', 'информационный посредник', 'провайдер хостинга'],
+    'consumer-protection': ['потребител'],
+  },
+  mn: {
+    'data-protection': ['хувийн мэдээлэл', 'хувь хүний мэдээлэл', 'хувийн нууц'],
+    cybersecurity: ['кибер', 'мэдээллийн аюулгүй байдал'],
+    'copyright-safe-harbour': ['зохиогчийн эрх'],
+    'intermediary-liability': ['зуучлагч'],
+    'consumer-protection': ['хэрэглэгчийн эрх'],
+  },
+  lo: {
+    'data-protection': ['ຂໍ້ມູນສ່ວນບຸກຄົນ', 'ປົກປ້ອງຂໍ້ມູນ'],
+    cybersecurity: ['ໄຊເບີ', 'ລະບົບຄອມພິວເຕີ', 'ຄວາມປອດໄພທາງໄຊເບີ'],
+    'copyright-safe-harbour': ['ລິຂະສິດ'],
+    // Lao law calls the intermediary ສື່ກາງ, and states its shield in the shapes Thai does: the
+    // intermediary's liability, and an intermediary that has none or need bear none. With only
+    // "ຜູ້ໃຫ້ບໍລິການ", every bank's service provider, the section search handed 8.2 payment and
+    // anti-money-laundering rules, and the E-Transactions Law's article on an intermediary's
+    // non-liability was never examined. With the name alone it was fifth among the section search's
+    // instruments, past the five examined; with the shield's shapes it is the first.
+    'intermediary-liability': [
+      'ຜູ້ໃຫ້ບໍລິການ',
+      'ສື່ກາງ',
+      'ຄວາມຮັບຜິດຊອບຂອງສື່ກາງ',
+      'ສື່ກາງ ບໍ່ມີຄວາມຮັບຜິດຊອບ',
+      'ສື່ກາງບໍ່ຕ້ອງຮັບຜິດຊອບ',
+    ],
+    'consumer-protection': ['ຜູ້ຊົມໃຊ້'],
   },
 };
 
@@ -1603,8 +1718,24 @@ function namesIn(subject: FrameworkSubject, languages: readonly string[]): strin
 
 /** Whether quoted words name the subject at all, as opposed to merely coming from the instrument. */
 function namesSubject(words: string, subject: FrameworkSubject): boolean {
-  const w = words.toLowerCase();
-  return [...SUBJECT_NAMES[subject], ...namesIn(subject, Object.keys(SUBJECT_NAMES_IN_OTHER_LANGUAGES))].some((n) => w.includes(n));
+  // Lao OCR writes ຳ as ໍ + າ as often as not, and drops tone marks ("ສືກາງ" for "ສື່ກາງ"); the
+  // names use the single character, and are compared without tones on both sides.
+  const lao = (s: string) => s.replace(/ໍາ/g, 'ຳ').replace(/[່-໋]/g, '');
+  const w = lao(words.toLowerCase());
+  return [...SUBJECT_NAMES[subject], ...namesIn(subject, Object.keys(SUBJECT_NAMES_IN_OTHER_LANGUAGES))].some((n) => w.includes(lao(n)));
+}
+
+/**
+ * The words as the source has them, where the reader's copy of a Cyrillic or Lao rule is nearly but
+ * not exactly verbatim: two Latin letters inside a Mongolian word left Mongolia's Personal Data
+ * Protection Law unshown as its own framework. The source's span is kept in place of the copy, so
+ * what is quoted is the law. Exact copies, English, and anything short of 92% of the quote found in
+ * order come back as they were -- see locateNearQuote.
+ */
+export function sourceWords(words: string | null, text: string): string | null {
+  if (words === null || quoteIsInSection(words, text, MIN_RULE_CHARS)) return words;
+  const near = locateNearQuote(text, words);
+  return near ? text.slice(near.start, near.end) : words;
 }
 
 /** Whether the words said to make the framework are a rule in the instrument, naming the subject. */
@@ -1766,7 +1897,7 @@ export async function readFramework(
   let res;
   let failure: unknown;
   try {
-    res = await generate(body, SYSTEM, {
+    res = await generate(body, systemFor(body), {
       schema: FRAMEWORK_SCHEMA,
       ...(opts.model ? { model: opts.model } : {}),
       ...(opts.contextTokens ? { contextTokens: opts.contextTokens } : {}),
@@ -1870,9 +2001,11 @@ export async function readFramework(
     };
   }
   const quote = typeof p['quote'] === 'string' ? p['quote'] : '';
-  const dedicatedWords = wordsOrNull(p['dedicatedWords']);
+  // As the source has it, where a Cyrillic or Lao copy is nearly verbatim -- see sourceWords.
+  const dedicatedWords = sourceWords(wordsOrNull(p['dedicatedWords']), input.openingText);
   const sectorWords = wordsOrNull(p['sectorWords']);
-  const frameworkWords = wordsOrNull(p['frameworkWords']);
+  const haystack = [input.provisionsText, input.openingText].join('\n\n');
+  const frameworkWords = sourceWords(wordsOrNull(p['frameworkWords']), haystack);
   // Checked against the provisions and the opening together, because a rule may be stated in
   // either, and at a longer floor than the other quotes. Widening a haystack widens what a weak
   // quote can match: the eight-character floor let a quote of "No findings." verify once the
@@ -1885,11 +2018,7 @@ export async function readFramework(
   // immunity, really in the Act, and about a data provider under the Consumer Data Right rather
   // than an intermediary carrying somebody else's content. Quoting proves the rule exists; only
   // the subject's own words show it is this rule.
-  const frameworkWordsVerified = frameworkWordsShown(
-    frameworkWords,
-    subject,
-    [input.provisionsText, input.openingText].join('\n\n'),
-  );
+  const frameworkWordsVerified = frameworkWordsShown(frameworkWords, subject, haystack);
 
   return {
     instrumentId: input.instrumentId,

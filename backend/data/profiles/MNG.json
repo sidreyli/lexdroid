@@ -1,0 +1,190 @@
+{
+  "code": "MNG",
+  "name": "Mongolia",
+  "legalSystem": {
+    "family": "civil-law",
+    "note": "Unitary parliamentary republic with a continental civil-law system. The Constitution (Монгол Улсын Үндсэн Хууль) sits above a Law of Mongolia (Монгол Улсын хууль) passed by the State Great Khural; operative detail is overwhelmingly delegated downward, and the corpus reflects that -- legalinfo.mn publishes 956 Laws against 5,778 Government resolutions (Засгийн газрын тогтоол) and 988 ministerial orders (Сайдын тушаал). A citation of the Law alone is therefore frequently the wrong instrument, in the same way Thailand's Act/Royal-Decree chain and China's delegation pattern are: the requirement usually lives in the тогтоол or тушаал made under it, and in the журам (procedure) annexed to that. Instruments state their own enabling powers in their opening words -- a sampled ministerial order cites 'Монгол Улсын Засгийн газрын тухай хуулийн 24 дүгээр зүйлийн 2 дахь хэсэг' -- so the made-under relationship is recoverable from the document's own text rather than inferred."
+  },
+  "officialLanguages": [
+    "mn"
+  ],
+  "authoritativeLanguage": "mn",
+  "languageNote": "Mongolian, written in Cyrillic script. Cyrillic spaces its words, so unlike Thai or Lao it needs no spaceless-script handling in the trigram index. It does need language detection that can tell Mongolian from Russian: backend/src/parse/language.ts currently maps the whole Cyrillic block to 'ru' (its own comment concedes 'Cyrillic: Russian, Mongolian, Kazakh'), which would record every Mongolian provision as Russian in Language of Source -- a required export column that drives criterion C1c. Mongolian Cyrillic carries Ө/ө (U+04E8/U+04E9) and Ү/ү (U+04AE/U+04AF), which standard Russian orthography does not, and the profile's own officialLanguages already narrow the candidates. legalinfo.mn also serves an /en edition; it is a translation of partial coverage and the Mongolian text governs, so a row quoting the English says so via translationNote in src/export/index.ts. No Mongolian text is translated anywhere in the pipeline -- provisions are quoted in Mongolian and language_of_source records it, per docs/architecture.md's rule against full-document translation.",
+  "demonym": ["монгол"],
+  "jurisdictionScope": {
+    "held": "national",
+    "note": "Mongolia is unitary, so this is not the federal scope question Australia and Russia have -- but it is not empty either. legalinfo.mn publishes national law and sub-national instruments in one repository: 1,212 aimag and capital-city citizens assembly decisions and 86 governors orders, against roughly 12,800 national instruments. The legalinfo adapter registers the national categories only, the way docs/india-integration.md deferred State and Union Territory law, and records the two local categories it passed over rather than dropping them silently -- set adapterConfig.includeLocal to walk them. The risk this guards is the inverse of Australias: not a tier missing from the corpus, but a provincial rule read as an economy-level answer.",
+    "notHeld": [
+      {
+        "tier": "Aimag and capital-city instruments",
+        "note": "Each aimag and the capital legislate within the competence the law gives them, and legalinfo.mn publishes those decisions and orders alongside national law. An indicator answered only on one of them is a scope condition to record, not a national finding.",
+        "citedAs": [
+          "Аймаг,?\\s*нийслэлийн\\s+(?:ИТХ|Иргэдийн|Засаг)[^,.;]{0,40}",
+          "нийслэлийн\\s+Засаг\\s+даргын\\s+захирамж",
+          "аймгийн\\s+(?:ИТХ|Иргэдийн\\s+Төлөөлөгчдийн\\s+Хурлын|Засаг\\s+даргын)[^,.;]{0,30}"
+        ]
+      }
+    ]
+  },
+  "instrumentTypes": [
+    {
+      "rank": 1,
+      "kind": "act",
+      "localName": "Монгол Улсын хууль (Law of Mongolia)",
+      "bindingness": "binding",
+      "note": "Primary legislation passed by the State Great Khural (Улсын Их Хурал). 956 published on legalinfo.mn. The Constitution (Монгол Улсын Үндсэн Хууль, 1) sits above these and is registered in the same tier. Routinely a framework that delegates its operative requirements to a Government resolution or a ministerial order -- read what was made under it before treating the Law's own text as the requirement."
+    },
+    {
+      "rank": 2,
+      "kind": "order",
+      "localName": "Ерөнхийлөгчийн зарлиг (Presidential decree) / Улсын Их Хурлын тогтоол (Khural resolution)",
+      "bindingness": "binding",
+      "note": "218 presidential decrees and 2,589 resolutions of the State Great Khural. Issued under a constitutional or statutory power rather than as primary legislation; binding, and subordinate to a Law where the two speak to the same matter."
+    },
+    {
+      "rank": 2,
+      "kind": "regulation",
+      "localName": "Засгийн газрын тогтоол (Government resolution)",
+      "bindingness": "binding",
+      "note": "The largest operative tier in the corpus at 5,778 instruments, and the one most RDTII requirements will actually be found in. Adopted by the Cabinet under an enabling Law, commonly approving a журам (procedure) as an annex -- the annex carries the detail, so the resolution and its annex are retained together."
+    },
+    {
+      "rank": 3,
+      "kind": "rule",
+      "localName": "Журам / Заавар (Procedure or Instruction)",
+      "bindingness": "binding",
+      "note": "The operative rules approved by, and usually annexed to, a Government resolution or a ministerial order rather than standing alone. Declared as its own kind so that a document the generic title classifier tags 'rule' does not fall through to binding by omission, which is the hole backend/test/bindingness.test.ts exists to close. Classified 'binding' as a considered judgment rather than a confirmed legal determination: a журам binds within the scope its parent instrument gives it, and a specific document's force should be established from that parent, never from the title alone."
+    },
+    {
+      "rank": 3,
+      "kind": "notice",
+      "localName": "Сайдын тушаал / Агентлагийн даргын тушаал (Ministerial or agency head's order)",
+      "bindingness": "binding-on-licensees",
+      "note": "988 ministerial orders and 217 orders of government agency heads, plus 132 decisions of the heads of bodies the Khural appoints -- which is where a sectoral regulator's requirements live. Recorded as binding-on-licensees because the bindingness the decision logic needs is reach, not force: an instrument that binds the licensees of a sector has not established a horizontal framework, and the licence is the confinement whether or not the words name a sector. Bindingness and commencement are established from the enabling provision and the instrument's own text."
+    },
+    {
+      "rank": 4,
+      "kind": "guideline",
+      "localName": "Зөвлөл, хороо, бусад байгууллагын шийдвэр, зөвлөмж (Council, committee or other body's decision or recommendation)",
+      "bindingness": "advisory",
+      "note": "605 instruments from councils, committees and other bodies. Evidence of regulator interpretation or expected practice, not itself the source of a legal obligation unless the instrument and its enabling authority say it binds."
+    },
+    {
+      "rank": 5,
+      "kind": "publication",
+      "localName": "Publication about the law",
+      "bindingness": "advisory",
+      "note": "A document a body published about the law rather than an instrument of it: a consultation paper, a media release, an FAQ, a landing page for an Act held in the statute book. Registered because it is real evidence of how a regulator reads an obligation, and never the source of one. Assigned where the source states neither an identifier nor a standing."
+    }
+  ],
+  "portals": [
+    {
+      "name": "Unified Legal Information System (Эрх зүйн мэдээллийн нэгдсэн систем)",
+      "url": "https://legalinfo.mn",
+      "kind": "legislation-database",
+      "authority": "Legal Institute of Mongolia (Хууль зүйн үндэсний хүрээлэн)",
+      "pillars": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12
+      ],
+      "adapter": "legalinfo",
+      "adapterConfig": {},
+      "notes": "The primary legislation database and the India-Code equivalent: roughly 14,090 instruments across 17 published categories, and the most tractable portal this repository has profiled. No robots.txt (the site 404s it), so the conservative unknown-robots delay applies. Server-rendered PHP, no SPA. The register is reachable through the site own listing endpoint, and documents are served in full as HTML with Pdf and Word exports beside them. Walked by the legalinfo adapter, one category at a time so the instrument kind comes from the register rather than the title. Full trace: docs/lao-mongolia-russia-recon.md."
+    },
+    {
+      "name": "Bank of Mongolia (Монголбанк)",
+      "url": "https://www.mongolbank.mn",
+      "kind": "regulator",
+      "authority": "Bank of Mongolia",
+      "pillars": [
+        6,
+        7,
+        8
+      ],
+      "adapter": "sitemap",
+      "adapterConfig": {},
+      "notes": "PERMITTED: robots.txt is Allow: / with no disallowed paths, read directly 21 September 2026. Its Sitemap: line is commented out (#Sitemap: https://www.mongolbank.mn/sitemap.xml), so the sitemap adapter falls back to the conventional /sitemap.xml path, which has not yet been confirmed to exist. If it does not, this portal moves to the crawl adapter."
+    },
+    {
+      "name": "Communications Regulatory Commission (Харилцаа холбооны зохицуулах хороо)",
+      "url": "https://crc.gov.mn",
+      "kind": "regulator",
+      "authority": "Communications Regulatory Commission of Mongolia",
+      "pillars": [
+        5,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12
+      ],
+      "adapter": "crawl",
+      "adapterConfig": {
+        "seeds": [
+          "/directions-terms-and-requirements-of-procedures-and-regulations-approved-by-the-crc",
+          "/documents/xxzx-togtool",
+          "/caxim-orcny-zoxicuulalt/onlain-kontentyn-zoxicuulalt",
+          "/salbaryn-standartyn-zhagsaalt",
+          "/batalgaazuulaltyn-tanilcuulga"
+        ],
+        "urlMustMatch": "/storage/"
+      },
+      "notes": "PERMITTED: robots.txt returns 'User-agent: * / Disallow:' -- an empty disallow, which permits everything -- read directly 21 September 2026. The Commission keeps the procedures, conditions and requirements it approves as tables of PDFs under /storage/ -- read directly 29 September 2026: each row is number, name, date, resolution number, and a link captioned with a code, so the crawl names a link from its row. Seeded at its register of approved procedures, its resolutions, its online-content regulation and its equipment certification pages; only files under /storage/ are instruments, which keeps its news and FAQ pages out."
+    },
+    {
+      "name": "State Great Khural (Улсын Их Хурал)",
+      "url": "https://www.parliament.mn",
+      "kind": "legislation-database",
+      "authority": "State Great Khural of Mongolia",
+      "pillars": [],
+      "adapter": null,
+      "adapterConfig": {},
+      "notes": "No robots.txt (404 with an empty body), read directly 21 September 2026. Page structure not yet inspected. The legislature's own site; likely a duplicate of what legalinfo.mn already publishes, and should not be counted as a second source for the same instrument. Full trace: docs/lao-mongolia-russia-recon.md."
+    },
+    {
+      "name": "Mongolian Customs (Гаалийн ерөнхий газар)",
+      "url": "https://customs.gov.mn",
+      "kind": "regulator",
+      "authority": "General Customs Administration of Mongolia",
+      "pillars": [
+        1,
+        2,
+        10,
+        12
+      ],
+      "adapter": null,
+      "adapterConfig": {},
+      "notes": "UNVERIFIED, not blocked. The connection timed out on port 443 from the environment used on 21 September 2026 -- an environment that proxies all traffic and refused HTTPS to several other healthy government hosts, so this is a fact about that network and not about this portal. Must be re-checked from an ordinary connection before any conclusion is drawn. Customs and trade law, so it matters for pillars 10 and 12. Full trace: docs/lao-mongolia-russia-recon.md."
+    }
+  ],
+  "commitments": [
+    {
+      "name": "World Trade Organization",
+      "status": "in-force",
+      "sourceUrl": "https://www.wto.org/english/thewto_e/countries_e/mongolia_e.htm"
+    }
+  ],
+  "notes": "Researched from Mongolian government portals read directly with curl on 21 September 2026; every structural claim above was produced by an actual request, and the full trace with response sizes is docs/lao-mongolia-russia-recon.md. ESCAP's completed Mongolia Round 2 answer sheet remains quarantined in the isolated baseline store per docs/architecture.md and was not opened to write this profile -- portals were found the way a researcher finds them, which is what backend/test/baseline-isolation.test.ts protects and what makes the discovery claim worth anything on a sealed economy. Coverage is genuinely better than Thailand's or India's first slice: the primary legislation database is reachable, server-rendered, enumerable through its own listing endpoint, and publishes per-category counts that give the register an exact shortfall check the way Australia's OData count does. Two things stand between this profile and cells: the small bespoke adapter for legalinfo.mn's listing endpoint, and the Cyrillic language-detection fix named in languageNote above.",
+  "authoredBy": "LexDroid team",
+  "authoredOn": "2026-09-21",
+  "sources": [
+    "https://legalinfo.mn/ and /mn -- read directly, 21 Sep 2026; 302 to /mn, 122 KB server-rendered, 2,197 body text tokens",
+    "https://legalinfo.mn/mn/law/26 -- read directly, 21 Sep 2026; category listing, and the source of the status vocabulary",
+    "https://legalinfo.mn/assets/custom/legal/js/pages/law.js -- read directly, 21 Sep 2026; the source of the AJAX endpoint list and every filter parameter named above",
+    "POST https://legalinfo.mn/mn/ajaxListBody/ -- called directly, 21 Sep 2026; 200, 48 KB, 20 rows with titles, gazette references and dates",
+    "https://legalinfo.mn/mn/detail?lawId=16532151599871 -- read directly, 21 Sep 2026; 125 KB, 16,848 visible characters, the Minister of Labour and Social Protection's order A/123 of 2022-06-10, including its enabling-power citation. The instrument-category counts in this profile are taken from this page's own footer",
+    "https://www.mongolbank.mn/robots.txt, https://crc.gov.mn/robots.txt, https://www.parliament.mn/robots.txt -- read directly, 21 Sep 2026",
+    "NOT ESCAP's Round 2 database or legal inventory for Mongolia: those remain evaluation-only, per the isolation this profile is required to respect"
+  ]
+}

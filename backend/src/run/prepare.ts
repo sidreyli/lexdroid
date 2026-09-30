@@ -30,6 +30,7 @@ import { followCitations, followDown } from '../discover/follow.js';
 import { embedContents, recordParsedContents } from '../contents/index.js';
 import { chosenIndicators, loadRubric } from '../rubric/index.js';
 import { queriesFor } from '../retrieve/index.js';
+import { hasTranslationTable } from '../retrieve/translations.js';
 import { EMBEDDING_MODEL, haveModel, OllamaUnavailable } from '../engines/ollama.js';
 import type { Emit } from './events.js';
 
@@ -159,7 +160,10 @@ export async function prepareCorpus(db: Db, opts: PrepareOptions): Promise<Prepa
   const rubric = loadRubric();
   const asked: string[][] = [];
   for (const p of opts.pillars) {
-    for (const ind of chosenIndicators(p, opts.indicators, rubric)) asked.push(queriesFor(ind, undefined, profile.officialLanguages));
+    // Named ("in Mongolia") only where one of our translation tables covers the economy's language:
+    // those tables are keyed on the named question. Unnamed elsewhere, exactly as before.
+    const named = profile.officialLanguages.some((l) => hasTranslationTable(l)) ? profile.name : undefined;
+    for (const ind of chosenIndicators(p, opts.indicators, rubric)) asked.push(queriesFor(ind, named, profile.officialLanguages));
   }
 
   const top = opts.top ?? 15;

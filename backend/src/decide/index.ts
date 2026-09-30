@@ -18,11 +18,12 @@
  */
 import type { Indicator, ScoreBand } from '../rubric/types.js';
 import type { Finding } from '../read/index.js';
-import { FRAMEWORK_TITLE_DOMAIN, HEADING_CLASS_DOMAIN, MEASURES, MEASURE_DOMAIN, MEASURE_NAMES, SECTOR_DOMAINS, SUBJECTS, TITLE_CARRIES_DOMAIN, SUBJECT_DOMAIN } from '../rubric/measures.js';
+import { DATA_SUBJECT, ELECTRONIC_DELIVERY, FRAMEWORK_TITLE_DOMAIN, HEADING_CLASS_DOMAIN, MEASURES, MEASURE_DOMAIN, MEASURE_NAMES, RESTRICTION_ANY, SECTOR_ASKED_IN_ITS_OWN_PILLAR, SECTOR_DOMAINS, STANDARD_ANY, SUBJECTS, TITLE_CARRIES_DOMAIN, SUBJECT_DOMAIN, TARIFF_CODED_DOMAIN } from '../rubric/measures.js';
 import { tallyConfirmations, type ConfirmationTally } from '../read/confirmations.js';
 import { inUsd, moneyIn, type FxRates } from './currency.js';
 import { determinesAParticularCase } from '../discover/titles.js';
 import { REPLACEABLE_FIGURE } from '../parse/identity.js';
+import { loadProfile } from '../profile/index.js';
 
 /** One finding, with enough of its origin to cite it. */
 export interface Evidence {
@@ -87,6 +88,12 @@ export interface Evidence {
    */
   definesATerm?: boolean;
   /**
+   * What the instrument defines the party bound, or the subject, as -- the words of its own
+   * definition entry. Carried only for a measure whose domain the document may name (see
+   * TITLE_CARRIES_DOMAIN), because the definition is the document naming it.
+   */
+  definedAs?: string;
+  /**
    * Whether the quoted words are a list item whose stem only confers a power.
    *
    * Same footing as definesATerm: a fact about the drafting, read off the whole section once. The
@@ -106,6 +113,12 @@ export interface Evidence {
   instrumentKind?: string | null;
   /** The language the provision is written in. Absent where the corpus predates the field. */
   sectionLanguage?: string | null;
+  /**
+   * The ICT tariff codes the provision states -- see ict-goods.ts. A customs instrument names the
+   * goods it charges by code, so this is what the goods are, whatever the words call them. Absent
+   * for evidence recorded before the field, which reads as none.
+   */
+  ictTariffCodes?: string[];
   /** The parser read the provision itself as repealed or deleted, whatever the instrument's status. */
   sectionRepealed?: boolean;
 }
@@ -321,7 +334,7 @@ const isPublishedAboutTheLaw = (e: Evidence): boolean => e.instrumentKind === 'p
  *  opening the words that define it. Those words are checked to be in the provision before they get
  *  here, and have to belong to the duty the finding is about: its quote or its defining words. */
 const isRequirement = (f: Finding): boolean =>
-  f.dutyForce === 'requires' || f.dutyForce === 'forbids' || imposesTheDutyItDefines(f) || confinesPermission(f);
+  f.dutyForce === 'requires' || f.dutyForce === 'forbids' || mandatesByItself(f.dutyAct) || imposesTheDutyItDefines(f) || confinesPermission(f);
 
 function imposesTheDutyItDefines(f: Finding): boolean {
   const words = f.imposingWords?.trim();
@@ -559,6 +572,8 @@ export function statedProportion(words: string | null, quote: string | null = nu
 
   const figure =
     /\b\d{1,3}(\.\d+)?\s*(%|per ?cent)/.test(t) ||
+    // The same figure in the corpus's other languages: процент (ru), хувь (mn), ສ່ວນຮ້ອຍ (lo).
+    /\b\d{1,3}([.,]\d+)?\s*(процент|хувь|ສ່ວນຮ້ອຍ|ເປີເຊັນ)/u.test(t) ||
     /\b(one|two|three|four|five|six|seven|eight|nine|ten|fifteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)\b[ -]*(per ?cent|%)/.test(t) ||
     /\b(majority|minority|controlling (stake|interest)|half|one[ -]third|two[ -]thirds|one[ -]quarter)\b/.test(t) ||
     // The same figures in Thai, which writes a percentage as ร้อยละ and has no word boundaries.
@@ -653,8 +668,15 @@ function equityLadder(
 const LICENSEE = /\b(licensee\w*|beneficiar\w* of the (?:compulsory )?licen[cs]e|holder of (?:a|the) (?:compulsory )?licen[cs]e)\b/i;
 const PATENTEE = /\b(patentee\w*|proprietor\w*|owner of the patent|patent (?:holder|owner)\w*)\b/i;
 /** A duty to comply with rules, laws or requirements made somewhere other than this provision. */
-const COMPLY_WITH_RULES =
-  /\bcomply\s+with\s+(?:the\s+|any\s+|all\s+)?(?:prevailing\s+|applicable\s+|relevant\s+|existing\s+)?[\w\s-]{0,50}?\b(?:rules|regulations|laws|requirements|policies|guidelines|directions|notices|standards)\b[^.;]*/i;
+const COMPLY_WITH_RULES = new RegExp(
+  [
+    /\bcomply\s+with\s+(?:the\s+|any\s+|all\s+)?(?:prevailing\s+|applicable\s+|relevant\s+|existing\s+)?[\w\s-]{0,50}?\b(?:rules|regulations|laws|requirements|policies|guidelines|directions|notices|standards)\b[^.;]*/.source,
+    // Thai and Lao: "must comply with the relevant laws and regulations" (ປະຕິບັດຕາມ ກົດໝາຍ ແລະ
+    // ລະບຽບການທີ່ກ່ຽວຂ້ອງ) was the strict condition of a Lao internet data centre's licence.
+    '(?:ปฏิบัติตาม|ປະຕິບັດຕາມ)\\s*(?:กฎหมาย|ระเบียบ|ກົດ(?:ໝ|ຫມ|ຫນ)າຍ|ລະບຽບ)[^.;]*',
+  ].join('|'),
+  'i',
+);
 function definedOnlyInAPointer(quote: string, definingWords: string | null): boolean {
   if (!definingWords) return false;
   const m = COMPLY_WITH_RULES.exec(quote);
@@ -666,10 +688,43 @@ function definedOnlyInAPointer(quote: string, definingWords: string | null): boo
 /** Goods named by a schedule or a list rather than one by one. */
 const BANS_A_LIST =
   /\b(?:set\s+out|specified|listed|described|mentioned|enumerated)\s+in\s+(?:the\s+)?(?:\w+\s+)?(?:Schedule|list|table)\b|\bany\s+of\s+the\s+following\b/i;
+/**
+ * The goods `10.4`'s own `other-export-restriction` measure exists to hold: waste, wildlife,
+ * food, medicines, chemicals, weapons, cultural property -- none of them computing,
+ * telecommunications or online goods. Singapore's reader mistagged four such findings as
+ * `ict-export-restriction` directly (hazardous waste, endangered species, food safety, and a
+ * blanket export-permit clause), so the bucket built to hold them never engaged. Applied as a
+ * negative exclusion to whichever bucket the reader chose, not a positive ICT-goods requirement:
+ * an earlier positive-domain fix was reverted because it also excluded the genuine Strategic
+ * Goods (Control) Act schedule-based controls, which don't name ICT goods textually either.
+ */
+const NON_ICT_EXPORT_GOODS = /\b(?:hazardous\s+waste|other\s+waste|endangered\s+species|scheduled\s+species|food\s+safety|food\s+security|medicines?|chemicals?|weapons?|cultural\s+property)\b/i;
+/** A generic anti-evasion or blanket export-permit clause that names no goods at all. */
+const GENERIC_EXPORT_CLAUSE = /\b(?:avoid|evade|defeat|reduce)\b[^.]{0,60}\bprohibition\b|\bevery\s+exporter\s+of\s+goods\b/i;
+/** Whether an `ict-export-restriction` finding is actually about goods the measure excludes. */
+function namesNonIctExportGoods(e: Evidence): boolean {
+  const text = `${e.instrumentTitle} ${e.finding.quote ?? ''} ${e.finding.definingWords ?? ''}`;
+  return NON_ICT_EXPORT_GOODS.test(text) || GENERIC_EXPORT_CLAUSE.test(text);
+}
 /** Words that put a duty on someone, in the languages of the law read here. Thai is written without spaces between words, so its words stand outside the word boundaries. */
-const MANDATES = /\b(?:shall|must|is required to|are required to|hendaklah|mesti)\b|ต้อง|ห้าม/i;
+const MANDATES = /\b(?:shall|must|is required to|are required to|hendaklah|mesti)\b|ต้อง|ห้าม|ຕ້ອງ|ຫ້າມ/i;
 /** A mandate word turned into its absence: "need not", "shall not be required to", "ไม่ต้อง". */
-const WAIVES = /\b(?:need not|not be required|not required|tidak perlu)\b|ไม่ต้อง/i;
+const WAIVES = /\b(?:need not|not be required|not required|tidak perlu)\b|ไม่ต้อง|ບໍ່ຕ້ອງ/i;
+/**
+ * The same in Thai and Lao alone, whose "must" and "prohibited" are single words the reader copies
+ * as the act. English is not here: "shall be deemed" is how a deeming rule is written.
+ */
+const MANDATES_BY_ITSELF = /ต้อง|ห้าม|ຕ້ອງ|ຫ້າມ/;
+const mandatesByItself = (act: string | null | undefined): boolean => !!act && MANDATES_BY_ITSELF.test(act) && !WAIVES.test(act);
+/**
+ * What a duty is to do, which is what follows the word that imposes it. The words before are who
+ * or what it binds, and can say anything: "Electronic money issued by Payment Service Providers in
+ * the Lao PDR shall be in KIP only" was taken to leave its content to something "issued" elsewhere.
+ */
+const dutyContent = (quote: string): string => {
+  const at = quote.search(MANDATES);
+  return at > 0 ? quote.slice(at) : quote;
+};
 /** Words that leave the content of a duty to something specified, prescribed or imposed elsewhere. */
 const DEFERS = /\b(?:in accordance with|specified|prescribed|determined|imposed|issued|conditions of (?:the|a|its) licen[cs]e)\b|กำหนด|ตามหลักเกณฑ์/i;
 
@@ -800,7 +855,7 @@ const RULES: Record<string, Rule> = {
   '8.3': (indicator, qualifying) => {
     const online = qualifying.filter((e) => e.finding.measure === 'user-identity');
     if (online.length > 0) {
-      return { ordinal: 1, reason: 'identity required to connect or use an online service', counted: online };
+      return { ordinal: 1, reason: 'identity required to connect or use an online service', counted: providerBoundFirst(online) };
     }
     const sim = qualifying.filter((e) => e.finding.measure === 'sim-registration');
     if (sim.length > 0) return { ordinal: 2, reason: 'identity required to register a SIM', counted: sim };
@@ -892,7 +947,9 @@ const RULES: Record<string, Rule> = {
 
   /** 10.4 "Export restriction" / "No restriction", on ICT goods and digital services only. */
   '10.4': (indicator, qualifying) => {
-    const ict = qualifying.filter((e) => e.finding.measure === 'ict-export-restriction');
+    const ict = qualifying.filter(
+      (e) => e.finding.measure === 'ict-export-restriction' && !namesNonIctExportGoods(e),
+    );
     return ict.length > 0
       ? { ordinal: 1, reason: `${ict.length} export restriction(s) on ICT goods or online services`, counted: ict }
       : { ordinal: 2, reason: 'no export restriction on ICT goods or online services found' };
@@ -1378,8 +1435,16 @@ function applyException(indicator: Indicator, evidence: Evidence[]): {
   excluded: { evidence: Evidence; reason: string }[];
 } {
   const governmentData = /government data/i.test(indicator.exception ?? '');
-  // 3.1 carves out the two sectors 5.2 and 12.01 ask about, so a cap on either is not its cap.
-  const sectorsAskedElsewhere = indicator.id === '3.1';
+  // 3.1 carves out the two sectors 5.2 and 12.01 ask about, so a cap on either is not its cap; 9.4
+  // the licences of the same two, so Lao PDR's internet service, internet cafe and domain registry
+  // licences, and its online gold-trading platform's, are not licences for online content.
+  const sectorsAskedElsewhere = /(?:covered|captured) under Pillar/i.test(indicator.exception ?? '');
+  const inTheirOwnPillar = (e: Evidence): boolean =>
+    indicator.id === '3.1'
+      ? /telecom|e-?commerce|online market/i.test(e.finding.sector ?? '')
+      : // The instrument's title too: a licensing instrument for internet service businesses says
+        // once whose licence it is, and its provisions call it "the licence".
+        [e.finding.sector, e.finding.subjectWords, e.finding.dutyBearer, e.instrumentTitle].some((w) => !!w && SECTOR_ASKED_IN_ITS_OWN_PILLAR.test(w));
   if (!indicator.exception) return { kept: evidence, excluded: [] };
   const kept: Evidence[] = [];
   const excluded: { evidence: Evidence; reason: string }[] = [];
@@ -1389,7 +1454,7 @@ function applyException(indicator: Indicator, evidence: Evidence[]): {
     // Those words are verified in Zone 2, so a claim with nothing to check is not applied.
     const out =
       (governmentData && e.finding.appliesOnlyToGovernmentData) ||
-      (sectorsAskedElsewhere && /telecom|e-?commerce|online market/i.test(e.finding.sector ?? '')) ||
+      (sectorsAskedElsewhere && inTheirOwnPillar(e)) ||
       (e.finding.withinException === true && !!e.finding.targetWords);
     if (out) excluded.push({ evidence: e, reason: indicator.exception });
     else kept.push(e);
@@ -1440,7 +1505,7 @@ const DURATION =
 
 /** Whether the words copied from a provision state how long something lasts. */
 export function statesDuration(...words: (string | null | undefined)[]): boolean {
-  return words.some((w) => !!w && DURATION.test(w));
+  return words.some((w) => !!w && (DURATION.test(w) || DURATION_LOCAL.test(w)));
 }
 
 /**
@@ -1500,6 +1565,23 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
   const ruledOut: { evidence: Evidence; reason: string }[] = [];
 
   for (const e of evidence) {
+    /**
+     * Rule out on an English-word test, unless the provision is not in English.
+     *
+     * The tests below that read the reader's copied words against English lists -- a period in
+     * years, a sector's name, a nationality, a word for information, a word for a country -- show
+     * nothing about a Russian, Mongolian or Lao provision, which cannot use those words whatever it
+     * says. There the finding is held, as the measure-name and subject tests already hold it, and a
+     * zero is never built on a test the provision could not have passed.
+     */
+    // Only for the languages whose own words these tests do not yet carry. Thai and Malay take the
+    // rule-out path exactly as on master, so no economy outside Russia, Mongolia and Lao can move.
+    const excludeOnWords = (reason: string): void => {
+      const language = otherLanguage(e);
+      if (language && CYRILLIC_OR_LAO_LANGUAGES.has(language)) {
+        held.push({ evidence: e, reason: `${reason} -- but the provision is in ${language}, and the test is of English words` });
+      } else ruledOut.push({ evidence: e, reason });
+    };
     // Before any measure-specific test: a sentence that declares rather than obliges has not
     // imposed a requirement on anyone, whatever the requirement would have been.
     //
@@ -1520,10 +1602,55 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     // exceeding RM500 per user" -- which is the answer ESCAP gives for that cell and is a
     // declaration by grammar. The reader was right about the verb; the gate was asking the wrong
     // measures for one.
-    if (e.finding.dutyForce === 'declares' && !permits(indicatorId, e.finding.measure) && !confinesPermission(e.finding)) {
+    //
+    // Nor an act that is itself "must". Lao PDR's Payment System Law says e-money "ຕ້ອງເປັນ" -- must
+    // be -- in kip only, and the reader copied that as the act and called it a declaration.
+    if (
+      e.finding.dutyForce === 'declares' &&
+      !mandatesByItself(e.finding.dutyAct) &&
+      !permits(indicatorId, e.finding.measure) &&
+      !confinesPermission(e.finding) &&
+      !laysTheCharge(indicatorId, e.finding)
+    ) {
       ruledOut.push({
         evidence: e,
         reason: `the provision declares what is the case -- "${e.finding.dutyAct}" -- rather than requiring anyone to do anything`,
+      });
+      continue;
+    }
+    // An amount is made out by an amount. See statesAnAmount on the measure.
+    if (statesAnAmount(indicatorId, e.finding.measure) && !NAMES_AN_AMOUNT.test(`${e.finding.quote ?? ''} ${e.finding.definingWords ?? ''}`)) {
+      ruledOut.push({
+        evidence: e,
+        reason: 'the provision states no amount and says none is set elsewhere, and this measure is an amount',
+      });
+      continue;
+    }
+    // A strict licence is strict in one of the ways the band names: a minimum of capital, an
+    // obligation to cover, roll out or perform, or a worse term for foreign operators. Lao PDR's
+    // telecommunications licence scored strict on "having enterprise registration", "having stable
+    // financial standing" and on needing the licence at all -- conditions of every licence, which
+    // ESCAP scores 0 there.
+    if (STRICT_LICENCE_MEASURES.has(e.finding.measure ?? '') && !STRICT_CONDITION.test(`${e.finding.quote ?? ''} ${e.finding.definingWords ?? ''}`)) {
+      ruledOut.push({
+        evidence: e,
+        reason: 'the condition is not a minimum of capital, an obligation to cover, roll out or perform, or a worse term for foreign operators, which is what makes a licence strict',
+      });
+      continue;
+    }
+    // An official-secrecy-of-investigatory-information clause is a duty of confidence over
+    // whatever an official learned in administering the Act -- not 4.1's remedy for the holder of
+    // a trade secret. See OFFICIAL_SECRECY_SCOPE.
+    if (
+      indicatorId === '4.1' &&
+      (e.finding.measure === 'trade-secret-protection' || e.finding.measure === 'trade-secret-clause') &&
+      OFFICIAL_SECRECY_SCOPE.test(
+        [e.finding.quote, e.finding.targetWords, e.finding.exceptionWords, e.finding.dutyBearer].filter(Boolean).join(' '),
+      )
+    ) {
+      ruledOut.push({
+        evidence: e,
+        reason: 'the duty of confidence is scoped to information obtained by virtue of or under this Act, or to the exercise of an officer’s functions or duties -- an official-secrecy clause, not a trade-secret regime',
       });
       continue;
     }
@@ -1585,10 +1712,7 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     // Read from the words copied out of the provision, not from the reader's statedPeriod, which
     // is its own paraphrase and has named a period the provision leaves to regulations.
     if (e.finding.measure === 'minimum-retention' && !statesDuration(e.finding.quote, e.finding.definingWords)) {
-      ruledOut.push({
-        evidence: e,
-        reason: 'the provision states no retention period; a period left to be prescribed elsewhere is not a minimum period',
-      });
+      excludeOnWords('the provision states no retention period; a period left to be prescribed elsewhere is not a minimum period');
       continue;
     }
     // An outline is a signpost to provisions elsewhere in the same instrument. Drafting manuals
@@ -1717,6 +1841,180 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
       });
       continue;
     }
+    // "Local" is the half of local-bank-account that MEASURE_NAMES asks for above, and the other
+    // half -- the account being a bank's -- is not asked at all, so a confirmation in the
+    // provision's own language can echo any local requirement back as this one. Mongolia's e-
+    // invoicing rule ("цахим төлбөрийн баримт", an electronic tax receipt) was confirmed in
+    // Mongolian as naming a local-bank-account requirement and never says the word bank in any
+    // language; a Payment System Procedure requiring settlement "through their account at
+    // Mongolbank" does. Checked regardless of readInItsLanguage, because the confirmation pass is
+    // exactly what let the first one through.
+    if (
+      e.finding.measure === 'local-bank-account' &&
+      !BANK_STEM.test(e.finding.definingWords ?? '') &&
+      !BANK_STEM.test(e.finding.quote ?? '')
+    ) {
+      ruledOut.push({
+        evidence: e,
+        reason: `"${e.finding.definingWords ?? e.finding.quote}" names no bank, and a local-bank-account requirement has to`,
+      });
+      continue;
+    }
+    // RESTRICTION (in measures.ts) is the only term of art 12.4.7's and 12.2's two measures have,
+    // and the same confirmation pass that let a bare bank-less noun through for local-bank-account
+    // above lets a bare noun phrase through here too. Mongolia's Customs Act named "цахим мөнгө"
+    // (electronic money) as the whole of its defining words for six unrelated payment measures at
+    // once, and its Law on Violations named the National Payment System Act by title, twice, as the
+    // "restriction" a person committed -- a penalty clause that borrows its prohibition from
+    // elsewhere states none of its own. Checked regardless of readInItsLanguage, exactly like
+    // BANK_STEM, and only for the three measures RESTRICTION alone answers.
+    if (
+      e.finding.measure !== null &&
+      e.finding.measure !== undefined &&
+      RESTRICTION_MEASURES.has(e.finding.measure) &&
+      !RESTRICTION_ANY.test(e.finding.definingWords ?? '') &&
+      !RESTRICTION_ANY.test(e.finding.quote ?? '')
+    ) {
+      ruledOut.push({
+        evidence: e,
+        reason: `"${e.finding.definingWords ?? e.finding.quote}" names nothing that prohibits, limits or requires anything, and this measure is a residual restriction`,
+      });
+      continue;
+    }
+    // national-payment-standard's only term of art (STANDARD, in measures.ts) is English, and the
+    // same confirmation pass that let a bare noun through for local-bank-account and the RESTRICTION
+    // measures above lets one through here too. Mongolia's Customs Act named "цахим мөнгө"
+    // (electronic money) as the whole of its defining words for this measure as well, and it says
+    // nothing about a standard or a requirement in any language. Checked regardless of
+    // readInItsLanguage, exactly like BANK_STEM and RESTRICTION_ANY, and only for this one measure.
+    if (
+      e.finding.measure === 'national-payment-standard' &&
+      !STANDARD_ANY.test(e.finding.definingWords ?? '') &&
+      !STANDARD_ANY.test(e.finding.quote ?? '')
+    ) {
+      ruledOut.push({
+        evidence: e,
+        reason: `"${e.finding.definingWords ?? e.finding.quote}" names no standard or requirement, and a national-payment-standard measure has to`,
+      });
+      continue;
+    }
+    // transmission-duty and transmission-duty-power are named by DUTY_OR_TAX alone (see
+    // MEASURE_NAMES in measures.ts), and a duty is a duty whatever it is charged on. 12.6 is about
+    // one thing charged on: something delivered electronically -- not merely something traded
+    // online. Russia's federal budget law refunds interest on a duty charged on "товаров
+    // электронной торговли" (goods of electronic commerce, a customs category for a cross-border
+    // online order that still arrives by post), and it was filed as this measure on that bare
+    // "electronic" word alone. 12.6's own SUBJECT_DOMAIN (ONLINE) would pass it the same way --
+    // reached, in fact, only where subjectWords is stated and reaches statesASubject, and this
+    // clause's subject need not be phrased as a noun phrase at all -- so ELECTRONIC_DELIVERY (see
+    // measures.ts) is asked of the quote instead, exactly like BANK_STEM and STANDARD_ANY above,
+    // and asks for the transmission or delivery word ONLINE alone does not: a duty is on something
+    // delivered electronically only where the words say both electronic and delivered, not either
+    // one alone.
+    if (
+      (e.finding.measure === 'transmission-duty' || e.finding.measure === 'transmission-duty-power') &&
+      !ELECTRONIC_DELIVERY.test(e.finding.definingWords ?? '') &&
+      !ELECTRONIC_DELIVERY.test(e.finding.quote ?? '')
+    ) {
+      ruledOut.push({
+        evidence: e,
+        reason: `"${e.finding.definingWords ?? e.finding.quote}" does not say something was delivered or transmitted electronically, and a transmission duty has to be on that`,
+      });
+      continue;
+    }
+    // 3.4's own gloss says so, and its own exception says so too: "not ordinary competition-law
+    // merger review, which this indicator excludes" / "Anti-trust measures related to M&A are not
+    // considered a restriction, unless discriminatory." A second token, discriminatory-merger-review,
+    // exists precisely for the carve-back -- but nothing enforced the exclusion itself, so an
+    // ordinary merger-clearance duty under a competition act, applying alike to any acquirer,
+    // counted as investment screening regardless. Thailand's Trade Competition Act ("a business
+    // operator that will carry out a merger ... that may create a monopoly ... must be authorised by
+    // the Committee") and Singapore's Competition Act ("notify the Commission of the merger; and
+    // apply to it for a decision") both confirmed this, and neither names a foreign party anywhere
+    // in the quote. Checked against the instrument's title, not the quote, because an ordinary
+    // merger-clearance section rarely repeats the Act's own name in its own sentence; checked only
+    // for investment-screening, not its own discriminatory-merger-review carve-back, and only where
+    // the finding itself never names a foreign party either -- a competition act *can* still single
+    // out a foreign acquirer, and that is exactly what the second token is for.
+    if (e.finding.measure === 'investment-screening' && COMPETITION_LAW.test(e.instrumentTitle ?? '') && !namesNationality(e.finding)) {
+      ruledOut.push({
+        evidence: e,
+        reason: `"${e.instrumentTitle}" is ordinary competition-law merger review, which this indicator excludes unless it treats a foreign acquirer differently from a local one`,
+      });
+      continue;
+    }
+    // 9.1's own gloss excludes political and election content, criminal content such as child abuse
+    // material, and age-restricted content -- and says so only in the measure vocabulary the reader
+    // is asked, with nothing enforcing it here. Mongolia's entire basis for this cell was almost
+    // exactly what the gloss excludes and nothing it scores: a Criminal Procedure Code network-
+    // restriction order ("ЭРҮҮГИЙН ХЭРЭГ ХЯНАН ШИЙДВЭРЛЭХ ТУХАЙ"), two Child Protection Act blocks plus
+    // a child-inspector rule, an 18+ content filter, and five election-campaign blocks across three
+    // election laws ("...СОНГУУЛИЙН ТУХАЙ" x2, "ЦАХИМ ОРЧИН АШИГЛАН СОНГУУЛИЙН СУРТАЛЧИЛГАА..." x3) --
+    // none an ordinary commercial website, marketplace, streaming or gambling-service duty, confirmed
+    // by reading the cell's full basis directly against the pack. Election/political and criminal-
+    // procedure instruments are asked of the instrument's title alone, the same way COMPETITION_LAW
+    // is above: an election law or a criminal code is named as such by its own title far more
+    // reliably than by any one operative sentence, and asking the quote for a bare "criminal" or
+    // "political" would as readily catch a penalty clause's criminal liability, or a "political
+    // subdivision" naming which government body holds a power, as it would the content this
+    // indicator excludes. A child or age-restriction measure is asked of the quote and defining
+    // words too, since a child-protection duty states its own subject there as plainly as its
+    // instrument's title does, and "child" carries none of "criminal"'s or "political"'s ambiguity.
+    if (
+      NINE_ONE_EXCLUDED_MEASURES.has(e.finding.measure ?? '') &&
+      (ELECTION_OR_POLITICAL_TITLE.test(e.instrumentTitle) ||
+        CRIMINAL_PROCEDURE_TITLE.test(e.instrumentTitle) ||
+        CHILD_OR_AGE_RESTRICTED.test(e.instrumentTitle) ||
+        CHILD_OR_AGE_RESTRICTED.test(e.finding.quote ?? '') ||
+        CHILD_OR_AGE_RESTRICTED.test(e.finding.definingWords ?? ''))
+    ) {
+      ruledOut.push({
+        evidence: e,
+        reason: `"${e.instrumentTitle}" is political or election content, criminal-procedure content, or child or age-restricted content, none of which this indicator scores`,
+      });
+      continue;
+    }
+    // 2.3's bidding-condition measure is defined by its own gloss as a substantive one -- "a local
+    // content share, a local employment target or another performance undertaking" -- not the
+    // ordinary run of eligibility grounds every procurement law states for every tender regardless
+    // of nationality: a registration or certificate requirement, a document- or bid-format
+    // conformity check, a supplier-blacklist check, or a bid-security deposit. Nothing enforced that
+    // distinction, and checked directly against the benchmark's own basis (not Russia alone, per
+    // this fix's own risk note): Malaysia's registration clause ("no supplier ... unless he is
+    // registered under this Act") and Mongolia's certificate clause ("must have a legal-entity
+    // certificate") name only who may bid, not a condition on how the contract is performed; four
+    // near-identical clauses in Russia's Постановление № 1215 disqualify a bid for a document or
+    // format non-conformity, one in Постановление № 2571 checks the supplier blacklist, and one in
+    // 223-ФЗ is a bid-security deposit -- none of them India's genuine local-content clause ("local
+    // content", the cost of locally-sourced items) or the rubric's own Australian-industry-
+    // participation example. Excluded on the finding's own words, not the instrument's title,
+    // because an eligibility clause and a substantive one commonly share the same procurement Act.
+    if (e.finding.measure === 'bidding-condition' && BIDDER_ELIGIBILITY_ONLY.test(e.finding.quote ?? e.finding.definingWords ?? '')) {
+      ruledOut.push({
+        evidence: e,
+        reason: `"${e.finding.definingWords ?? e.finding.quote}" is an ordinary eligibility, conformity or bid-security ground, not a substantive condition on how the contract is performed`,
+      });
+      continue;
+    }
+    // A requirement to be present in the economy says where. Lao PDR's rule that an internet café
+    // "must have suitable premises" was confirmed in Lao as a local presence requirement and
+    // scored 12.8's top band: a shop needs a room, which is not the same as a provider having to
+    // be in the country. The provision, its words or the place the reader named has to put the
+    // provider somewhere -- the economy, a country, a territory. In English a place's name is
+    // capitalised, so this reaches the scripts where the name test above is answered by the
+    // confirmation instead.
+    // "Local" says it as well as a name does: Singapore's registration rules require "a local
+    // agent as its administrative contact".
+    if (
+      PRESENT_IN_THE_ECONOMY.has(e.finding.measure ?? '') &&
+      ![e.finding.placeWords, e.finding.definingWords, e.finding.quote].some((w) => namesAPlace(w, ctx.economy) || HERE.test(w ?? ''))
+    ) {
+      ruledOut.push({
+        evidence: e,
+        reason: 'the provision names no place anyone has to be in, and this measure is a requirement to be present in the economy',
+      });
+      continue;
+    }
     // And a provision that never says what it is about. Every question before this one asks what
     // the provision does, and a provision can do exactly the right thing to the wrong subject: the
     // Competition Commission's duty to bank in Malaysia scored the online-payment cell, and a
@@ -1779,11 +2077,28 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     const domain = inDomain(indicatorId, e.finding.measure);
     // A sector is named by the document, not by every sentence in it -- see SECTOR_DOMAINS. The
     // instrument's title answers the domain for those, and the words answer it for the rest.
+    // And goods are named by their tariff code where the indicator's goods are defined by one --
+    // see TARIFF_CODED_DOMAIN.
     const namesDomain =
       domain !== null &&
-      (SECTOR_DOMAINS.has(indicatorId) || TITLE_CARRIES_DOMAIN.has(e.finding.measure ?? '')) &&
-      (domain.test(e.instrumentTitle) || domain.test(e.finding.subjectWords ?? ''));
-    if (domain && !namesDomain && e.finding.subjectWords && !domain.test(e.finding.subjectWords) && otherLanguage(e)) {
+      (((SECTOR_DOMAINS.has(indicatorId) || TITLE_CARRIES_DOMAIN.has(e.finding.measure ?? '')) &&
+        (domain.test(e.instrumentTitle) || domain.test(e.finding.subjectWords ?? ''))) ||
+        // Or the instrument's own definition of the party or subject, which names the topic once
+        // for every provision after it just as a title does -- see definedFor in ../cell.
+        (TITLE_CARRIES_DOMAIN.has(e.finding.measure ?? '') && domain.test(e.definedAs ?? '')) ||
+        (TARIFF_CODED_DOMAIN.has(indicatorId) && (e.ictTariffCodes?.length ?? 0) > 0));
+    // Words in another language that the domain's own words for it do not reach are not thereby
+    // outside it: those lists are stems, and a statute's chapter names its topic in its own terms.
+    // The title of the instrument they were read in does answer, as it does for a sector. Lao PDR's
+    // copyright decree heads its fair use article with the exception's name and nothing else, and
+    // asked of that name alone the domain held the one provision stating the model 4.5's top band
+    // names. Only where held: English words are still asked of themselves. And only for a measure
+    // that grants -- an exception, a remedy -- which is stated inside the statute creating the
+    // right; a restriction is asked of its own words, since a radio Act's ban on importing
+    // equipment is in a telecom title and is not a ban on ICT goods for that.
+    const grants = (MEASURES[indicatorId] ?? []).some((m) => m.token === e.finding.measure && m.permits === true);
+    const titledInDomain = domain !== null && grants && otherLanguage(e) !== null && domain.test(e.instrumentTitle);
+    if (domain && !namesDomain && !titledInDomain && e.finding.subjectWords && !domain.test(e.finding.subjectWords) && otherLanguage(e)) {
       held.push({
         evidence: e,
         reason: `the subject "${e.finding.subjectWords}" is in ${otherLanguage(e)}, and this indicator's subject is stated only in English`,
@@ -1793,6 +2108,7 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     if (
       domain &&
       !namesDomain &&
+      !titledInDomain &&
       e.finding.subjectWords &&
       !domain.test(e.finding.subjectWords) &&
       statesASubject(e.finding.subjectWords)
@@ -1819,11 +2135,8 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     // And the other way round for a sector: the words name no sector and neither does the Act they
     // were read in, so the provision is about some other trade. Ruled out for the reason the
     // subject test is -- the provision was read and what it is about belongs elsewhere.
-    if (domain && SECTOR_DOMAINS.has(indicatorId) && !namesDomain) {
-      ruledOut.push({
-        evidence: e,
-        reason: `neither "${e.finding.subjectWords ?? e.instrumentTitle}" nor the instrument it is in names ${subject ?? "this indicator's subject"}`,
-      });
+    if (domain && SECTOR_DOMAINS.has(indicatorId) && !namesDomain && !titledInDomain) {
+      excludeOnWords(`neither "${e.finding.subjectWords ?? e.instrumentTitle}" nor the instrument it is in names ${subject ?? "this indicator's subject"}`);
       continue;
     }
     // A band that is a proportion needs the provision to state one. 3.1, 5.2 and 12.01 descend
@@ -1846,20 +2159,22 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     // foreigners. Either side of the line will do, because the restriction is written both ways:
     // a ceiling on foreign holding, or a floor on the share that must stay in local hands.
     if (proportional(indicatorId, e.finding.measure) && !namesNationality(e.finding)) {
-      ruledOut.push({
-        evidence: e,
-        reason: 'the provision limits what anyone may hold, and every band of this indicator is a limit on foreign holding',
-      });
+      excludeOnWords('the provision limits what anyone may hold, and every band of this indicator is a limit on foreign holding');
       continue;
     }
     // The same question of every other measure that restricts a foreign party and no one else.
     // See Measure.restrictsForeigners: a joint venture entered for tax consolidation, and a branch
     // a domestic provider must open, are the act the measure describes done by nobody foreign.
     if (restrictsForeigners(indicatorId, e.finding.measure) && !namesNationality(e.finding)) {
-      ruledOut.push({
-        evidence: e,
-        reason: `the provision names no foreign party, and this measure is borne by ${actorOf(indicatorId, e.finding.measure) ?? 'a foreign one'}`,
-      });
+      excludeOnWords(`the provision names no foreign party, and this measure is borne by ${actorOf(indicatorId, e.finding.measure) ?? 'a foreign one'}`);
+      continue;
+    }
+    // A joint-venture duty scoped to "the tender"/"the procurement"/"the bid" is a condition on
+    // winning a public contract -- pillar 2's subject -- not a market-entry requirement on doing
+    // business here at all. India's Public Procurement (Preference to Make in India) Order 2017
+    // cl.13A requires the joint venture only "to participate in the tender".
+    if (indicatorId === '3.2' && e.finding.measure === 'joint-venture' && scopedToProcurement(e.finding, e.headingPath)) {
+      excludeOnWords('the joint-venture duty is scoped to the tender, the procurement or the bid, and that is a condition on a public contract, not a market-entry requirement');
       continue;
     }
     // And the direction of a presence: it has to be one required here. A bank regulator's approval
@@ -1916,6 +2231,21 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
       });
       continue;
     }
+    // A copy put out for inspection for a few days is a notice, not storage. A payment firm
+    // transferring its business "must keep at their respective offices in Singapore, for
+    // inspection by any person that may be affected by the transfer, a copy of the report" for 15
+    // days after the Gazette notice, and it made a second local storage measure beside the
+    // Companies Act's accounting records. It says where the affected may read a document while
+    // they can object, and nothing about where the records themselves must live. A register kept
+    // open to inspection with no end is still where the register is kept, so only the short window
+    // rules it out.
+    if (locational(indicatorId, e.finding.measure) && displayedForAWhile(e.finding)) {
+      ruledOut.push({
+        evidence: e,
+        reason: `the provision puts a copy out for inspection for ${e.finding.statedPeriod}, which is notice to those affected rather than a place the data must be kept`,
+      });
+      continue;
+    }
     // Where the measure is a condition, the place the data goes is not one. The condition may be
     // stated outright or carved out as an exception, so either will do; naming neither will not.
     if (
@@ -1960,9 +2290,9 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     // quoted, and leaves nothing for another instrument to do.
     const imposesItself =
       !e.finding.prescribingWords &&
-      !DEFERS.test(e.finding.quote) &&
+      !DEFERS.test(dutyContent(e.finding.quote)) &&
       ((e.finding.mandatory &&
-        (e.finding.dutyForce === 'requires' || e.finding.dutyForce === 'forbids') &&
+        (e.finding.dutyForce === 'requires' || e.finding.dutyForce === 'forbids' || mandatesByItself(e.finding.dutyAct)) &&
         MANDATES.test(e.finding.quote)) ||
         confinesPermission(e.finding));
     if (!e.finding.imposingWords && !imposesItself && !permits(indicatorId, e.finding.measure)) {
@@ -1997,7 +2327,12 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     // "administered by a trustee company in Singapore" -- a place, a duty, and nothing to do with
     // data. These measures are all about where data has to be, so a provision that never names
     // the data has not made one out however locational its language is.
-    if (locational(indicatorId, e.finding.measure) && !e.finding.locatedData) {
+    //
+    // The data may be named as the provision's subject rather than in the field asked for it. Section
+    // 12 of a credit information statute forbids processing "ข้อมูล" outside the Kingdom; the reader
+    // gave the data as the subject and left the located data empty. Where the subject is called
+    // information in the quote's own words, it is the data the place holds.
+    if (locational(indicatorId, e.finding.measure) && !e.finding.locatedData && !subjectIsTheData(e.finding)) {
       ruledOut.push({
         evidence: e,
         reason: 'the provision names a place but no data that has to be there',
@@ -2009,7 +2344,7 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     // secure": a duty, a place, and a thing that must be there, all genuinely in the provision.
     // The thing is a virus. Every measure marked locational is about where *data* has to be, so
     // a provision whose own words never call the located thing information has not made one out.
-    if (locational(indicatorId, e.finding.measure) && !e.finding.informationWords) {
+    if (locational(indicatorId, e.finding.measure) && !e.finding.informationWords && !subjectIsTheData(e.finding)) {
       ruledOut.push({
         evidence: e,
         reason: 'the provision says where something must be, but never calls that thing information',
@@ -2053,11 +2388,13 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     // here in the way a patent is: a legal system may call it data, a record, a document or
     // particulars, but none of them calls it a payment. Placed after the structural tests, which
     // need no view about what the words mean and so should have their say first.
-    if (locational(indicatorId, e.finding.measure) && !INFORMATION.test(e.finding.informationWords ?? '')) {
-      ruledOut.push({
-        evidence: e,
-        reason: `the provision calls the thing "${e.finding.informationWords}", which is not information`,
-      });
+    const informationWords = e.finding.informationWords ?? (subjectIsTheData(e.finding) ? e.finding.subjectWords : null);
+    if (locational(indicatorId, e.finding.measure) && !callsItInformation(informationWords)) {
+      const reason = `the provision calls the thing "${informationWords}", which is not information`;
+      // Russian, Mongolian and Lao have their own words for information (INFORMATION_LOCAL), but a
+      // list of stems is never the whole of a language, so a provision in one of them that fails it
+      // is held rather than ruled out -- see excludeOnWords. Every other language is ruled out as before.
+      excludeOnWords(reason);
       continue;
     }
     // And a place that is not a place. These measures ask for the words naming the country,
@@ -2070,11 +2407,8 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     // about flood and fire, naming nowhere -- decided the cell and named its controlling
     // instrument. Ruled out rather than held, for the reason the test above it is: the provision
     // was read, and the words it gave are not words about where anything has to be.
-    if (locational(indicatorId, e.finding.measure) && !namesAPlace(e.finding.placeWords)) {
-      ruledOut.push({
-        evidence: e,
-        reason: `the provision puts the data "${e.finding.placeWords}", which names no country, territory or jurisdiction`,
-      });
+    if (locational(indicatorId, e.finding.measure) && !namesAPlace(e.finding.placeWords, ctx.economy)) {
+      excludeOnWords(`the provision puts the data "${e.finding.placeWords}", which names no country, territory or jurisdiction`);
       continue;
     }
     // A duty to comply with rules made elsewhere is not the requirement those rules make. "An EMI
@@ -2113,17 +2447,60 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
       });
       continue;
     }
+    // And an appointed officer is not necessarily a data-protection one. Mongolia's Insurance Act
+    // has "the insurer ... appoints an authorised official" score this measure: a generic
+    // compliance appointment, of the kind every regulated industry's supervision statute makes,
+    // that never says data, information or privacy. Asked of the words naming the appointee, or --
+    // the way local-bank-account's title carries "the account" once the statute has said it -- of
+    // the instrument's own title: Singapore's "an organisation must designate one or more
+    // individuals" never repeats "data" itself, and sits inside the Personal Data Protection Act.
+    if (
+      e.finding.measure === 'data-protection-officer' &&
+      !DATA_SUBJECT.test(e.finding.roleWords ?? '') &&
+      !DATA_SUBJECT.test(e.finding.quote ?? '') &&
+      !DATA_SUBJECT.test(e.instrumentTitle)
+    ) {
+      ruledOut.push({
+        evidence: e,
+        reason: `"${e.finding.roleWords ?? e.finding.quote}" appoints an officer, not one named for data or information`,
+      });
+      continue;
+    }
     // And a role created by the State is not a duty on the regulated. Section 47 of Malaysia's
     // Personal Data Protection Act has the Minister appoint the Personal Data Protection
     // Commissioner: a real appointment to a real position, and the position is the regulator's.
     // Each measure says which side it binds, and this checks the side the reader read out.
     if (
       actorKindOf(indicatorId, e.finding.measure) === 'private' &&
-      e.finding.dutyBearerKind === 'government'
+      e.finding.dutyBearerKind === 'government' &&
+      !laysTheCharge(indicatorId, e.finding)
     ) {
       ruledOut.push({
         evidence: e,
         reason: `the duty falls on ${e.finding.dutyBearer}, which is the State, and this measure binds the party the law regulates`,
+      });
+      continue;
+    }
+    // And the mirror of that, for government-access alone: the power 7.5 asks about is the State's
+    // own, exercised by the State, so a private party's own entitlement does not make it out.
+    // Mongolia's Civil Code gives a contracting party "мэдээлэл авах эрхтэй" -- a right to receive
+    // information from the other side -- and it led 7.5's citation as government access to data
+    // without a court order, which is not what a private right to information under a contract is.
+    //
+    // Scoped to this one measure by name, not by `actorKindOf(...) === 'state'` generally: 11.1's
+    // own two measures also carry that tag, for the different reason their `actor` field names the
+    // standard-setting body -- but the duty foreign-exclusion-from-standards actually reports is
+    // borne by the excluded party, which is exactly the private or foreign entity a nationality bar
+    // names, not the State. Reusing the tag there would rule out every genuine finding it has.
+    if (
+      e.finding.measure === 'government-access' &&
+      e.finding.dutyBearerKind !== undefined &&
+      e.finding.dutyBearerKind !== null &&
+      e.finding.dutyBearerKind !== 'government'
+    ) {
+      ruledOut.push({
+        evidence: e,
+        reason: `the party exercising it is ${e.finding.dutyBearer}, which is not the State, and this measure is a power exercised by a public authority`,
       });
       continue;
     }
@@ -2156,7 +2533,7 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
     }
     // A power is not a duty, and two measures in the rubric are written as powers: government
     // access, and a power to impose customs duties on an electronic transmission.
-    if (!isRequirement(e.finding) && !permits(indicatorId, e.finding.measure)) {
+    if (!isRequirement(e.finding) && !permits(indicatorId, e.finding.measure) && !laysTheCharge(indicatorId, e.finding)) {
       ruledOut.push({ evidence: e, reason: 'the provision permits rather than requires' });
       continue;
     }
@@ -2205,6 +2582,14 @@ function hold(indicatorId: string, evidence: Evidence[], ctx: RuleContext): {
 }
 
 /** The verbs of keeping something somewhere, as against doing something to it there. */
+/** Kept "for inspection" for a window counted in days or weeks: see `hold`. */
+function displayedForAWhile(f: Finding): boolean {
+  return (
+    /for (?:public )?inspection|open to (?:public )?inspection|available for (?:public )?inspection|เพื่อให้.{0,20}ตรวจดู/i.test(f.quote ?? '') &&
+    /\d+\s*(?:days?|weeks?)\b|\b[a-z-]+ (?:days?|weeks?)\b|\d+\s*วัน/i.test(f.statedPeriod ?? '')
+  );
+}
+
 const KEEPING = /\b(keep|kept|keeping|retain\w*|store\w*|storing|hold|held|holding|maintain\w*|preserv\w*)\b|เก็บ|จัดเก็บ|เก็บรักษา/i;
 /** The verbs of doing something to data, which make a locational duty 6.1's. */
 const PROCESSING = /\b(process\w*|handl\w*|analys\w*|comput\w*)\b|ประมวลผล/i;
@@ -2367,18 +2752,151 @@ function inDomain(indicatorId: string, measure: string | null): RegExp | null {
 }
 
 /**
+ * The word for "bank" itself, English, the Cyrillic economies and Lao alike. Not beside `\b` for
+ * "банк", for the reason NATIONALITY_LOCAL below is not: Russian and Mongolian inflect, and
+ * "Монголбанк" (the Mongolian central bank) is one word with "банк" inside it, not two. First cut
+ * left "ທະນາຄານ" out and lost a real Lao land-payment agreement that settles "ຜ່ານລະບົບທະນາຄານ" --
+ * through the banking system -- the reason this is asked of every economy this rule reaches, not
+ * only the one the bug was first found in.
+ */
+const BANK_STEM = /\bbank\w*\b|банк|ທະນາຄານ/i;
+
+/** The three measures whose only term of art is RESTRICTION_ANY (in measures.ts): no amount, no
+ * licence, no named instrument, just a word that restricts, prohibits or requires something. */
+const RESTRICTION_MEASURES = new Set(['other-payment-restriction', 'online-purchase-limit', 'online-delivery-limit']);
+
+/** 9.1's two measures, whose own gloss excludes political, election, criminal-procedure and
+ * child/age-restricted content -- see the block below that enforces it. */
+const NINE_ONE_EXCLUDED_MEASURES = new Set(['content-blocking', 'content-filtering']);
+
+/**
+ * An instrument named for the election or political process, English or Mongolian.
+ *
+ * Title-only, not the quote: "election\w*"/"campaign\w*"/"candidate\w*" asked of an operative
+ * sentence would be safe enough, but a bare "political\w*" is not -- "political subdivision" is
+ * ordinary drafting for which government body holds a power, naming nothing about content. An
+ * instrument's own title carries none of that risk. "сонгуул" (election) is confirmed against
+ * Mongolia's three election-law citations for content-blocking's 9.1 basis: two Election Acts
+ * ("...СОНГУУЛИЙН ТУХАЙ") and the electronic-campaign procedure
+ * ("ЦАХИМ ОРЧИН АШИГЛАН СОНГУУЛИЙН СУРТАЛЧИЛГАА...").
+ */
+const ELECTION_OR_POLITICAL_TITLE = /\b(election\w*|campaign\w*|candidate\w*|referendum\w*|political part(?:y|ies))\b|сонгуул/i;
+
+/**
+ * An instrument that is a criminal code or criminal procedure code by its own title, English or
+ * Mongolian. Title-only for the same reason as above: a bare "criminal\w*" asked of the quote would
+ * as readily catch a penalty clause's criminal liability attached to an ordinary commercial duty as
+ * it would content genuinely restricted under criminal procedure. "эрүү" (crime/criminal) is
+ * confirmed against Mongolia's "ЭРҮҮГИЙН ХЭРЭГ ХЯНАН ШИЙДВЭРЛЭХ ТУХАЙ" (its Criminal Procedure Code),
+ * whose own network-restriction order sat in 9.1's basis as an ordinary content-blocking measure.
+ */
+const CRIMINAL_PROCEDURE_TITLE = /\bcriminal (?:procedure|code)\b|penal code|эрүү/i;
+
+/**
+ * Content restricted for a child's or a minor's protection, or by an age restriction -- English or
+ * Mongolian, and asked of the title, the quote and the defining words alike, unlike the two above:
+ * "child" and "хүүх" carry none of "criminal"'s or "political"'s ambiguity, so the wider net costs
+ * nothing. "хүүх" (child) is confirmed against Mongolia's Child Protection Act (two citations), its
+ * child state inspector's rule, and the instrument requiring an "18+" content filter, all four
+ * counted in 9.1's basis as ordinary content-blocking or -filtering measures; "18+" is asked directly
+ * for the same instrument, whose own quote states only the figure and not the word "child".
+ *
+ * "хүүх", not the fuller "хүүхэд": Mongolian's own word for child is "хүүхэд" in the nominative but
+ * drops that vowel in every case-marked form the corpus actually uses -- "хүүхдийн" (genitive, the
+ * inspector's rule), "хүүхдэд" (dative, the harmful-content clause) -- so no five-letter stem is
+ * common to both the Act's own title and its own inflections; the four-letter "хүүх" is, and is
+ * confirmed against all four.
+ */
+const CHILD_OR_AGE_RESTRICTED = /\b(child\w*|minor\w*|juvenile\w*)\b|18\+|хүүх/i;
+
+/**
+ * An ordinary bidder-eligibility ground, not a substantive condition on how the contract is
+ * performed -- see the `bidding-condition` block above for what this excludes and why.
+ *
+ * Four shapes, each confirmed against a real citation in the benchmark: a registration or
+ * certificate requirement (Malaysia's "registered under this Act", Mongolia's "гэрчилгээтэй байх",
+ * a legal-entity certificate); a document- or bid-format conformity check (Russia's Постановление
+ * № 1215, four near-identical clauses -- "несоответствие документов ... требованиям", "несоответствие
+ * заявки ... к содержанию, оформлению и составу", "непредставление документов и информации"); a
+ * supplier-blacklist check (Постановление № 2571's "реестре недобросовестных поставщиков"); and a
+ * bid-security deposit (223-ФЗ's "в качестве обеспечения заявки"). The conformity shape is asked
+ * with a gap rather than a bare stem, because "несоответствие" alone is ordinary Russian for any
+ * non-conformity, including a substantive one -- a local-content shortfall would say so too -- and
+ * what makes these four eligibility rather than substance is that the non-conformity is with the
+ * tender's own documents, format or requirements, stated within the same clause.
+ */
+const BIDDER_ELIGIBILITY_ONLY =
+  /\bregistered under (?:this|the) act\b|\bbid (?:security|bond)\b|\bearnest money\b|гэрчилгээтэй|бүртгэлтэй\s*байх|недобросовестн\w*|обеспечени\w*[\s\S]{0,15}заявк\w*|(?:несоответств\w*|непредставлени\w*)[\s\S]{0,60}(?:докумен\w*|заявк\w*|требован\w*)/i;
+
+/**
  * Does this finding restrict holders by nationality or residence, either way round?
  *
  * Ruled out rather than held: a provision that caps every shareholder alike was read and does not
  * carry a foreign equity limit, which is a finding about it. Read across every word the reader
  * copied out, because the nationality can sit in the party bound, the limit, or the sector.
  */
+// "ต่างประเทศ" ("foreign/another country") is its own word, not a substring of "ต่างด้าว" (alien) or
+// "ต่างชาติ" (foreign nationality): a card-network licensee that "is a foreign legal entity"
+// (นิติบุคคลต่างประเทศ) named its dutyBearer that way, and without this word the finding read as
+// naming no foreign party at all, taking the rule-out path this indicator's Thai findings already
+// take (see excludeOnWords above).
 const NATIONALITY =
-  /\b(foreign(er|ers|ly)?|non-?residents?|non-?citizens?|non-?nationals?|overseas|aliens?|citizens?|nationals?|nationality|residents?|residency|domestic|local(ly)?|indigenous|bumiputera|malaysian|singaporean|australian|incorporated in)\b|คนต่างด้าว|ต่างด้าว|ต่างชาติ|สัญชาติ/i;
+  /\b(foreign(er|ers|ly)?|non-?residents?|non-?citizens?|non-?nationals?|overseas|aliens?|citizens?|nationals?|nationality|residents?|residency|domestic|local(ly)?|indigenous|bumiputera|malaysian|singaporean|australian|incorporated in)\b|คนต่างด้าว|ต่างด้าว|ต่างชาติ|ต่างประเทศ|สัญชาติ/i;
+
+/**
+ * The same categories in Russian, Mongolian and Lao. Stems, matched as substrings: `\b` is ASCII-only
+ * in JavaScript and never bounds a Cyrillic or Lao word, and these languages inflect. Every term is
+ * in Cyrillic or Lao script, so no English word can match one -- the English economies are tested
+ * exactly as before.
+ *
+ * Measured on Russia's pillar 6: Article 12 of 152-ФЗ, the cross-border transfer article itself,
+ * was held because the data it governs, "персональных данных", is not an English word for
+ * information; Article 13 of 149-ФЗ was held for "баз данных". A held finding scores nothing, so
+ * the cells defaulted to "no restriction" on the laws that impose one.
+ */
+const NATIONALITY_LOCAL = /(иностран|нерезидент|резидент|граждан|подданств|гадаад|иргэн|харьяат|ຕ່າງປະເທດ|ຄົນຕ່າງດ້າວ|ພົນລະເມືອງ|ສັນຊາດ)/i;
+const FOREIGN_PARTY_LOCAL = /(иностран|нерезидент|гадаад|ຕ່າງປະເທດ|ຄົນຕ່າງດ້າວ)/i;
+// "данны"/"данных", not "данн": "данного Федерального закона" means "of this Federal Law".
+const INFORMATION_LOCAL =
+  /(информаци|сведени|данны[ехйм]|данные|документ|запис|реестр|архив|мэдээл|өгөгдөл|баримт|бүртгэл|ຂໍ້ມູນ|ເອກະສານ|ບັນທຶກ|ທະບຽນ)/i;
+// Not "государств" or "улсын": "государственной информационной системы" is a state system, not a place.
+const PLACE_LOCAL = /(территори|пределами|за рубеж|иностранн|нутаг дэвсгэр|гадаад|ສປປ|ລາວ|ປະເທດ|ດິນແດນ)/i;
+const DURATION_LOCAL =
+  /(\d+|одного|двух|тр[её]х|четырех|пяти|шести|десяти|нэг|хоёр|гурав|тав|ຫນຶ່ງ|ໜຶ່ງ|ສອງ|ສາມ|ຫ້າ|ສິບ)\s*(лет|год|месяц|дн|жил|сар|хоног|ປີ|ເດືອນ|ມື້)/i;
 
 function namesNationality(f: Finding): boolean {
-  return [f.dutyBearer, f.definingWords, f.subjectWords, f.quote].some((w) => w && NATIONALITY.test(w));
+  return [f.dutyBearer, f.definingWords, f.subjectWords, f.quote].some((w) => w && (NATIONALITY.test(w) || NATIONALITY_LOCAL.test(w)));
 }
+
+/**
+ * The instrument's own name, where the law is an ordinary competition/anti-trust act rather than an
+ * investment-screening one. "Competition" alone is too common a word in a merger-review sentence to
+ * ask of the quote (a genuine investment-screening clause can mention "competition" in passing), so
+ * this is asked of the instrument's title instead -- Thailand's "พระราชบัญญัติการแข่งขันทางการค้า"
+ * (Trade Competition Act), Singapore's and India's "Competition Act", Australia's "Competition and
+ * Consumer Act" (the up-to-25-character gap allows "and Consumer" between the two words) and Lao
+ * PDR's "ກົດໝາຍ ວ່າດ້ວຍແຂ່ງຂັນທາງທຸລະກິດ" (Law on Business Competition) were each confirmed as the
+ * instrument named for an investment-screening finding that turned out, on inspection, to be an
+ * ordinary merger-clearance duty applying alike to any acquirer.
+ *
+ * Mongolia had no stem here at all, so its own ordinary merger-clearance procedure -- "ЖУРАМ БАТЛАХ
+ * ТУХАЙ (өрсөлдөгчийн хувьцааг худалдан авахад дүгнэлт гаргах)", "Procedure for issuing an opinion
+ * on acquiring a competitor's shares" -- still counted. "өрсөлд" (compete/competitor) is confirmed
+ * as the corpus's own term of art, title-only and correct on two other instruments as well as this
+ * one (a cartel/price-fixing procedure, a tender's "competitive" selection procedure), and nothing
+ * else in a title-only regex.
+ *
+ * Russia had none either: three of its investment-screening findings sit on Федеральный закон
+ * № 135-ФЗ "О защите конкуренции" ("On the protection of competition") -- the antimonopoly
+ * authority's own pre-approval of "transactions with shares, assets of a financial organisation",
+ * the notification duty and invalidity consequence Article 31 attaches to it, and the authority's
+ * duty to consider such a request -- an ordinary merger-clearance regime for financial-sector deals,
+ * applying alike to any acquirer, beside the genuine screening in 620-FZ and 57-FZ that carries the
+ * cell either way. "конкуренци" (competition/competitor) is confirmed as this title's own term of
+ * art and matches nothing else in RUS 3.4's basis.
+ */
+const COMPETITION_LAW =
+  /\bcompetition\b.{0,25}\bact\b|anti-?trust|trade competition|merger control|monopol(?:y|ies)(?:\s+commission)?|การแข่งขันทางการค้า|ແຂ່ງຂັນທາງທຸລະກິດ|өрсөлд|конкуренци/i;
 
 /** Words that make a party foreign to the economy, as opposed to merely naming a nationality. */
 const FOREIGN_PARTY = /\b(foreign(er|ers|ly|-owned|-ownership)?|non-?residents?|non-?citizens?|non-?nationals?|overseas|aliens?)\b|คนต่างด้าว|ต่างด้าว|ต่างชาติ/i;
@@ -2402,7 +2920,8 @@ const FOREIGN_PARTY = /\b(foreign(er|ers|ly|-owned|-ownership)?|non-?residents?|
  * practice -- so requiring the holder to be the foreign one keeps those and drops these.
  */
 function foreignIsTheHeld(f: Finding): boolean {
-  return FOREIGN_PARTY.test(f.subjectWords ?? '') && !FOREIGN_PARTY.test(f.dutyBearer ?? '');
+  const foreign = (w: string | null): boolean => !!w && (FOREIGN_PARTY.test(w) || FOREIGN_PARTY_LOCAL.test(w));
+  return foreign(f.subjectWords) && !foreign(f.dutyBearer);
 }
 
 /**
@@ -2412,6 +2931,26 @@ function foreignIsTheHeld(f: Finding): boolean {
  * a document or particulars, and it words each of those its own way, but the category itself is
  * one every one of them has. It is not a list of the data we want to find.
  */
+/** The subject is information by its own words, and those words are in the quote: see `hold`. */
+function subjectIsTheData(f: Finding): boolean {
+  const subject = (f.subjectWords ?? '').trim();
+  return (
+    subject.length > 0 &&
+    callsItInformation(subject) &&
+    (f.quote ?? '').toLowerCase().includes(subject.toLowerCase())
+  );
+}
+
+function callsItInformation(words: string | null | undefined): boolean {
+  return INFORMATION.test(words ?? '') || INFORMATION_TH.test(words ?? '') || INFORMATION_LOCAL.test(words ?? '');
+}
+
+/** The languages INFORMATION_LOCAL and PLACE_LOCAL speak for. */
+const CYRILLIC_OR_LAO_LANGUAGES: ReadonlySet<string> = new Set(['ru', 'mn', 'lo']);
+
+/** INFORMATION in Thai, which has no word boundaries for it to test. */
+const INFORMATION_TH = /ข้อมูล|สารสนเทศ|เอกสาร|บันทึก|ทะเบียน|บัญชี|รายงาน/;
+
 const INFORMATION =
   /\b(information|data|dataset\w*|records?|recorded|documents?|particulars?|details?|registers?|books?|accounts?|files?|communications?|messages?|contents?|statements?|reports?|copies|copy|logs?|databases?|credentials?|personal\w*)\b/i;
 
@@ -2430,9 +2969,49 @@ const PLACE_KIND =
 /** A place has a name, and a name is capitalised. */
 const PLACE_NAME = /\p{Lu}\p{L}{2,}/u;
 
-function namesAPlace(words: string | null): boolean {
-  return !!words && (PLACE_KIND.test(words) || PLACE_NAME.test(words));
+/** Measures made out only by a requirement to be in the economy: an office, a branch, an agent. */
+const PRESENT_IN_THE_ECONOMY = new Set(['local-presence', 'local-representative', 'commercial-presence']);
+/** Words that put someone in the economy without naming it. */
+const HERE = /\b(local(ly)?|resident|domestic)\b|местн/i;
+
+/**
+ * The economy's own name or nationality adjective, from its Zone 0 profile's `demonym`.
+ *
+ * English economies never needed this: `PLACE_NAME` already catches "Australian" or "Singapore" by
+ * their capital letter, the way it catches any proper noun. Russian and Mongolian have no case for a
+ * regex to use that way, so "учредить российское юридическое лицо" (establish a Russian legal
+ * entity) named no place by the shared word lists alone -- not because Russia is a special case, but
+ * because naming the economy by its own name is a category every legal system has, the same
+ * reasoning PLACE_KIND and INFORMATION are kept on. Cached per economy code; an economy the tests
+ * exercise but never profile (e.g. "XXX") or one with nothing declared yet simply adds nothing.
+ */
+const demonymCache = new Map<string, RegExp | null>();
+function demonymPattern(economy: string): RegExp | null {
+  if (!demonymCache.has(economy)) {
+    let pattern: RegExp | null = null;
+    try {
+      const stems = loadProfile(economy).demonym;
+      if (stems.length > 0) pattern = new RegExp(stems.join('|'), 'i');
+    } catch {
+      // No profile for this code, or it fails to parse: fall back to the shared word lists.
+    }
+    demonymCache.set(economy, pattern);
+  }
+  return demonymCache.get(economy)!;
 }
+
+function namesAPlace(words: string | null | undefined, economy?: string): boolean {
+  if (!words) return false;
+  if (PLACE_KIND.test(words) || PLACE_KIND_TH.test(words) || PLACE_NAME.test(words) || PLACE_LOCAL.test(words)) return true;
+  const demonym = economy ? demonymPattern(economy) : null;
+  return !!demonym && demonym.test(words);
+}
+
+/**
+ * PLACE_KIND in Thai. Thai has no capitals, so a place's name cannot be told by its case, and the
+ * common nouns carry the whole test: a kingdom, a country, abroad, a territory, a jurisdiction.
+ */
+const PLACE_KIND_TH = /ราชอาณาจักร|ประเทศ|ต่างประเทศ|นอกประเทศ|ดินแดน|เขตอำนาจ|ต่างแดน/;
 
 /**
  * Does this proportion say how much must be held, rather than how much may be?
@@ -2486,6 +3065,19 @@ export function presenceAbroad(subject: string | null): boolean {
   return /\b(overseas|offshore) (branch|office|subsidiar)\w*|\b(branch|office|subsidiar\w*)\w* (abroad|overseas|outside)\b|สาขาในต่างประเทศ/i.test(subject ?? '');
 }
 
+/**
+ * Is a joint-venture duty's own scope the tender, the procurement or the bid, rather than doing
+ * business in the economy at all? A duty to form a joint venture "to participate in the tender" is
+ * a bidder's condition on one contract, not a standing requirement to enter the market. India's
+ * Public Procurement (Preference to Make in India) Order 2017 cl.13A puts that scoping in the
+ * quote and its condition/target words, not in subjectWords (which names the goods, not the
+ * tender) -- so every field the reader might have put it in is checked.
+ */
+export function scopedToProcurement(f: Pick<Finding, 'subjectWords' | 'quote' | 'targetWords' | 'conditionWords'>, headingPath: string | null | undefined): boolean {
+  const words = `${f.subjectWords ?? ''} ${f.quote ?? ''} ${f.targetWords ?? ''} ${f.conditionWords ?? ''} ${headingPath ?? ''}`;
+  return /\b(the|a|this|that) (tender|procurement|bid)\b|\bpublic procurement\b/i.test(words);
+}
+
 /** Who the catalogue says bears this measure, for the reason given when it is not borne. */
 function actorOf(indicatorId: string, measure: string | null): string | null {
   if (!measure) return null;
@@ -2509,6 +3101,12 @@ const FRONTIER = new RegExp(
     // "diimport" and "pengeksportan".
     /import|export|eksport/.source,
     'นำเข้า|ส่งออก|นำ\\S*เข้า|ส่ง\\S*ออก|นำออก|ราชอาณาจักร|ศุลกากร|ผ่านแดน|นำผ่าน|ถ่ายลำ|ประเทศ|ตางประเทศ|ภายนอก',
+    // Lao, which had none, so Lao PDR's Data Protection Law -- personal data may not be sent "ອອກນອກ
+    // ສປປ ລາວ", out of the Lao PDR, without its owner's consent -- was found to take nothing across a
+    // border. The marks are optional because the gazette's text layer drops them as often as not:
+    // import is written ນໍາເຂົ້າ, ນາໍເຂົາ and ນ້າເຂົ້າ, foreign ຕ່າງປະເທດ, ຕາງປະເທດ and ຕ້າງປະເທດ.
+    // ແດນ is the frontier itself, in ຊາຍແດນ (border), ຂ້າມແດນ (across it) and ຜ່ານແດນ (transit).
+    'ນ[ໍາຳ້]{1,3}ເຂົ|ສ[ົິ]່?ງອ?ອກ|ຂາອອກ|ແດນ|ສົ່ງຜ່ານ|ຕ[່້]?າງປະເທ|ນອກປະເທດ|ອອກນອກ|ອອກຈາກ ?ສປປ|ເຂົ້?າ\\S* ?ສປປ|ເຂົ້?າ-ອອກ|ພາຍນອກ',
   ].join('|'),
   'i',
 );
@@ -2642,6 +3240,68 @@ function statesASubject(subjectWords: string): boolean {
 }
 
 /** Is this measure one the rubric describes as a permission or a limit rather than a command? */
+/**
+ * Whether the finding is the words laying a charge on goods, for a measure that is one -- see
+ * `laidOnGoods`. The act has to lay it now: "imposes", "levies". A charge the provision only
+ * refers to as laid already -- "had imposed", "has been imposed" -- is laid somewhere else, and
+ * counting it here would count that instrument twice.
+ */
+function laysTheCharge(indicatorId: string, f: Pick<Finding, 'measure' | 'dutyAct'>): boolean {
+  const laid = (MEASURES[indicatorId] ?? []).some((m) => m.token === f.measure && m.laidOnGoods === true);
+  const act = f.dutyAct ?? '';
+  return laid && LAYS_A_CHARGE.test(act) && !REFERS_TO_A_CHARGE_LAID.test(act);
+}
+const LAYS_A_CHARGE = /\b(impos|levi|levy|charg)\w*/i;
+const REFERS_TO_A_CHARGE_LAID = /\b(had|has|have|was|were|been|to be|shall be|may)\b/i;
+
+function statesAnAmount(indicatorId: string, measure: string | null): boolean {
+  return !!measure && (MEASURES[indicatorId] ?? []).some((m) => m.token === measure && m.statesAnAmount === true);
+}
+/**
+ * A figure, in any numerals the law is written in, a number in words, a maximum or a sum not to be
+ * exceeded, or a limit the provision says is fixed by someone else: "the limit prescribed by the
+ * Bank" and "specify the maximum value of electronic money" are ceilings whose amount is elsewhere,
+ * where "the approved credit line limit" is the customer's own.
+ */
+const NAMES_AN_AMOUNT =
+  /[0-9๐-๙໐-໙]|\b(?:hundred|thousand|million|billion|lakh|crore|ratus|ribu|juta)\b|\b(?:prescribed|specified|determined|fixed|set)\s+(?:by|in|under)\b|\b(?:maximum|not exceed\w*|specify)\b|กำหนด|สูงสุด|ไม่เกิน|ກໍານົດ|ກຳນົດ|ສູງສຸດ|ບໍ່ເກີນ|установлен|определ|максимальн|не более|не превыша|тогтоо|дээд|хэтрүүлэхгүй/i;
+
+const STRICT_LICENCE_MEASURES = new Set(['strict-telecom-licence']);
+/** The three kinds of strict licence condition 5.5's band names, in the languages read here. */
+const STRICT_CONDITION = new RegExp(
+  [
+    /\b(capital|paid[- ]up|net worth|coverage|cover(?:s|ing)?\b|roll[- ]?out|performance|build[- ]out|universal service|service obligation|foreign\w*|national\w*|citizen\w*|local(?:ly)? (?:owned|ownership|incorporated|partner)|equity|shareholding)\b/.source,
+    // Or whatever the regulator writes into the licence: Singapore's Telecommunications Act lets a
+    // licence require "the licensee to do, or not to do, such things as are specified in the
+    // licence", which is how its performance and rollout obligations are imposed.
+    /\bsuch (?:things|conditions)\b[^.;]{0,40}\bspecified in the licen[cs]e/.source,
+    'ทุน|ต่างด้าว|สัญชาติ|ครอบคลุม',
+    'ທຶນ|ຕ່າງປະເທດ|ຕາງປະເທດ|ຕ້າງປະເທດ|ສັນຊາດ|ຄອບຄຸມ',
+    'капитал|иностран|покрыти|гражданств',
+  ].join('|'),
+  'i',
+);
+
+/**
+ * An official-secrecy-of-investigatory-information clause: a duty of confidence over whatever a
+ * person learned by virtue of, or in administering, the Act itself -- not a trade-secret regime.
+ * The identical clause ("any person who discloses or makes use of any confidential information
+ * ... obtained by virtue of any provision of this Act commits an offence") recurs word for word
+ * across five unrelated Malaysian Acts (Trademarks 2019, GI 2022, Price Control 2011, Competition
+ * 2010, Consumer Protection 1999), each scoped to "a particular enterprise or the affairs of an
+ * individual" and excepted for "the performance of the functions ... of the Controller" and "the
+ * investigation of an offence under this Act" -- the tell that this is a regulator's own secrecy
+ * duty about what its Act let it collect, not a remedy the trade-secret holder can invoke.
+ */
+const OFFICIAL_SECRECY_SCOPE = new RegExp(
+  [
+    /\b(?:obtained|received)\b[^.]{0,60}\b(?:by virtue of|pursuant to|under|in connection with the administration or execution of)\b[^.]{0,15}\bthis Act\b/.source,
+    /\bwith respect to a particular (?:enterprise|undertaking)\b/.source,
+    /\b(?:performance|exercise) of (?:his|her|its|their|the)?\s*(?:duty|duties|functions?|powers?)\b/.source,
+  ].join('|'),
+  'i',
+);
+
 function permits(indicatorId: string, measure: string | null): boolean {
   if (!measure) return false;
   return (MEASURES[indicatorId] ?? []).some((m) => m.token === measure && m.permits === true);
@@ -2778,6 +3438,22 @@ function absenceFor(input: DecideInput): Absence | null {
     pillarFindings: 0,
     currentTo: top.currentTo ?? null,
   };
+}
+
+/**
+ * The measure as the rubric states it first: a duty on the online service provider.
+ *
+ * 8.3's user-identity measure binds "the internet or online service provider", and every finding
+ * that makes it out counts. But a service's own terms telling its users to log in -- a central
+ * bank's rules for its bond information website -- make it out too, and they are not the law that
+ * requires providers to know their users. The row leads with the provision whose party bound is
+ * named, or defined by its own instrument, as an online service; nothing is dropped.
+ */
+function providerBoundFirst(found: Evidence[]): Evidence[] {
+  const domain = MEASURE_DOMAIN['user-identity'];
+  if (!domain) return found;
+  const bound = found.filter((e) => domain.test(e.finding.dutyBearer ?? '') || domain.test(e.definedAs ?? ''));
+  return [...bound, ...found.filter((e) => !bound.includes(e))];
 }
 
 /**

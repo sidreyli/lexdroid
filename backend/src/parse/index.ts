@@ -11,13 +11,19 @@ import { indexSections } from '../db/index.js';
 import type { FetchResult } from '../fetch/index.js';
 import { parseCn } from './cn.js';
 import { docxParagraphs, parseDocx } from './docx.js';
+import { decodeBody } from '../fetch/decode.js';
 import { parseFrl } from './frl.js';
 import { parseHtml } from './html.js';
 import { parseIndiaCode } from './indiacode.js';
+import { parseIps } from './ips.js';
+import { legalinfoScans, parseLegalinfo, parseLegalinfoScan } from './legalinfo.js';
+import { ocrImages, type OcrPage } from './ocr.js';
 import { parseOcs } from './ocs.js';
 import { parsePdf } from './pdf.js';
 import { parseSso } from './sso.js';
 import { identityMismatch } from './identity.js';
+import { detectLanguage } from './language.js';
+import { loadProfile } from '../profile/index.js';
 import { opensAsPublishedAbout, publishedAbout } from '../discover/titles.js';
 import type { ParsedDocument, UnreadReason } from './types.js';
 
@@ -28,6 +34,12 @@ export { provisionIds } from './sso.js';
 const BY_HOST: Record<string, (html: string, url: string) => ParsedDocument> = {
   'sso.agc.gov.sg': parseSso,
   'www.legislation.gov.au': parseFrl,
+  'legalinfo.mn': parseLegalinfo,
+  // Russia's legal information system: IPS, proxied on the government's own domain.
+  'pravo.gov.ru': parseIps,
+  'www.pravo.gov.ru': parseIps,
+  // The Eurasian Economic Union's acts, read from their Word files as Russian acts are (discover/eaeu.ts).
+  'docs.eaeunion.org': parseIps,
 };
 
 /**
@@ -37,6 +49,26 @@ const BY_HOST: Record<string, (html: string, url: string) => ParsedDocument> = {
 const DOCX_BY_HOST: Record<string, (paragraphs: string[], url: string) => ParsedDocument> = {
   'flk.npc.gov.cn': (paragraphs, url) => parseCn(paragraphs, url),
 };
+
+/**
+ * Sites that sometimes show an instrument as a scan in place of its text: where to find the scans
+ * on the page, and how to section what OCR reads from them.
+ */
+const SCANS_BY_HOST: Record<string, { find(html: string, url: string): string[]; read(pages: OcrPage[], url: string): ParsedDocument }> = {
+  'legalinfo.mn': { find: legalinfoScans, read: parseLegalinfoScan },
+};
+
+/** The scans a page shows, if it is on a site known to do so: data: URIs or absolute addresses. */
+export function scannedPages(res: FetchResult): string[] {
+  const site = SCANS_BY_HOST[new URL(res.finalUrl || res.url).host];
+  return site ? site.find(decodeBody(res), res.finalUrl || res.url) : [];
+}
+
+/** Read a scanned page by OCR in the economy's languages, one image per page. */
+export async function parseScans(res: FetchResult, images: readonly Buffer[], languages: readonly string[]): Promise<ParsedDocument> {
+  const site = SCANS_BY_HOST[new URL(res.finalUrl || res.url).host]!;
+  return site.read(await ocrImages(images, languages), res.url);
+}
 
 /** `languages`: the economy's official languages, among which a PDF's language is guessed. */
 export async function parseDocument(res: FetchResult, opts: { languages?: readonly string[] } = {}): Promise<ParsedDocument> {
@@ -72,13 +104,13 @@ export async function parseDocument(res: FetchResult, opts: { languages?: readon
   }
 
   if (res.mediaType.includes('html') || res.mediaType.includes('xml')) {
-    const html = res.body.toString('utf8');
+    const html = decodeBody(res);
     const site = BY_HOST[host];
     return site ? site(html, res.url) : parseHtml(html, res.url);
   }
 
   if (res.mediaType.startsWith('text/')) {
-    const text = res.body.toString('utf8').trim();
+    const text = decodeBody(res).trim();
     if (!text) {
       return { extraction: 'none', text: '', sections: [], title: null, meta: {}, parser: 'plain', unread: { reason: 'empty', detail: `${res.url} is empty.` } };
     }
@@ -129,6 +161,7 @@ export function storeDocument(
     // The same bytes parsed into the same provisions is the document already stored, and storing
     // it again deleted every section and every reading that cited one -- cascaded out of runs that
     // had nothing to do with this parse. Nothing about it has changed, so nothing is touched.
+    parsed = withLanguages(db, instrumentId, parsed);
     const unchanged = unchangedDocument(db, instrumentId, fetched, parsed);
     if (unchanged !== null) return { documentId: unchanged, sectionCount: parsed.sections.length, unread: false, unreadReason: null };
 
@@ -155,18 +188,22 @@ export function storeDocument(
     }
     db.prepare(
       `INSERT INTO document (instrument_id, url, content_hash, media_type, bytes, http_status,
-                             fetched_at, from_cache, extraction, section_count)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                             fetched_at, from_cache, extraction, section_count, ocr_confidence)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(url, content_hash) DO UPDATE SET
          media_type = excluded.media_type, bytes = excluded.bytes, http_status = excluded.http_status,
          fetched_at = excluded.fetched_at, from_cache = excluded.from_cache,
-         extraction = excluded.extraction, section_count = excluded.section_count`,
+         extraction = excluded.extraction, section_count = excluded.section_count,
+         ocr_confidence = excluded.ocr_confidence`,
     ).run(
       instrumentId, fetched.url, fetched.contentHash, fetched.mediaType, fetched.body.length,
       fetched.status, fetched.fetchedAt, fetched.fromCache ? 1 : 0, parsed.extraction,
       // An unread document holds no sections, whatever the parser managed to split. Counting what
       // was never stored made ten Malaysian documents report 348 provisions the corpus has not got.
       parsed.unread ? 0 : parsed.sections.length,
+      // The PDF parser measures this for every OCR'd document and it went nowhere; kept so that a
+      // reader of a Lao answer can see how well the page it rests on was read.
+      parsed.meta.ocrConfidence !== undefined ? Number(parsed.meta.ocrConfidence) : null,
     );
 
     const { id: documentId } = db
@@ -245,6 +282,43 @@ export function storeDocument(
     indexSections(db, documentId);
     return { documentId, sectionCount: parsed.sections.length, unread: false, unreadReason: null };
   })();
+}
+
+/** The languages whose provisions have their language recorded on storing. */
+const DETECTED_HERE = new Set(['mn', 'ru', 'lo']);
+
+/**
+ * Each provision with the language it is written in, where its parser left that open.
+ *
+ * Most parsers leave it null for the export to decide at the end. But `decide` reads it long before
+ * then: a finding in a language other than English is held when an English-word test fails on it,
+ * because the test shows nothing about a provision that cannot use English words -- and only ruled
+ * out when the provision is known to be English. With the language null, every Mongolian and
+ * Russian finding was treated as English and ruled out by words it could never contain, which is a
+ * run producing zeros for laws that say the opposite. Detected among the economy's own languages,
+ * falling back to its first.
+ *
+ * Filled before the unchanged-document check, so a re-parse of the same bytes still matches what
+ * was stored and does not replace it.
+ */
+function withLanguages(db: Db, instrumentId: number, parsed: ParsedDocument): ParsedDocument {
+  if (parsed.unread || parsed.sections.every((s) => s.language)) return parsed;
+  const row = db.prepare('SELECT economy_code c FROM instrument WHERE id = ?').get(instrumentId) as { c: string } | undefined;
+  let languages: readonly string[] = [];
+  try {
+    if (row) languages = loadProfile(row.c).officialLanguages;
+  } catch {
+    // An economy with no profile -- a test fixture -- leaves languages to the export, as before.
+  }
+  // Only for the economies that publish in Mongolian, Russian or Lao. The others were measured and
+  // tuned with their languages left to the export, and their answers are not to move.
+  if (!languages.some((l) => DETECTED_HERE.has(l))) return parsed;
+  return {
+    ...parsed,
+    sections: parsed.sections.map((s) =>
+      s.language ? s : { ...s, language: detectLanguage(s.text, { candidates: languages }) ?? languages[0]! },
+    ),
+  };
 }
 
 /**

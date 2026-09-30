@@ -13,7 +13,7 @@
  */
 import type { Db } from '../db/index.js';
 import { MIN_TRIGRAM_TERM } from '../db/index.js';
-import { embed, EMBEDDING_MODEL } from '../engines/ollama.js';
+import { embed, EMBEDDING_MODEL, embedQueries } from '../engines/ollama.js';
 import { canonicalizeThai } from '../util/thai.js';
 
 /**
@@ -140,11 +140,20 @@ export async function buildDenseIndex(
  * Scripts written without spaces between words.
  *
  * Cyrillic and Malay are deliberately absent: they space their words, so the ordinary path already
- * serves them. Chinese, Japanese and Thai do not, and that is a fact about search rather than about
- * language -- a whole Thai (or Chinese) sentence arrives as one token however long it is.
+ * serves them. Chinese, Japanese, Thai and Lao do not, and that is a fact about search rather than
+ * about language -- a whole Thai (or Chinese, or Lao) sentence arrives as one token however long
+ * it is.
+ *
+ * Lao was omitted when this was written for Chinese and Thai, and the omission is silent in the
+ * worst way: a Lao query survives the whitespace split as one enormous token, FTS5's trigram
+ * tokenizer can satisfy it only by an exact contiguous match, and Lao lexical search therefore
+ * returns nothing at all -- indistinguishable from a genuine absence of results. It costs the
+ * fused retrieval its whole phrase-match channel, which is the agreement signal `fuse` below is
+ * built on. Lao script is written without word spaces exactly as Thai is, so it belongs here and
+ * needs nothing else: `expand` segments by trigram, not by dictionary.
  */
-const SPACELESS = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Thai}]/u;
-const SPACELESS_RUN = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Thai}]+/gu;
+const SPACELESS = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Thai}\p{Script=Lao}]/u;
+const SPACELESS_RUN = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Thai}\p{Script=Lao}]+/gu;
 
 /** Enough for any real query set, and a bound on a pathologically long one. */
 const MAX_QUERY_TERMS = 96;
@@ -320,7 +329,7 @@ export async function searchDense(
 ): Promise<SearchHit[]> {
   if (vectors.ids.length === 0) return [];
   const limit = opts.limit ?? 50;
-  const [raw] = await embed([query], opts.model ?? EMBEDDING_MODEL);
+  const [raw] = await embedQueries([query], opts.model ?? EMBEDDING_MODEL);
   const q = normalise(raw!);
   if (q.length !== vectors.dims) {
     throw new Error(`the query embedded to ${q.length} dimensions but the index holds ${vectors.dims}. Rebuild the index after changing model.`);

@@ -32,6 +32,9 @@ suggestion with its working shown, not a verdict.
 **Mandatory pillars:** 6 (Cross-border data policies) and 7 (Domestic data protection and privacy).
 **Also in scope:** all twelve RDTII 2.1 pillars — the sealed live test may fall in any of them.
 **Economies run end to end:** Australia, Malaysia, Singapore — all 61 indicators, all 12 pillars.
+**Economies profiled:** those three plus India, Thailand, Mongolia, the Russian Federation and Lao
+PDR — eight, five of them non-English. Zone 0 only for the last five; see below for what that means
+and what it does not.
 **Ready for the live test:** see [Supported Economies and Portals](#supported-economies-and-portals)
 for an honest statement of what has and has not been run.
 
@@ -210,7 +213,12 @@ npm run -w backend engine-check -- --engine engine-b
 ```
 
 Four checks: reachable, returns structured output, quotes before it interprets, and reads a legal
-provision correctly.
+provision correctly — asked twice, once of an English provision and once of a Russian one whose
+period is written as a word (`пяти`) rather than a digit. The second case is there because five of
+the eight profiled economies do not publish in English, and an engine that reads English perfectly
+but paraphrases Russian produces unlocatable findings at 0.50 rather than citations. Measured
+21 September 2026: Engine B passes both, quoting Cyrillic back character-for-character without
+translating it.
 
 ### Switching between them
 
@@ -328,11 +336,28 @@ as for the language model.
 | Malaysia | `lom.agc.gov.my` (+ 10) | en, ms | **Yes** — 61/61 indicators | 16,822 registered. See the limitation on Malay below. |
 | Singapore | `sso.agc.gov.sg` (+ 8) | en | **Yes** — 61/61 indicators | 6,857 registered |
 | India | `indiacode.gov.in` (+ 10) | en, hi | **No** — profile and adapter only | Portal adapter written and tested; no cells produced |
+| Thailand | `searchlaw.ocs.go.th` (+ 7) | th | **No** — profile only | Six of eight portals confirmed blocked or client-rendered; `docs/thailand-integration-plan.md` |
+| Mongolia | `legalinfo.mn` (+ 4) | mn | **No** — corpus parsed, no cells | 11,962 registered; parser and annex fetching proven by 45 gold tests on 11 real pages |
+| Russian Federation | `pravo.gov.ru/proxy/ips` (+ 4) | ru | **No** — corpus parsed, no cells | 421 federal instruments from the State legal information system (windows-1251); whole Codes read; 36 gold tests on 5 documents |
+| Lao PDR | `laoofficialgazette.gov.la` (+ 4) | lo | **No** — corpus parsed, no cells | 1,115 registered from the gazette grid; scans read by local OCR (59–89 confidence) and sectioned by article; 21 gold tests on 4 scans |
 
-**Stated honestly:** of the nine sealed live-test economies, LexDroid has been run against **none**
-end to end. India has a written and tested portal adapter but has not produced cells. The three
-mandatory economies are complete. ESCAP's own guidance is that depth across three beats a thin pass
-over ten, and that is the trade we made.
+**Stated honestly:** eight economies are profiled; **three have been run end to end**, and they are
+the three mandatory ones. Of the nine sealed live-test economies, LexDroid has produced cells for
+**none**. India has a written and tested portal adapter; Thailand, Mongolia, Russia and Lao PDR have
+Zone 0 profiles built from portals read live, with every unread portal recorded with the reason it
+is unread rather than quietly dropped. ESCAP's own guidance is that depth beats a thin pass, and
+that is the trade we made — but the finals brief also sets a floor of six economies processed
+autonomously, at least three of them non-English, and that floor is not yet met.
+
+For the three new non-English economies, registration, fetching and parsing now run end to end
+and are proven against real sources (`docs/handoff-three-economies.md`). What still stands between
+them and their first cells:
+- a table of the rubric's queries in each language, since 5 of 300 English queries find anything
+  in these corpora (`npm run -w backend translate-queries`);
+- embeddings on a GPU host;
+- a run.
+
+The portal trace behind each is `docs/lao-mongolia-russia-recon.md`.
 
 ---
 
@@ -418,6 +443,25 @@ Engine A's rented GPUs, and the run record takes the price from the pod. It is n
   Malay and 7 unclassifiable. `lom.agc.gov.my` publishes English versions and our discovery reaches
   those first. C1c is scored on the language of the source, so this is a real gap, not a
   presentational one.
+- **Every Lao row is OCR-recovered, and capped at 0.65 confidence because of it.**
+  `laoofficialgazette.gov.la` publishes image-only scans — one sampled at 1.09 MB carried zero
+  `/Font` and zero `/ToUnicode`. The Lao language pack reads them: 1,761 Lao characters off one
+  page at 77.0 confidence in 10.2 seconds, retaining article numbers and the made-under citation
+  chain. But "located in text recovered by OCR" is what the 0.65 rung means, and it is a real
+  ceiling on Lao rather than a number to explain away.
+- **Lao ligature orthography can still cost recall.** Lao writes some clusters either as one
+  ligature codepoint or as `ຫ` plus the base consonant (`ໝ` against `ຫ`+`ມ`), Unicode defines no
+  canonical decomposition, and `normalize('NFC')` is a no-op on them — the same situation
+  `backend/src/util/thai.ts` handles for Thai. Two spellings of one word are two trigram sets, so
+  a query and a document that disagree do not match. Sized and written up in
+  `docs/lao-mongolia-russia-recon.md`; not fixed, because the one sample also shows OCR confusing
+  `ມ` with `ນ` and normalising alone would not have recovered it.
+- **Cyrillic tells Mongolian from Russian in one direction only.** Mongolian Cyrillic carries Ө and
+  Ү, which Russian does not, so a Mongolian provision is recognised on its own evidence. Russian
+  has no letter of its own against Mongolian, so Russian text inside an economy declared Mongolian
+  falls through to what the profile says and is recorded as Mongolian. It is the same trade this
+  codebase already makes for Malay against Indonesian, and `backend/test/language.test.ts` asserts
+  the asymmetry rather than leaving it to be discovered.
 - **Confidence does not discriminate strongly.** See above: the rungs order rows correctly but the
   spread is 0.061. Do not treat the number as a probability.
 - **The reading engine can misread a number if it is not made to quote first.** Asked for a

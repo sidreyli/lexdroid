@@ -6,7 +6,15 @@
     "tha": "lexdroid.bench-tha.db",
     "12-follow": "lexdroid.bench-12-follow.db",
     "p9-ams": "lexdroid.bench-p9-ams.db",
-    "mys81011": "lexdroid.bench-mys81011.db"
+    "mys81011": "lexdroid.bench-mys81011.db",
+    "ind-p1ict": "lexdroid.bench-ind-p1ict.db",
+    "tha-p511": "lexdroid.bench-tha-p511.db",
+    "tha-p68": "lexdroid.bench-tha-p68.db",
+    "lao": "lexdroid.bench-lao.db",
+    "lao-fix": "lexdroid.bench-lao-fix.db",
+    "lao-fix2": "lexdroid.bench-lao-fix2.db",
+    "rus": "lexdroid.bench-rus.db",
+    "mng": "lexdroid.bench-mng.db"
   },
   "sources": [
     { "economy": "AUS", "pack": "aus-mys-sgp", "run": "a74d0fca-5362-4ee1-9194-983d70a66eab", "skip": [12] },
@@ -16,23 +24,32 @@
     { "economy": "MYS", "pack": "12-follow", "run": "9dbd7d9c-6ce2-4fa3-b9fe-99112642fc56", "pillars": [12] },
     { "economy": "SGP", "pack": "aus-mys-sgp", "run": "a74d0fca-5362-4ee1-9194-983d70a66eab", "skip": [9] },
     { "economy": "SGP", "pack": "p9-ams", "run": "3ba611e1-0f69-4a34-9103-6ff5fe70e333", "pillars": [9] },
-    { "economy": "IND", "pack": "ind", "run": "283f457e-6b94-4cac-8d36-b79d329867c7", "skip": [8] },
+    { "economy": "IND", "pack": "ind", "run": "283f457e-6b94-4cac-8d36-b79d329867c7", "skip": [1, 8] },
+    { "economy": "IND", "pack": "ind-p1ict", "run": "d4a8e968-efb2-4481-a534-c6a1ca4c2f4a", "pillars": [1] },
     { "economy": "IND", "pack": "ind", "run": "78642831-8bc7-4db0-a50b-d6dca7fb618c", "pillars": [8] },
-    { "economy": "THA", "pack": "tha", "run": "f8848a01-d776-42a3-8db2-afbcc3a25e8d" }
+    { "economy": "THA", "pack": "tha", "run": "f8848a01-d776-42a3-8db2-afbcc3a25e8d", "skip": [5, 6, 8, 11] },
+    { "economy": "THA", "pack": "tha-p511", "run": "32cab2a4-9e5e-45f3-b475-bcec480d01ee", "pillars": [5, 11] },
+    { "economy": "THA", "pack": "tha-p68", "run": "6c775d5c-d600-40f0-afb9-debfe271c3ef", "pillars": [6] },
+    { "economy": "THA", "pack": "tha-p68", "run": "b4a8abcc-69b8-42c6-a295-ff146c33ad3e", "pillars": [8] },
+    { "economy": "LAO", "pack": "lao-fix2", "run": "452f3e65-9efd-43e0-b6e0-d872f7cbc666" },
+    { "economy": "RUS", "pack": "rus", "run": "24fc8068-9eab-45bc-addc-c6819c3c2e19" },
+    { "economy": "MNG", "pack": "mng", "run": "515b4c45-98bd-4e71-8897-2e63d2007c48" }
   ],
   "audit": {
-    "unearned": ["AUS 10.3", "MYS 10.2", "MYS 11.3", "THA 10.2", "THA 3.1", "IND 12.4.6"],
+    "unearned": ["AUS 10.3", "MYS 10.2", "MYS 11.3", "THA 10.2", "THA 3.1", "IND 12.4.6", "RUS 2.3", "MNG 9.1"],
     "finds": {
       "AUS 5.1": 0, "AUS 6.2": 1, "AUS 9.1": 1,
       "SGP 8.3": 1, "SGP 9.3": 1, "SGP 11.2": 0, "SGP 12.8": 1, "SGP 12.4.7": 1,
       "IND 6.1": 0.5, "IND 6.3": 1, "IND 7.2": 0.5,
-      "THA 12.4.1": 1
+      "THA 8.4": 1, "THA 12.4.1": 1, "THA 11.1": 1,
+      "LAO 6.2": 1,
+      "RUS 11.1": 1
     },
     "contestable": [
-      "AUS 1.4", "AUS 2.1", "MYS 2.1", "SGP 6.2",
-      "IND 2.2", "IND 3.2", "IND 4.1", "IND 4.9", "IND 12.4.4", "THA 8.4", "THA 12.3"
+      "AUS 1.4", "AUS 2.1", "MYS 2.1",
+      "IND 2.2", "IND 3.2", "IND 4.1", "IND 4.9", "IND 12.4.4", "THA 12.3", "LAO 7.5"
     ],
-    "notAnswerable": ["AUS 5.3", "MYS 5.3", "SGP 5.3", "IND 5.3", "THA 5.3", "AUS 3.4", "IND 3.4"]
+    "notAnswerable": ["AUS 5.3", "MYS 5.3", "SGP 5.3", "IND 5.3", "THA 5.3", "LAO 5.3", "AUS 3.4", "IND 3.4"]
   },
   "declareAt": 0.75
 }

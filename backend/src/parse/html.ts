@@ -309,6 +309,16 @@ export function soleDocumentLink(html: string, pageUrl: string): string | null {
 }
 
 /**
+ * A link a request can follow. An editor who drafted the page in a word processor can leave a link
+ * to the file on their own desktop -- Mongolia's legalinfo.mn carries `file:///Users/.../08-ne-89.doc`
+ * beside the law it amends -- and asked for, it fails the way a host refusing us does, three times,
+ * until the reader stops asking the host it came from.
+ */
+function onTheWeb(url: URL): boolean {
+  return url.protocol === 'http:' || url.protocol === 'https:';
+}
+
+/**
  * The one file a page publishes under the instrument's own name.
  *
  * A regulator that announces a policy document by posting a page linking it has the crawl
@@ -331,6 +341,7 @@ export function namedDocumentLink(html: string, pageUrl: string, title: string):
     if (!text || !namesTheSame(text, title)) return;
     try {
       const target = new URL(href, pageUrl);
+      if (!onTheWeb(target)) return;
       target.hash = '';
       // A site linking itself under its other name. Bank Negara's pages are served from
       // www.bnm.gov.my and two of them link their own policy at bnm.gov.my, which answers 202 to
@@ -401,6 +412,7 @@ export function pointedDocumentLink(html: string, pageUrl: string): string | nul
     if (!href || !/\.(?:pdf|docx?|rtf)(?:$|\?)/i.test(href)) return;
     try {
       const target = new URL(href, pageUrl);
+      if (!onTheWeb(target)) return;
       target.hash = '';
       // The same site under its other name, as `namedDocumentLink` explains.
       if (target.host !== here && target.host.replace(/^www\./i, '') === here.replace(/^www\./i, '')) {
