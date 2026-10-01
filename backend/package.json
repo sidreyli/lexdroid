@@ -55,6 +55,7 @@
     "better-sqlite3": "^11.8.1",
     "cheerio": "^1.0.0",
     "exceljs": "^4.4.0",
+    "fflate": "^0.8.3",
     "jszip": "^3.10.1",
     "pdfjs-dist": "^4.10.38",
     "tesseract.js": "^7.0.0",

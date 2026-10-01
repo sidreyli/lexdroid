@@ -27,6 +27,7 @@ import { cbicDownloadUrl, resolveCbicDocument } from './cbic.js';
 import { crawlAdapter } from './crawl.js';
 import { drupalAdapter } from './drupal.js';
 import { eaeuAdapter } from './eaeu.js';
+import { flkAdapter } from './flk.js';
 import { frlAdapter } from './frl.js';
 import { indiaCodeAdapter } from './indiacode.js';
 import { legalinfoAdapter } from './legalinfo.js';
@@ -49,6 +50,7 @@ const ADAPTERS: Record<string, Adapter> = {
   drupal: drupalAdapter,
   eaeu: eaeuAdapter,
   fipcs: fipcsAdapter,
+  flk: flkAdapter,
   frl: frlAdapter,
   indiacode: indiaCodeAdapter,
   legalinfo: legalinfoAdapter,
